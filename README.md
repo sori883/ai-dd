@@ -51,3 +51,5 @@ Flags:
 ローカル検証手順は[docs/development.md](docs/development.md)、package境界と手動DIは[docs/architecture.md](docs/architecture.md)を参照してください。
 
 AI-DLC v2参照実装の分析資料は[docs/aidlc-analysis/README.md](docs/aidlc-analysis/README.md)にあります。
+
+開発上の意思決定、制約、調査結果は[docs/ram/README.md](docs/ram/README.md)から参照できます。
