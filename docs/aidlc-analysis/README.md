@@ -64,9 +64,10 @@ TypeScript/Bun 製フレームワークである。配布物は単なる文書�
 
 ファイル数は分析時点の棚卸し値であり、後続バージョンでは変わり得る。
 
-## 将来の参照スキルへの組み込み方
+## 参照スキルからの利用
 
-参照スキルは次の progressive disclosure を採用するとよい。
+リポジトリ内の `.agents/skills/aidlc-reference/` に、この索引を利用する
+`$aidlc-reference` スキルを配置している。スキルは次の progressive disclosure を採用する。
 
 1. この `README.md` から質問を1〜2個の観点へ分類する。
 2. 対応する観点別文書だけを読む。

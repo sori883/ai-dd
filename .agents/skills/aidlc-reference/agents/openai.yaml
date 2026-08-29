@@ -1,0 +1,6 @@
+interface:
+  display_name: "AI-DLC Reference"
+  short_description: "Inspect the local AI-DLC v2 implementation and distribution"
+  default_prompt: "Use $aidlc-reference to answer this AI-DLC v2 question from the local analysis and only the necessary source evidence."
+policy:
+  allow_implicit_invocation: true
