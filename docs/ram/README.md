@@ -36,4 +36,5 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [初期実装の境界](decisions/2026-08-29-initial-implementation-boundaries.md) | Accepted |
 | 意思決定 | [プロジェクトRAMの記録運用](decisions/2026-08-29-project-ram-policy.md) | Accepted |
 | 意思決定 | [Project root解決の初期契約](decisions/2026-08-30-project-root-resolution.md) | Accepted |
+| 意思決定 | [Local配布E2E sandboxの運用](decisions/2026-08-30-local-distribution-e2e-sandbox.md) | Accepted |
 | 調査 | [既存AI-DLCの配布形式](research/2026-08-29-existing-distribution-format.md) | Current for local v2.6.123 snapshot |

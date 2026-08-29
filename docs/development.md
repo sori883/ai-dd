@@ -72,6 +72,12 @@ for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 wi
 done
 ```
 
+## 配布E2E
+
+repository外の承認済みlocal sandboxへ実行物を配置して確認する手順と安全規則は、
+[配布E2Eテスト](e2e-testing.md)を参照してください。実行ごとの証跡は
+[`e2e-runs/`](e2e-runs/)へ記録します。
+
 ## 変更手順
 
 1. GitHub Issueと承認済み計画でscopeを固定します。
