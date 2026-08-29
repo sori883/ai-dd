@@ -44,7 +44,7 @@ Flags:
   --version  Show version information
 ```
 
-`help`と`--help`はhelpをstdoutへ出力し、`version`と`--version`はversion情報をstdoutへ出力します。不正な引数は診断とusageをstderrへ出力し、終了コード2を返します。
+`help`と`--help`はhelpをstdoutへ出力し、`version`と`--version`はversion情報をstdoutへ出力します。stdoutへの書き込みに失敗した場合はstderrへ診断を試み、終了コード1を返します。不正な引数は診断とusageをstderrへ出力し、終了コード2を返します。
 
 ## 開発
 

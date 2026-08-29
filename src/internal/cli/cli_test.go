@@ -2,11 +2,20 @@ package cli_test
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 
 	"github.com/sori883/ai-dd/src/internal/buildinfo"
 	"github.com/sori883/ai-dd/src/internal/cli"
 )
+
+type errorWriter struct {
+	err error
+}
+
+func (w errorWriter) Write([]byte) (int, error) {
+	return 0, w.err
+}
 
 const wantHelp = `AI-DLC command-line interface
 
@@ -55,6 +64,41 @@ func TestRun_Help(t *testing.T) {
 	}
 }
 
+func TestRun_HelpWriteError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "no arguments", args: nil},
+		{name: "help command", args: []string{"help"}},
+		{name: "help flag", args: []string{"--help"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var stderr bytes.Buffer
+			exitCode := cli.Run(
+				tt.args,
+				errorWriter{err: errors.New("broken pipe")},
+				&stderr,
+				buildinfo.Info{},
+			)
+
+			if exitCode != 1 {
+				t.Errorf("exit code = %d, want 1", exitCode)
+			}
+			const wantStderr = "aidlc: write stdout: broken pipe\n"
+			if got := stderr.String(); got != wantStderr {
+				t.Errorf("stderr = %q, want %q", got, wantStderr)
+			}
+		})
+	}
+}
+
 func TestRun_Version(t *testing.T) {
 	t.Parallel()
 
@@ -86,6 +130,40 @@ func TestRun_Version(t *testing.T) {
 			}
 			if got := stderr.String(); got != "" {
 				t.Errorf("stderr = %q, want empty", got)
+			}
+		})
+	}
+}
+
+func TestRun_VersionWriteError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "version command", args: []string{"version"}},
+		{name: "version flag", args: []string{"--version"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var stderr bytes.Buffer
+			exitCode := cli.Run(
+				tt.args,
+				errorWriter{err: errors.New("broken pipe")},
+				&stderr,
+				buildinfo.Info{Version: "v1.2.3", Commit: "abcdef0"},
+			)
+
+			if exitCode != 1 {
+				t.Errorf("exit code = %d, want 1", exitCode)
+			}
+			const wantStderr = "aidlc: write stdout: broken pipe\n"
+			if got := stderr.String(); got != wantStderr {
+				t.Errorf("stderr = %q, want %q", got, wantStderr)
 			}
 		})
 	}

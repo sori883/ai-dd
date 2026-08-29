@@ -26,22 +26,32 @@ Flags:
 // Run executes the CLI with injected process inputs and outputs and returns an exit code.
 func Run(args []string, stdout, stderr io.Writer, info buildinfo.Info) int {
 	if len(args) == 0 {
-		_, _ = io.WriteString(stdout, helpText)
-		return 0
+		return writeStdout(stdout, stderr, helpText)
 	}
 
 	if len(args) == 1 {
 		switch args[0] {
 		case "help", "--help":
-			_, _ = io.WriteString(stdout, helpText)
-			return 0
+			return writeStdout(stdout, stderr, helpText)
 		case "version", "--version":
-			_, _ = fmt.Fprintf(stdout, "aidlc %s (commit %s)\n", info.Version, info.Commit)
-			return 0
+			return writeStdout(
+				stdout,
+				stderr,
+				fmt.Sprintf("aidlc %s (commit %s)\n", info.Version, info.Commit),
+			)
 		}
 	}
 
 	_, _ = fmt.Fprintf(stderr, "aidlc: unknown arguments: %q\n\n", strings.Join(args, " "))
 	_, _ = io.WriteString(stderr, helpText)
 	return 2
+}
+
+func writeStdout(stdout, stderr io.Writer, output string) int {
+	if _, err := io.WriteString(stdout, output); err != nil {
+		_, _ = fmt.Fprintf(stderr, "aidlc: write stdout: %v\n", err)
+		return 1
+	}
+
+	return 0
 }
