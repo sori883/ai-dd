@@ -3,3 +3,8 @@
 docs/実装_aidlc-workflows/
 docs/配布_ai-dlc/
 work/
+/aidlc
+/bin/
+/dist/
+/coverage.out
+*.test

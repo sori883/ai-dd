@@ -1,0 +1,149 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Quality (Go ${{ matrix.go-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version:
+          - 1.26.x
+          - stable
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: false
+      - name: Check formatting
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l src)"
+          if [[ -n "$unformatted" ]]; then
+            printf '%s\n' "$unformatted"
+            exit 1
+          fi
+      - name: Vet
+        run: go vet ./...
+      - name: Test with shuffled order and coverage
+        run: go test -shuffle=on -coverprofile=coverage.out ./...
+      - name: Test with race detector
+        run: go test -race -shuffle=on ./...
+      - name: Check module metadata
+        run: go mod tidy -diff
+      - name: Smoke test native binary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          binary="${RUNNER_TEMP}/aidlc"
+          go build -trimpath -o "$binary" ./src/cmd/aidlc
+
+          help_stdout="${RUNNER_TEMP}/help.stdout"
+          help_stderr="${RUNNER_TEMP}/help.stderr"
+          "$binary" --help >"$help_stdout" 2>"$help_stderr"
+          grep -Fqx 'Usage:' "$help_stdout"
+          if [[ -s "$help_stderr" ]]; then
+            printf '%s\n' 'expected --help stderr to be empty'
+            exit 1
+          fi
+
+          default_version_stdout="${RUNNER_TEMP}/default-version.stdout"
+          default_version_stderr="${RUNNER_TEMP}/default-version.stderr"
+          "$binary" --version >"$default_version_stdout" 2>"$default_version_stderr"
+          if [[ "$(<"$default_version_stdout")" != 'aidlc dev (commit unknown)' ]]; then
+            printf '%s\n' 'unexpected default version output'
+            exit 1
+          fi
+          if [[ -s "$default_version_stderr" ]]; then
+            printf '%s\n' 'expected default --version stderr to be empty'
+            exit 1
+          fi
+
+          injected_binary="${RUNNER_TEMP}/aidlc-injected"
+          go build -trimpath \
+            -ldflags '-X github.com/sori883/ai-dd/src/internal/buildinfo.Version=v0.1.0 -X github.com/sori883/ai-dd/src/internal/buildinfo.Commit=abcdef0' \
+            -o "$injected_binary" \
+            ./src/cmd/aidlc
+          injected_stdout="${RUNNER_TEMP}/injected-version.stdout"
+          injected_stderr="${RUNNER_TEMP}/injected-version.stderr"
+          "$injected_binary" --version >"$injected_stdout" 2>"$injected_stderr"
+          if [[ "$(<"$injected_stdout")" != 'aidlc v0.1.0 (commit abcdef0)' ]]; then
+            printf '%s\n' 'unexpected injected version output'
+            exit 1
+          fi
+          if [[ -s "$injected_stderr" ]]; then
+            printf '%s\n' 'expected injected --version stderr to be empty'
+            exit 1
+          fi
+
+          unknown_stdout="${RUNNER_TEMP}/unknown.stdout"
+          unknown_stderr="${RUNNER_TEMP}/unknown.stderr"
+          if "$binary" unknown >"$unknown_stdout" 2>"$unknown_stderr"; then
+            printf '%s\n' 'expected unknown argument to fail'
+            exit 1
+          else
+            unknown_status=$?
+          fi
+          if [[ "$unknown_status" -ne 2 ]]; then
+            printf 'unknown argument exit code = %s, want 2\n' "$unknown_status"
+            exit 1
+          fi
+          if [[ -s "$unknown_stdout" ]]; then
+            printf '%s\n' 'expected unknown argument stdout to be empty'
+            exit 1
+          fi
+          grep -Fqx 'aidlc: unknown arguments: "unknown"' "$unknown_stderr"
+          grep -Fqx 'Usage:' "$unknown_stderr"
+
+  cross-build:
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: darwin
+            goarch: amd64
+            extension: ""
+          - goos: darwin
+            goarch: arm64
+            extension: ""
+          - goos: linux
+            goarch: amd64
+            extension: ""
+          - goos: linux
+            goarch: arm64
+            extension: ""
+          - goos: windows
+            goarch: amd64
+            extension: .exe
+          - goos: windows
+            goarch: arm64
+            extension: .exe
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: 1.26.x
+          cache: false
+      - name: Build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -trimpath -o "${{ runner.temp }}/aidlc-${GOOS}-${GOARCH}${{ matrix.extension }}" ./src/cmd/aidlc
