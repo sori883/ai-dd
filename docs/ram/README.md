@@ -39,5 +39,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [Local配布E2E sandboxの運用](decisions/2026-08-30-local-distribution-e2e-sandbox.md) | Accepted |
 | 意思決定 | [内部workspace機能を先行し、statusを後段で実装する](decisions/2026-08-31-internal-workspace-before-status.md) | Accepted（実装順序） |
 | 意思決定 | [共通space読み取りの初期契約](decisions/2026-08-31-space-reading-contract.md) | Accepted |
+| 意思決定 | [Intent読み取りの実装計画](decisions/2026-08-31-intent-reading-plan.md) | Accepted |
 | 調査 | [既存AI-DLCの配布形式](research/2026-08-29-existing-distribution-format.md) | Current for local v2.6.123 snapshot |
 | 調査 | [共通space読み取りの参照契約](research/2026-08-31-space-reading-contracts.md) | Current for local v2.6.123 snapshot |
+| 調査 | [Intent候補列挙・現在intent解決の参照契約](research/2026-08-31-intent-reading-contracts.md) | Current for local v2.6.123 snapshot |
