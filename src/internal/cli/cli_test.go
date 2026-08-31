@@ -22,16 +22,20 @@ const wantHelp = `AI-DLC command-line interface
 Usage:
   aidlc <command>
   aidlc space create <name> [--project-dir <path>]
+  aidlc space list [--json] [--project-dir <path>]
+  aidlc space [--json] [--project-dir <path>]
 
 Commands:
   help       Show help
   version    Show version information
   space create  Create a new space
+  space list    List spaces (space is an alias)
 
 Flags:
   --help     Show help
   --version  Show version information
-  --project-dir <path>  Project directory for space create
+  --project-dir <path>  Project directory for space commands
+  --json     Print space lists as JSON
 `
 
 func TestRun_Help(t *testing.T) {
@@ -57,6 +61,7 @@ func TestRun_Help(t *testing.T) {
 				&stdout,
 				&stderr,
 				buildinfo.Info{},
+				nil,
 				nil,
 				nil,
 			)
@@ -98,6 +103,7 @@ func TestRun_HelpWriteError(t *testing.T) {
 				buildinfo.Info{},
 				nil,
 				nil,
+				nil,
 			)
 
 			if exitCode != 1 {
@@ -133,6 +139,7 @@ func TestRun_Version(t *testing.T) {
 				&stdout,
 				&stderr,
 				buildinfo.Info{Version: "v1.2.3", Commit: "abcdef0"},
+				nil,
 				nil,
 				nil,
 			)
@@ -172,6 +179,7 @@ func TestRun_VersionWriteError(t *testing.T) {
 				errorWriter{err: errors.New("broken pipe")},
 				&stderr,
 				buildinfo.Info{Version: "v1.2.3", Commit: "abcdef0"},
+				nil,
 				nil,
 				nil,
 			)
@@ -218,6 +226,7 @@ func TestRun_UnknownArguments(t *testing.T) {
 				&stdout,
 				&stderr,
 				buildinfo.Info{},
+				nil,
 				nil,
 				nil,
 			)

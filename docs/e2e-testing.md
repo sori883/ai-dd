@@ -24,13 +24,15 @@ sandbox rootそのものへ実行物を直置きせず、必ずscenarioごとの
 | --- | --- | --- |
 | CLI distribution smoke | repository外へbuildしたbinaryの起動、標準出力、標準error、終了code | 実施可能 |
 | Space creation | 配布binaryから既存projectを解決し、spaceの生成物・org継承・重複拒否を確認 | 実施可能 |
+| Space listing | 配布binaryからshared cursorの一覧・human/JSON・bare aliasと無変更を確認 | 実施可能 |
 | 配布・install | binaryがCodex向け資産を対象projectへ安全に展開できること | 未実装 |
 | workspace lifecycle | project root、space、intent、stateを配布先から一連で扱えること | 未実装 |
 
-Go版CLIはhelp/versionと`aidlc space create <name> [--project-dir <path>]`を公開している。
-help/versionの起動確認は引き続きsmokeとして扱い、space作成は別の機能E2Eとして記録する。
-作成CLIはmainでroot入力を組み立てて既存resolverへ接続するため、その経路も検証対象になる。
-`ReadSelection`、space/intent読み取りCLI、切替やintent作成は未接続・未実装なので、
+Go版CLIはhelp/version、`aidlc space create <name> [--project-dir <path>]`、
+`aidlc space list [--json] [--project-dir <path>]`とbare `aidlc space`を公開している。
+help/versionの起動確認は引き続きsmokeとして扱い、space作成・一覧は別の機能E2Eとして記録する。
+作成・一覧CLIはmainでroot入力を組み立てて既存resolverへ接続するため、その経路も検証対象になる。
+`ReadSelection`、intent読み取りCLI、session binding、切替やintent作成は未接続・未実装なので、
 このE2Eを完全なworkspace lifecycleや完全なAI-DLC配布E2Eとは扱わない。
 
 ## 実行証跡
@@ -44,6 +46,7 @@ help/versionの起動確認は引き続きsmokeとして扱い、space作成は�
 - artifactのsizeとSHA-256
 - 実行した入力、期待した終了code、stdout、stderrの観測結果
 - space作成では生成path・file本文、継承元と既存cursor等の前後snapshot、重複拒否後の無変更
+- space一覧では出力の行・active・JSON形式と、成功・構文/接続/出力失敗時のfixture前後snapshot
 - その時点で未実装のため確認できなかった範囲
 
 local sandboxはmacOS上の実配布確認に使う。LinuxとWindowsを含むcompile可能性は
@@ -57,6 +60,28 @@ CIのcross-build matrixで別に検証し、各OSでのnative実行と同一視�
 4. 配布先をworking directoryとして、正常系と異常系を実行する。
 5. 終了code、stdout、stderr、artifact hashを確認する。
 6. 結果と未検証範囲を`docs/e2e-runs/`へ記録する。
+
+## Space一覧scenario
+
+未使用scenario内にbinaryと既存project fixtureを用意する。通常の開発projectを検証用に変更しない。
+
+1. 明示`space list`とbare `space`のhuman/JSONを確認する。shared cursor、並び順、合成default、
+   未知cursorで全行inactiveのままJSON top-level `active`だけdefaultになる契約を確認する。
+2. projectが存在しspaces未配置なら作成せずdefaultを表示し、project自体が未作成なら
+   JSON error・exit 1となることを確認する。flag・環境変数・cwdの優先順位も確認する。
+3. flagの前・途中・後配置とproject-dirの分離形・等号形、未知/重複/欠落/空値、値付きJSON、
+   余剰位置引数、既存の未知subcommand診断を確認する。
+4. 初回project link、内部相対linkの参照、外向き・絶対・broken linkのfallbackや途中打切りを確認する。
+5. Unixでは読み口を閉じた実pipeをstdout、stderr、両方へ接続する。list/bareのhuman/JSONが
+   SIGPIPE終了でなくexit 1となり、stderrへ書ける場合だけJSON errorが届くことを確認する。
+   stderrも書けない場合はexit 1だけを確認する。一般のstdout書込み失敗は部分出力を残し得る。
+6. 全caseでproject・外側link先fixtureのpath、内容、mode、mtime、symlink先を前後比較し、
+   readerが作成・修復・切替・変更をしていないことを確認する。
+
+構文の境界は[Space一覧CLI](development.md#space一覧cli)、
+本家ローカル`2.6.123`との比較範囲・承認済み変更は[差分表](architecture.md#space一覧の意図的な差分)を参照する。
+readerが吸収するerrorをすべてCLI errorと見なさず、OS固有のerror本文ではなく形式・exit code・
+dataへの影響を検証する。snapshot比較は並行更新に対する一貫性や完全sandboxの保証ではない。
 
 ## Space作成scenario
 

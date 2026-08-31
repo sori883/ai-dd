@@ -56,10 +56,10 @@ directory/fileへのsymlink、broken link、root外symlinkを検証します。
 intentの統合テストは、`t.TempDir()`を`os.OpenRoot`で開いた`Root.FS()`を使用します。
 cursorとmarkerの双方で、内側の相対linkの受入れ、外側・絶対・壊れたlinkによるfallbackや
 候補除外を検証します。reader単体テストでは`Root`のopen/closeをfixtureが管理し、
-接続APIの`ReadSelection`では製品内部が管理します。
+接続APIの`ReadSpaces`と`ReadSelection`では製品内部が管理します。
 `fs.FS`自体、`os.DirFS`、`fs.Sub`にはsymlink封じ込め保証がない点に注意してください。
 
-両readerの統合テストで、読取前後のpath、内容、mode、更新時刻、symlink先を比較し、
+readerと接続APIの統合テストで、読取前後のpath、内容、mode、更新時刻、symlink先を比較し、
 製品処理による作成・変更がないことを確認します。fixtureの作成は製品への作成機能追加とは別です。
 Windowsでsymlink作成権限が不足する場合は、そのケースだけ理由付きでskipします。
 
@@ -89,8 +89,63 @@ fallbackします。さらに、同じproject内でもintents外のcursor/marker
 path操作に独自の検証とFS境界を用意する必要があります。
 
 既存CIのquality jobでも統合テストを実行します。ただしCIの実行OSはUbuntuであり、
-6 targetのcross buildを各OSの実行証拠とは扱いません。workspace readerは公開CLIから未到達
-なので、help/version smokeや配布E2Eをspace・intent・接続機能の検証証拠にはしません。
+6 targetのcross buildを各OSの実行証拠とは扱いません。space一覧は`ReadSpaces`経由で公開CLIに
+接続していますが、intent readerと`ReadSelection`は未接続です。help/version smokeを一覧の
+検証とせず、space一覧E2Eもintent・selectionや完全なworkspace lifecycleの検証とは区別します。
+
+### Space一覧CLI
+
+既存projectのspaceをread-onlyで表示します。bare `space`は`space list`のaliasです。
+
+```sh
+go run ./src/cmd/aidlc space list --project-dir /path/to/existing-project
+go run ./src/cmd/aidlc space --json --project-dir=/path/to/existing-project
+```
+
+rootは明示`--project-dir`、`AIDLC_PROJECT_DIR`、`CLAUDE_PROJECT_DIR`、cwdの順に選びます。
+相対pathはcwd基準です。選んだprojectが開けなくても低優先rootへ切り替えません。
+project自体は既存である必要がありますが、`aidlc/spaces`やintent・stateの準備は不要です。
+合成`default`の表示は初期化を意味せず、一覧はdirectory作成・修復・切替を行いません。
+現在spaceはshared cursorだけから決め、session bindingやspace overrideはまだ受け取りません。
+
+`--json`は値なしで1回だけ指定できます。`--json space list`、`space --json list`、
+`space list --json`は同じ操作です。`--project-dir path`と`--project-dir=path`も
+commandの前・途中・後に配置できます。重複・欠落・空値、未知flag、list後の余剰位置引数は
+callback前に拒否し、cwd・環境変数・FSを読みません。`--json=true`や`--json=false`も無効です。
+分離形のproject-dirは次tokenが`-`始まりなら値欠落とします。
+`--project-dir --force`をpathとして扱わず、実pathが`-dir`なら
+`--project-dir=-dir`または`--project-dir ./-dir`を使います。
+
+bare aliasはflagを除いた位置引数が`space`だけの場合です。未知subcommandは従来の診断を保ちます。
+
+| 入力（`aidlc`省略） | 結果 |
+| --- | --- |
+| `space --json false` | `space false`が未知subcommandとなり、従来形式・exit 2 |
+| `space list --json false` | 認識済みlistの余剰位置引数としてJSON error・exit 1 |
+| `space --json=false` | bare一覧の未知flagとしてJSON error・exit 1 |
+
+成功時はstdoutのhuman一覧またはJSON 1行、stderrは空、exit 0です。全行inactiveならJSONの
+top-level `active`だけが`default`となり、行のfalseは保持されます。認識済み一覧の構文・接続・
+Close・出力失敗はexit 1で、stderrが書ける場合にJSON errorを1行出力します。
+stdout失敗では部分出力が残り得ます。stderrも書けない場合はexit 1だけを保証します。
+reader内部の欠損・読取エラーは既存fallbackを保つため、すべてがCLI errorになるわけではありません。
+
+```sh
+go test -count=1 -run '^TestReadSpaces' ./src/internal/workspace
+go test -tags=integration -count=1 -run '^TestReadSpaces' ./src/internal/workspace
+go test -count=1 ./src/internal/cli ./src/cmd/aidlc
+```
+
+単体テストはroot優先順位・open失敗の原因保持、flag配置・厳格検証・callback未実行、human/JSONの
+行・escape・short write、lazy main入力を確認します。実RootのClose失敗は関数注入し、
+Close済みであることもintegrationで確認します。実FSでは未配置・fallback、初回projectリンクと
+内部相対・外向き・絶対・brokenリンクを確認し、外側fixtureを含む前後snapshotを比較します。
+Unixの通常テストでは実mainのhelper subprocessに閉じたstdout/stderr pipeを接続し、list/bareの
+human/JSONがSIGPIPE終了でなくexit 1となること、既存help/version/未知commandには影響しないことを
+確認します。非Unixでは実pipe回帰は対象外です。全体・race・coverage・vetは上記の手順も実行します。
+
+詳細と本家ローカル`2.6.123`との差分は[一覧CLIの契約](architecture.md#space一覧cliとread-only接続)、
+[承認済み差分表](architecture.md#space一覧の意図的な差分)を参照してください。
 
 ### Space作成CLI
 
@@ -173,7 +228,7 @@ CIは`CGO_ENABLED=0`で次の6ターゲットのCLIをbuildします。
 - `windows/arm64`
 
 ローカルでは次のloopで、CLIとintegrationタグ付きworkspaceテストバイナリを確認できます。
-mainはspace作成のためworkspaceをimportしますが、CLI buildはworkspaceの`_test.go`や
+mainはspace作成・一覧のためworkspaceをimportしますが、CLI buildはworkspaceの`_test.go`や
 integrationタグ付きテストをcompileしないため、テストバイナリも別に確認します。
 いずれもコンパイルの確認であり、各OSでのテスト実行とは区別します。
 

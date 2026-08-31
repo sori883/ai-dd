@@ -138,6 +138,7 @@ func TestSpaceCreatorLazyCLIInputs(t *testing.T) {
 				buildinfo.Info{},
 				callback,
 				nil,
+				nil,
 			)
 			if code != tt.code {
 				t.Errorf(
@@ -164,5 +165,165 @@ func TestSpaceCreatorCreationFailure(t *testing.T) {
 	got, err := callback("team", "project")
 	if got != "" || !errors.Is(err, cause) {
 		t.Errorf("callback() = (%q, %v), want empty name and creation cause", got, err)
+	}
+}
+
+func TestSpaceListerRootInput(t *testing.T) {
+	t.Parallel()
+
+	getwdCalls := 0
+	var envKeys []string
+	readCalls := 0
+	want := []workspace.Space{{Name: "team", Active: true}, {Name: "default"}}
+	callback := spaceLister(
+		func() (string, error) {
+			getwdCalls++
+			return "working directory", nil
+		},
+		func(key string) string {
+			envKeys = append(envKeys, key)
+			return map[string]string{
+				"AIDLC_PROJECT_DIR":  "aidlc directory",
+				"CLAUDE_PROJECT_DIR": "claude directory",
+			}[key]
+		},
+		func(input workspace.RootInput) ([]workspace.Space, error) {
+			readCalls++
+			wantInput := workspace.RootInput{
+				ExplicitDir:      "explicit directory",
+				AIDLCProjectDir:  "aidlc directory",
+				ClaudeProjectDir: "claude directory",
+				WorkingDir:       "working directory",
+			}
+			if input != wantInput {
+				t.Errorf("RootInput=%+v, want %+v", input, wantInput)
+			}
+			return want, nil
+		},
+	)
+	if getwdCalls != 0 || readCalls != 0 {
+		t.Error("constructing the list callback read process inputs or workspace")
+	}
+	if len(envKeys) != 0 {
+		t.Error("constructing the list callback read environment variables")
+	}
+	got, err := callback("explicit directory")
+	if err != nil || !slices.Equal(got, want) {
+		t.Errorf(
+			"callback()=(%v, %v), want (%v, nil)",
+			got,
+			err,
+			want,
+		)
+	}
+	if getwdCalls != 1 || readCalls != 1 {
+		t.Errorf("getwd calls=%d read calls=%d, want 1 each", getwdCalls, readCalls)
+	}
+	if wantKeys := []string{"AIDLC_PROJECT_DIR", "CLAUDE_PROJECT_DIR"}; !slices.Equal(envKeys, wantKeys) {
+		t.Errorf("environment keys=%v, want %v", envKeys, wantKeys)
+	}
+}
+
+func TestSpaceListerWorkingDirectoryFailure(t *testing.T) {
+	t.Parallel()
+
+	cause := errors.New("injected working directory failure")
+	callback := spaceLister(
+		func() (string, error) { return "partial path", cause },
+		func(string) string {
+			t.Error("environment read after cwd failure")
+			return ""
+		},
+		func(workspace.RootInput) ([]workspace.Space, error) {
+			t.Error("workspace read after cwd failure")
+			return nil, nil
+		},
+	)
+	got, err := callback("explicit path")
+	if got != nil || !errors.Is(err, cause) {
+		t.Errorf("callback()=(%v, %v), want nil and cwd cause", got, err)
+	}
+}
+
+func TestSpaceListerReadFailure(t *testing.T) {
+	t.Parallel()
+
+	cause := errors.New("injected workspace read failure")
+	callback := spaceLister(
+		func() (string, error) { return "working directory", nil },
+		func(string) string { return "" },
+		func(workspace.RootInput) ([]workspace.Space, error) { return nil, cause },
+	)
+	got, err := callback("explicit path")
+	if got != nil || !errors.Is(err, cause) {
+		t.Errorf("callback()=(%v, %v), want nil and read cause", got, err)
+	}
+}
+
+func TestSpaceListerLazyCLIInputs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+		code int
+	}{
+		{name: "no arguments"},
+		{name: "help", args: []string{"help"}},
+		{name: "help flag", args: []string{"--help"}},
+		{name: "version", args: []string{"version"}},
+		{name: "version flag", args: []string{"--version"}},
+		{name: "unknown command", args: []string{"unknown"}, code: 2},
+		{name: "unknown subcommand", args: []string{"space", "unknown"}, code: 2},
+		{name: "bare separate JSON value", args: []string{"space", "--json", "false"}, code: 2},
+		{name: "extra positional", args: []string{"space", "list", "extra"}, code: 1},
+		{name: "help after list", args: []string{"space", "list", "--help"}, code: 1},
+		{name: "duplicate JSON", args: []string{"space", "list", "--json", "--json"}, code: 1},
+		{name: "bare JSON equals", args: []string{"space", "--json=false"}, code: 1},
+		{name: "missing project", args: []string{"space", "list", "--project-dir"}, code: 1},
+		{
+			name: "duplicate project",
+			args: []string{"space", "list", "--project-dir=one", "--project-dir=two"},
+			code: 1,
+		},
+		{name: "create command", args: []string{"space", "create", "team"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			callback := spaceLister(
+				func() (string, error) {
+					t.Error("cwd read without a valid list invocation")
+					return "", errors.New("must not read cwd")
+				},
+				func(string) string {
+					t.Error("environment read without a valid list invocation")
+					return ""
+				},
+				func(workspace.RootInput) ([]workspace.Space, error) {
+					t.Error("workspace read without a valid list invocation")
+					return nil, nil
+				},
+			)
+			var stdout, stderr bytes.Buffer
+			code := cli.Run(
+				tt.args,
+				&stdout,
+				&stderr,
+				buildinfo.Info{},
+				func(string, string) (string, error) { return "team", nil },
+				callback,
+				nil,
+			)
+			if code != tt.code {
+				t.Errorf(
+					"exit=%d, want %d; stderr=%q",
+					code,
+					tt.code,
+					stderr.String(),
+				)
+			}
+		})
 	}
 }

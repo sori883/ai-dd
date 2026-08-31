@@ -8,7 +8,10 @@ import (
 	"strings"
 )
 
-func spaceCreateArguments(args []string) (command []string, explicitDir string, err error) {
+func spaceArguments(
+	args []string,
+	allowJSON bool,
+) (command []string, explicitDir string, jsonOutput bool, err error) {
 	command = []string{}
 	projectDirSeen := false
 	recordError := func(argumentErr error) {
@@ -18,6 +21,13 @@ func spaceCreateArguments(args []string) (command []string, explicitDir string, 
 	}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
+		if arg == "--json" && allowJSON {
+			if jsonOutput {
+				recordError(errors.New("duplicate --json"))
+			}
+			jsonOutput = true
+			continue
+		}
 		value, equalsForm := strings.CutPrefix(arg, "--project-dir=")
 		if arg == "--project-dir" || equalsForm {
 			if projectDirSeen {
@@ -44,7 +54,7 @@ func spaceCreateArguments(args []string) (command []string, explicitDir string, 
 		}
 		command = append(command, arg)
 	}
-	return command, explicitDir, err
+	return command, explicitDir, jsonOutput, err
 }
 
 func runSpaceCreate(

@@ -142,3 +142,18 @@ switch、intent、status、session binding、インストーラーや配布資�
 
 Issue作成→単独TDD実装→固定base/headの独立レビュー→必要な修正・最終検証→配布E2E→PRと進める。
 PRはIssueへ紐づけ、自動マージせずユーザーへ引き渡す。Issueはマージ後にCloseする。
+
+## 実装時の具体化（2026-08-31）
+
+以下は、承認済みの「値なしflag」「bare alias」「未知subcommandの既存契約を維持する」を
+具体的な入力へ適用したもの。別のユーザー承認があったとは扱わず、新しい機能や仕様差分は追加しない。
+
+| 入力（aidlc省略） | 解釈・結果 |
+| --- | --- |
+| `space --json false` | flagを除くと`space false`。未知subcommandとして従来形式・exit 2 |
+| `space list --json false` | 認識済みlistの余剰位置引数としてJSON error・exit 1 |
+| `space --json=false` | bare一覧に対する値付きの未知flagとしてJSON error・exit 1 |
+
+`--json`は値なしflagとしてargvの前・途中・後から認識する。
+`--json space list`、`space --json list`、`space list --json`は同じ操作とする。
+未知commandには一覧のSIGPIPE hookを広げず、これらの境界を回帰テストと利用手順に記載する。
