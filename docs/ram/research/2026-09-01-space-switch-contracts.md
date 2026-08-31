@@ -115,3 +115,34 @@ Cursor型検査とRoot境界を追加し、strict CLIは既存Go版へ揃える�
 
 同時切替の排他、全OS atomic、敵対的差替え、crash耐久性は検証済みとはしない。
 session/harness/auditは後続段階へ分け、共有cursor更新を本家の全切替処理と同一視しない。
+
+## 配布E2Eで保護する本家の保存先
+
+2026-09-01、ローカル本家2.6.123の静的調査で次の保存先を確認した。
+Go版の今回のscopeではこれらを読み書きせず、配布E2Eで内容・mode・mtimeを含む無変更を確認する。
+
+| 用途 | 利用projectからの相対path | 本家switchの操作 |
+| --- | --- | --- |
+| session binding | `aidlc/.aidlc-sessions/<session-id>.binding.json` | 更新 |
+| current session | `aidlc/.aidlc-sessions/.current-session` | fallbackとして読む |
+| rebind offer | `aidlc/.aidlc-sessions/<session-id>.rebind-offer` | 削除 |
+| intent UUID stamp | `aidlc/.aidlc-sessions/<session-id>`（拡張子なし） | 対象intentのUUIDで更新。intentなしでは削除 |
+| target active-intent | `aidlc/spaces/<space>/intents/active-intent` | 読取りのみ |
+
+binding fixtureは `{"space":"default","intent":null,"boundAt":"2026-09-01T00:00:00Z"}\n` とする。
+bindingのintentが文字列の場合は対応するintentの `aidlc-state.md` の存在も必要になる。
+対象intentが存在してregistryにUUIDがない場合、既存UUID stampは更新も削除もされない。
+E2Eのstate本文・offer署名・UUIDは無変更検証用の合成fixtureであり、本家session処理を実行して検証したものではない。
+
+根拠（すべて `docs/実装_aidlc-workflows/core/tools/` 配下）：
+
+- `aidlc-lib.ts:3219` binding path・型、`:3288` JSON保存、`:3296` rebind offer。
+- `aidlc-lib.ts:3699` UUID stamp、`:3816` current-session。
+- `aidlc-lib.ts:1638` target active-intent。
+- `aidlc-utility.ts:6255` switch時のsession更新。
+
+追加で親が `aidlc-lib.ts:2357` の `intentsRegistryPath` と
+`:6103` の `auditFilePath` を確認した。intent registryは
+`aidlc/spaces/<space>/intents/intents.json`、解決済みintentのaudit shardは
+`aidlc/spaces/<space>/intents/<record-dir-name>/audit/<host>-<clone>.md`。
+配布E2Eにも空registryと合成Markdown audit shardを保護fixtureとして配置する。

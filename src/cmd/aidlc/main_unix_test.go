@@ -17,6 +17,105 @@ import (
 	"testing"
 )
 
+func TestMainSpaceSwitchClosedPipes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		args            []string
+		hasClosedStdout bool
+		hasClosedStderr bool
+		isRejected      bool
+		wantCode        int
+	}{
+		{name: "success", args: []string{"space", "switch", "Team Alpha"}},
+		{
+			name: "stdout", args: []string{"space", "switch", "Team Alpha"},
+			hasClosedStdout: true, wantCode: 1,
+		},
+		{
+			name: "stderr syntax", args: []string{"space", "switch", "help"},
+			hasClosedStderr: true, isRejected: true, wantCode: 1,
+		},
+		{
+			name: "stderr workspace failure", args: []string{"space", "switch", "unknown"},
+			hasClosedStderr: true, isRejected: true, wantCode: 1,
+		},
+		{
+			name: "both", args: []string{"space", "switch", "Team Alpha"},
+			hasClosedStdout: true, hasClosedStderr: true, wantCode: 1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			project := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(
+				project,
+				"aidlc",
+				"spaces",
+				"team-alpha",
+			), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			cursor := filepath.Join(project, "aidlc", "active-space")
+			if err := os.WriteFile(cursor, []byte("old bytes"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			before := mainTreeSnapshot(t, project)
+			args := append(slices.Clone(tt.args), "--project-dir", project)
+			cmd := mainProcess(t, args...)
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &stdout, &stderr
+			if tt.hasClosedStdout {
+				cmd.Stdout = closedPipeWriter(t)
+			}
+			if tt.hasClosedStderr {
+				cmd.Stderr = closedPipeWriter(t)
+			}
+			state := runMainProcess(t, cmd)
+			if code := state.ExitCode(); code != tt.wantCode {
+				t.Errorf(
+					"main exit=%d (%s), want %d",
+					code,
+					state,
+					tt.wantCode,
+				)
+			}
+			wantCursor := "team-alpha\n"
+			if tt.isRejected {
+				wantCursor = "old bytes"
+				if !maps.Equal(before, mainTreeSnapshot(t, project)) {
+					t.Error("rejected switch changed the project")
+				}
+			}
+			data, err := os.ReadFile(cursor)
+			if err != nil || string(data) != wantCursor {
+				t.Errorf(
+					"cursor=(%q, %v), want %q without output-error rollback",
+					data,
+					err,
+					wantCursor,
+				)
+			}
+			wantStdout := ""
+			if tt.wantCode == 0 {
+				wantStdout = "Active space → team-alpha\n"
+			}
+			if stdout.String() != wantStdout {
+				t.Errorf("stdout=%q, want %q", stdout.String(), wantStdout)
+			}
+			if tt.hasClosedStdout && !tt.hasClosedStderr {
+				if message := mainErrorJSON(t, stderr.String()); !strings.Contains(message, "write stdout:") {
+					t.Errorf("JSON error=%q, want stdout failure", message)
+				}
+			} else if stderr.Len() != 0 {
+				t.Errorf("stderr=%q, want empty for success or closed stderr", stderr.String())
+			}
+		})
+	}
+}
+
 func TestMainSpaceList(t *testing.T) {
 	t.Parallel()
 

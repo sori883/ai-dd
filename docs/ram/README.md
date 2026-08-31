@@ -50,5 +50,5 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 調査 | [共通space読み取りの参照契約](research/2026-08-31-space-reading-contracts.md) | Current for local v2.6.123 snapshot |
 | 調査 | [Space作成の参照契約](research/2026-08-31-space-creation-contracts.md) | Current for local v2.6.123 snapshot（U+0130小文字化の追加調査を含む） |
 | 調査 | [Space一覧CLIの参照契約](research/2026-08-31-space-list-contracts.md) | Current for local v2.6.123 snapshot（public parserとsession選択の境界） |
-| 調査 | [Space切替の参照契約と保存API](research/2026-09-01-space-switch-contracts.md) | Current for local v2.6.123 snapshot（共有cursorと後続処理、Go1.26.4保存境界） |
+| 調査 | [Space切替の参照契約と保存API](research/2026-09-01-space-switch-contracts.md) | Current for local v2.6.123 snapshot（共有cursor・後続処理の保存先、Go1.26.4保存境界） |
 | 調査 | [Intent候補列挙・現在intent解決の参照契約](research/2026-08-31-intent-reading-contracts.md) | Current for local v2.6.123 snapshot |

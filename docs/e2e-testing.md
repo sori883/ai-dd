@@ -25,14 +25,16 @@ sandbox rootそのものへ実行物を直置きせず、必ずscenarioごとの
 | CLI distribution smoke | repository外へbuildしたbinaryの起動、標準出力、標準error、終了code | 実施可能 |
 | Space creation | 配布binaryから既存projectを解決し、spaceの生成物・org継承・重複拒否を確認 | 実施可能 |
 | Space listing | 配布binaryからshared cursorの一覧・human/JSON・bare aliasと無変更を確認 | 実施可能 |
+| Space switching | 配布binaryから既存spaceを選び、shared cursor保存・失敗境界・周辺dataの無変更を確認 | 実施可能 |
 | 配布・install | binaryがCodex向け資産を対象projectへ安全に展開できること | 未実装 |
 | workspace lifecycle | project root、space、intent、stateを配布先から一連で扱えること | 未実装 |
 
 Go版CLIはhelp/version、`aidlc space create <name> [--project-dir <path>]`、
-`aidlc space list [--json] [--project-dir <path>]`とbare `aidlc space`を公開している。
-help/versionの起動確認は引き続きsmokeとして扱い、space作成・一覧は別の機能E2Eとして記録する。
-作成・一覧CLIはmainでroot入力を組み立てて既存resolverへ接続するため、その経路も検証対象になる。
-`ReadSelection`、intent読み取りCLI、session binding、切替やintent作成は未接続・未実装なので、
+`aidlc space list [--json] [--project-dir <path>]`とbare `aidlc space`、
+`aidlc space switch <name> [--project-dir <path>]`を公開している。
+help/versionの起動確認は引き続きsmokeとして扱い、space作成・一覧・切替は別の機能E2Eとして記録する。
+作成・一覧・切替CLIはmainでroot入力を組み立てて既存resolverへ接続するため、その経路も検証対象になる。
+`ReadSelection`、intent読み取りCLI、session binding、intent作成・切替は未接続・未実装なので、
 このE2Eを完全なworkspace lifecycleや完全なAI-DLC配布E2Eとは扱わない。
 
 ## 実行証跡
@@ -47,6 +49,7 @@ help/versionの起動確認は引き続きsmokeとして扱い、space作成・�
 - 実行した入力、期待した終了code、stdout、stderrの観測結果
 - space作成では生成path・file本文、継承元と既存cursor等の前後snapshot、重複拒否後の無変更
 - space一覧では出力の行・active・JSON形式と、成功・構文/接続/出力失敗時のfixture前後snapshot
+- space切替ではcursorの内容・mode、親directory・tempの残存、周辺dataの無変更、errorでも保存済みかの確認
 - その時点で未実装のため確認できなかった範囲
 
 local sandboxはmacOS上の実配布確認に使う。LinuxとWindowsを含むcompile可能性は
@@ -84,6 +87,36 @@ CIのcross-build matrixで別に検証し、各OSでのnative実行と同一視�
 本家ローカル`2.6.123`との比較範囲・承認済み変更は[差分表](architecture.md#space一覧の意図的な差分)を参照する。
 readerが吸収するerrorをすべてCLI errorと見なさず、OS固有のerror本文ではなく形式・exit code・
 dataへの影響を検証する。snapshot比較は並行更新に対する一貫性や完全sandboxの保証ではない。
+
+## Space切替scenario
+
+未使用scenario内にbinaryと独立した既存project fixtureを用意する。以下は検証手順であり、
+実行済みの証拠はsource commitを固定した後の個別実施記録で示す。
+
+1. `space create`→`space list`→`space switch`→`space list`を実行し、作成で自動切替しないこと、
+   切替の成功1行`Active space → <slug>\n`・exit 0と、cursorの正確な`<slug>\n`を確認する。
+2. 実directoryのない合成default、同一targetの再保存、Unicode正規化、一覧にある`Help`由来のhelpを
+   確認する。未知名を拒否し、spaceを新設しないことも確認する。
+3. project-dirの全位置・分離形・等号形、root優先順位、未作成projectの拒否、名前欠落・raw help/-h・
+   余剰・未知・重複・空flag値・`--json`を確認する。既存help/version/未知commandも回帰確認する。
+4. 初回project link、境界内相対link、外向き・絶対linkの祖先、cursorのsymlink・broken link・
+   非regular fileを確認する。失敗後のcursor、外側fixture、親directory、tempの状態を記録する。
+5. `aidlc/.aidlc-sessions/`のbinding・current-session・rebind-offer・session file、
+   `aidlc/spaces/<space>/intents/active-intent`、state・registry・audit、`.codex/config.toml`等を
+   保護fixtureに含め、対象cursorと保存に必要な
+   親directoryのmetadata以外が変わらないことをsnapshotで確認する。
+6. Unixでは読み口を閉じた実pipeをstdout、stderr、両方へ接続する。SIGPIPE終了でなくexit 1となり、
+   stderrが書ける場合だけJSON errorが届くこと、stdout失敗でも保存済みcursorを取り消さないことを
+   確認する。一般のstdout失敗は部分出力を残し得て、stderrも書けなければexit 1だけを確認する。
+
+write・short write・Chmod・Close・Rename・cleanupの決定的な失敗注入はunit/integrationテストで
+別に確認する。chmodだけで権限不足を再現できるとは仮定しない。Rename前の失敗でも親directoryや
+tempが残り得て、Rename以降・Root Close・出力失敗ではcursorが保存済みの場合がある。
+検証都合の自動rollback・既存artifactの削除はしない。各OSでのatomic更新、crash耐久性、
+並行writerや完全なsession/harness連携をこのE2Eの成功から主張しない。
+
+構文は[Space切替CLI](development.md#space切替cli)、保存境界とローカル本家`2.6.123`からの
+承認済み変更は[Space切替](architecture.md#space切替)・[差分表](architecture.md#space切替の意図的な差分)を参照する。
 
 ## Space作成scenario
 
