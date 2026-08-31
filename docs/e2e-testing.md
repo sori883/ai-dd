@@ -63,6 +63,8 @@ CIのcross-build matrixで別に検証し、各OSでのnative実行と同一視�
 
 ## Space一覧scenario
 
+実施記録: [2026-08-31のspace一覧E2E](e2e-runs/2026-08-31-space-list.md)（53起動・全fixture無変更）。
+
 未使用scenario内にbinaryと既存project fixtureを用意する。通常の開発projectを検証用に変更しない。
 
 1. 明示`space list`とbare `space`のhuman/JSONを確認する。shared cursor、並び順、合成default、

@@ -157,3 +157,13 @@ PRはIssueへ紐づけ、自動マージせずユーザーへ引き渡す。Issu
 `--json`は値なしflagとしてargvの前・途中・後から認識する。
 `--json space list`、`space --json list`、`space list --json`は同じ操作とする。
 未知commandには一覧のSIGPIPE hookを広げず、これらの境界を回帰テストと利用手順に記載する。
+
+## 実装・検証の記録
+
+製品source commitは `50fae80e4f7a05331af803c71d9d4c8c1b9d8781`。
+14件の観測可能なTDD slice、fresh通常/race/integration/coverage/vet等と、固定差分の独立レビューを実施した。
+製品差分のblocking findingはなし。親による6target buildと、配布binaryの53起動もPASSし、
+全起動でfixtureの前後snapshotは無変更だった。
+[検証・配布E2E記録](../../e2e-runs/2026-08-31-space-list.md)にsource、artifact hash、入力・出力・限界をまとめた。
+session等の後続範囲を追加せず、今回の承認済み契約と意図的な差分3件を維持した。
+PRはIssue #21へ紐づけ、自動マージしない。IssueのCloseはマージ後とする。
