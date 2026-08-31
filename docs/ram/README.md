@@ -41,7 +41,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [共通space読み取りの初期契約](decisions/2026-08-31-space-reading-contract.md) | Accepted |
 | 意思決定 | [Intent読み取りの実装計画](decisions/2026-08-31-intent-reading-plan.md) | Accepted |
 | 意思決定 | [Workspace読み取り接続の実装計画](decisions/2026-08-31-workspace-reading-composition-plan.md) | Accepted |
-| 意思決定 | [Space作成をCLIから使えるようにする実装計画](decisions/2026-08-31-space-creation-plan.md) | Accepted（Issue #19、strict flag値・実装検証・初回E2E・SIGPIPE修正を追記） |
+| 意思決定 | [Space作成をCLIから使えるようにする実装計画](decisions/2026-08-31-space-creation-plan.md) | Accepted（Issue #19、strict flag値・SIGPIPE修正・最終配布E2Eまで記録） |
 | 意思決定 | [本家AI-DLCとの差分を自発的に提示する](decisions/2026-08-31-upstream-difference-reporting.md) | Superseded（下記の意図的な差分に限定する方針へ置換） |
 | 意思決定 | [本家との差分提示を意図的な仕様・挙動の変更に限定する](decisions/2026-08-31-intentional-upstream-difference-reporting.md) | Accepted |
 | 調査 | [既存AI-DLCの配布形式](research/2026-08-29-existing-distribution-format.md) | Current for local v2.6.123 snapshot |

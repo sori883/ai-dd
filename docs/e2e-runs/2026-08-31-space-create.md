@@ -124,3 +124,5 @@ stdout側は作成済み`pipe-target`のorg本文も確認でき、生成物は�
 
 これはmock writerでは検出できなかったUnixのSIGPIPE境界であり、基本23ケースのPassedとは
 分けて記録する。初回artifactと失敗証跡は残し、修正後は別の新規scenarioで再確認する。
+
+修正後の結果は[最終配布E2E](2026-08-31-space-create-final.md)を参照。

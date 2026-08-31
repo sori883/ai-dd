@@ -313,3 +313,15 @@ Unix subprocessテストは通常テストで実行し、CIのcoverage付き実�
 修正後の全package通常・shuffle・race・integration、通常/integration vet、tidy・gofmt・gopls診断は成功。
 CLI・workspace integration test binary・main test binaryの3種類を6構成でcross compileし、すべて成功した。
 修正後の配布E2Eと固定headの独立再レビューを完了してからPRへ進む。
+
+## 修正後の配布E2E結果（2026-08-31）
+
+source commit `a5623a625a0fba80b9f0f8042600d9171c85927d`をcleanな状態でbuildし、
+初回とは別の未使用scenarioで基本23ケース、closed-pipe 3パターン、再試行拒否2件を検証した。
+計28回のコマンド実行はすべて期待どおりだった。閉pipeはSIGPIPE終了ではなく通常のexit 1であり、
+出力可能なstderrへだけJSONを出し、生成済みの7directory・6fileを保持した。
+再試行後も既存targetの内容・mode・mtimeは不変だった。
+
+詳細は[最終配布E2E証跡](../../e2e-runs/2026-08-31-space-create-final.md)を参照。
+この記録時点ではコードの独立再レビューでP2解消を確認済みであり、証跡のdocs-only差分を
+最終照合してからIssue #19へ紐づくPRを作成する。マージはユーザー判断とし、自動マージしない。
