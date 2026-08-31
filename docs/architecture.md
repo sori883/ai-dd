@@ -12,7 +12,8 @@ src/cmd/aidlc/main.go
 
 src/internal/workspace (CLI integration is deferred)
   ├─ project root resolution
-  └─ active-space and space listing (read-only)
+  ├─ active-space and space listing (read-only)
+  └─ active-intent and intent listing (read-only)
 ```
 
 ## Package境界
@@ -20,7 +21,7 @@ src/internal/workspace (CLI integration is deferred)
 - `src/cmd/aidlc`: composition rootです。process引数、stdout、stderr、build情報を組み立て、`cli.Run`の戻り値を`os.Exit`へ渡します。ドメイン判断や出力整形は置きません。
 - `src/internal/cli`: CLIの引数解釈、stdout/stderrの分離、終了コード、help/versionの表示契約を所有します。`io.Writer`を受け取るため、process全体を起動せずにテストできます。
 - `src/internal/buildinfo`: linkerが差し替える`Version`と`Commit`、およびそのsnapshotを所有します。既定値は`dev`と`unknown`です。
-- `src/internal/workspace`: project rootの選択・path正規化と、spaceの読み取りを所有します。root解決は受け取った候補だけで決定し、space readerはproject root基準の`fs.FS`を受け取ります。環境変数や現在directoryを直接参照せず、filesystemへ書き込みません。公開CLIにはまだ接続していません。
+- `src/internal/workspace`: project rootの選択・path正規化と、space・intentの読み取りを所有します。root解決は受け取った候補だけで決定します。space readerはproject root基準、intent readerは選択済み1spaceのintents directory基準の`fs.FS`を受け取ります。環境変数や現在directoryを直接参照せず、filesystemへ書き込みません。公開CLIにはまだ接続していません。
 
 `internal`配下はmodule外からimportできません。今後の機能も、CLIから直接filesystemやnetworkへ到達させず、責務ごとのpackageをcomposition rootで接続します。
 
@@ -58,6 +59,47 @@ symlinkも参照し得ます。名前からpathへ到達する後続機能では
 
 承認と詳細は[共通space読み取りの初期契約](ram/decisions/2026-08-31-space-reading-contract.md)を参照してください。
 
+## Intent読み取りの契約と安全性の差分
+
+`workspace.ListIntentDirs(intentsFS)`と`workspace.ActiveIntent(intentsFS, explicit)`は、
+選択済み1spaceの`aidlc/spaces/<space>/intents/`をrootとする、non-nilの`fs.FS`を受け取ります。
+project root基準のFSではありません。space選択、名前からのFS接続、`os.OpenRoot`と`Close`の
+管理は呼出側の責務であり、今回のreaderには実装していません。
+
+- `ListIntentDirs`は直下entryの`<entry>/aidlc-state.md`へのStatが成功すれば候補にします。
+  entryのdirectory判定やmarkerの通常file判定は行いません。命名形式を制限せず、現行の
+  `YYMMDD-label`、旧形式、その他の名前をUTF-16コード単位順で返します。再帰はしません。
+- ReadDirのエラーでは部分entriesも捨て、non-nilの空sliceを返します。個別Statの失敗では
+  その候補だけを除外して後続を調べます。space readerの途中打切りとは異なる契約です。
+- `ActiveIntent`の非空explicitは、空白やunsafeなpathもtrim・検証せずそのまま`true`と
+  返します。この分岐ではFSへ一切アクセスしません。空explicitはcursor・候補選択へ進みます。
+- cursorは`active-intent`を読み、space readerと同じJavaScript相当のtrimを行います。
+  読取エラーでは部分データも捨てます。trim後の値が`fs.ValidPath`を満たし、markerへの
+  Statが成功すればその値を選択します。候補一覧への所属は必要ありません。
+- cursorが利用できなければ、候補がちょうど1件の場合だけその名前と`true`を返します。
+  0件・複数件なら`("", false)`です。いずれのreaderもregistryの`intents.json`やstate本文を
+  読まず、作成・切替・修復・書き込みを行いません。
+
+AI-DLC `2.6.123`との意図的な差分として、cursorのpathを正規化する前に`fs.ValidPath`で
+検証します。`../other`、`a/../b`、絶対path、空component等はcursor先をStatせずfallbackへ
+進みます。一方、`nested/name`と特殊値`.`は有効です。`.`はrootの`aidlc-state.md`を確認し、
+返値も`.`のままです。backslashとcolonは`fs.FS`の名前文字として扱い、OSの区切りへ
+独自変換しません。
+
+実filesystemの供給方法には`os.Root.FS()`を採用し、統合テストでその境界を固定しています。
+内側の相対symlinkには追従しますが、越境・絶対symlinkは拒否されるため、本家が参照できる
+リンクでもfallbackまたは候補除外になり得ます。`fs.FS`という型自体にはこの封じ込め保証が
+ありません。`os.DirFS`や`fs.Sub`をsandboxとせず、供給FSの選択は呼出側で行います。
+`os.Root`もmount、特殊file、device fileまで遮断する完全なsandboxではありません。
+
+返すboolは選択の有無だけを表し、名前の安全性や存在の保証ではありません。特にexplicitは
+未検証であるため、後続consumerはその値をpathに使う前に検証し、安全なFS境界を用意する
+必要があります。space readerの返す未検証名からintentsのFSを接続する処理も別途設計します。
+エラー吸収により欠損と権限不足等は区別できません。不正UTF-8の完全互換、各OSの名前制約・
+Node/BunのOS別path解釈、並行更新中の一貫したsnapshotは保証しません。
+
+承認と詳細は[intent読み取りの実装計画](ram/decisions/2026-08-31-intent-reading-plan.md)を参照してください。
+
 ## ビルド情報
 
 `Version`と`Commit`は通常のstring変数として安全な既定値を持ち、release buildでは`go build -ldflags -X`で差し替えます。build timestampは再現可能なbuildを損なうため保持しません。
@@ -67,6 +109,7 @@ symlinkも参照し得ます。名前からpathへ到達する後続機能では
 - AI-DLCの33ステージとagent実行
 - 設定ファイルとshell completion
 - project rootの存在確認、ancestor探索、workspace filesystemの作成
-- spaceの作成・切替・削除、名前からのpath解決、intent/state/statusの実装
+- spaceの作成・切替・削除、space名からintentsのFSへの接続
+- intentの作成・切替・削除、registry/state本文の解釈、statusの実装
 - Cobra、Viper、GoReleaserなどの外部依存
 - release、署名、公証、installer
