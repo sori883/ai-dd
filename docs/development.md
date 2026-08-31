@@ -28,6 +28,29 @@ go test -shuffle=on -coverprofile="$coverage_file" ./...
 go tool cover -func="$coverage_file"
 ```
 
+### Workspaceのspace reader
+
+内部readerの単体テストと、実filesystemでの統合テストを分けて実行します。
+
+```sh
+go test -count=1 ./src/internal/workspace
+go test -tags=integration -count=1 ./src/internal/workspace
+```
+
+単体テストは`fstest.MapFS`と最小の失敗注入stubを使い、cursor、明示override、
+部分データ付きエラー、途中Stat失敗、JavaScriptのtrim・UTF-16 sort互換を固定します。
+cwdや環境変数は変更しません。
+
+統合テストは`os.DirFS(t.TempDir())`に対して、未配置・空・通常file・directory、
+directory/fileへのsymlink、broken link、root外symlinkを検証します。
+読取前後のpath、内容、mode、更新時刻、symlink先を比較し、製品処理による作成・変更が
+ないことを確認します。fixtureの作成は、製品へのspace作成機能追加とは別です。
+Windowsでsymlink作成権限が不足する場合は、そのケースだけ理由付きでskipします。
+
+既存CIのquality jobでも統合テストを実行します。ただしCIの実行OSはUbuntuであり、
+6 targetのcross buildを各OSの実行証拠とは扱いません。space readerは公開CLIから未到達
+なので、help/version smokeや配布E2Eをspace機能の検証証拠にはしません。
+
 ## 実行fileの確認
 
 ```sh
