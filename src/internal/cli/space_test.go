@@ -32,6 +32,7 @@ func TestRunSpaceCreate(t *testing.T) {
 		},
 		nil,
 		nil,
+		nil,
 	)
 	if calls != 1 || code != 0 {
 		t.Errorf("callback calls = %d, exit code = %d; want 1, 0", calls, code)
@@ -82,6 +83,7 @@ func TestRunSpaceCreateProjectDirPositions(t *testing.T) {
 					},
 					nil,
 					nil,
+					nil,
 				)
 				if code != 0 || calls != 1 || stdout.String() != "Space created: team-alpha\n" || stderr.Len() != 0 {
 					t.Errorf(
@@ -117,6 +119,7 @@ func TestRunSpaceCreateFailureJSON(t *testing.T) {
 				},
 				nil,
 				nil,
+				nil,
 			)
 			if calls != 1 || code != 1 || stdout.Len() != 0 {
 				t.Errorf(
@@ -147,6 +150,7 @@ func TestRunSpaceCreateStdoutFailure(t *testing.T) {
 			calls++
 			return "team", nil
 		},
+		nil,
 		nil,
 		nil,
 	)
@@ -204,6 +208,7 @@ func TestRunSpaceCreateInvalidArguments(t *testing.T) {
 				},
 				nil,
 				nil,
+				nil,
 			)
 			if code != 1 || calls != 0 || stdout.Len() != 0 {
 				t.Errorf(
@@ -252,6 +257,7 @@ func TestRunSpaceCreateDashProjectDir(t *testing.T) {
 				},
 				nil,
 				nil,
+				nil,
 			)
 			if tt.wantFailure {
 				if code != 1 || calls != 0 || stdout.Len() != 0 {
@@ -290,6 +296,7 @@ func TestRunHelpIncludesSpaceCreate(t *testing.T) {
 		},
 		nil,
 		nil,
+		nil,
 	)
 	if code != 0 || !strings.Contains(stdout.String(), "aidlc space create <name> [--project-dir <path>]") {
 		t.Errorf("exit=%d stdout=%q, want help with creation syntax", code, stdout.String())
@@ -306,6 +313,7 @@ func TestRunSpaceCreateShortStdoutWrite(t *testing.T) {
 		&stderr,
 		buildinfo.Info{},
 		func(string, string) (string, error) { return "team", nil },
+		nil,
 		nil,
 		nil,
 	)
@@ -327,6 +335,7 @@ func TestRunSpaceCreateStderrFailure(t *testing.T) {
 		errorWriter{err: errors.New("stderr unavailable")},
 		buildinfo.Info{},
 		func(string, string) (string, error) { return "", errors.New("creation failed") },
+		nil,
 		nil,
 		nil,
 	)
@@ -400,6 +409,7 @@ func TestRunSpaceOutputPreparation(t *testing.T) {
 					events = append(events, "create")
 					return "team", tt.createErr
 				},
+				nil,
 				nil,
 				func() { events = append(events, "prepare") },
 			)

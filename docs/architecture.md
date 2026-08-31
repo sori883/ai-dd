@@ -8,7 +8,7 @@ ai-ddは、単一のGo moduleと単一の実行ファイルを保ちながら、
 src/cmd/aidlc/main.go
   ├─ src/internal/buildinfo
   ├─ src/internal/cli (arguments, output, exit code)
-  └─ src/internal/workspace (CreateSpace / ReadSpaces callbacks)
+  └─ src/internal/workspace (CreateSpace / ReadSpaces / SwitchSpace callbacks)
 
 src/internal/workspace
   ├─ project root resolution
@@ -16,31 +16,32 @@ src/internal/workspace
   ├─ active-intent and intent listing (read-only)
   ├─ ReadSpaces: project → shared-cursor space list (read-only CLI)
   ├─ ReadSelection: project → current space → intents (read-only, no CLI yet)
-  └─ CreateSpace: explicit creation within an existing project
+  ├─ CreateSpace: explicit creation within an existing project
+  └─ SwitchSpace: explicit shared-cursor update within an existing project
 ```
 
 ## Package境界
 
-- `src/cmd/aidlc`: composition rootです。process引数、stdout、stderr、build情報と作成・一覧callbackを組み立て、`cli.Run`の戻り値を`os.Exit`へ渡します。callbackが呼ばれたときだけcwdと環境変数を読みます。ドメイン判断や出力整形は置きません。
-- `src/internal/cli`: CLIの引数解釈、stdout/stderrの分離、終了コード、help/version、space create/listとbare spaceの表示契約を所有します。`io.Writer`とcallbackを受け取るため、process全体を起動せずにテストできます。
+- `src/cmd/aidlc`: composition rootです。process引数、stdout、stderr、build情報と作成・一覧・切替callbackを組み立て、`cli.Run`の戻り値を`os.Exit`へ渡します。callbackが呼ばれたときだけcwdと環境変数を読みます。ドメイン判断や出力整形は置きません。
+- `src/internal/cli`: CLIの引数解釈、stdout/stderrの分離、終了コード、help/version、space create/list/switchとbare spaceの表示契約を所有します。`io.Writer`とcallbackを受け取るため、process全体を起動せずにテストできます。
 - `src/internal/buildinfo`: linkerが差し替える`Version`と`Commit`、およびそのsnapshotを所有します。既定値は`dev`と`unknown`です。
-- `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、spaceの新規作成を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。space readerはread-onlyの`ReadSpaces`を通じてCLIへ接続し、intent readerと`ReadSelection`は未接続です。書込みは`CreateSpace`の明示呼出しだけで行い、接続APIのRoot生存期間も内部で管理します。
+- `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、spaceの新規作成・共有cursor切替を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。space readerはread-onlyの`ReadSpaces`を通じてCLIへ接続し、intent readerと`ReadSelection`は未接続です。書込みは`CreateSpace`・`SwitchSpace`の明示呼出しだけで行い、接続APIのRoot生存期間も内部で管理します。
 
 `internal`配下はmodule外からimportできません。今後の機能も、CLIから直接filesystemやnetworkへ到達させず、責務ごとのpackageをcomposition rootで接続します。
 
 ## 手動DI
 
 `main`が`os.Args[1:]`、`os.Stdout`、`os.Stderr`、`buildinfo.Current()`と
-`func(rawName, explicitDir string) (string, error)`、
+作成・切替それぞれの`func(rawName, explicitDir string) (string, error)`、
 `func(explicitDir string) ([]workspace.Space, error)`を`cli.Run`へ渡します。
 CLIは構文検証後にだけcallbackを1度呼びます。callback内で`os.Getwd()`、
 `AIDLC_PROJECT_DIR`、`CLAUDE_PROJECT_DIR`を読み、flag値と合わせた`RootInput`を
-`workspace.CreateSpace`または`workspace.ReadSpaces`へ渡します。
+`workspace.CreateSpace`、`workspace.ReadSpaces`または`workspace.SwitchSpace`へ渡します。
 help/versionと構文エラーではcwd・環境・FSへ到達しません。
 CLI packageはglobalなprocess I/Oを参照せず、各実行の出力と終了コードを決定的に検証できます。
 
 `main`はnil可の`prepareSpaceOutput func()`も渡します。CLIは認識済み`space create`、
-`space list`、bare `space`で、構文エラーを含む最初の出力・callbackより前に1度だけ呼びます。`main`側のhookで
+`space list`、`space switch`、bare `space`で、構文エラーを含む最初の出力・callbackより前に1度だけ呼びます。`main`側のhookで
 `SIGPIPE`を無視し、Unixの閉じたstdout/stderr pipeへのwriteもerrorとして扱い、exit 1へ到達させます。
 signalのprocess-global設定は`main`だけが所有し、CLI package自身には置きません。
 help/version/未知commandではhookを呼ばず、従来のsignal・出力挙動を維持します。
@@ -289,10 +290,64 @@ targetを単独の`Mkdir`で確保するため、既存directory・file・symlin
 | 事前存在確認後に再帰mkdir、非排他的write | targetの単独Mkdirとfileの排他作成 | 同名競合時の再利用・上書きを防ぐ | dangling targetも拒否し、同名作成の片方だけが進む |
 | orgのexistsSyncがfalseならstub | 確認できた不在だけstub、他はerror | 継承失敗を隠さない | 読めるorgか不在が必要。部分生成物が残り得る |
 | 余剰引数や未使用flagを厳格検証しない | 不明・余剰・重複・空flag値をcallback前に拒否 | typoによる作成を防ぐ | 以前黙認された構文はerrorになる |
-| 成功3行と切替案内、名前欠落時usage | 成功1行、認識済み作成失敗はJSON・exit 1 | 機械判読可能にし、未実装の切替を案内しない | 成功出力と名前欠落時の形式が変わる |
+| 成功3行と切替案内、名前欠落時usage | 成功1行、認識済み作成失敗はJSON・exit 1 | 機械判読可能にし、作成導入時点で未実装だった切替を案内しない | 成功出力と名前欠落時の形式が変わる |
 
 承認とscopeは[space作成の実装計画](ram/decisions/2026-08-31-space-creation-plan.md)を参照してください。
 session・audit・legacy alias等は今回の未実装範囲であり、恒久的な非互換としては扱いません。
+
+## Space切替
+
+`workspace.SwitchSpace(input RootInput, rawName string) (string, error)`は、既存spaceを選び、
+共有`aidlc/active-space`へUTF-8の`<正規化名>\n`を保存します。成功時は正規化名、error時は
+空文字を返します。ただしerrorでもcursorが保存済みの場合があります。作成の成功出力・自動切替しない
+契約は変更しません。intent cursor、session binding、harness include、audit、registry、state、
+spaceの内容は更新しません。
+
+rawの空文字・`help`・`-h`を拒否し、作成と同じprivate slug helperで正規化します。
+Unicode小文字化、ASCII化、48文字切詰め、数字開始のprefix、空白・記号だけなら`intent`という
+順序は共通ですが、作成専用の予約名拒否は流用しません。`Help`からの`help`や`list`、`create`等も
+一覧にあれば選べます。同じtargetでも末尾LF付きで再保存します。
+
+既存`ResolveRoot`の優先順位で選んだ絶対pathを`os.OpenRoot`で開きます。既存projectが必要で、
+不在・open失敗を低優先rootへfallbackしません。同じRootのFSで`ListSpaces`を呼び、非nilの
+overrideで現在cursorの不要な読取りを避けて所属を確認します。targetだけのStatには置き換えません。
+合成`default`は実directoryなしで選べます。未知名は書込み前に拒否しますが、readerの途中Stat失敗等で
+一覧から漏れた場合も含むため、「物理的に存在しない」という診断ではありません。
+
+project内に必要な`aidlc/`親だけを作り、別のRootとして開きます。初回project pathのsymlinkと
+境界内の相対linkは許可しますが、外向き・絶対linkの祖先を経由した保存は拒否します。
+既存cursorはLstatで検査し、symlink（danglingを含む）や非regular fileなら拒否します。
+同じaidlc Root内で`crypto/rand.Text`による一時名を`O_CREATE|O_EXCL`で確保し、衝突は最大10回で
+打ち切ります。pathを再解決する`os.CreateTemp`や、旧cursorの先行削除は使いません。
+
+新規directoryは`0777`、新規cursorは`0666`をumask付きで使用します。既存通常cursorの更新では
+tempを`0600`で作り、write・短いwriteの確認、既存permissionの9bitだけを継承するFile.Chmod、
+File.Closeの順に成功してからRoot.Renameします。owner、ACL、特殊mode、hardlink同一性等は
+保持保証しません。置換にはdirectory書込権限が必要で、直接上書きとは権限・metadataの扱いが異なります。
+
+自分で作成したtempだけをcleanupし、write・Chmod・Close・Rename・cleanupの原因をwrap/joinします。
+取得したRootはaidlc、projectの逆順に閉じ、Close失敗も保持します。Rename呼出前の失敗は、
+他のwriterがいなければ旧cursor内容を保護しますが、新しい親directoryやcleanup失敗したtempは残り得ます。
+Rename呼出以降、Root Close、成功出力の失敗では切替済みの場合があり、自動rollbackしません。
+排他lock、一貫したsnapshot、敵対的並行差替えへの完全transaction、全OSのatomic更新、
+fsyncによるcrash/powerloss耐久性は保証しません。Rootもmountやdeviceを防ぐ完全sandboxではありません。
+
+### Space切替の意図的な差分
+
+比較対象はローカルAI-DLC `2.6.123`のpublic CLI・共有cursor保存経路です。
+[原典調査](ram/research/2026-09-01-space-switch-contracts.md)に基づく静的確認であり、
+最新upstream全体や全ハーネスとの完全互換は主張しません。
+
+| 本家の挙動 | 採用した挙動 | 理由 | 利用者・互換性への影響 |
+| --- | --- | --- | --- |
+| cursorを直接上書きし、mkdir/write失敗を吸収 | 一時fileから置換し、保存失敗をerror通知 | 失敗を成功と表示しない | directory書込権限が必要。owner/ACL等の保持は保証しない |
+| 通常path操作でlinkを追従し、不在projectも作り得る | 既存projectのRoot境界とcursor型検査 | 外部・非regular配置を更新しない | 従来追従できた外向き・絶対linkやcursor symlinkも拒否する |
+| 余剰引数・一部flagを無視し、raw help/-hはhelp表示 | 厳格検証とJSON error・exit 1。project-dir等号形式は既存Go方針を継続 | 誤入力を隠さず既存Go CLIと揃える | 従来無視された入力やhelp要求はerrorになる |
+
+承認とscopeは[space切替の実装計画](ram/decisions/2026-09-01-space-switch-plan.md)、
+構文・出力は[Space切替CLI](development.md#space切替cli)を参照してください。
+bare `space <name>`、session binding、harness include、audit等は段階的な未実装範囲であり、
+恒久的な非互換方針ではありません。
 
 ## ビルド情報
 
@@ -303,7 +358,7 @@ session・audit・legacy alias等は今回の未実装範囲であり、恒久�
 - AI-DLCの33ステージとagent実行
 - 設定ファイルとshell completion
 - ancestor探索、project自体の自動作成、既存spaceの自動修復
-- intent作成、space・intentの切替・削除、registry/state本文の解釈
+- intent作成・切替、space・intentの削除、registry/state本文の解釈
 - `ReadSelection`・intent読み取りの公開CLI/status接続、space/intent明示override、session binding
 - Cobra、Viper、GoReleaserなどの外部依存
 - release、署名、公証、installer

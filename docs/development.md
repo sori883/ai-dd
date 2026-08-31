@@ -197,6 +197,61 @@ errorが返っても生成物が残る場合があり、再試行は既存target
 本家との承認済みの6つの意図的な変更は[差分表](architecture.md#space作成の意図的な差分)を参照してください。
 space作成の配布E2Eはread-only APIや完全なworkspace lifecycleの検証とは区別します。
 
+### Space切替CLI
+
+既存spaceを選び、共有`aidlc/active-space`だけを更新します。明示的な`switch`が必要で、
+bare `space <name>`は受理しません。
+
+```sh
+go run ./src/cmd/aidlc space switch "Team Alpha" --project-dir /path/to/existing-project
+go run ./src/cmd/aidlc space list --json --project-dir=/path/to/existing-project
+```
+
+rootは明示flag、`AIDLC_PROJECT_DIR`、`CLAUDE_PROJECT_DIR`、cwdの順で、相対pathはcwd基準です。
+projectは既存である必要があり、open失敗で低優先rootへ切り替えません。名前は作成と同じslug化を
+行いますが、作成専用の予約名拒否は使いません。raw空文字・`help`・`-h`は拒否し、`Help`からの
+`help`や`list`等は一覧にあれば選べます。合成`default`は実directoryがなくても選べます。
+一覧にない名前では書き込まず、自動作成・修復しません。readerがerrorを吸収するため、
+この拒否だけで対象の物理的な不在を断定できません。同じtargetでも`<slug>\n`へ再保存します。
+
+`--project-dir path`と`--project-dir=path`はcommandの前・途中・名前の後に配置できます。
+重複・欠落・空値、余剰位置引数、未知flag、`--json`をcallback前に拒否し、cwd・環境変数・FSを
+読みません。分離形の次tokenが`-`始まりなら値欠落です。実pathが`-dir`なら
+`--project-dir=-dir`または`--project-dir ./-dir`を使います。専用subcommand helpはありません。
+既存の`space --json false`は引き続き未知subcommandの従来形式・exit 2です。
+
+成功はstdoutに`Active space → team-alpha\n`、stderr空、exit 0です。認識済みswitchの構文・保存・
+Close・出力失敗はexit 1で、stderrが書ける場合はJSON errorを1行出力します。stdout失敗では
+部分出力が残り得て、stderrも書けない場合はexit 1だけを保証します。Unixの閉pipeも同様です。
+help/version/未知commandのsignal挙動は変更しません。
+
+既存cursorがsymlink（danglingを含む）や非regularなら拒否します。初回project linkと境界内の
+相対linkは許可しますが、外向き・絶対linkの祖先を経由した保存は拒否します。新規directoryは0777、
+新規cursorは0666をumask付きで作ります。既存cursor更新はtemp0600からpermissionの9bitだけを
+継承する置換であり、directory書込権限が必要です。owner/ACL等の保持は保証しません。
+Rename前の失敗では、並行writerがいなければ旧cursorを保持しますが、親directoryやtempが
+残り得ます。Rename以降・Close・出力失敗では切替済みの場合があり、自動rollbackしません。
+errorだけで未変更と判断せず、一覧やcursorを確認してから次の対応を決めてください。
+
+```sh
+go test -count=1 -run '^(TestSwitchSpace|TestReplaceSpaceCursor|TestSaveCursorInRoot)' ./src/internal/workspace
+go test -tags=integration -count=1 -run '^TestSwitchSpace' ./src/internal/workspace
+go test -count=1 -run '^(TestRunSpaceSwitch|TestRunHelpIncludesSpaceSwitch)' ./src/internal/cli
+go test -count=1 -run '^(TestSpaceSwitcher|TestMainSpaceSwitchClosedPipes)' ./src/cmd/aidlc
+```
+
+異常系は小さい関数seamへopen/write/short write/Chmod/Close/Rename/cleanup失敗を注入し、
+原因のjoinと順序、自分のtempだけのcleanupを確認します。権限エラーをchmodだけに依存させません。
+integrationでは実RootのClose、保存前後の内容・mode、内側・外側・絶対・broken linkを確認します。
+cursorと保存に必要な親directory以外のsession・intent・registry・harness等はsnapshotで無変更を確認します。
+Unixの通常テストは実mainのhelper subprocessへ閉pipeを接続し、exit 1と保存済みcursorの保持を
+検証します。子のcoverage出力は専用一時directoryへ隔離します。非Unixでは実pipeテストは対象外、
+Windowsのsymlink権限不足では該当caseだけ理由付きskipです。全体・race・coverage・vetも上記手順で実行します。
+
+保存の限界と本家ローカル`2.6.123`との承認済みの3つの意図的な変更は
+[Space切替](architecture.md#space切替)・[差分表](architecture.md#space切替の意図的な差分)を参照してください。
+spaceの作成→一覧→切替→一覧は確認できますが、intentやsessionを含む完全なworkspace lifecycleではありません。
+
 ## 実行fileの確認
 
 ```sh
@@ -228,7 +283,7 @@ CIは`CGO_ENABLED=0`で次の6ターゲットのCLIをbuildします。
 - `windows/arm64`
 
 ローカルでは次のloopで、CLIとintegrationタグ付きworkspaceテストバイナリを確認できます。
-mainはspace作成・一覧のためworkspaceをimportしますが、CLI buildはworkspaceの`_test.go`や
+mainはspace作成・一覧・切替のためworkspaceをimportしますが、CLI buildはworkspaceの`_test.go`や
 integrationタグ付きテストをcompileしないため、テストバイナリも別に確認します。
 いずれもコンパイルの確認であり、各OSでのテスト実行とは区別します。
 

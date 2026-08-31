@@ -38,6 +38,7 @@ func TestRunSpaceListHuman(t *testing.T) {
 			}, nil
 		},
 		nil,
+		nil,
 	)
 	if code != 0 || calls != 1 {
 		t.Errorf("exit=%d calls=%d, want 0, 1", code, calls)
@@ -70,6 +71,7 @@ func TestRunSpaceListJSON(t *testing.T) {
 				{Name: "zeta", Active: true},
 			}, nil
 		},
+		nil,
 		nil,
 	)
 	if code != 0 || calls != 1 {
@@ -117,6 +119,7 @@ func TestRunSpaceBareAlias(t *testing.T) {
 					return []workspace.Space{{Name: "default", Active: true}}, nil
 				},
 				nil,
+				nil,
 			)
 			if code != 0 || calls != 1 {
 				t.Errorf("exit=%d calls=%d, want 0, 1", code, calls)
@@ -159,6 +162,7 @@ func TestRunSpaceListExtraArguments(t *testing.T) {
 					return []workspace.Space{{Name: "default", Active: true}}, nil
 				},
 				nil,
+				nil,
 			)
 			if code != 1 || calls != 0 {
 				t.Errorf("exit=%d calls=%d, want 1, 0", code, calls)
@@ -200,6 +204,7 @@ func TestRunSpaceListDuplicateJSON(t *testing.T) {
 					return []workspace.Space{{Name: "default", Active: true}}, nil
 				},
 				nil,
+				nil,
 			)
 			if code != 1 || calls != 0 {
 				t.Errorf("exit=%d calls=%d, want 1, 0", code, calls)
@@ -238,6 +243,7 @@ func TestRunSpaceListShortStdoutWrite(t *testing.T) {
 				func(string) ([]workspace.Space, error) {
 					return []workspace.Space{{Name: "default", Active: true}}, nil
 				},
+				nil,
 				nil,
 			)
 			if code != 1 {
@@ -322,6 +328,7 @@ func TestRunSpaceListOutputPreparation(t *testing.T) {
 					events = append(events, "list")
 					return []workspace.Space{{Name: "default", Active: true}}, tt.readErr
 				},
+				nil,
 				func() { events = append(events, "prepare") },
 			)
 			if code != tt.wantCode {
@@ -343,6 +350,7 @@ func TestRunHelpIncludesSpaceList(t *testing.T) {
 		&stdout,
 		&stderr,
 		buildinfo.Info{},
+		nil,
 		nil,
 		nil,
 		nil,
@@ -407,6 +415,7 @@ func TestRunSpaceListFlagPositions(t *testing.T) {
 								return []workspace.Space{{Name: "default", Active: true}}, nil
 							},
 							nil,
+							nil,
 						)
 						if code != 0 || calls != 1 {
 							t.Errorf(
@@ -452,6 +461,7 @@ func TestRunSpaceListUnknownSubcommands(t *testing.T) {
 				&stdout,
 				&stderr,
 				buildinfo.Info{},
+				nil,
 				nil,
 				nil,
 				func() { t.Error("unknown subcommand ran the space output hook") },
@@ -510,6 +520,7 @@ func TestRunSpaceListInvalidFlags(t *testing.T) {
 						return nil, nil
 					},
 					nil,
+					nil,
 				)
 				if code != 1 || stdout.Len() != 0 {
 					t.Errorf("exit=%d stdout=%q, want 1 and empty", code, stdout.String())
@@ -551,6 +562,7 @@ func TestRunSpaceListProjectDirLiteral(t *testing.T) {
 					}
 					return []workspace.Space{{Name: "default", Active: true}}, nil
 				},
+				nil,
 				nil,
 			)
 			if code != 0 || calls != 1 {
@@ -601,6 +613,7 @@ func TestRunSpaceListJSONPreservesRows(t *testing.T) {
 				nil,
 				func(string) ([]workspace.Space, error) { return spaces, nil },
 				nil,
+				nil,
 			)
 			if code != 0 || stderr.Len() != 0 {
 				t.Errorf("exit=%d stderr=%q, want 0 and empty", code, stderr.String())
@@ -650,6 +663,7 @@ func TestRunSpaceListReadFailure(t *testing.T) {
 					return []workspace.Space{{Name: "discarded", Active: true}}, cause
 				},
 				nil,
+				nil,
 			)
 			if code != 1 || calls != 1 {
 				t.Errorf("exit=%d calls=%d, want 1 each", code, calls)
@@ -690,6 +704,7 @@ func TestRunSpaceListPartialStdoutFailure(t *testing.T) {
 				func(string) ([]workspace.Space, error) {
 					return []workspace.Space{{Name: "default", Active: true}}, nil
 				},
+				nil,
 				nil,
 			)
 			if code != 1 {
@@ -755,6 +770,7 @@ func TestRunSpaceListStderrFailure(t *testing.T) {
 					calls++
 					return []workspace.Space{{Name: "default", Active: true}}, tt.readErr
 				},
+				nil,
 				nil,
 			)
 			if code != 1 || calls != tt.wantCalls {

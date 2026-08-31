@@ -20,6 +20,7 @@ func main() {
 		buildinfo.Current(),
 		spaceCreator(os.Getwd, os.Getenv, workspace.CreateSpace),
 		spaceLister(os.Getwd, os.Getenv, workspace.ReadSpaces),
+		spaceSwitcher(os.Getwd, os.Getenv, workspace.SwitchSpace),
 		func() {
 			// Recognized space commands promise exit 1 for writes to closed stdout or stderr pipes.
 			signal.Ignore(syscall.SIGPIPE)
@@ -62,5 +63,24 @@ func spaceLister(
 			ClaudeProjectDir: getenv("CLAUDE_PROJECT_DIR"),
 			WorkingDir:       workingDir,
 		})
+	}
+}
+
+func spaceSwitcher(
+	getwd func() (string, error),
+	getenv func(string) string,
+	switchSpace func(workspace.RootInput, string) (string, error),
+) func(string, string) (string, error) {
+	return func(rawName, explicitDir string) (string, error) {
+		workingDir, err := getwd()
+		if err != nil {
+			return "", fmt.Errorf("read working directory: %w", err)
+		}
+		return switchSpace(workspace.RootInput{
+			ExplicitDir:      explicitDir,
+			AIDLCProjectDir:  getenv("AIDLC_PROJECT_DIR"),
+			ClaudeProjectDir: getenv("CLAUDE_PROJECT_DIR"),
+			WorkingDir:       workingDir,
+		}, rawName)
 	}
 }

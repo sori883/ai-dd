@@ -158,6 +158,16 @@ func normalizeSpaceName(raw string) (string, error) {
 	case "", "help", "-h":
 		return "", fmt.Errorf("invalid space name %q: %w", raw, fs.ErrInvalid)
 	}
+	name := spaceSlug(raw)
+	switch name {
+	case "help", "list", "switch", "create", "archive", "rename", "show", "birth":
+		return "", fmt.Errorf("reserved space name %q: %w", name, fs.ErrInvalid)
+	}
+	return name, nil
+}
+
+// spaceSlug normalizes names without applying command-specific reserved names.
+func spaceSlug(raw string) string {
 	// JavaScript lowercasing expands U+0130; Go's simple lowercase mapping does not.
 	raw = strings.ReplaceAll(raw, "İ", "i\u0307")
 	var slug strings.Builder
@@ -181,14 +191,10 @@ func normalizeSpaceName(raw string) (string, error) {
 	}
 	name = strings.TrimRight(name, "-")
 	if name == "" {
-		return "intent", nil
+		return "intent"
 	}
 	if name[0] < 'a' || name[0] > 'z' {
 		name = "intent-" + name
 	}
-	switch name {
-	case "help", "list", "switch", "create", "archive", "rename", "show", "birth":
-		return "", fmt.Errorf("reserved space name %q: %w", name, fs.ErrInvalid)
-	}
-	return name, nil
+	return name
 }

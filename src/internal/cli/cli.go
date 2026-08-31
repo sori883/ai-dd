@@ -17,6 +17,7 @@ Usage:
   aidlc <command>
   aidlc space create <name> [--project-dir <path>]
   aidlc space list [--json] [--project-dir <path>]
+  aidlc space switch <name> [--project-dir <path>]
   aidlc space [--json] [--project-dir <path>]
 
 Commands:
@@ -24,6 +25,7 @@ Commands:
   version    Show version information
   space create  Create a new space
   space list    List spaces (space is an alias)
+  space switch  Select an existing space
 
 Flags:
   --help     Show help
@@ -35,7 +37,8 @@ Flags:
 // Run executes the CLI with injected process inputs and outputs and returns an exit code.
 // createSpace is called once for a syntactically valid space create command only.
 // listSpaces is called once for a syntactically valid space list or bare space command only.
-// If non-nil, prepareSpaceOutput runs once for a recognized space create, list, or bare command,
+// switchSpace is called once for a syntactically valid space switch command only.
+// If non-nil, prepareSpaceOutput runs once for recognized create, switch, list, or bare space,
 // before its callback or any output, including syntax errors.
 func Run(
 	args []string,
@@ -44,6 +47,7 @@ func Run(
 	info buildinfo.Info,
 	createSpace func(rawName, explicitDir string) (string, error),
 	listSpaces func(explicitDir string) ([]workspace.Space, error),
+	switchSpace func(rawName, explicitDir string) (string, error),
 	prepareSpaceOutput func(),
 ) int {
 	if len(args) == 0 {
@@ -78,6 +82,22 @@ func Run(
 			stdout,
 			stderr,
 			createSpace,
+		)
+	}
+	isSpaceSwitch := hasSpaceSubcommand && command[1] == "switch"
+	if isSpaceSwitch {
+		if prepareSpaceOutput != nil {
+			prepareSpaceOutput()
+		}
+		if err != nil {
+			return writeSpaceError(stderr, err)
+		}
+		return runSpaceSwitch(
+			command[2:],
+			explicitDir,
+			stdout,
+			stderr,
+			switchSpace,
 		)
 	}
 	isSpaceList := hasSpaceSubcommand && command[1] == "list"
