@@ -28,12 +28,15 @@ Flags:
 
 // Run executes the CLI with injected process inputs and outputs and returns an exit code.
 // createSpace is called once for a syntactically valid space create command only.
+// If non-nil, prepareSpaceOutput runs once for a recognized space create command,
+// before its callback or any output, including syntax errors.
 func Run(
 	args []string,
 	stdout io.Writer,
 	stderr io.Writer,
 	info buildinfo.Info,
 	createSpace func(rawName, explicitDir string) (string, error),
+	prepareSpaceOutput func(),
 ) int {
 	if len(args) == 0 {
 		return writeStdout(stdout, stderr, helpText)
@@ -54,6 +57,9 @@ func Run(
 	command, explicitDir, err := spaceCreateArguments(args)
 	isSpaceCreate := len(command) >= 2 && command[0] == "space" && command[1] == "create"
 	if isSpaceCreate {
+		if prepareSpaceOutput != nil {
+			prepareSpaceOutput()
+		}
 		if err != nil {
 			return writeSpaceError(stderr, err)
 		}

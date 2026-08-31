@@ -110,6 +110,9 @@ callback前に拒否します。分離形の次tokenが`-`始まりなら値欠�
 
 成功時はstdoutに`Space created: team-alpha\n`、stderrは空、exit 0です。
 認識済み`space create`の失敗はstderrのJSON 1行とexit 1、rootの未知commandは従来どおりexit 2です。
+認識済み作成はUnixの閉じたstdout/stderr pipeでもexit 1を返します。stderrが書ける場合だけ
+JSONを出力し、stdoutの出力失敗で作成済みspaceを取り消しません。
+help/version/未知commandのSIGPIPE挙動は変更しません。
 help/versionと構文エラーではcwd・環境変数・FSへアクセスしません。作成時も現在のspace/intentを
 読まず、自動切替しません。本文・生成treeと境界は[Space作成](architecture.md#space作成)を参照してください。
 
@@ -125,6 +128,10 @@ go vet -tags=integration ./...
 単体テストは名前のUnicode小文字化・48文字切詰め、flag全位置と`=形式`、callback未実行、
 stdout/stderr・終了コード、lazyなmainのroot入力を固定します。open/read/write/Closeの異常は
 小さい関数seamから注入し、権限エラーをchmodだけに依存させません。
+Unixでは通常テスト内でhelper subprocessから実際の`main`を呼び、読み口を閉じた実pipeを
+stdout/stderrへ接続します。mock Writerだけでは検出できないSIGPIPE終了、生成物の保持、
+再試行拒否、既存commandへの非影響を確認します。CIの全package通常テストでも実行され、
+子processのcoverage出力は専用一時directoryへ隔離します。非Unixではこの回帰テストは対象外です。
 integrationでは7 directory・6 fileと本文、default orgだけの継承、空org、不在fallback、
 既存targetの全種別と同名競合、内部・外部・絶対・broken link、部分writeと複数Close失敗を確認します。
 snapshotで既存default・他space・cursorの内容・mode・mtimeを比較し、対象追加に必要な親directoryの

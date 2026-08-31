@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -29,6 +30,7 @@ func TestRunSpaceCreate(t *testing.T) {
 			}
 			return "team-alpha", nil
 		},
+		nil,
 	)
 	if calls != 1 || code != 0 {
 		t.Errorf("callback calls = %d, exit code = %d; want 1, 0", calls, code)
@@ -77,6 +79,7 @@ func TestRunSpaceCreateProjectDirPositions(t *testing.T) {
 						}
 						return "team-alpha", nil
 					},
+					nil,
 				)
 				if code != 0 || calls != 1 || stdout.String() != "Space created: team-alpha\n" || stderr.Len() != 0 {
 					t.Errorf(
@@ -110,6 +113,7 @@ func TestRunSpaceCreateFailureJSON(t *testing.T) {
 					calls++
 					return "ignored-on-error", errors.New(message)
 				},
+				nil,
 			)
 			if calls != 1 || code != 1 || stdout.Len() != 0 {
 				t.Errorf(
@@ -140,6 +144,7 @@ func TestRunSpaceCreateStdoutFailure(t *testing.T) {
 			calls++
 			return "team", nil
 		},
+		nil,
 	)
 	if code != 1 || calls != 1 {
 		t.Errorf("exit=%d calls=%d, want 1 each", code, calls)
@@ -193,6 +198,7 @@ func TestRunSpaceCreateInvalidArguments(t *testing.T) {
 					calls++
 					return "must-not-create", nil
 				},
+				nil,
 			)
 			if code != 1 || calls != 0 || stdout.Len() != 0 {
 				t.Errorf(
@@ -239,6 +245,7 @@ func TestRunSpaceCreateDashProjectDir(t *testing.T) {
 					}
 					return "team", nil
 				},
+				nil,
 			)
 			if tt.wantFailure {
 				if code != 1 || calls != 0 || stdout.Len() != 0 {
@@ -275,6 +282,7 @@ func TestRunHelpIncludesSpaceCreate(t *testing.T) {
 			t.Error("help called create callback")
 			return "", nil
 		},
+		nil,
 	)
 	if code != 0 || !strings.Contains(stdout.String(), "aidlc space create <name> [--project-dir <path>]") {
 		t.Errorf("exit=%d stdout=%q, want help with creation syntax", code, stdout.String())
@@ -291,6 +299,7 @@ func TestRunSpaceCreateShortStdoutWrite(t *testing.T) {
 		&stderr,
 		buildinfo.Info{},
 		func(string, string) (string, error) { return "team", nil },
+		nil,
 	)
 	if code != 1 {
 		t.Errorf("short stdout write exit = %d, want 1", code)
@@ -310,10 +319,98 @@ func TestRunSpaceCreateStderrFailure(t *testing.T) {
 		errorWriter{err: errors.New("stderr unavailable")},
 		buildinfo.Info{},
 		func(string, string) (string, error) { return "", errors.New("creation failed") },
+		nil,
 	)
 	if code != 1 || stdout.Len() != 0 {
 		t.Errorf("exit=%d stdout=%q, want 1 and empty", code, stdout.String())
 	}
+}
+
+func TestRunSpaceOutputPreparation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		args       []string
+		createErr  error
+		wantCode   int
+		wantEvents []string
+	}{
+		{
+			name:       "success",
+			args:       []string{"space", "create", "team"},
+			wantEvents: []string{"prepare", "create", "stdout"},
+		},
+		{
+			name:       "project flag before command",
+			args:       []string{"--project-dir=project", "space", "create", "team"},
+			wantEvents: []string{"prepare", "create", "stdout"},
+		},
+		{
+			name:       "callback failure",
+			args:       []string{"space", "create", "team"},
+			createErr:  errors.New("creation failed"),
+			wantCode:   1,
+			wantEvents: []string{"prepare", "create", "stderr"},
+		},
+		{
+			name:       "missing name",
+			args:       []string{"space", "create"},
+			wantCode:   1,
+			wantEvents: []string{"prepare", "stderr"},
+		},
+		{
+			name:       "unknown flag",
+			args:       []string{"--force", "space", "create", "team"},
+			wantCode:   1,
+			wantEvents: []string{"prepare", "stderr"},
+		},
+		{name: "no arguments", wantEvents: []string{"stdout"}},
+		{name: "help", args: []string{"help"}, wantEvents: []string{"stdout"}},
+		{name: "help flag", args: []string{"--help"}, wantEvents: []string{"stdout"}},
+		{name: "version", args: []string{"version"}, wantEvents: []string{"stdout"}},
+		{name: "version flag", args: []string{"--version"}, wantEvents: []string{"stdout"}},
+		{
+			name:       "unknown command",
+			args:       []string{"unknown"},
+			wantCode:   2,
+			wantEvents: []string{"stderr", "stderr"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var events []string
+			code := cli.Run(
+				tt.args,
+				outputEventWriter{stream: "stdout", events: &events},
+				outputEventWriter{stream: "stderr", events: &events},
+				buildinfo.Info{},
+				func(string, string) (string, error) {
+					events = append(events, "create")
+					return "team", tt.createErr
+				},
+				func() { events = append(events, "prepare") },
+			)
+			if code != tt.wantCode {
+				t.Errorf("exit = %d, want %d", code, tt.wantCode)
+			}
+			if !slices.Equal(events, tt.wantEvents) {
+				t.Errorf("events = %q, want %q", events, tt.wantEvents)
+			}
+		})
+	}
+}
+
+type outputEventWriter struct {
+	stream string
+	events *[]string
+}
+
+func (w outputEventWriter) Write(p []byte) (int, error) {
+	*w.events = append(*w.events, w.stream)
+	return len(p), nil
 }
 
 type shortOutputWriter struct{}

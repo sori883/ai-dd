@@ -36,6 +36,12 @@ CLIは構文検証後にだけcallbackを1度呼びます。callback内で`os.Ge
 `workspace.CreateSpace`へ渡します。help/versionと構文エラーではcwd・環境・FSへ到達しません。
 CLI packageはglobalなprocess I/Oを参照せず、各実行の出力と終了コードを決定的に検証できます。
 
+`main`はnil可の`prepareSpaceOutput func()`も渡します。CLIは認識済み`space create`で、
+構文エラーを含む最初の出力・作成callbackより前に1度だけ呼びます。`main`側のhookで
+`SIGPIPE`を無視し、Unixの閉じたstdout/stderr pipeへのwriteもerrorとして扱い、exit 1へ到達させます。
+signalのprocess-global設定は`main`だけが所有し、CLI package自身には置きません。
+help/version/未知commandではhookを呼ばず、従来のsignal・出力挙動を維持します。
+
 外部DI containerは使用しません。依存が増えた場合も、まずconstructorまたは関数引数による注入を維持し、変更理由が明確になった時点で再評価します。
 
 ## Space読み取りの互換契約

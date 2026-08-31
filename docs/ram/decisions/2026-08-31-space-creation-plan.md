@@ -273,3 +273,43 @@ govulncheckは未導入・未実施であり、脆弱性検査済みとは扱わ
 CLIとintegration付きworkspace test binaryをそれぞれcross compileし、6構成とも成功した。
 nativeテストはmacOS arm64であり、他OSの実行確認とは区別する。
 この時点で残るゲートは配布E2E、独立レビュー、Issueへ紐づくPR作成である。
+
+## 配布E2E結果（2026-08-31）
+
+source commit `c7cdba318f9a594b8e4226ddcd1a6ce84d6d1617`をcleanな状態でbuildし、
+承認済みsandboxの未使用scenarioへ配置した。Go/NodeがPATHにない子プロセスで
+23ケース（作成10、help/version 2、拒否11）が成功した。
+生成treeと本文、orgだけの継承、既存data/cursor/metadataの保全、無効入力の無書込み、
+flag > AIDLC環境変数 > CLAUDE環境変数 > cwdのroot優先順位を確認した。
+
+詳細な実行条件、入力・出力、artifact hash、未検証範囲は
+[配布E2E証跡](../../e2e-runs/2026-08-31-space-create.md)に記録した。
+既存scenarioやsandbox rootの上書き・削除はしていない。
+独立レビューとIssueへ紐づくPR作成は、このE2E後の完了ゲートとして扱う。
+
+## 独立レビューで見つかったSIGPIPE境界と修正（2026-08-31）
+
+初回sourceの独立レビューで、Unixの閉じた標準pipeへの出力がSIGPIPE終了となり、
+承認済みのcreate失敗exit 1へ到達しないP2を確認した。
+親も実配布binaryのstdout・stderrで再現し、[初回E2E証跡](../../e2e-runs/2026-08-31-space-create.md)へ追記した。
+基本23ケースの成功をもって、この出力境界まで検証済みとは扱わない。
+
+原因はGoが標準出力・標準errorの閉pipeを既定でSIGPIPE終了させることであり、
+Context7のGo1.25.3標準ライブラリ資料とローカルGo1.26.4の`go doc os/signal`・runtime実装を照合した。
+参照: [Go os/signalのSIGPIPE仕様](https://pkg.go.dev/os/signal@go1.26.4#hdr-SIGPIPE)。
+
+`cli.Run`へ単一のnil可`prepareSpaceOutput func()`を追加し、認識済みcreateの最初の出力・
+callback前だけ呼ぶ。`main`がそのhookで`signal.Ignore(syscall.SIGPIPE)`を実行し、
+CLI自体はprocess-global設定を所有しない。help/version/未知commandはhook対象外として従来挙動を保つ。
+これは既存の承認契約を満たす不具合修正で、7件目の意図的な仕様変更ではない。
+外部module/tool、workspaceの生成処理、CI設定は変更していない。
+
+修正前の`TestMainSpaceCreateClosedStdout`で実main subprocessのassertion REDを観測し、
+同じテストを最小hookでGREENにした。後に`TestMainSpaceCreateClosedPipes`のtableへ整理した。
+stdout/stderr/両方、生成物保持と再試行拒否、既存command・hook順序は追加guardとして確認した。
+Unix subprocessテストは通常テストで実行し、CIのcoverage付き実行も確認した。
+この追加guardを新たなRED実績には数えない。
+
+修正後の全package通常・shuffle・race・integration、通常/integration vet、tidy・gofmt・gopls診断は成功。
+CLI・workspace integration test binary・main test binaryの3種類を6構成でcross compileし、すべて成功した。
+修正後の配布E2Eと固定headの独立再レビューを完了してからPRへ進む。

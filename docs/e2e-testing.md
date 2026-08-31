@@ -69,6 +69,10 @@ CIのcross-build matrixで別に検証し、各OSでのnative実行と同一視�
 3. 同名の再実行をJSON error・exit 1で拒否し、既存treeを変更しないことを確認する。
 4. missing name、unknown/duplicate flag、欠落・空のproject-dirを拒否して何も作らないことを確認する。
 5. 未作成project自体を自動新設せず、root flag・環境変数・cwdの優先順位どおりに到達することを確認する。
+6. Unixでは読み口を先に閉じた実pipeを配布binaryのstdout、stderr、両方へ接続し、
+   認識済み作成の出力失敗がSIGPIPE終了ではなくexit 1になることを確認する。
+   stdout失敗でstderrが書ける場合はJSON 1行、stderrも書けない場合は終了codeだけを確認する。
+   作成済みの7 directory・6 fileは保持され、同じ名前の再試行は拒否されてtreeが変わらないことも確認する。
 
 flagの詳細と`-`始まりのpathの指定方法は[開発手順](development.md#space作成cli)、
 本家との差分は[意図的な差分表](architecture.md#space作成の意図的な差分)を参照する。

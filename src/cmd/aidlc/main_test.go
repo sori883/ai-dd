@@ -137,6 +137,7 @@ func TestSpaceCreatorLazyCLIInputs(t *testing.T) {
 				&stderr,
 				buildinfo.Info{},
 				callback,
+				nil,
 			)
 			if code != tt.code {
 				t.Errorf(

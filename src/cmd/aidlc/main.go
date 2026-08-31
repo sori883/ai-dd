@@ -4,6 +4,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/sori883/ai-dd/src/internal/buildinfo"
 	"github.com/sori883/ai-dd/src/internal/cli"
@@ -17,6 +19,10 @@ func main() {
 		os.Stderr,
 		buildinfo.Current(),
 		spaceCreator(os.Getwd, os.Getenv, workspace.CreateSpace),
+		func() {
+			// Only space create promises exit 1 for writes to closed stdout or stderr pipes.
+			signal.Ignore(syscall.SIGPIPE)
+		},
 	))
 }
 

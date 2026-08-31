@@ -58,6 +58,7 @@ func TestRun_Help(t *testing.T) {
 				&stderr,
 				buildinfo.Info{},
 				nil,
+				nil,
 			)
 
 			if exitCode != 0 {
@@ -96,6 +97,7 @@ func TestRun_HelpWriteError(t *testing.T) {
 				&stderr,
 				buildinfo.Info{},
 				nil,
+				nil,
 			)
 
 			if exitCode != 1 {
@@ -131,6 +133,7 @@ func TestRun_Version(t *testing.T) {
 				&stdout,
 				&stderr,
 				buildinfo.Info{Version: "v1.2.3", Commit: "abcdef0"},
+				nil,
 				nil,
 			)
 
@@ -169,6 +172,7 @@ func TestRun_VersionWriteError(t *testing.T) {
 				errorWriter{err: errors.New("broken pipe")},
 				&stderr,
 				buildinfo.Info{Version: "v1.2.3", Commit: "abcdef0"},
+				nil,
 				nil,
 			)
 
@@ -214,6 +218,7 @@ func TestRun_UnknownArguments(t *testing.T) {
 				&stdout,
 				&stderr,
 				buildinfo.Info{},
+				nil,
 				nil,
 			)
 
