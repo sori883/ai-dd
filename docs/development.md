@@ -28,7 +28,7 @@ go test -shuffle=on -coverprofile="$coverage_file" ./...
 go tool cover -func="$coverage_file"
 ```
 
-### Workspaceのspace・intent reader
+### Workspaceのspace・intent readerと接続
 
 内部readerの単体テストと、実filesystemでの統合テストを分けて実行します。
 
@@ -55,16 +55,42 @@ spaceの統合テストは`os.DirFS(t.TempDir())`に対して、未配置・空�
 directory/fileへのsymlink、broken link、root外symlinkを検証します。
 intentの統合テストは、`t.TempDir()`を`os.OpenRoot`で開いた`Root.FS()`を使用します。
 cursorとmarkerの双方で、内側の相対linkの受入れ、外側・絶対・壊れたlinkによるfallbackや
-候補除外を検証します。`Root`のopen/closeはfixtureの責務で、製品のspace接続処理は未実装です。
+候補除外を検証します。reader単体テストでは`Root`のopen/closeをfixtureが管理し、
+接続APIの`ReadSelection`では製品内部が管理します。
 `fs.FS`自体、`os.DirFS`、`fs.Sub`にはsymlink封じ込め保証がない点に注意してください。
 
 両readerの統合テストで、読取前後のpath、内容、mode、更新時刻、symlink先を比較し、
 製品処理による作成・変更がないことを確認します。fixtureの作成は製品への作成機能追加とは別です。
 Windowsでsymlink作成権限が不足する場合は、そのケースだけ理由付きでskipします。
 
+`ReadSelection`だけを確認する場合は次を実行します。
+
+```sh
+go test -count=1 -run '^(TestReadSelection|TestLocalizeSpace)' ./src/internal/workspace
+go test -tags=integration -count=1 -run '^(TestReadSelection|TestLocalizeSpace)' ./src/internal/workspace
+```
+
+接続の単体テストではroot候補の優先順位・絶対path、spaceの正規化前検証とLocalizeのOS差を
+確認します。open・child-open・closeのエラーは非公開helperの関数引数から注入し、権限不足を
+chmodや実行ユーザーの権限だけに依存させません。実Rootが必要な経路はintegration側でcaptureし、
+正常・不在・無効space・接続失敗・Close失敗でも取得済みRootが逆順に閉じられること、
+複数の原因を`errors.Is`で識別できること、error時にmetadataがzero valueになることを確認します。
+
+実FSではdefault/custom/未知space、未作成の各階層、候補0・1・複数、cursorの優先を確認します。
+projectの初回symlinkは追従しますが、childはproject内の相対linkだけを許可し、外向き・絶対linkを
+接続error、壊れた相対linkを不在として扱います。`active-space`の拒否されたリンクはdefaultへ
+fallbackします。さらに、同じproject内でもintents外のcursor/markerはfallback・除外となることを
+固定します。接続テストも外側fixtureを含む読取前後snapshotを比較し、書込みや自動作成が
+ないことを検証します。cursor・ReadDir・Statのエラー吸収は既存readerのままです。
+
+本家ローカル`2.6.123`との差分は[接続境界と互換性への影響](architecture.md#本家との差分と影響)、
+合意は[Accepted計画](ram/decisions/2026-08-31-workspace-reading-composition-plan.md)を参照してください。
+将来のconsumerは`Selection`のboolを安全性・state内容・存在継続の保証とせず、名前を再利用する
+path操作に独自の検証とFS境界を用意する必要があります。
+
 既存CIのquality jobでも統合テストを実行します。ただしCIの実行OSはUbuntuであり、
 6 targetのcross buildを各OSの実行証拠とは扱いません。workspace readerは公開CLIから未到達
-なので、help/version smokeや配布E2Eをspace・intent機能の検証証拠にはしません。
+なので、help/version smokeや配布E2Eをspace・intent・接続機能の検証証拠にはしません。
 
 ## 実行fileの確認
 
