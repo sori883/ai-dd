@@ -8,36 +8,39 @@ ai-ddは、単一のGo moduleと単一の実行ファイルを保ちながら、
 src/cmd/aidlc/main.go
   ├─ src/internal/buildinfo
   ├─ src/internal/cli (arguments, output, exit code)
-  └─ src/internal/workspace.CreateSpace (injected callback)
+  └─ src/internal/workspace (CreateSpace / ReadSpaces callbacks)
 
 src/internal/workspace
   ├─ project root resolution
   ├─ active-space and space listing (read-only)
   ├─ active-intent and intent listing (read-only)
+  ├─ ReadSpaces: project → shared-cursor space list (read-only CLI)
   ├─ ReadSelection: project → current space → intents (read-only, no CLI yet)
   └─ CreateSpace: explicit creation within an existing project
 ```
 
 ## Package境界
 
-- `src/cmd/aidlc`: composition rootです。process引数、stdout、stderr、build情報と作成callbackを組み立て、`cli.Run`の戻り値を`os.Exit`へ渡します。callbackが呼ばれたときだけcwdと環境変数を読みます。ドメイン判断や出力整形は置きません。
-- `src/internal/cli`: CLIの引数解釈、stdout/stderrの分離、終了コード、help/versionとspace createの表示契約を所有します。`io.Writer`と作成callbackを受け取るため、process全体を起動せずにテストできます。
+- `src/cmd/aidlc`: composition rootです。process引数、stdout、stderr、build情報と作成・一覧callbackを組み立て、`cli.Run`の戻り値を`os.Exit`へ渡します。callbackが呼ばれたときだけcwdと環境変数を読みます。ドメイン判断や出力整形は置きません。
+- `src/internal/cli`: CLIの引数解釈、stdout/stderrの分離、終了コード、help/version、space create/listとbare spaceの表示契約を所有します。`io.Writer`とcallbackを受け取るため、process全体を起動せずにテストできます。
 - `src/internal/buildinfo`: linkerが差し替える`Version`と`Commit`、およびそのsnapshotを所有します。既定値は`dev`と`unknown`です。
-- `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、spaceの新規作成を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。readerと`ReadSelection`は引き続きread-onlyで、公開CLIへ未接続です。書込みは`CreateSpace`の明示呼出しだけで行い、Rootの生存期間も内部で管理します。
+- `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、spaceの新規作成を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。space readerはread-onlyの`ReadSpaces`を通じてCLIへ接続し、intent readerと`ReadSelection`は未接続です。書込みは`CreateSpace`の明示呼出しだけで行い、接続APIのRoot生存期間も内部で管理します。
 
 `internal`配下はmodule外からimportできません。今後の機能も、CLIから直接filesystemやnetworkへ到達させず、責務ごとのpackageをcomposition rootで接続します。
 
 ## 手動DI
 
 `main`が`os.Args[1:]`、`os.Stdout`、`os.Stderr`、`buildinfo.Current()`と
-`func(rawName, explicitDir string) (string, error)`を`cli.Run`へ渡します。
+`func(rawName, explicitDir string) (string, error)`、
+`func(explicitDir string) ([]workspace.Space, error)`を`cli.Run`へ渡します。
 CLIは構文検証後にだけcallbackを1度呼びます。callback内で`os.Getwd()`、
 `AIDLC_PROJECT_DIR`、`CLAUDE_PROJECT_DIR`を読み、flag値と合わせた`RootInput`を
-`workspace.CreateSpace`へ渡します。help/versionと構文エラーではcwd・環境・FSへ到達しません。
+`workspace.CreateSpace`または`workspace.ReadSpaces`へ渡します。
+help/versionと構文エラーではcwd・環境・FSへ到達しません。
 CLI packageはglobalなprocess I/Oを参照せず、各実行の出力と終了コードを決定的に検証できます。
 
-`main`はnil可の`prepareSpaceOutput func()`も渡します。CLIは認識済み`space create`で、
-構文エラーを含む最初の出力・作成callbackより前に1度だけ呼びます。`main`側のhookで
+`main`はnil可の`prepareSpaceOutput func()`も渡します。CLIは認識済み`space create`、
+`space list`、bare `space`で、構文エラーを含む最初の出力・callbackより前に1度だけ呼びます。`main`側のhookで
 `SIGPIPE`を無視し、Unixの閉じたstdout/stderr pipeへのwriteもerrorとして扱い、exit 1へ到達させます。
 signalのprocess-global設定は`main`だけが所有し、CLI package自身には置きません。
 help/version/未知commandではhookを呼ばず、従来のsignal・出力挙動を維持します。
@@ -71,6 +74,54 @@ symlinkも参照し得ます。下記の`ReadSelection`は、名前からpathへ
 完全互換は保証しません。
 
 承認と詳細は[共通space読み取りの初期契約](ram/decisions/2026-08-31-space-reading-contract.md)を参照してください。
+
+## Space一覧CLIとread-only接続
+
+`workspace.ReadSpaces(input RootInput) ([]Space, error)`は、既存`ResolveRoot`で選んだprojectを
+絶対pathと確認して`os.OpenRoot`で1つだけ開き、`ListSpaces(root.FS(), nil)`を呼んでCloseします。
+相対解決結果は`fs.ErrInvalid`、project open失敗は不在を含めerrorとし、低優先rootへfallbackしません。
+RootのClose失敗も原因を保持したerrorとして返し、error時の一覧はnilです。
+返値にRootやFSは含めず、呼出側のCloseは不要です。異常系は非公開helperのopen/close関数へ
+注入し、mutable globalや独自FS/store interfaceは追加しません。
+
+既存space readerのエラー吸収は維持します。未作成の`aidlc/spaces`は合成`default`を返しますが、
+directoryを作成したという意味ではありません。cursor参照の境界拒否・読取失敗は`default`へfallbackし、
+ReadDir失敗は`default`だけ、途中Stat失敗は既収集分と`default`を返します。
+このため、成功した一覧だけでは欠損・権限不足等を区別できません。
+
+選択はshared `aidlc/active-space`だけを参照します。cursor名を検証・pathとして再利用せず、
+intent、state、registry、sessionの存在を要求しません。初回project pathのsymlinkは追従します。
+project内の相対symlinkは許可し、外向き・絶対linkは`os.Root`で拒否されるため、読取箇所に応じて
+既存readerのfallback・途中打切りになります。作成・切替・修復・書込みは行いません。
+
+CLIは`space list`とbare `space`を受理し、`--json`がなければ`Spaces:\n`に続けて
+active行を`* <name>\n`、その他を`  <name>\n`として出力します。
+JSONは`active`と`spaces`（各行は`name`・`active`）だけの1行と末尾LFです。
+top-level `active`は最初のactive行の名前、全行inactiveなら`default`です。その場合も
+各行のfalseは書き換えません。readerの順序・名前を保持し、JSON escapeは標準encoderに任せます。
+
+成功はexit 0、認識済み一覧の構文・root・Close・出力失敗はexit 1です。
+stderrが書ける場合はJSON errorを1行出力します。stdout失敗時は途中までの出力が残り得て、
+stderrも書けない場合はexit 1だけを保証します。既存の未知command/subcommandは従来形式・exit 2です。
+引数の配置・厳格検証は[Space一覧CLIの利用手順](development.md#space一覧cli)を参照してください。
+
+### Space一覧の意図的な差分
+
+比較対象はローカルAI-DLC `2.6.123`の`printSpaceListing`、共通reader、public引数処理です。
+[調査記録](ram/research/2026-08-31-space-list-contracts.md)のcore実装を静的に確認し、
+該当する3ファイルと配置版のSHA-256一致を確認した範囲です。
+正規配布を含む配布物全体のparity、最新upstreamや全workflowの一致は未確認です。
+
+| 本家の挙動 | 採用した挙動 | 理由 | 利用者・互換性への影響 |
+| --- | --- | --- | --- |
+| project不在でもreaderがdefaultを返し得る | 既存project必須、project open失敗をerrorにする | 誤ったproject指定や接続失敗を隠さない | 未作成projectはJSON error・exit 1。存在するprojectの未配置spacesは従来のfallback |
+| 通常のFS操作で任意symlinkを参照し得る | projectの`os.Root`境界を適用 | project外の参照を制限する | 外向き・絶対linkは読取箇所に応じfallback・途中打切り。初回project linkと内部相対linkは許可 |
+| 余剰引数・flagの解釈が寛容で、public経路のproject-dir形式に差がある | 未知・重複・値付きJSON・余剰位置引数を拒否し、project-dirの分離形と等号形を受理 | typoをcallback前に検出し、既存createと揃える | 以前黙認された構文はerror。flagはcommand前・途中・後に置ける |
+
+承認は[space一覧の実装計画](ram/decisions/2026-08-31-space-list-plan.md)を参照してください。
+session binding、space override、intent/status表示は今回の未実装範囲であり、恒久的な差分ではありません。
+`os.Root`もmountや特殊file/deviceを防ぐ完全sandboxではありません。不正UTF-8やOS別の名前表現、
+列挙途中エラーの部分集合の完全互換、並行更新中の一貫したsnapshotは保証しません。
 
 ## Intent読み取りの契約と安全性の差分
 
@@ -253,6 +304,6 @@ session・audit・legacy alias等は今回の未実装範囲であり、恒久�
 - 設定ファイルとshell completion
 - ancestor探索、project自体の自動作成、既存spaceの自動修復
 - intent作成、space・intentの切替・削除、registry/state本文の解釈
-- workspace読み取りの公開CLI/status接続、`ReadSelection`のspace/intent明示override
+- `ReadSelection`・intent読み取りの公開CLI/status接続、space/intent明示override、session binding
 - Cobra、Viper、GoReleaserなどの外部依存
 - release、署名、公証、installer

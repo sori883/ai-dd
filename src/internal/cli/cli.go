@@ -2,11 +2,13 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/sori883/ai-dd/src/internal/buildinfo"
+	"github.com/sori883/ai-dd/src/internal/workspace"
 )
 
 const helpText = `AI-DLC command-line interface
@@ -14,21 +16,26 @@ const helpText = `AI-DLC command-line interface
 Usage:
   aidlc <command>
   aidlc space create <name> [--project-dir <path>]
+  aidlc space list [--json] [--project-dir <path>]
+  aidlc space [--json] [--project-dir <path>]
 
 Commands:
   help       Show help
   version    Show version information
   space create  Create a new space
+  space list    List spaces (space is an alias)
 
 Flags:
   --help     Show help
   --version  Show version information
-  --project-dir <path>  Project directory for space create
+  --project-dir <path>  Project directory for space commands
+  --json     Print space lists as JSON
 `
 
 // Run executes the CLI with injected process inputs and outputs and returns an exit code.
 // createSpace is called once for a syntactically valid space create command only.
-// If non-nil, prepareSpaceOutput runs once for a recognized space create command,
+// listSpaces is called once for a syntactically valid space list or bare space command only.
+// If non-nil, prepareSpaceOutput runs once for a recognized space create, list, or bare command,
 // before its callback or any output, including syntax errors.
 func Run(
 	args []string,
@@ -36,6 +43,7 @@ func Run(
 	stderr io.Writer,
 	info buildinfo.Info,
 	createSpace func(rawName, explicitDir string) (string, error),
+	listSpaces func(explicitDir string) ([]workspace.Space, error),
 	prepareSpaceOutput func(),
 ) int {
 	if len(args) == 0 {
@@ -54,8 +62,9 @@ func Run(
 			)
 		}
 	}
-	command, explicitDir, err := spaceCreateArguments(args)
-	isSpaceCreate := len(command) >= 2 && command[0] == "space" && command[1] == "create"
+	command, explicitDir, _, err := spaceArguments(args, false)
+	hasSpaceSubcommand := len(command) >= 2 && command[0] == "space"
+	isSpaceCreate := hasSpaceSubcommand && command[1] == "create"
 	if isSpaceCreate {
 		if prepareSpaceOutput != nil {
 			prepareSpaceOutput()
@@ -69,6 +78,28 @@ func Run(
 			stdout,
 			stderr,
 			createSpace,
+		)
+	}
+	isSpaceList := hasSpaceSubcommand && command[1] == "list"
+	isBareSpace := len(command) == 1 && command[0] == "space"
+	if isSpaceList || isBareSpace {
+		if prepareSpaceOutput != nil {
+			prepareSpaceOutput()
+		}
+		// --json is list-only; reparse after classification to preserve create's diagnostics.
+		_, explicitDir, jsonOutput, err := spaceArguments(args, true)
+		if err != nil {
+			return writeSpaceError(stderr, err)
+		}
+		if len(command) > 2 {
+			return writeSpaceError(stderr, errors.New("space list does not accept positional arguments"))
+		}
+		return runSpaceList(
+			explicitDir,
+			jsonOutput,
+			stdout,
+			stderr,
+			listSpaces,
 		)
 	}
 
