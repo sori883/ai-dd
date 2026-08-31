@@ -170,3 +170,26 @@ PRはIssue #23へ紐づけ、自動マージせず引き渡す。IssueのClose�
 
 承認記録時点ではswitchの新規テスト、実装、独立レビュー、配布E2Eは未実施。
 後続の検証結果は証跡への参照とともに追記する。
+
+## 実装・検証結果
+
+2026-09-01、Issue #23の承認scopeで実装を完了した。
+製品差分を `39f1f58acdb60f6e3225e6e432cc9040406fa6f0` に固定し、
+base `7f9001260d4c93e7156a7b13d075466ba72b34ad` からの独立read-onlyレビューで
+blocking findingはなかった。承認済みの意図的な差分3点は変更していない。
+
+- 実際のassertion RED→GREENは17 slice。追加時点でGREENのguardは区別した。
+- 通常・shuffle・race・integration・coverage、vet、tidy差分、gofmt、goplsを通過。
+  既存create/listと未知commandの契約も回帰確認した。
+- 同じclean sourceから6構成のCLIと18 test binaryをcross compileした。
+  各OSでの実行成功とは扱わない。
+- macOS/arm64で配布binaryを76回起動し、期待exitとfilesystem差分に全件一致した。
+  予定更新32回（space作成1回を含む）、無変更44回。Go/NodeをPATHから呼べない環境で検証した。
+- stdout/両streamの失敗でexit 1でも保存済みとなるcaseを確認し、自動rollbackは行わない。
+
+具体的なsource、artifact、TDD、生ログ、比較条件・未検証範囲は
+[Space切替の実装検証・配布E2E](../../e2e-runs/2026-09-01-space-switch.md)へ記録した。
+後続の証跡追記commitは文書のみで、検証binaryのsource commitとは区別する。
+外部module/tool、store層、CI変更は追加していない。
+bare alias、session/harness/audit、intent/status、installは引き続き後続段階へ分離する。
+PRはIssue #23へ紐づけ、自動マージしない。IssueのCloseはマージ後とする。

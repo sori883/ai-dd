@@ -118,6 +118,9 @@ tempが残り得て、Rename以降・Root Close・出力失敗ではcursorが保
 構文は[Space切替CLI](development.md#space切替cli)、保存境界とローカル本家`2.6.123`からの
 承認済み変更は[Space切替](architecture.md#space切替)・[差分表](architecture.md#space切替の意図的な差分)を参照する。
 
+実施済みの記録: [2026-09-01 Space切替の配布E2E](e2e-runs/2026-09-01-space-switch.md)。
+76起動すべてで期待exit・filesystem差分に一致し、予定更新32回・無変更44回を確認した。
+
 ## Space作成scenario
 
 未使用scenario内にbinaryと独立したproject fixtureを用意し、その既存projectだけを指定する。
