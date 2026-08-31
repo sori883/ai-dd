@@ -92,6 +92,49 @@ path操作に独自の検証とFS境界を用意する必要があります。
 6 targetのcross buildを各OSの実行証拠とは扱いません。workspace readerは公開CLIから未到達
 なので、help/version smokeや配布E2Eをspace・intent・接続機能の検証証拠にはしません。
 
+### Space作成CLI
+
+既存projectへ新しいspaceを作ります。複数単語の名前は引用してください。
+
+```sh
+go run ./src/cmd/aidlc space create "Team Alpha" --project-dir /path/to/existing-project
+```
+
+`--project-dir path`と`--project-dir=path`はcommandの前・途中・名前の後に配置できます。
+省略時のroot優先順位は`AIDLC_PROJECT_DIR`、`CLAUDE_PROJECT_DIR`、cwdです。
+明示flagが最優先で、相対pathはcwd基準です。project自体は新設しません。
+余剰位置引数、未知flag、重複flag、欠落・空のpath値、空の名前、作成位置の`help`・`-h`は
+callback前に拒否します。分離形の次tokenが`-`始まりなら値欠落とし、例えば
+`--project-dir --force`をpathとして飲み込みません。`-`始まりの実pathは
+`--project-dir=-dir`または`--project-dir ./-dir`で渡せます。
+
+成功時はstdoutに`Space created: team-alpha\n`、stderrは空、exit 0です。
+認識済み`space create`の失敗はstderrのJSON 1行とexit 1、rootの未知commandは従来どおりexit 2です。
+help/versionと構文エラーではcwd・環境変数・FSへアクセスしません。作成時も現在のspace/intentを
+読まず、自動切替しません。本文・生成treeと境界は[Space作成](architecture.md#space作成)を参照してください。
+
+```sh
+go test -count=1 ./src/internal/cli ./src/cmd/aidlc ./src/internal/workspace
+go test -tags=integration -count=1 -run '^TestCreateSpace' ./src/internal/workspace
+go test -count=1 -race -shuffle=on ./...
+go test -tags=integration -count=1 -race -shuffle=on ./...
+go vet ./...
+go vet -tags=integration ./...
+```
+
+単体テストは名前のUnicode小文字化・48文字切詰め、flag全位置と`=形式`、callback未実行、
+stdout/stderr・終了コード、lazyなmainのroot入力を固定します。open/read/write/Closeの異常は
+小さい関数seamから注入し、権限エラーをchmodだけに依存させません。
+integrationでは7 directory・6 fileと本文、default orgだけの継承、空org、不在fallback、
+既存targetの全種別と同名競合、内部・外部・絶対・broken link、部分writeと複数Close失敗を確認します。
+snapshotで既存default・他space・cursorの内容・mode・mtimeを比較し、対象追加に必要な親directoryの
+mtime以外を変えないこと、境界外に書き込まないことを確認します。
+
+errorが返っても生成物が残る場合があり、再試行は既存targetとして拒否されます。
+自動cleanupや修復は行わず、利用者が内容を確認して次の対応を決めます。
+本家との承認済みの6つの意図的な変更は[差分表](architecture.md#space作成の意図的な差分)を参照してください。
+space作成の配布E2Eはread-only APIや完全なworkspace lifecycleの検証とは区別します。
+
 ## 実行fileの確認
 
 ```sh
@@ -123,7 +166,8 @@ CIは`CGO_ENABLED=0`で次の6ターゲットのCLIをbuildします。
 - `windows/arm64`
 
 ローカルでは次のloopで、CLIとintegrationタグ付きworkspaceテストバイナリを確認できます。
-CLIはworkspaceをimportしないため、CLI buildだけではreaderのcross build証拠になりません。
+mainはspace作成のためworkspaceをimportしますが、CLI buildはworkspaceの`_test.go`や
+integrationタグ付きテストをcompileしないため、テストバイナリも別に確認します。
 いずれもコンパイルの確認であり、各OSでのテスト実行とは区別します。
 
 ```sh

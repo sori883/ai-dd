@@ -21,14 +21,17 @@ const wantHelp = `AI-DLC command-line interface
 
 Usage:
   aidlc <command>
+  aidlc space create <name> [--project-dir <path>]
 
 Commands:
   help       Show help
   version    Show version information
+  space create  Create a new space
 
 Flags:
   --help     Show help
   --version  Show version information
+  --project-dir <path>  Project directory for space create
 `
 
 func TestRun_Help(t *testing.T) {
@@ -49,7 +52,13 @@ func TestRun_Help(t *testing.T) {
 
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
-			exitCode := cli.Run(tt.args, &stdout, &stderr, buildinfo.Info{})
+			exitCode := cli.Run(
+				tt.args,
+				&stdout,
+				&stderr,
+				buildinfo.Info{},
+				nil,
+			)
 
 			if exitCode != 0 {
 				t.Errorf("exit code = %d, want 0", exitCode)
@@ -86,6 +95,7 @@ func TestRun_HelpWriteError(t *testing.T) {
 				errorWriter{err: errors.New("broken pipe")},
 				&stderr,
 				buildinfo.Info{},
+				nil,
 			)
 
 			if exitCode != 1 {
@@ -116,10 +126,13 @@ func TestRun_Version(t *testing.T) {
 
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
-			exitCode := cli.Run(tt.args, &stdout, &stderr, buildinfo.Info{
-				Version: "v1.2.3",
-				Commit:  "abcdef0",
-			})
+			exitCode := cli.Run(
+				tt.args,
+				&stdout,
+				&stderr,
+				buildinfo.Info{Version: "v1.2.3", Commit: "abcdef0"},
+				nil,
+			)
 
 			const wantStdout = "aidlc v1.2.3 (commit abcdef0)\n"
 			if exitCode != 0 {
@@ -156,6 +169,7 @@ func TestRun_VersionWriteError(t *testing.T) {
 				errorWriter{err: errors.New("broken pipe")},
 				&stderr,
 				buildinfo.Info{Version: "v1.2.3", Commit: "abcdef0"},
+				nil,
 			)
 
 			if exitCode != 1 {
@@ -195,7 +209,13 @@ func TestRun_UnknownArguments(t *testing.T) {
 
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
-			exitCode := cli.Run(tt.args, &stdout, &stderr, buildinfo.Info{})
+			exitCode := cli.Run(
+				tt.args,
+				&stdout,
+				&stderr,
+				buildinfo.Info{},
+				nil,
+			)
 
 			if exitCode != 2 {
 				t.Errorf("exit code = %d, want 2", exitCode)
