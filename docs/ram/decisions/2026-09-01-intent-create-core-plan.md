@@ -154,9 +154,12 @@ Unicodeの再reviewでは、macOS Bunのsystem ICU結果をWindowsへ外挿し�
 `1.3.14`の固定sourceとUnicode 15.0公式dataを再調査し、reviewerが指摘を撤回した。将来の
 Go Unicode table更新を検知するU+1C89の追加時GREEN guardをcommit
 `fb2632dc448c896064c749bf5e273f9958d3a494`で固定した。このguardは挙動変更ではないためTDD
-RED件数へ含めない。新しい外部moduleや意図的な本家差分は追加していない。
+RED件数へ含めなかった。その後PR #32のGo `1.27.0` CIで同guardが実際にREDとなり、Unicode 17
+tableへの依存を検出した。Unicode 15/17の全範囲差分を固定overlayへ反映し、commit
+`0c24f2adf0e85e8bd77cf23f79d354f3fe2fb4cd`でGo `1.26.4`・`1.27.0`双方をGREENにした。
+新しい外部moduleや意図的な本家差分は追加していない。
 
-親が通常shuffle、race shuffle、integration race shuffle、vet両構成、tidy差分、gofmt、
-gopls、diff checkをfresh実行し、全てPASSした。darwin・linux・windowsのamd64/arm64向け
+親がGo `1.26.4`・`1.27.0`の通常shuffle、race shuffle、integration race shuffle、vet両構成、
+tidy差分、gofmt、gopls、diff checkをfresh実行し、全てPASSした。darwin・linux・windowsのamd64/arm64向け
 workspace integration test binaryも6構成でcross compileした。macOS / arm64以外でのnative
 実行証拠ではない。詳細は[実装検証記録](../../e2e-runs/2026-09-01-intent-create-core.md)に残す。

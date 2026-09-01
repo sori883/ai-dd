@@ -5,8 +5,8 @@
   raceを含む検証に成功した。
 - Issue: [#31](https://github.com/sori883/ai-dd/issues/31)
 - 承認: [Intent作成coreの実装計画](../ram/decisions/2026-09-01-intent-create-core-plan.md)
-- source commit: `fb2632dc448c896064c749bf5e273f9958d3a494`
-- native実行: macOS / arm64、Go `1.26.4`
+- source commit: `0c24f2adf0e85e8bd77cf23f79d354f3fe2fb4cd`
+- native実行: macOS / arm64、Go `1.26.4`・`1.27.0`
 
 ## 実装した契約
 
@@ -45,28 +45,42 @@ directoryと2 registry rowを失わずに作ることを確認した。
 初回review修正では、target Spaceとshared active-space fallbackの違い、追加処理より先にlockを
 解放する順序、U+0130・Final Sigmaを含むWindows identityについて追加REDを観測した。U+1C89を
 Unicode 15で変換せずhash prefix `a3f33a77`とするtestは、挙動変更ではない追加時GREENの将来互換
-guardであり、RED件数へ含めない。raw shell transcriptは永続化しておらず、過去の遷移を独立再現する
+guardとして最初はRED件数へ含めなかった。PR #32のGo `1.27.0` CIではこのguardがU+1C89→U+1C8A、
+hash prefix `1e96ce4c`として実際にREDとなった。lowercase 55件、`Cased` 107件、
+`Case_Ignorable` 88件、Final Sigma 7文脈へtestを拡張し、Unicode 15 overlay後にGo `1.26.4`・
+`1.27.0`の双方でGREENを確認した。raw shell transcriptは永続化しておらず、過去の遷移を独立再現する
 証拠とは扱わない。最終GREENはtest sourceとfresh実行で再現できる。
+
+## PR CIで観測したRED
+
+PR作成時の[CI run 33480731964](https://github.com/sori883/ai-dd/actions/runs/33480731964)では、
+Go `1.26.x`と6構成buildが成功し、Go `stable`だけが失敗した。`stable`はGo `1.27.0` / Unicode
+17.0であり、lock helperがhost toolchainのUnicode tableへ依存していたことが原因だった。
+test期待値を緩めず、Bun Windows `1.3.14`のICU 73.2 / Unicode 15へ戻す完全overlayを実装した。
+未監査のGo Unicode versionはversion guardで再調査を要求する。
 
 ## Fresh検証
 
-repository rootから親が次を実行し、全てPASSした。
+repository rootから親がGo `1.26.4`・`1.27.0`の双方で次を実行し、全てPASSした。
 
 | 検証 | 結果 |
 | --- | --- |
-| `go test -count=1 -shuffle=on ./...` | PASS |
-| `go test -count=1 -race -shuffle=on ./...` | PASS |
-| `go test -tags=integration -count=1 -race -shuffle=on ./...` | PASS |
-| `go vet ./...` | PASS |
-| `go vet -tags=integration ./...` | PASS |
-| `go mod tidy -diff` | PASS、差分なし |
+| `go test -count=1 -shuffle=on ./...` | 両toolchainでPASS |
+| `go test -count=1 -race -shuffle=on ./...` | 両toolchainでPASS |
+| `go test -tags=integration -count=1 -race -shuffle=on ./...` | 両toolchainでPASS |
+| `go vet ./...` | 両toolchainでPASS |
+| `go vet -tags=integration ./...` | 両toolchainでPASS |
+| `go mod tidy -diff` | 両toolchainでPASS、差分なし |
 | `gofmt -l src` | PASS、出力なし |
 | 変更Go fileへの`gopls check` | PASS、diagnosticなし |
 | `git diff --check` | PASS |
 
-通常coverageはmain 92.6%、CLI 98.6%、workspace 84.2%、buildinfo 100%、全体87.2%だった。
-profileは`/tmp/ai-dd-issue-31-coverage-final.1f6osQ/coverage.out`、SHA-256は
-`853522cbdf10e3db5bc2f818d2e28577bb1e546c52e9544baef7860ca38eff2f`である。一時directoryの
+Go `1.26.4`の通常coverageはmain 92.6%、CLI 98.6%、workspace 84.6%、buildinfo 100%、全体87.4%。
+profileは`/tmp/ai-dd-issue-31-coverage-go126-final.Goydqk/coverage.out`、SHA-256は
+`1edd45977d075c822b5989d422ac00107a8c51b5b1b9fc0df5da8fb3fbd5f6a7`である。Go `1.27.0`は順に
+92.6%、98.6%、84.5%、100%、全体87.3%。profileは
+`/tmp/ai-dd-issue-31-coverage-go127-final.E47bNy/coverage.out`、SHA-256は
+`71d82cd36a91e1955769b2a8083a66e4c04e1828c7d58ef1ad25a33138ca2e3e`である。一時directoryの
 長期保持は保証しない。
 
 ## 6構成cross compile
@@ -79,8 +93,8 @@ profileは`/tmp/ai-dd-issue-31-coverage-final.1f6osQ/coverage.out`、SHA-256は
 | linux | PASS | PASS |
 | windows | PASS | PASS |
 
-artifact rootは`/tmp/ai-dd-issue-31-cross-final.IsBgFD/`である。6 fileのSHA-256出力を辞書順に
-並べたmanifestのSHA-256は`4c6fec7a494bb7525d4a95340121bba3039e9266eae695e1e5ece8c97ae26269`である。
+artifact rootは`/tmp/ai-dd-issue-31-cross-go126-final.9jpuzx/`である。6 fileのSHA-256出力を辞書順に
+並べたmanifestのSHA-256は`b615ca1c123c7bce517fca0d1655a60149c0b5858fb208ed8432c1a223d73d88`である。
 cross compileは各OSでのnative実行証拠ではなく、Windows Bun `1.3.14`とのlock identityも固定source、
 ICU 73.2 / Unicode 15.0 data、全OSで動く既知vectorで検証した。Windows native照合は未実施である。
 
@@ -104,5 +118,5 @@ No findingsとした。macOS runtime観測はWindows互換表へ取り込まず�
 ある。実装・reviewを通じて新しい意図的な差分は追加していない。
 
 rollback、fsync・power-loss耐久、multi-file atomicity、mount/deviceを含む完全sandbox、
-Windows/Linuxでのnative実行、将来のBun/Go Unicode version間互換は保証しない。外部Go module、
+Windows/Linuxでのnative実行、未監査の将来Bun/Go Unicode version間互換は保証しない。外部Go module、
 public CLI、CI変更は追加していない。

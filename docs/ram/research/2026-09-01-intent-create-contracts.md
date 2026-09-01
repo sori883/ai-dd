@@ -73,6 +73,13 @@ U+0130を`i\u0307`へ展開する規則と、Cased・Case_Ignorable文脈でU+03
 変換する規則の2系統である。Go標準のUnicode tableとこの2規則で、比較対象のWindows buildに
 おけるwell-formed Unicode pathを再現する。
 
+PR #32のCIでは`stable`がGo `1.27.0` / Unicode 17.0へ更新され、U+1C89をU+1C8Aへ変換したため、
+下記の固定vectorが実際にREDとなった。Unicode 15.0と17.0の全scalar比較で、simple lowercase
+55件、`Cased`の追加107件・削除1件、`Case_Ignorable`の追加88件・削除1件を確定した。
+Go版はこの差分だけをUnicode 15の値へ戻すoverlayをlock identity内に持つ。Go `1.26.4`と
+`1.27.0`で同じidentityとなり、未監査のGo Unicode versionはtestを失敗させて再調査を要求する。
+これは本家からの仕様差ではなく、toolchain更新で本家互換identityが変わらないための固定である。
+
 固定vector `C:\\Projects\\AİB\\ΟΣ`は
 `c:\\projects\\ai\u0307b\\ος`へ変換され、NULと`__workspace__`を加えたMD5先頭8文字は
 `211f1998`、lock名は`.aidlc-audit-211f1998.lock`となる。ASCII-only変換、case folding、
@@ -83,8 +90,9 @@ Unicode 17相当と推定した。しかしmacOS buildはsystem ICUを使い、W
 73.2を同梱するため、この推定は誤りとして撤回した。macOS runtimeとの全scalar比較で観測した
 55 mapping差はWindows lock identityへ適用しない。将来のGo Unicode table更新によるdriftを
 検知するため、`C:\\Projects\\AᲉB`はU+1C89を変換せず、MD5先頭8文字`a3f33a77`となることを
-固定vectorにする。Windows Bun `1.3.14`実機でのnative照合は未実施であり、現時点の根拠は
-固定source、同梱ICU version、Unicode 15.0公式dataとの全範囲比較である。
+固定vectorにする。このvectorはGo `1.27.0` CIでtable driftを検知し、Unicode 15 overlay後に
+Go `1.26.4`・`1.27.0`の双方でPASSした。Windows Bun `1.3.14`実機でのnative照合は未実施であり、
+現時点の根拠は固定source、同梱ICU version、Unicode 15.0公式dataとの全範囲比較である。
 
 本家はrollbackしない。stub失敗ではdirectory、registry失敗ではdirectoryとstub、cursor以降の
 失敗ではregistryまでの成果物が残り得る。cursorとsessionの失敗は成功結果へ反映されない。
@@ -101,8 +109,9 @@ registry不存在・malformed・非配列は空listとして扱うため、新�
 - [Bun 1.3.14のWebKit固定とplatform別ICU](https://github.com/oven-sh/bun/blob/0d9b296af33f2b851fcbf4df3e9ec89751734ba4/scripts/build/deps/webkit.ts)
 - [固定WebKitのWindows ICU 73.2 build](https://github.com/oven-sh/WebKit/blob/5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b/build-icu.ps1#L34)
 - [JavaScriptCoreの`u_strToLower`委譲](https://github.com/oven-sh/WebKit/blob/5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b/Source/WTF/wtf/text/StringImpl.cpp#L389-L445)
+- [Go 1.27.0のUnicode 17 table](https://github.com/golang/go/blob/go1.27.0/src/unicode/tables.go)
 - ECMAScript 2024 `String.prototype.toLowerCase` §22.1.3.28
-- Unicode 15.0 `SpecialCasing.txt`、`UnicodeData.txt`、`DerivedCoreProperties.txt`
+- Unicode 15.0 / 17.0 `SpecialCasing.txt`、`UnicodeData.txt`、`DerivedCoreProperties.txt`
 
 ## Go版への示唆
 
