@@ -260,6 +260,42 @@ func TestDetectInterpretsWeakPackageJSON(t *testing.T) {
 			wantFW:      "Unknown",
 		},
 		{
+			name:        "positive overflow dependency is truthy",
+			packageJSON: `{"dependencies":{"react":1e400}}`,
+			wantType:    "Brownfield",
+			wantFW:      "React",
+		},
+		{
+			name:        "negative overflow peer dependency is truthy",
+			packageJSON: `{"peerDependencies":{"react":-1e400}}`,
+			wantType:    "Brownfield",
+			wantFW:      "React",
+		},
+		{
+			name:        "positive underflow dependency is falsy",
+			packageJSON: `{"dependencies":{"react":1e-400}}`,
+			wantType:    "Brownfield",
+			wantFW:      "Unknown",
+		},
+		{
+			name:        "negative underflow peer dependency overrides truthy dependency",
+			packageJSON: `{"dependencies":{"react":"18"},"peerDependencies":{"react":-1e-400}}`,
+			wantType:    "Brownfield",
+			wantFW:      "Unknown",
+		},
+		{
+			name:        "positive zero dependency is falsy",
+			packageJSON: `{"dependencies":{"react":0}}`,
+			wantType:    "Brownfield",
+			wantFW:      "Unknown",
+		},
+		{
+			name:        "negative zero peer dependency is falsy",
+			packageJSON: `{"peerDependencies":{"react":-0}}`,
+			wantType:    "Greenfield",
+			wantFW:      "Unknown",
+		},
+		{
 			name:        "non object package document",
 			packageJSON: `[{"dependencies":{"react":"18"}}]`,
 			wantType:    "Greenfield",
@@ -268,6 +304,12 @@ func TestDetectInterpretsWeakPackageJSON(t *testing.T) {
 		{
 			name:        "invalid package document",
 			packageJSON: `{"dependencies":`,
+			wantType:    "Greenfield",
+			wantFW:      "Unknown",
+		},
+		{
+			name:        "trailing JSON token rejects the document",
+			packageJSON: `{"dependencies":{"react":"18"}} true`,
 			wantType:    "Greenfield",
 			wantFW:      "Unknown",
 		},

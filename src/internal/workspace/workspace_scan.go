@@ -1,12 +1,15 @@
 package workspace
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf16"
 )
@@ -390,8 +393,13 @@ func readPackageJSON(ops workspaceScanOps, directory string) (map[string]any, bo
 	if err != nil {
 		return nil, false
 	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
 	var document any
-	if err := json.Unmarshal(data, &document); err != nil {
+	if err := decoder.Decode(&document); err != nil {
+		return nil, false
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return nil, false
 	}
 	object, ok := document.(map[string]any)
@@ -423,6 +431,12 @@ func isJavaScriptTruthy(value any) bool {
 		return value
 	case float64:
 		return value != 0
+	case json.Number:
+		number, err := value.Float64()
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
+			return false
+		}
+		return number != 0
 	case string:
 		return value != ""
 	default:
