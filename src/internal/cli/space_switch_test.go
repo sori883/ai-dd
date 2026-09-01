@@ -22,18 +22,19 @@ func TestRunSpaceSwitch(t *testing.T) {
 		[]string{"space", "switch", "Team Alpha", "--project-dir=project path"},
 		&stdout,
 		&stderr,
-		buildinfo.Info{},
-		nil,
-		nil,
-		func(rawName, explicitDir string) (string, error) {
-			calls++
-			if rawName != "Team Alpha" || explicitDir != "project path" {
-				t.Errorf("switch callback(%q, %q), want raw name and path", rawName, explicitDir)
-			}
-			return "team-alpha", nil
-		},
-		nil,
-	)
+		buildinfo.Info{}, runDependencies(
+
+			nil,
+			nil,
+			func(rawName, explicitDir string) (string, error) {
+				calls++
+				if rawName != "Team Alpha" || explicitDir != "project path" {
+					t.Errorf("switch callback(%q, %q), want raw name and path", rawName, explicitDir)
+				}
+				return "team-alpha", nil
+			},
+			nil))
+
 	if code != 0 || calls != 1 {
 		t.Errorf("exit=%d calls=%d, want 0, 1", code, calls)
 	}
@@ -53,15 +54,16 @@ func TestRunSpaceSwitchInvalidRawName(t *testing.T) {
 				[]string{"space", "switch", name},
 				&stdout,
 				&stderr,
-				buildinfo.Info{},
-				nil,
-				nil,
-				func(string, string) (string, error) {
-					t.Error("invalid raw name reached switch callback")
-					return "intent", nil
-				},
-				nil,
-			)
+				buildinfo.Info{}, runDependencies(
+
+					nil,
+					nil,
+					func(string, string) (string, error) {
+						t.Error("invalid raw name reached switch callback")
+						return "intent", nil
+					},
+					nil))
+
 			if code != 1 || stdout.Len() != 0 {
 				t.Errorf("exit=%d stdout=%q, want 1 and empty", code, stdout.String())
 			}
@@ -78,12 +80,13 @@ func TestRunSpaceSwitchShortStdoutWrite(t *testing.T) {
 		[]string{"space", "switch", "team"},
 		shortOutputWriter{},
 		&stderr,
-		buildinfo.Info{},
-		nil,
-		nil,
-		func(string, string) (string, error) { return "team", nil },
-		nil,
-	)
+		buildinfo.Info{}, runDependencies(
+
+			nil,
+			nil,
+			func(string, string) (string, error) { return "team", nil },
+			nil))
+
 	if code != 1 {
 		t.Errorf("exit=%d, want 1 for short stdout write", code)
 	}
@@ -100,12 +103,13 @@ func TestRunHelpIncludesSpaceSwitch(t *testing.T) {
 		[]string{"--help"},
 		&stdout,
 		&stderr,
-		buildinfo.Info{},
-		nil,
-		nil,
-		nil,
-		nil,
-	)
+		buildinfo.Info{}, runDependencies(
+
+			nil,
+			nil,
+			nil,
+			nil))
+
 	if code != 0 || stderr.Len() != 0 {
 		t.Errorf("exit=%d stderr=%q, want 0 and empty", code, stderr.String())
 	}
@@ -134,18 +138,19 @@ func TestRunSpaceSwitchProjectDirPositions(t *testing.T) {
 					args,
 					&stdout,
 					&stderr,
-					buildinfo.Info{},
-					nil,
-					nil,
-					func(name, dir string) (string, error) {
-						calls++
-						if name != "Help" || dir != "project path" {
-							t.Errorf("callback(%q, %q), want unchanged name and path", name, dir)
-						}
-						return "help", nil
-					},
-					nil,
-				)
+					buildinfo.Info{}, runDependencies(
+
+						nil,
+						nil,
+						func(name, dir string) (string, error) {
+							calls++
+							if name != "Help" || dir != "project path" {
+								t.Errorf("callback(%q, %q), want unchanged name and path", name, dir)
+							}
+							return "help", nil
+						},
+						nil))
+
 				if code != 0 || calls != 1 {
 					t.Errorf("exit=%d calls=%d, want 0, 1", code, calls)
 				}
@@ -195,15 +200,16 @@ func TestRunSpaceSwitchInvalidArguments(t *testing.T) {
 				tt.args,
 				&stdout,
 				&stderr,
-				buildinfo.Info{},
-				nil,
-				nil,
-				func(string, string) (string, error) {
-					t.Error("invalid arguments called switch callback")
-					return "team", nil
-				},
-				nil,
-			)
+				buildinfo.Info{}, runDependencies(
+
+					nil,
+					nil,
+					func(string, string) (string, error) {
+						t.Error("invalid arguments called switch callback")
+						return "team", nil
+					},
+					nil))
+
 			if code != 1 || stdout.Len() != 0 {
 				t.Errorf("exit=%d stdout=%q, want 1 and empty", code, stdout.String())
 			}
@@ -223,21 +229,22 @@ func TestRunSpaceSwitchDashPath(t *testing.T) {
 				append([]string{"space", "switch", "team"}, flag...),
 				&stdout,
 				&stderr,
-				buildinfo.Info{},
-				nil,
-				nil,
-				func(_ string, dir string) (string, error) {
-					want := "-dir"
-					if len(flag) == 2 {
-						want = "./-dir"
-					}
-					if dir != want {
-						t.Errorf("project dir=%q, want %q", dir, want)
-					}
-					return "team", nil
-				},
-				nil,
-			)
+				buildinfo.Info{}, runDependencies(
+
+					nil,
+					nil,
+					func(_ string, dir string) (string, error) {
+						want := "-dir"
+						if len(flag) == 2 {
+							want = "./-dir"
+						}
+						if dir != want {
+							t.Errorf("project dir=%q, want %q", dir, want)
+						}
+						return "team", nil
+					},
+					nil))
+
 			if code != 0 || stderr.Len() != 0 {
 				t.Errorf("exit=%d stderr=%q, want 0 and empty", code, stderr.String())
 			}
@@ -274,15 +281,16 @@ func TestRunSpaceSwitchOutputPreparation(t *testing.T) {
 				tt.args,
 				outputEventWriter{stream: "stdout", events: &steps},
 				outputEventWriter{stream: "stderr", events: &steps},
-				buildinfo.Info{},
-				nil,
-				nil,
-				func(string, string) (string, error) {
-					steps = append(steps, "switch")
-					return "team", tt.cause
-				},
-				func() { steps = append(steps, "prepare") },
-			)
+				buildinfo.Info{}, runDependencies(
+
+					nil,
+					nil,
+					func(string, string) (string, error) {
+						steps = append(steps, "switch")
+						return "team", tt.cause
+					},
+					func() { steps = append(steps, "prepare") }))
+
 			if code != tt.code || !slices.Equal(steps, tt.steps) {
 				t.Errorf(
 					"exit=%d steps=%q; want exit=%d steps=%q",
@@ -336,15 +344,16 @@ func TestRunSpaceSwitchOutputFailures(t *testing.T) {
 				[]string{"space", "switch", "team"},
 				tt.stdout,
 				errorOutput,
-				buildinfo.Info{},
-				nil,
-				nil,
-				func(string, string) (string, error) {
-					calls++
-					return "ignored-on-error", tt.cause
-				},
-				nil,
-			)
+				buildinfo.Info{}, runDependencies(
+
+					nil,
+					nil,
+					func(string, string) (string, error) {
+						calls++
+						return "ignored-on-error", tt.cause
+					},
+					nil))
+
 			if code != 1 || calls != 1 {
 				t.Errorf("exit=%d calls=%d, want 1 each", code, calls)
 			}

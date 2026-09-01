@@ -18,14 +18,36 @@ func main() {
 		os.Stdout,
 		os.Stderr,
 		buildinfo.Current(),
-		spaceCreator(os.Getwd, os.Getenv, workspace.CreateSpace),
-		spaceLister(os.Getwd, os.Getenv, workspace.ReadSpaces),
-		spaceSwitcher(os.Getwd, os.Getenv, workspace.SwitchSpace),
-		func() {
-			// Recognized space commands promise exit 1 for writes to closed stdout or stderr pipes.
-			signal.Ignore(syscall.SIGPIPE)
+		cli.Dependencies{
+			CreateSpace: spaceCreator(os.Getwd, os.Getenv, workspace.CreateSpace),
+			ListSpaces:  spaceLister(os.Getwd, os.Getenv, workspace.ReadSpaces),
+			SwitchSpace: spaceSwitcher(os.Getwd, os.Getenv, workspace.SwitchSpace),
+			ListIntents: intentLister(os.Getwd, os.Getenv, workspace.ReadIntents),
+			PrepareOutput: func() {
+				// Recognized workspace commands promise exit 1 for writes to closed stdout or stderr pipes.
+				signal.Ignore(syscall.SIGPIPE)
+			},
 		},
 	))
+}
+
+func intentLister(
+	getwd func() (string, error),
+	getenv func(string) string,
+	read func(workspace.RootInput) (workspace.IntentListing, error),
+) func(string) (workspace.IntentListing, error) {
+	return func(explicitDir string) (workspace.IntentListing, error) {
+		workingDir, err := getwd()
+		if err != nil {
+			return workspace.IntentListing{}, fmt.Errorf("read working directory: %w", err)
+		}
+		return read(workspace.RootInput{
+			ExplicitDir:      explicitDir,
+			AIDLCProjectDir:  getenv("AIDLC_PROJECT_DIR"),
+			ClaudeProjectDir: getenv("CLAUDE_PROJECT_DIR"),
+			WorkingDir:       workingDir,
+		})
+	}
 }
 
 func spaceCreator(

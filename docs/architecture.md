@@ -8,13 +8,14 @@ ai-ddは、単一のGo moduleと単一の実行ファイルを保ちながら、
 src/cmd/aidlc/main.go
   ├─ src/internal/buildinfo
   ├─ src/internal/cli (arguments, output, exit code)
-  └─ src/internal/workspace (CreateSpace / ReadSpaces / SwitchSpace callbacks)
+  └─ src/internal/workspace (CreateSpace / ReadSpaces / ReadIntents / SwitchSpace callbacks)
 
 src/internal/workspace
   ├─ project root resolution
   ├─ active-space and space listing (read-only)
   ├─ active-intent and intent listing (read-only)
   ├─ ReadSpaces: project → shared-cursor space list (read-only CLI)
+  ├─ ReadIntents: project → active space → registry and record list (read-only CLI)
   ├─ ReadSelection: project → current space → intents (read-only, no CLI yet)
   ├─ CreateSpace: explicit creation within an existing project
   └─ SwitchSpace: explicit shared-cursor update within an existing project
@@ -23,25 +24,26 @@ src/internal/workspace
 ## Package境界
 
 - `src/cmd/aidlc`: composition rootです。process引数、stdout、stderr、build情報と作成・一覧・切替callbackを組み立て、`cli.Run`の戻り値を`os.Exit`へ渡します。callbackが呼ばれたときだけcwdと環境変数を読みます。ドメイン判断や出力整形は置きません。
-- `src/internal/cli`: CLIの引数解釈、stdout/stderrの分離、終了コード、help/version、space create/list/switchとbare spaceの表示契約を所有します。`io.Writer`とcallbackを受け取るため、process全体を起動せずにテストできます。
+- `src/internal/cli`: CLIの引数解釈、stdout/stderrの分離、終了コード、help/version、space create/list/switch、bare space、intent listとbare intentの表示契約を所有します。`io.Writer`とcallbackを受け取るため、process全体を起動せずにテストできます。
 - `src/internal/buildinfo`: linkerが差し替える`Version`と`Commit`、およびそのsnapshotを所有します。既定値は`dev`と`unknown`です。
-- `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、spaceの新規作成・共有cursor切替を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。space readerはread-onlyの`ReadSpaces`を通じてCLIへ接続し、intent readerと`ReadSelection`は未接続です。書込みは`CreateSpace`・`SwitchSpace`の明示呼出しだけで行い、接続APIのRoot生存期間も内部で管理します。
+- `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、spaceの新規作成・共有cursor切替を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。space一覧は`ReadSpaces`、intent一覧は`ReadIntents`を通じてCLIへ接続し、`ReadSelection`は内部APIのままです。書込みは`CreateSpace`・`SwitchSpace`の明示呼出しだけで行い、接続APIのRoot生存期間も内部で管理します。
 
 `internal`配下はmodule外からimportできません。今後の機能も、CLIから直接filesystemやnetworkへ到達させず、責務ごとのpackageをcomposition rootで接続します。
 
 ## 手動DI
 
 `main`が`os.Args[1:]`、`os.Stdout`、`os.Stderr`、`buildinfo.Current()`と
-作成・切替それぞれの`func(rawName, explicitDir string) (string, error)`、
-`func(explicitDir string) ([]workspace.Space, error)`を`cli.Run`へ渡します。
+`cli.Dependencies`へ、作成・切替それぞれの`func(rawName, explicitDir string) (string, error)`、
+space一覧の`func(explicitDir string) ([]workspace.Space, error)`、intent一覧の
+`func(explicitDir string) (workspace.IntentListing, error)`をまとめて`cli.Run`へ渡します。
 CLIは構文検証後にだけcallbackを1度呼びます。callback内で`os.Getwd()`、
 `AIDLC_PROJECT_DIR`、`CLAUDE_PROJECT_DIR`を読み、flag値と合わせた`RootInput`を
-`workspace.CreateSpace`、`workspace.ReadSpaces`または`workspace.SwitchSpace`へ渡します。
+`workspace.CreateSpace`、`workspace.ReadSpaces`、`workspace.ReadIntents`または`workspace.SwitchSpace`へ渡します。
 help/versionと構文エラーではcwd・環境・FSへ到達しません。
 CLI packageはglobalなprocess I/Oを参照せず、各実行の出力と終了コードを決定的に検証できます。
 
-`main`はnil可の`prepareSpaceOutput func()`も渡します。CLIは認識済み`space create`、
-`space list`、`space switch`、bare `space`で、構文エラーを含む最初の出力・callbackより前に1度だけ呼びます。`main`側のhookで
+`main`はnil可の`PrepareOutput func()`も渡します。CLIは認識済み`space create`、
+`space list`、`space switch`、bare `space`、`intent list`、bare `intent`で、構文エラーを含む最初の出力・callbackより前に1度だけ呼びます。`main`側のhookで
 `SIGPIPE`を無視し、Unixの閉じたstdout/stderr pipeへのwriteもerrorとして扱い、exit 1へ到達させます。
 signalのprocess-global設定は`main`だけが所有し、CLI package自身には置きません。
 help/version/未知commandではhookを呼ばず、従来のsignal・出力挙動を維持します。
@@ -166,6 +168,60 @@ intentの明示overrideは受け取りません。既存`ActiveIntent`のexplici
 Node/BunのOS別path解釈、並行更新中の一貫したsnapshotは保証しません。
 
 承認と詳細は[intent読み取りの実装計画](ram/decisions/2026-08-31-intent-reading-plan.md)を参照してください。
+
+## Intent一覧CLIとread-only接続
+
+`workspace.ListIntents(intentsFS, activeOverride) ([]Intent, error)`は、上記readerと同じく
+選択済みspaceの`intents/`をrootとする`fs.FS`を受け取ります。`intents.json`のregistry行を
+順序どおり保持し、record directoryと相関してから、registryがclaimしなかったdirectoryを
+既存`ListIntentDirs`のUTF-16順でorphanとして末尾へ追加します。返す`Repos`は常にnon-nilです。
+
+- `dirName`がnon-emptyならその完全一致だけを使います。一致しない場合にlegacy名へfallbackしません。
+- `dirName`が欠損・null・空なら`<slug>-<lowercase hex>`をlegacy候補とし、hyphenを除いたUUIDの
+  末尾が同じ長さのsuffixと完全一致するときだけ対応付けます。registry-only行と重複行も保持し、
+  同じdirectoryを指す重複行は両方activeになり得ます。
+- orphanのUUIDは空、statusは`unknown`、reposは空配列です。表示slugは先頭の6桁日付prefix、
+  または末尾のlowercase hex suffixだけを除き、それ以外の名前を制限しません。
+- `activeOverride == nil`のときだけ既存`ActiveIntent(intentsFS, "")`を使います。non-nilの空文字は
+  明示的な未選択であり、cursorも1件fallbackも読みません。active判定はrecord directory名です。
+- registryの欠損、読取error（部分dataを含む）、不正JSON、top-level非配列は空registryへfallbackし、
+  disk上のorphanは列挙します。一方、有効なtop-level配列に1行でも構造不正があればfail-closedの
+  errorとし、部分一覧を返しません。必須`uuid`・`slug`・`status`は値の意味を検証せず、存在する
+  stringであることだけを要求します。任意`dirName`・`scope`は欠損/null/string、`repos`は
+  欠損/null/string配列だけを受理し、未知fieldを無視します。
+
+`workspace.ReadIntents(input RootInput) (IntentListing, error)`は、`ReadSelection`と同じroot解決、
+space名の1 component検証、`filepath.Localize`、`os.Root`境界を使います。project Rootから
+`aidlc/spaces/<space>/intents`を相対的に開き、そのRootのFSへ`ListIntents(..., nil)`を渡します。
+初回project symlinkとproject内への相対child symlinkは許可しますが、外向き・絶対child linkは
+拒否します。childが`fs.ErrNotExist`ならproject path・space名・non-nil空一覧を返し、その他の
+open、query、Close失敗は原因を保持したerrorです。取得済みRootはintents、projectの逆順でCloseし、
+複数errorを結合します。error時の`IntentListing`はzero valueで、作成・修復・切替・書込みはしません。
+
+CLIは`intent list`とbare `intent`を受理します。human形式はspace名のheaderと、active marker、
+`dirName ?? slug`、statusを表示します。空一覧では開始方法を1行で案内し、非空でactiveがなければ
+末尾に切替案内を表示します。JSONはfield順を`active`、`space`、`intents`とし、各行を
+`uuid`、`slug`、`status`、`repos`、`dirName`、`active`の順で1行出力します。active不在と
+dirName不在はnull、reposは配列です。内部`scope`は公開しません。認識済み構文・query・Close・
+出力失敗はexit 1で、stderrへ書ける場合はJSON errorを1行出力します。stdoutの部分出力は
+残り得て、stderrも書けない場合はexit 1だけを保証します。未知subcommandは従来形式・exit 2です。
+
+### Intent一覧の意図的な差分
+
+比較対象はローカルAI-DLC `2.6.123`の`listIntents`・record相関・一覧表示・public引数処理を、
+[調査記録](ram/research/2026-09-01-intent-list-contracts.md)に記した範囲で静的確認したものです。
+最新upstream、全workflow、全配布物のruntime parityは未確認です。
+
+| 本家の挙動 | 採用した挙動 | 理由 | 利用者・互換性への影響 |
+| --- | --- | --- | --- |
+| registry行を実行時に寛容に扱い、構造不正が後段まで流れ得る | 有効な配列内の不正rowを1件でも検出したらfail-closed | 部分的・誤解を招く一覧を正常結果にしない | 不正registryは一覧全体がJSON error・exit 1。欠損・不正JSON・非配列のdisk fallbackとは区別 |
+| public引数処理は余剰引数やflagを寛容に扱う箇所がある | 既存space CLIと同じstrict flag、値なしJSON、project-dir分離形・等号形を使う | typoをcallback前に検出して既存Go CLIと統一 | 以前黙認された構文はerror。flagはcommand前・途中・後に置ける |
+| 通常のfilesystem操作でproject不在や任意symlinkをreader側の結果へ畳み込み得る | 既存projectを必須とし、projectとintentsを`os.Root`境界で開く | 接続失敗を隠さずproject外参照を制限 | project openはerror。外向き・絶対child linkはerror、初回project linkと内向き相対linkは許可 |
+| 一覧のJSON/出力は本家runtimeのserializerとwrite挙動に従う | Go標準JSON encoderと明示的short-write検出を使う | 標準libraryだけで出力失敗をexit 1へ伝える | JSONのHTML escape等は本家runtimeと異なり得る。閉pipeを含むwrite失敗は正常終了しない |
+
+承認と詳細は[intent一覧の実装計画](ram/decisions/2026-09-01-intent-list-plan.md)を参照してください。
+session binding、intent作成・切替、state本文、audit、registry修復は対象外です。各readerを別々に
+呼ぶため並行更新中の一貫したsnapshotは保証せず、`os.Root`もmountやdeviceを防ぐ完全sandboxではありません。
 
 ## Workspace読み取りの接続
 

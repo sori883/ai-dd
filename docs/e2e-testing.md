@@ -26,15 +26,17 @@ sandbox rootそのものへ実行物を直置きせず、必ずscenarioごとの
 | Space creation | 配布binaryから既存projectを解決し、spaceの生成物・org継承・重複拒否を確認 | 実施可能 |
 | Space listing | 配布binaryからshared cursorの一覧・human/JSON・bare aliasと無変更を確認 | 実施可能 |
 | Space switching | 配布binaryから既存spaceを選び、shared cursor保存・失敗境界・周辺dataの無変更を確認 | 実施可能 |
+| Intent listing | 配布binaryから現在spaceのregistry・record相関、human/JSON・bare aliasと無変更を確認 | 実施可能 |
 | 配布・install | binaryがCodex向け資産を対象projectへ安全に展開できること | 未実装 |
 | workspace lifecycle | project root、space、intent、stateを配布先から一連で扱えること | 未実装 |
 
 Go版CLIはhelp/version、`aidlc space create <name> [--project-dir <path>]`、
 `aidlc space list [--json] [--project-dir <path>]`とbare `aidlc space`、
-`aidlc space switch <name> [--project-dir <path>]`を公開している。
-help/versionの起動確認は引き続きsmokeとして扱い、space作成・一覧・切替は別の機能E2Eとして記録する。
-作成・一覧・切替CLIはmainでroot入力を組み立てて既存resolverへ接続するため、その経路も検証対象になる。
-`ReadSelection`、intent読み取りCLI、session binding、intent作成・切替は未接続・未実装なので、
+`aidlc space switch <name> [--project-dir <path>]`、`aidlc intent list [--json] [--project-dir <path>]`と
+bare `aidlc intent`を公開している。help/versionの起動確認は引き続きsmokeとして扱い、
+space作成・一覧・切替とintent一覧は別の機能E2Eとして記録する。各CLIはmainでroot入力を
+組み立てて既存resolverへ接続するため、その経路も検証対象になる。
+`ReadSelection`、session binding、intent作成・切替は公開CLIへ未接続・未実装なので、
 このE2Eを完全なworkspace lifecycleや完全なAI-DLC配布E2Eとは扱わない。
 
 ## 実行証跡
@@ -49,6 +51,7 @@ help/versionの起動確認は引き続きsmokeとして扱い、space作成・�
 - 実行した入力、期待した終了code、stdout、stderrの観測結果
 - space作成では生成path・file本文、継承元と既存cursor等の前後snapshot、重複拒否後の無変更
 - space一覧では出力の行・active・JSON形式と、成功・構文/接続/出力失敗時のfixture前後snapshot
+- intent一覧ではregistry/recordの相関・順序・active・human/JSON形式と、成功・構文/接続/query/出力失敗時のfixture前後snapshot
 - space切替ではcursorの内容・mode、親directory・tempの残存、周辺dataの無変更、errorでも保存済みかの確認
 - その時点で未実装のため確認できなかった範囲
 
@@ -87,6 +90,34 @@ CIのcross-build matrixで別に検証し、各OSでのnative実行と同一視�
 本家ローカル`2.6.123`との比較範囲・承認済み変更は[差分表](architecture.md#space一覧の意図的な差分)を参照する。
 readerが吸収するerrorをすべてCLI errorと見なさず、OS固有のerror本文ではなく形式・exit code・
 dataへの影響を検証する。snapshot比較は並行更新に対する一貫性や完全sandboxの保証ではない。
+
+## Intent一覧scenario
+
+未使用scenario内にbinaryと独立した既存project fixtureを用意する。以下は検証手順であり、
+実行済みの証拠はsource commitを固定した後の個別実施記録で示す。
+
+1. 明示`intent list`とbare `intent`のhuman/JSONを確認する。registry順、exact/legacy対応、
+   duplicate、registry-only、UTF-16順orphan、active marker、空一覧とactive不在の案内を固定する。
+   JSONはfield順、null、repos配列、scope非公開と末尾LFを確認する。
+2. registry欠損・不正JSON・非配列・読取errorではdisk recordをfallback表示し、有効な配列内の
+   不正rowは部分表示せずJSON error・exit 1となることを確認する。state本文は解釈しない。
+3. project-dirの分離形・等号形とflagの前・途中・後配置、root優先順位、未作成project、
+   値なしJSON、未知・重複・欠落・空flag値、余剰位置引数、未知intent subcommandを確認する。
+   構文errorではcwd・環境変数・FS callbackを呼ばない。
+4. 初回project link、project内相対intents link、外向き・絶対・broken linkを確認する。
+   child不在・broken linkはspace名を保持した空一覧、外向き・絶対linkは接続errorとして区別する。
+5. Unixでは読み口を閉じた実pipeをstdout、stderr、両方へ接続し、human/JSONがSIGPIPE終了でなく
+   exit 1となること、stderrへ書ける場合だけJSON errorが届くことを確認する。stdoutには部分出力が
+   残り得て、stderrも書けない場合はexit 1だけを保証する。help/version/未知commandは従来の
+   SIGPIPE挙動を維持する。
+6. 全caseでproject、外側link先、active-space、active-intent、intents.json、state、session、audit等の
+   path・内容・mode・mtime・symlink先を前後比較し、一覧が作成・修復・切替・書込みをしないことを
+   確認する。
+
+構文とquery境界は[Intent一覧CLI](development.md#intent一覧cli)、本家ローカル`2.6.123`との
+比較範囲・承認済み変更は[Intent一覧の差分表](architecture.md#intent一覧の意図的な差分)を参照する。
+このscenarioの成功からintent作成・切替、session binding、並行更新中の一貫したsnapshot、
+完全なworkspace lifecycleや完全sandboxを主張しない。
 
 ## Space切替scenario
 

@@ -22,18 +22,19 @@ func TestRunSpaceCreate(t *testing.T) {
 		[]string{"space", "create", "Team Alpha"},
 		&stdout,
 		&stderr,
-		buildinfo.Info{},
-		func(rawName, explicitDir string) (string, error) {
-			calls++
-			if rawName != "Team Alpha" || explicitDir != "" {
-				t.Errorf("callback(%q, %q), want (Team Alpha, empty)", rawName, explicitDir)
-			}
-			return "team-alpha", nil
-		},
-		nil,
-		nil,
-		nil,
-	)
+		buildinfo.Info{}, runDependencies(
+
+			func(rawName, explicitDir string) (string, error) {
+				calls++
+				if rawName != "Team Alpha" || explicitDir != "" {
+					t.Errorf("callback(%q, %q), want (Team Alpha, empty)", rawName, explicitDir)
+				}
+				return "team-alpha", nil
+			},
+			nil,
+			nil,
+			nil))
+
 	if calls != 1 || code != 0 {
 		t.Errorf("callback calls = %d, exit code = %d; want 1, 0", calls, code)
 	}
@@ -68,23 +69,24 @@ func TestRunSpaceCreateProjectDirPositions(t *testing.T) {
 					args,
 					&stdout,
 					&stderr,
-					buildinfo.Info{},
-					func(rawName, explicitDir string) (string, error) {
-						calls++
-						if rawName != "Team Alpha" || explicitDir != projectDir {
-							t.Errorf(
-								"callback(%q, %q), want (Team Alpha, %q)",
-								rawName,
-								explicitDir,
-								projectDir,
-							)
-						}
-						return "team-alpha", nil
-					},
-					nil,
-					nil,
-					nil,
-				)
+					buildinfo.Info{}, runDependencies(
+
+						func(rawName, explicitDir string) (string, error) {
+							calls++
+							if rawName != "Team Alpha" || explicitDir != projectDir {
+								t.Errorf(
+									"callback(%q, %q), want (Team Alpha, %q)",
+									rawName,
+									explicitDir,
+									projectDir,
+								)
+							}
+							return "team-alpha", nil
+						},
+						nil,
+						nil,
+						nil))
+
 				if code != 0 || calls != 1 || stdout.String() != "Space created: team-alpha\n" || stderr.Len() != 0 {
 					t.Errorf(
 						"exit=%d calls=%d stdout=%q stderr=%q",
@@ -112,15 +114,16 @@ func TestRunSpaceCreateFailureJSON(t *testing.T) {
 				[]string{"space", "create", "team"},
 				&stdout,
 				&stderr,
-				buildinfo.Info{},
-				func(string, string) (string, error) {
-					calls++
-					return "ignored-on-error", errors.New(message)
-				},
-				nil,
-				nil,
-				nil,
-			)
+				buildinfo.Info{}, runDependencies(
+
+					func(string, string) (string, error) {
+						calls++
+						return "ignored-on-error", errors.New(message)
+					},
+					nil,
+					nil,
+					nil))
+
 			if calls != 1 || code != 1 || stdout.Len() != 0 {
 				t.Errorf(
 					"calls=%d exit=%d stdout=%q; want 1, 1, empty",
@@ -145,15 +148,16 @@ func TestRunSpaceCreateStdoutFailure(t *testing.T) {
 		[]string{"space", "create", "team"},
 		errorWriter{err: errors.New("broken pipe")},
 		&stderr,
-		buildinfo.Info{},
-		func(string, string) (string, error) {
-			calls++
-			return "team", nil
-		},
-		nil,
-		nil,
-		nil,
-	)
+		buildinfo.Info{}, runDependencies(
+
+			func(string, string) (string, error) {
+				calls++
+				return "team", nil
+			},
+			nil,
+			nil,
+			nil))
+
 	if code != 1 || calls != 1 {
 		t.Errorf("exit=%d calls=%d, want 1 each", code, calls)
 	}
@@ -201,15 +205,16 @@ func TestRunSpaceCreateInvalidArguments(t *testing.T) {
 				tt.args,
 				&stdout,
 				&stderr,
-				buildinfo.Info{},
-				func(string, string) (string, error) {
-					calls++
-					return "must-not-create", nil
-				},
-				nil,
-				nil,
-				nil,
-			)
+				buildinfo.Info{}, runDependencies(
+
+					func(string, string) (string, error) {
+						calls++
+						return "must-not-create", nil
+					},
+					nil,
+					nil,
+					nil))
+
 			if code != 1 || calls != 0 || stdout.Len() != 0 {
 				t.Errorf(
 					"exit=%d calls=%d stdout=%q, want 1, 0, empty",
@@ -247,18 +252,19 @@ func TestRunSpaceCreateDashProjectDir(t *testing.T) {
 				args,
 				&stdout,
 				&stderr,
-				buildinfo.Info{},
-				func(_ string, explicitDir string) (string, error) {
-					calls++
-					if explicitDir != tt.wantDir {
-						t.Errorf("project dir = %q, want %q", explicitDir, tt.wantDir)
-					}
-					return "team", nil
-				},
-				nil,
-				nil,
-				nil,
-			)
+				buildinfo.Info{}, runDependencies(
+
+					func(_ string, explicitDir string) (string, error) {
+						calls++
+						if explicitDir != tt.wantDir {
+							t.Errorf("project dir = %q, want %q", explicitDir, tt.wantDir)
+						}
+						return "team", nil
+					},
+					nil,
+					nil,
+					nil))
+
 			if tt.wantFailure {
 				if code != 1 || calls != 0 || stdout.Len() != 0 {
 					t.Errorf(
@@ -289,15 +295,16 @@ func TestRunHelpIncludesSpaceCreate(t *testing.T) {
 		[]string{"help"},
 		&stdout,
 		&stderr,
-		buildinfo.Info{},
-		func(string, string) (string, error) {
-			t.Error("help called create callback")
-			return "", nil
-		},
-		nil,
-		nil,
-		nil,
-	)
+		buildinfo.Info{}, runDependencies(
+
+			func(string, string) (string, error) {
+				t.Error("help called create callback")
+				return "", nil
+			},
+			nil,
+			nil,
+			nil))
+
 	if code != 0 || !strings.Contains(stdout.String(), "aidlc space create <name> [--project-dir <path>]") {
 		t.Errorf("exit=%d stdout=%q, want help with creation syntax", code, stdout.String())
 	}
@@ -311,12 +318,13 @@ func TestRunSpaceCreateShortStdoutWrite(t *testing.T) {
 		[]string{"space", "create", "team"},
 		shortOutputWriter{},
 		&stderr,
-		buildinfo.Info{},
-		func(string, string) (string, error) { return "team", nil },
-		nil,
-		nil,
-		nil,
-	)
+		buildinfo.Info{}, runDependencies(
+
+			func(string, string) (string, error) { return "team", nil },
+			nil,
+			nil,
+			nil))
+
 	if code != 1 {
 		t.Errorf("short stdout write exit = %d, want 1", code)
 	}
@@ -333,12 +341,13 @@ func TestRunSpaceCreateStderrFailure(t *testing.T) {
 		[]string{"space", "create", "team"},
 		&stdout,
 		errorWriter{err: errors.New("stderr unavailable")},
-		buildinfo.Info{},
-		func(string, string) (string, error) { return "", errors.New("creation failed") },
-		nil,
-		nil,
-		nil,
-	)
+		buildinfo.Info{}, runDependencies(
+
+			func(string, string) (string, error) { return "", errors.New("creation failed") },
+			nil,
+			nil,
+			nil))
+
 	if code != 1 || stdout.Len() != 0 {
 		t.Errorf("exit=%d stdout=%q, want 1 and empty", code, stdout.String())
 	}
@@ -404,15 +413,16 @@ func TestRunSpaceOutputPreparation(t *testing.T) {
 				tt.args,
 				outputEventWriter{stream: "stdout", events: &events},
 				outputEventWriter{stream: "stderr", events: &events},
-				buildinfo.Info{},
-				func(string, string) (string, error) {
-					events = append(events, "create")
-					return "team", tt.createErr
-				},
-				nil,
-				nil,
-				func() { events = append(events, "prepare") },
-			)
+				buildinfo.Info{}, runDependencies(
+
+					func(string, string) (string, error) {
+						events = append(events, "create")
+						return "team", tt.createErr
+					},
+					nil,
+					nil,
+					func() { events = append(events, "prepare") }))
+
 			if code != tt.wantCode {
 				t.Errorf("exit = %d, want %d", code, tt.wantCode)
 			}
