@@ -1,7 +1,7 @@
 # 読み取り専用ワークスペース分析の実装計画
 
 - 日付: 2026-09-02
-- 状態: Accepted（実装前）
+- 状態: Accepted（実装・独立review完了、PR待ち）
 - GitHub Issue: [#33](https://github.com/sori883/ai-dd/issues/33)
 - base: `33e78a54b2a92f89ce6802178d44431974f23032`
 - 作業branch: `codex/workspace-detection`
@@ -111,3 +111,18 @@ native実行証拠とは区別する。
 
 固定base/headの独立reviewでP0/P1、受入条件違反、blockingなtest不足がなく、最終検証とGitHub checksが
 成功してからIssue #33へ紐づく日本語PRを作る。自動マージしない。
+
+## 実装・検証結果
+
+単独writerが7個のobservable sliceでRED→GREENを行い、内部`Detect` API、root / nested signal、
+language・framework・build system、weakly typed `package.json`、Git submodule検出を実装した。当初7 sliceの
+RED / GREEN raw logは保存されていないため、過去の遷移を独立再生できる証拠とは扱わない。
+
+初回固定head `a8b0c86`の独立reviewで、有効JSONのoverflow numberを文書ごと拒否する本家互換性のP1を
+指摘した。overflow回帰testのREDを観測後、`Decoder.UseNumber`とJavaScript相当のtruthinessへ修正し、
+commit `9d428b1`でGREENにした。修正後の固定diffを再reviewし、元P1の解消、追加findingなしを確認した。
+
+親が対象unit / integration、全package shuffle、通常・integrationのrace、vet両構成、tidy差分、gofmt、
+gopls、diff checkをfresh実行し、すべてPASSした。darwin・linux・windowsのamd64/arm64向けworkspace
+integration test binaryも最終source commitから6構成でcross compileした。各OSでのnative実行証拠ではない。
+詳細は[実装検証記録](../../e2e-runs/2026-09-02-workspace-detection.md)に残す。
