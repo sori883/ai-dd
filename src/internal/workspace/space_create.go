@@ -168,6 +168,10 @@ func normalizeSpaceName(raw string) (string, error) {
 
 // spaceSlug normalizes names without applying command-specific reserved names.
 func spaceSlug(raw string) string {
+	return workspaceSlug(raw, 48)
+}
+
+func workspaceSlug(raw string, maxLength int) string {
 	// JavaScript lowercasing expands U+0130; Go's simple lowercase mapping does not.
 	raw = strings.ReplaceAll(raw, "İ", "i\u0307")
 	var slug strings.Builder
@@ -186,8 +190,8 @@ func spaceSlug(raw string) string {
 		hasSeparator = false
 	}
 	name := slug.String()
-	if len(name) > 48 {
-		name = name[:48]
+	if len(name) > maxLength {
+		name = name[:maxLength]
 	}
 	name = strings.TrimRight(name, "-")
 	if name == "" {

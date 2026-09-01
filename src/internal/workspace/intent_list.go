@@ -93,51 +93,54 @@ func ListIntents(intentsFS fs.FS, activeOverride *string) ([]Intent, error) {
 }
 
 func decodeIntentRegistry(data []byte) ([]registryIntent, error) {
-	trimmed := bytes.TrimSpace(data)
-	if len(trimmed) == 0 || trimmed[0] != '[' {
-		return []registryIntent{}, nil
-	}
-
-	var rows []json.RawMessage
-	if err := json.Unmarshal(data, &rows); err != nil {
-		return []registryIntent{}, nil
+	rows, err := parseIntentRegistryDocument(data, false)
+	if err != nil {
+		return nil, err
 	}
 	registry := make([]registryIntent, 0, len(rows))
 	for index, row := range rows {
-		var fields map[string]json.RawMessage
-		if err := json.Unmarshal(row, &fields); err != nil || fields == nil {
-			return nil, invalidRegistryField(index, "row")
+		entry, err := decodeRegistryIntentRow(row, index)
+		if err != nil {
+			return nil, err
 		}
-
-		uuid, ok := requiredRegistryString(fields, "uuid")
-		if !ok {
-			return nil, invalidRegistryField(index, "uuid")
-		}
-		slug, ok := requiredRegistryString(fields, "slug")
-		if !ok {
-			return nil, invalidRegistryField(index, "slug")
-		}
-		status, ok := requiredRegistryString(fields, "status")
-		if !ok {
-			return nil, invalidRegistryField(index, "status")
-		}
-		dirName, ok := optionalRegistryString(fields, "dirName")
-		if !ok {
-			return nil, invalidRegistryField(index, "dirName")
-		}
-		scope, ok := optionalRegistryString(fields, "scope")
-		if !ok {
-			return nil, invalidRegistryField(index, "scope")
-		}
-		repos, ok := optionalRegistryStrings(fields, "repos")
-		if !ok {
-			return nil, invalidRegistryField(index, "repos")
-		}
-		registry = append(registry, registryIntent{
-			UUID: uuid, Slug: slug, Status: status, Scope: scope, Repos: repos, DirName: dirName,
-		})
+		registry = append(registry, entry)
 	}
 	return registry, nil
+}
+
+func decodeRegistryIntentRow(row json.RawMessage, index int) (registryIntent, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(row, &fields); err != nil || fields == nil {
+		return registryIntent{}, invalidRegistryField(index, "row")
+	}
+
+	uuid, ok := requiredRegistryString(fields, "uuid")
+	if !ok {
+		return registryIntent{}, invalidRegistryField(index, "uuid")
+	}
+	slug, ok := requiredRegistryString(fields, "slug")
+	if !ok {
+		return registryIntent{}, invalidRegistryField(index, "slug")
+	}
+	status, ok := requiredRegistryString(fields, "status")
+	if !ok {
+		return registryIntent{}, invalidRegistryField(index, "status")
+	}
+	dirName, ok := optionalRegistryString(fields, "dirName")
+	if !ok {
+		return registryIntent{}, invalidRegistryField(index, "dirName")
+	}
+	scope, ok := optionalRegistryString(fields, "scope")
+	if !ok {
+		return registryIntent{}, invalidRegistryField(index, "scope")
+	}
+	repos, ok := optionalRegistryStrings(fields, "repos")
+	if !ok {
+		return registryIntent{}, invalidRegistryField(index, "repos")
+	}
+	return registryIntent{
+		UUID: uuid, Slug: slug, Status: status, Scope: scope, Repos: repos, DirName: dirName,
+	}, nil
 }
 
 func requiredRegistryString(fields map[string]json.RawMessage, name string) (string, bool) {
