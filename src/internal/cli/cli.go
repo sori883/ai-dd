@@ -19,6 +19,8 @@ Usage:
   aidlc space list [--json] [--project-dir <path>]
   aidlc space switch <name> [--project-dir <path>]
   aidlc space [--json] [--project-dir <path>]
+  aidlc intent list [--json] [--project-dir <path>]
+  aidlc intent [--json] [--project-dir <path>]
 
 Commands:
   help       Show help
@@ -26,29 +28,35 @@ Commands:
   space create  Create a new space
   space list    List spaces (space is an alias)
   space switch  Select an existing space
+  intent list   List intents (intent is an alias)
 
 Flags:
   --help     Show help
   --version  Show version information
-  --project-dir <path>  Project directory for space commands
-  --json     Print space lists as JSON
+  --project-dir <path>  Project directory for workspace commands
+  --json     Print space or intent lists as JSON
 `
 
-// Run executes the CLI with injected process inputs and outputs and returns an exit code.
-// createSpace is called once for a syntactically valid space create command only.
-// listSpaces is called once for a syntactically valid space list or bare space command only.
-// switchSpace is called once for a syntactically valid space switch command only.
-// If non-nil, prepareSpaceOutput runs once for recognized create, switch, list, or bare space,
-// before its callback or any output, including syntax errors.
+// Dependencies groups the workspace operations used by Run. Nil callbacks are
+// valid for commands that do not invoke the corresponding operation.
+type Dependencies struct {
+	CreateSpace   func(rawName, explicitDir string) (string, error)
+	ListSpaces    func(explicitDir string) ([]workspace.Space, error)
+	SwitchSpace   func(rawName, explicitDir string) (string, error)
+	ListIntents   func(explicitDir string) (workspace.IntentListing, error)
+	PrepareOutput func()
+}
+
+// Run executes the CLI with injected process inputs, outputs, and workspace operations.
+// Each callback runs at most once and only for its syntactically valid command.
+// PrepareOutput runs once before callback or output for any recognized workspace command,
+// including commands with syntax errors.
 func Run(
 	args []string,
 	stdout io.Writer,
 	stderr io.Writer,
 	info buildinfo.Info,
-	createSpace func(rawName, explicitDir string) (string, error),
-	listSpaces func(explicitDir string) ([]workspace.Space, error),
-	switchSpace func(rawName, explicitDir string) (string, error),
-	prepareSpaceOutput func(),
+	dependencies Dependencies,
 ) int {
 	if len(args) == 0 {
 		return writeStdout(stdout, stderr, helpText)
@@ -66,60 +74,81 @@ func Run(
 			)
 		}
 	}
-	command, explicitDir, _, err := spaceArguments(args, false)
+	command, explicitDir, _, err := workspaceArguments(args, false)
 	hasSpaceSubcommand := len(command) >= 2 && command[0] == "space"
 	isSpaceCreate := hasSpaceSubcommand && command[1] == "create"
 	if isSpaceCreate {
-		if prepareSpaceOutput != nil {
-			prepareSpaceOutput()
+		if dependencies.PrepareOutput != nil {
+			dependencies.PrepareOutput()
 		}
 		if err != nil {
-			return writeSpaceError(stderr, err)
+			return writeCommandError(stderr, err)
 		}
 		return runSpaceCreate(
 			command[2:],
 			explicitDir,
 			stdout,
 			stderr,
-			createSpace,
+			dependencies.CreateSpace,
 		)
 	}
 	isSpaceSwitch := hasSpaceSubcommand && command[1] == "switch"
 	if isSpaceSwitch {
-		if prepareSpaceOutput != nil {
-			prepareSpaceOutput()
+		if dependencies.PrepareOutput != nil {
+			dependencies.PrepareOutput()
 		}
 		if err != nil {
-			return writeSpaceError(stderr, err)
+			return writeCommandError(stderr, err)
 		}
 		return runSpaceSwitch(
 			command[2:],
 			explicitDir,
 			stdout,
 			stderr,
-			switchSpace,
+			dependencies.SwitchSpace,
 		)
 	}
 	isSpaceList := hasSpaceSubcommand && command[1] == "list"
 	isBareSpace := len(command) == 1 && command[0] == "space"
 	if isSpaceList || isBareSpace {
-		if prepareSpaceOutput != nil {
-			prepareSpaceOutput()
+		if dependencies.PrepareOutput != nil {
+			dependencies.PrepareOutput()
 		}
 		// --json is list-only; reparse after classification to preserve create's diagnostics.
-		_, explicitDir, jsonOutput, err := spaceArguments(args, true)
+		_, explicitDir, jsonOutput, err := workspaceArguments(args, true)
 		if err != nil {
-			return writeSpaceError(stderr, err)
+			return writeCommandError(stderr, err)
 		}
 		if len(command) > 2 {
-			return writeSpaceError(stderr, errors.New("space list does not accept positional arguments"))
+			return writeCommandError(stderr, errors.New("space list does not accept positional arguments"))
 		}
 		return runSpaceList(
 			explicitDir,
 			jsonOutput,
 			stdout,
 			stderr,
-			listSpaces,
+			dependencies.ListSpaces,
+		)
+	}
+	isIntentList := len(command) >= 2 && command[0] == "intent" && command[1] == "list"
+	isBareIntent := len(command) == 1 && command[0] == "intent"
+	if isIntentList || isBareIntent {
+		if dependencies.PrepareOutput != nil {
+			dependencies.PrepareOutput()
+		}
+		_, explicitDir, jsonOutput, err := workspaceArguments(args, true)
+		if err != nil {
+			return writeCommandError(stderr, err)
+		}
+		if len(command) > 2 {
+			return writeCommandError(stderr, errors.New("intent list does not accept positional arguments"))
+		}
+		return runIntentList(
+			explicitDir,
+			jsonOutput,
+			stdout,
+			stderr,
+			dependencies.ListIntents,
 		)
 	}
 

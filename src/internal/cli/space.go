@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-func spaceArguments(
+func workspaceArguments(
 	args []string,
 	allowJSON bool,
 ) (command []string, explicitDir string, jsonOutput bool, err error) {
@@ -65,15 +65,15 @@ func runSpaceCreate(
 	createSpace func(string, string) (string, error),
 ) int {
 	if len(names) != 1 {
-		return writeSpaceError(stderr, errors.New("space create requires exactly one name"))
+		return writeCommandError(stderr, errors.New("space create requires exactly one name"))
 	}
 	switch names[0] {
 	case "", "help", "-h":
-		return writeSpaceError(stderr, fmt.Errorf("invalid space name %q", names[0]))
+		return writeCommandError(stderr, fmt.Errorf("invalid space name %q", names[0]))
 	}
 	name, err := createSpace(names[0], explicitDir)
 	if err != nil {
-		return writeSpaceError(stderr, err)
+		return writeCommandError(stderr, err)
 	}
 	output := fmt.Sprintf("Space created: %s\n", name)
 	n, err := io.WriteString(stdout, output)
@@ -81,12 +81,12 @@ func runSpaceCreate(
 		err = io.ErrShortWrite
 	}
 	if err != nil {
-		return writeSpaceError(stderr, fmt.Errorf("write stdout: %w", err))
+		return writeCommandError(stderr, fmt.Errorf("write stdout: %w", err))
 	}
 	return 0
 }
 
-func writeSpaceError(stderr io.Writer, err error) int {
+func writeCommandError(stderr io.Writer, err error) int {
 	_ = json.NewEncoder(stderr).Encode(struct {
 		Error string `json:"error"`
 	}{Error: err.Error()})

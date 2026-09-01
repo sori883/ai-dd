@@ -56,7 +56,7 @@ directory/fileへのsymlink、broken link、root外symlinkを検証します。
 intentの統合テストは、`t.TempDir()`を`os.OpenRoot`で開いた`Root.FS()`を使用します。
 cursorとmarkerの双方で、内側の相対linkの受入れ、外側・絶対・壊れたlinkによるfallbackや
 候補除外を検証します。reader単体テストでは`Root`のopen/closeをfixtureが管理し、
-接続APIの`ReadSpaces`と`ReadSelection`では製品内部が管理します。
+接続APIの`ReadSpaces`、`ReadIntents`、`ReadSelection`では製品内部が管理します。
 `fs.FS`自体、`os.DirFS`、`fs.Sub`にはsymlink封じ込め保証がない点に注意してください。
 
 readerと接続APIの統合テストで、読取前後のpath、内容、mode、更新時刻、symlink先を比較し、
@@ -68,6 +68,13 @@ Windowsでsymlink作成権限が不足する場合は、そのケースだけ理
 ```sh
 go test -count=1 -run '^(TestReadSelection|TestLocalizeSpace)' ./src/internal/workspace
 go test -tags=integration -count=1 -run '^(TestReadSelection|TestLocalizeSpace)' ./src/internal/workspace
+```
+
+registryとrecord directoryの相関、および公開一覧接続だけを確認する場合は次を実行します。
+
+```sh
+go test -count=1 -run '^(TestListIntents|TestReadIntents)' ./src/internal/workspace
+go test -tags=integration -count=1 -run '^(TestListIntents|TestReadIntents)' ./src/internal/workspace
 ```
 
 接続の単体テストではroot候補の優先順位・絶対path、spaceの正規化前検証とLocalizeのOS差を
@@ -89,9 +96,10 @@ fallbackします。さらに、同じproject内でもintents外のcursor/marker
 path操作に独自の検証とFS境界を用意する必要があります。
 
 既存CIのquality jobでも統合テストを実行します。ただしCIの実行OSはUbuntuであり、
-6 targetのcross buildを各OSの実行証拠とは扱いません。space一覧は`ReadSpaces`経由で公開CLIに
-接続していますが、intent readerと`ReadSelection`は未接続です。help/version smokeを一覧の
-検証とせず、space一覧E2Eもintent・selectionや完全なworkspace lifecycleの検証とは区別します。
+6 targetのcross buildを各OSの実行証拠とは扱いません。space一覧は`ReadSpaces`、intent一覧は
+`ReadIntents`経由で公開CLIに接続していますが、`ReadSelection`、intent作成・切替、sessionは
+未接続・未実装です。help/version smokeを一覧の検証とせず、space/intent一覧E2Eも完全な
+workspace lifecycleの検証とは区別します。
 
 ### Space一覧CLI
 
@@ -146,6 +154,62 @@ human/JSONがSIGPIPE終了でなくexit 1となること、既存help/version/�
 
 詳細と本家ローカル`2.6.123`との差分は[一覧CLIの契約](architecture.md#space一覧cliとread-only接続)、
 [承認済み差分表](architecture.md#space一覧の意図的な差分)を参照してください。
+
+### Intent一覧CLI
+
+現在spaceのintent registryとrecord directoryをread-onlyで相関して表示します。bare `intent`は
+`intent list`のaliasです。intentの作成・切替やstate本文の読取りは行いません。
+
+```sh
+go run ./src/cmd/aidlc intent list --project-dir /path/to/existing-project
+go run ./src/cmd/aidlc intent --json --project-dir=/path/to/existing-project
+```
+
+rootは明示`--project-dir`、`AIDLC_PROJECT_DIR`、`CLAUDE_PROJECT_DIR`、cwdの順です。
+既存projectを必須とし、低優先rootへfallbackしません。現在spaceはshared `active-space`から決め、
+space名を1 componentとして検証してから`os.Root`でその`intents/`を開きます。intents rootが
+未作成ならspace名を保持した空一覧です。registryの欠損、不正JSON、非配列、読取errorは
+disk上のrecord directoryだけを表示しますが、有効な配列内に構造不正rowがあれば一覧全体を
+errorにします。重複・registry-only・orphanを保持し、registry順の後にorphanをUTF-16順で並べます。
+
+human形式はactiveを`*`、inactiveを空白で示し、`dirName`がなければslugを表示します。
+空一覧は開始方法を案内し、非空でactiveがなければ切替方法を案内します。JSONは1行と末尾LFで、
+top-levelに`active`・`space`・`intents`、各行に`uuid`・`slug`・`status`・`repos`・`dirName`・
+`active`をこの順で出力します。active/dirName不在はnull、reposは常に配列で、内部scopeは出力しません。
+
+`--json`は値なしで1回だけ指定できます。`--json intent list`、`intent --json list`、
+`intent list --json`は同じ操作です。`--project-dir path`と`--project-dir=path`もcommandの
+前・途中・後に置けます。重複・欠落・空値、未知flag、list後の余剰位置引数はcallback前に拒否し、
+cwd・環境変数・FSを読みません。分離形の次tokenが`-`始まりなら値欠落です。`-dir`という実pathは
+`--project-dir=-dir`または`--project-dir ./-dir`で指定します。専用subcommand helpはありません。
+
+bare aliasはflagを除いた位置引数が`intent`だけの場合です。
+
+| 入力（`aidlc`省略） | 結果 |
+| --- | --- |
+| `intent --json false` | `intent false`が未知subcommandとなり、従来形式・exit 2 |
+| `intent list --json false` | 認識済みlistの余剰位置引数としてJSON error・exit 1 |
+| `intent --json=false` | bare一覧の未知flagとしてJSON error・exit 1 |
+| `intent create` / `intent switch` / `intent help` | 未実装subcommandとして従来形式・exit 2 |
+
+成功時はstdoutだけへ一覧を出してexit 0です。認識済み一覧の構文・接続・query・Close・出力失敗は
+exit 1で、stderrへ書ける場合はJSON errorを1行出力します。stdout失敗では部分出力が残り得ます。
+stderrも書けない場合はexit 1だけを保証します。Unixの閉pipeでも同じで、help/version/未知commandの
+SIGPIPE挙動は変更しません。
+
+```sh
+go test -count=1 -run '^(TestListIntents|TestReadIntents)' ./src/internal/workspace
+go test -tags=integration -count=1 -run '^TestReadIntents' ./src/internal/workspace
+go test -count=1 -run '^(TestRunIntentList|TestRunHelpIncludesIntentList)' ./src/internal/cli
+go test -count=1 -run '^(TestIntentLister|TestMainIntentList|TestMainRootCommandsKeepSIGPIPE)' ./src/cmd/aidlc
+```
+
+integrationでは初回project link、内向き相対child link、外向き・絶対・broken child linkと
+外側fixtureを含む前後snapshotを確認します。Unixの通常testでは実mainへ閉じたstdout/stderr pipeを
+接続します。非Unixでは実pipe回帰は対象外で、Windowsのsymlink権限不足では該当caseだけ理由付きskipです。
+本家ローカル`2.6.123`との比較範囲と承認済み変更は
+[Intent一覧の契約](architecture.md#intent一覧cliとread-only接続)・
+[差分表](architecture.md#intent一覧の意図的な差分)を参照してください。
 
 ### Space作成CLI
 
@@ -283,7 +347,7 @@ CIは`CGO_ENABLED=0`で次の6ターゲットのCLIをbuildします。
 - `windows/arm64`
 
 ローカルでは次のloopで、CLIとintegrationタグ付きworkspaceテストバイナリを確認できます。
-mainはspace作成・一覧・切替のためworkspaceをimportしますが、CLI buildはworkspaceの`_test.go`や
+mainはspace作成・一覧・切替とintent一覧のためworkspaceをimportしますが、CLI buildはworkspaceの`_test.go`や
 integrationタグ付きテストをcompileしないため、テストバイナリも別に確認します。
 いずれもコンパイルの確認であり、各OSでのテスト実行とは区別します。
 

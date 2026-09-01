@@ -236,6 +236,114 @@ func TestMainSpaceListClosedPipes(t *testing.T) {
 	}
 }
 
+func TestMainIntentList(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	intentsRoot := filepath.Join(project, "aidlc", "spaces", "default", "intents")
+	if err := os.MkdirAll(filepath.Join(intentsRoot, "240901-build-auth"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for path, content := range map[string]string{
+		filepath.Join(intentsRoot, "intents.json"):                        `[]`,
+		filepath.Join(intentsRoot, "active-intent"):                       "240901-build-auth\n",
+		filepath.Join(intentsRoot, "240901-build-auth", "aidlc-state.md"): "state",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := mainTreeSnapshot(t, project)
+	cmd := mainProcess(t, "intent", "list", "--project-dir", project)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	state := runMainProcess(t, cmd)
+	if got := state.ExitCode(); got != 0 {
+		t.Errorf("main exit=%d (%s), want 0; stderr=%q", got, state, stderr.String())
+	}
+	const want = "Intents in space \"default\":\n* 240901-build-auth  [unknown]\n"
+	if got := stdout.String(); got != want {
+		t.Errorf("stdout=%q, want %q", got, want)
+	}
+	if got := stderr.String(); got != "" {
+		t.Errorf("stderr=%q, want empty", got)
+	}
+	if after := mainTreeSnapshot(t, project); !maps.Equal(before, after) {
+		t.Error("intent list changed the project")
+	}
+}
+
+func TestMainIntentListClosedPipes(t *testing.T) {
+	t.Parallel()
+
+	commands := []struct {
+		name string
+		args []string
+	}{
+		{name: "bare human", args: []string{"intent"}},
+		{name: "list JSON", args: []string{"intent", "list", "--json"}},
+	}
+	failures := []struct {
+		name        string
+		closeStdout bool
+		closeStderr bool
+		invalidFlag bool
+		missingRoot bool
+	}{
+		{name: "stdout", closeStdout: true},
+		{name: "stderr syntax", closeStderr: true, invalidFlag: true},
+		{name: "stderr root error", closeStderr: true, missingRoot: true},
+		{name: "both", closeStdout: true, closeStderr: true},
+	}
+	for _, command := range commands {
+		for _, failure := range failures {
+			t.Run(command.name+"/"+failure.name, func(t *testing.T) {
+				t.Parallel()
+
+				project := t.TempDir()
+				if err := os.WriteFile(filepath.Join(project, "keep.txt"), []byte("unchanged\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				before := mainTreeSnapshot(t, project)
+				projectDir := project
+				if failure.missingRoot {
+					projectDir = filepath.Join(project, "missing")
+				}
+				args := append(slices.Clone(command.args), "--project-dir", projectDir)
+				if failure.invalidFlag {
+					args = append(args, "--json=false")
+				}
+				cmd := mainProcess(t, args...)
+				var stdout, stderr bytes.Buffer
+				cmd.Stdout, cmd.Stderr = &stdout, &stderr
+				if failure.closeStdout {
+					cmd.Stdout = closedPipeWriter(t)
+				}
+				if failure.closeStderr {
+					cmd.Stderr = closedPipeWriter(t)
+				}
+				state := runMainProcess(t, cmd)
+				if got := state.ExitCode(); got != 1 {
+					t.Errorf("main exit=%d (%s), want 1", got, state)
+				}
+				if stdout.Len() != 0 {
+					t.Errorf("stdout=%q, want empty for unread pipe or early error", stdout.String())
+				}
+				if failure.closeStderr {
+					if stderr.Len() != 0 {
+						t.Errorf("closed stderr=%q, want empty", stderr.String())
+					}
+				} else if message := mainErrorJSON(t, stderr.String()); !strings.Contains(message, "write stdout:") {
+					t.Errorf("JSON error=%q, want stdout failure", message)
+				}
+				if after := mainTreeSnapshot(t, project); !maps.Equal(before, after) {
+					t.Error("failed intent list changed the project")
+				}
+			})
+		}
+	}
+}
+
 func TestMainSpaceCreateClosedPipes(t *testing.T) {
 	t.Parallel()
 
@@ -324,6 +432,8 @@ func TestMainRootCommandsKeepSIGPIPE(t *testing.T) {
 		{name: "unknown", args: []string{"unknown"}, closeStderr: true},
 		{name: "unknown space subcommand", args: []string{"space", "unknown"}, closeStderr: true},
 		{name: "bare JSON separate value", args: []string{"space", "--json", "false"}, closeStderr: true},
+		{name: "unknown intent subcommand", args: []string{"intent", "create"}, closeStderr: true},
+		{name: "intent bare JSON separate value", args: []string{"intent", "--json", "false"}, closeStderr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

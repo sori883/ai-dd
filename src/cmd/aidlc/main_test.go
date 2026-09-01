@@ -11,6 +11,20 @@ import (
 	"github.com/sori883/ai-dd/src/internal/workspace"
 )
 
+func mainDependencies(
+	createSpace func(string, string) (string, error),
+	listSpaces func(string) ([]workspace.Space, error),
+	switchSpace func(string, string) (string, error),
+	prepareOutput func(),
+) cli.Dependencies {
+	return cli.Dependencies{
+		CreateSpace:   createSpace,
+		ListSpaces:    listSpaces,
+		SwitchSpace:   switchSpace,
+		PrepareOutput: prepareOutput,
+	}
+}
+
 func TestSpaceCreatorRootInput(t *testing.T) {
 	t.Parallel()
 
@@ -135,12 +149,13 @@ func TestSpaceCreatorLazyCLIInputs(t *testing.T) {
 				tt.args,
 				&stdout,
 				&stderr,
-				buildinfo.Info{},
-				callback,
-				nil,
-				nil,
-				nil,
-			)
+				buildinfo.Info{}, mainDependencies(
+
+					callback,
+					nil,
+					nil,
+					nil))
+
 			if code != tt.code {
 				t.Errorf(
 					"exit=%d, want %d; stdout=%q stderr=%q",
@@ -261,6 +276,77 @@ func TestSpaceListerReadFailure(t *testing.T) {
 	}
 }
 
+func TestIntentListerRootInput(t *testing.T) {
+	t.Parallel()
+
+	getwdCalls := 0
+	envKeys := []string{}
+	readCalls := 0
+	wantListing := workspace.IntentListing{
+		ProjectRoot: "project", SpaceName: "beta", Intents: []workspace.Intent{},
+	}
+	callback := intentLister(
+		func() (string, error) {
+			getwdCalls++
+			return "working directory", nil
+		},
+		func(key string) string {
+			envKeys = append(envKeys, key)
+			return map[string]string{
+				"AIDLC_PROJECT_DIR":  "aidlc directory",
+				"CLAUDE_PROJECT_DIR": "claude directory",
+			}[key]
+		},
+		func(input workspace.RootInput) (workspace.IntentListing, error) {
+			readCalls++
+			wantInput := workspace.RootInput{
+				ExplicitDir:      "explicit directory",
+				AIDLCProjectDir:  "aidlc directory",
+				ClaudeProjectDir: "claude directory",
+				WorkingDir:       "working directory",
+			}
+			if input != wantInput {
+				t.Errorf("RootInput=%+v, want %+v", input, wantInput)
+			}
+			return wantListing, nil
+		},
+	)
+	if getwdCalls != 0 || len(envKeys) != 0 || readCalls != 0 {
+		t.Fatal("constructing intent callback read process inputs or workspace")
+	}
+	got, err := callback("explicit directory")
+	if err != nil || got.ProjectRoot != wantListing.ProjectRoot || got.SpaceName != wantListing.SpaceName || got.Intents == nil {
+		t.Errorf("callback()=(%+v, %v), want (%+v, nil)", got, err, wantListing)
+	}
+	if getwdCalls != 1 || readCalls != 1 {
+		t.Errorf("getwd/read calls=%d/%d, want 1 each", getwdCalls, readCalls)
+	}
+	if wantKeys := []string{"AIDLC_PROJECT_DIR", "CLAUDE_PROJECT_DIR"}; !slices.Equal(envKeys, wantKeys) {
+		t.Errorf("environment keys=%q, want %q", envKeys, wantKeys)
+	}
+}
+
+func TestIntentListerWorkingDirectoryFailure(t *testing.T) {
+	t.Parallel()
+
+	cause := errors.New("injected working directory failure")
+	callback := intentLister(
+		func() (string, error) { return "partial path", cause },
+		func(string) string {
+			t.Error("environment read after cwd failure")
+			return ""
+		},
+		func(workspace.RootInput) (workspace.IntentListing, error) {
+			t.Error("workspace read after cwd failure")
+			return workspace.IntentListing{}, nil
+		},
+	)
+	got, err := callback("explicit path")
+	if !errors.Is(err, cause) || got.ProjectRoot != "" || got.SpaceName != "" || got.Intents != nil {
+		t.Errorf("callback()=(%+v, %v), want zero listing and cwd cause", got, err)
+	}
+}
+
 func TestSpaceListerLazyCLIInputs(t *testing.T) {
 	t.Parallel()
 
@@ -312,12 +398,13 @@ func TestSpaceListerLazyCLIInputs(t *testing.T) {
 				tt.args,
 				&stdout,
 				&stderr,
-				buildinfo.Info{},
-				func(string, string) (string, error) { return "team", nil },
-				callback,
-				nil,
-				nil,
-			)
+				buildinfo.Info{}, mainDependencies(
+
+					func(string, string) (string, error) { return "team", nil },
+					callback,
+					nil,
+					nil))
+
 			if code != tt.code {
 				t.Errorf(
 					"exit=%d, want %d; stderr=%q",
@@ -462,12 +549,13 @@ func TestSpaceSwitcherLazyCLIInputs(t *testing.T) {
 				tt.args,
 				&stdout,
 				&stderr,
-				buildinfo.Info{},
-				func(string, string) (string, error) { return "team", nil },
-				func(string) ([]workspace.Space, error) { return []workspace.Space{}, nil },
-				callback,
-				nil,
-			)
+				buildinfo.Info{}, mainDependencies(
+
+					func(string, string) (string, error) { return "team", nil },
+					func(string) ([]workspace.Space, error) { return []workspace.Space{}, nil },
+					callback,
+					nil))
+
 			if code != tt.code {
 				t.Errorf(
 					"exit=%d, want %d; stderr=%q",

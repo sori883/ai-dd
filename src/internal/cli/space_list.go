@@ -23,7 +23,7 @@ func runSpaceList(
 ) int {
 	spaces, err := listSpaces(explicitDir)
 	if err != nil {
-		return writeSpaceError(stderr, err)
+		return writeCommandError(stderr, err)
 	}
 	var output strings.Builder
 	if jsonOutput {
@@ -40,7 +40,7 @@ func runSpaceList(
 			}
 		}
 		if err := json.NewEncoder(&output).Encode(listing); err != nil {
-			return writeSpaceError(stderr, fmt.Errorf("encode spaces: %w", err))
+			return writeCommandError(stderr, fmt.Errorf("encode spaces: %w", err))
 		}
 	} else {
 		output.WriteString("Spaces:\n")
@@ -62,7 +62,7 @@ func runSpaceList(
 		err = io.ErrShortWrite
 	}
 	if err != nil {
-		return writeSpaceError(stderr, fmt.Errorf("write stdout: %w", err))
+		return writeCommandError(stderr, fmt.Errorf("write stdout: %w", err))
 	}
 	return 0
 }
