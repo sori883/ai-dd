@@ -64,6 +64,17 @@ WORKSPACE lock identityは、可能ならrealpathした絶対project path（Wind
 owner-stamped directory lockを待つ。本家はowner PID、generation、random token、reap gateを使い、
 死んだgenerationだけを自動回収する。
 
+WindowsのlowercaseはBun 1.3.14のECMAScript default lowercaseであり、Goの
+`strings.ToLower`だけでは一致しない。Unicode 15.0/15.1のlocale-insensitive lowercase差を
+原典dataとruntime vectorで限定すると、U+0130を`i\u0307`へ展開する規則と、Cased・
+Case_Ignorable文脈でU+03A3をfinal sigmaへ変換する規則の2系統である。Go標準のUnicode tableと
+この2規則で本家のwell-formed Unicode pathを再現できる。
+
+固定vector `C:\\Projects\\AİB\\ΟΣ`は
+`c:\\projects\\ai\u0307b\\ος`へ変換され、NULと`__workspace__`を加えたMD5先頭8文字は
+`211f1998`、lock名は`.aidlc-audit-211f1998.lock`となる。ASCII-only変換、case folding、
+現行Go identityとのdual scheme、hash scheme変更は本家と別lockを作り得るため採用しない。
+
 本家はrollbackしない。stub失敗ではdirectory、registry失敗ではdirectoryとstub、cursor以降の
 失敗ではregistryまでの成果物が残り得る。cursorとsessionの失敗は成功結果へ反映されない。
 registry不存在・malformed・非配列は空listとして扱うため、新規rowだけで上書きされ得る。
@@ -76,6 +87,8 @@ registry不存在・malformed・非配列は空listとして扱うため、新�
 - `docs/実装_aidlc-workflows/core/tools/aidlc-lib.ts:18617-18689`
 - `docs/実装_aidlc-workflows/core/tools/aidlc-utility.ts:268-270`
 - `docs/実装_aidlc-workflows/core/tools/aidlc-utility.ts:5512-5700`
+- ECMAScript 2024 `String.prototype.toLowerCase` §22.1.3.28
+- Unicode 15.1 `SpecialCasing.txt`
 
 ## Go版への示唆
 
@@ -90,4 +103,4 @@ writer、cross-process workspace lock、CreateIntent API、failure injectionと�
 
 本家testはUUID・slug、予約語、full creation、active cursor、repos、2 process concurrencyを主に固定する。
 Go版ではUTC境界、`-999` exhaustion、malformed registry無変更、各write/close/cursor失敗、owner違いの
-lock解放拒否、context cancellation、partial artifactも追加で固定する。
+lock解放拒否、context cancellation、Windows Unicode lock identity、partial artifactも追加で固定する。

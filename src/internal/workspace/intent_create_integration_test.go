@@ -109,7 +109,7 @@ func TestCreateIntentIntegrationCreatesCoreArtifacts(t *testing.T) {
 		t.Errorf("registry repos = (%q, %v), want input order", repos, err)
 	}
 	for path, want := range map[string]string{
-		filepath.Join(project, "aidlc", "active-space"):                               "team\n",
+		filepath.Join(project, "aidlc", "active-space"):                               "default\n",
 		filepath.Join(project, "aidlc", "spaces", "team", "intents", "active-intent"): created.DirName + "\n",
 	} {
 		data, err := os.ReadFile(path)

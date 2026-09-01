@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const (
@@ -91,17 +92,103 @@ func workspaceLockPath(
 	tempDir string,
 	evalSymlinks func(string) (string, error),
 ) string {
+	return workspaceLockPathForPlatform(projectPath, tempDir, evalSymlinks, runtime.GOOS)
+}
+
+func workspaceLockPathForPlatform(
+	projectPath string,
+	tempDir string,
+	evalSymlinks func(string) (string, error),
+	platform string,
+) string {
 	canonical := filepath.Clean(projectPath)
 	if resolved, err := evalSymlinks(canonical); err == nil {
 		canonical = resolved
 	}
-	if runtime.GOOS == "windows" {
-		canonical = strings.ToLower(canonical)
-	}
 	// MD5 is the upstream lock identity contract, not a security primitive.
-	digest := md5.Sum([]byte(canonical + "\x00" + workspaceLockSentinel))
+	digest := md5.Sum([]byte(workspaceLockIdentity(canonical, platform)))
 	name := fmt.Sprintf(".aidlc-audit-%x.lock", digest[:4])
 	return filepath.Join(tempDir, name)
+}
+
+func workspaceLockIdentity(canonical, platform string) string {
+	return normalizeWorkspaceLockCanonical(canonical, platform) + "\x00" + workspaceLockSentinel
+}
+
+func normalizeWorkspaceLockCanonical(canonical, platform string) string {
+	if platform == "windows" {
+		return ecmaScriptDefaultLower(canonical)
+	}
+	return canonical
+}
+
+func ecmaScriptDefaultLower(value string) string {
+	runes := []rune(value)
+	var lowered strings.Builder
+	lowered.Grow(len(value))
+	for index, char := range runes {
+		switch char {
+		case '\u0130':
+			lowered.WriteString("i\u0307")
+		case '\u03a3':
+			if isFinalSigma(runes, index) {
+				lowered.WriteRune('\u03c2')
+			} else {
+				lowered.WriteRune('\u03c3')
+			}
+		default:
+			lowered.WriteRune(unicode.ToLower(char))
+		}
+	}
+	return lowered.String()
+}
+
+func isFinalSigma(runes []rune, index int) bool {
+	if !nearestCasedBefore(runes, index) {
+		return false
+	}
+	for following := index + 1; following < len(runes); following++ {
+		if isCaseIgnorable(runes[following]) {
+			continue
+		}
+		return !isCased(runes[following])
+	}
+	return true
+}
+
+func nearestCasedBefore(runes []rune, index int) bool {
+	for preceding := index - 1; preceding >= 0; preceding-- {
+		if isCaseIgnorable(runes[preceding]) {
+			continue
+		}
+		return isCased(runes[preceding])
+	}
+	return false
+}
+
+func isCased(char rune) bool {
+	return unicode.In(
+		char,
+		unicode.Lu,
+		unicode.Ll,
+		unicode.Lt,
+		unicode.Other_Uppercase,
+		unicode.Other_Lowercase,
+	)
+}
+
+func isCaseIgnorable(char rune) bool {
+	if unicode.In(char, unicode.Mn, unicode.Me, unicode.Cf, unicode.Lm, unicode.Sk) {
+		return true
+	}
+	switch char {
+	case '\u0027', '\u002e', '\u003a', '\u00b7', '\u0387', '\u055f', '\u05f4',
+		'\u2018', '\u2019', '\u2024', '\u2027', '\ufe13', '\ufe52', '\ufe55',
+		'\uff07', '\uff0e', '\uff1a':
+		return true
+	default:
+		return false
+	}
 }
 
 func acquireWorkspaceLock(

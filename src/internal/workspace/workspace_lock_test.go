@@ -33,10 +33,11 @@ func TestWorkspaceLockPathUsesCanonicalWorkspaceIdentity(t *testing.T) {
 			return canonical, nil
 		},
 	)
+	wantCanonical := canonical
 	if runtime.GOOS == "windows" {
-		canonical = strings.ToLower(canonical)
+		wantCanonical = filepath.Join(string(filepath.Separator), "projects", "canonical")
 	}
-	digest := md5.Sum([]byte(canonical + "\x00" + workspaceLockSentinel)) //nolint:gosec // Compatibility identity, not security.
+	digest := md5.Sum([]byte(wantCanonical + "\x00" + workspaceLockSentinel)) //nolint:gosec // Compatibility identity, not security.
 	want := filepath.Join(tempDir, fmt.Sprintf(".aidlc-audit-%x.lock", digest[:4]))
 	if got != want {
 		t.Errorf("workspaceLockPath() = %q, want %q", got, want)
@@ -54,13 +55,65 @@ func TestWorkspaceLockPathFallsBackToLexicalAbsolutePath(t *testing.T) {
 		func(string) (string, error) { return "", errors.New("missing") },
 	)
 	canonical := filepath.Clean(lexical)
-	if runtime.GOOS == "windows" {
-		canonical = strings.ToLower(canonical)
-	}
 	digest := md5.Sum([]byte(canonical + "\x00" + workspaceLockSentinel)) //nolint:gosec // Compatibility identity, not security.
 	want := filepath.Join(tempDir, fmt.Sprintf(".aidlc-audit-%x.lock", digest[:4]))
 	if got != want {
 		t.Errorf("workspaceLockPath() = %q, want lexical fallback %q", got, want)
+	}
+}
+
+func TestNormalizeWorkspaceLockCanonicalMatchesECMAScriptDefaultLower(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "İ", want: "i\u0307"},
+		{input: "AİB", want: "ai\u0307b"},
+		{input: "Σ", want: "σ"},
+		{input: "ΟΣ", want: "ος"},
+		{input: "ΟΣΑ", want: "οσα"},
+		{input: "AΣ\u0301", want: "aς\u0301"},
+		{input: "AΣ\u0301B", want: "aσ\u0301b"},
+		{input: "AΣ'B", want: "aσ'b"},
+		{input: "AΣ-B", want: "aς-b"},
+		{input: "AΣʰ", want: "aςʰ"},
+		{input: "AΣⅠ", want: "aσⅰ"},
+		{input: "K", want: "k"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+
+			if got := normalizeWorkspaceLockCanonical(tt.input, "windows"); got != tt.want {
+				t.Errorf("normalizeWorkspaceLockCanonical(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWorkspaceLockPathMatchesKnownWindowsUnicodeIdentity(t *testing.T) {
+	t.Parallel()
+
+	canonical := `C:\Projects\AİB\ΟΣ`
+	wantLower := "c:\\projects\\ai\u0307b\\ος"
+	identity := workspaceLockIdentity(canonical, "windows")
+	if want := wantLower + "\x00" + workspaceLockSentinel; identity != want {
+		t.Errorf("workspaceLockIdentity() = %q, want %q", identity, want)
+	}
+	digest := md5.Sum([]byte(identity)) //nolint:gosec // Compatibility identity, not security.
+	if got := fmt.Sprintf("%x", digest[:4]); got != "211f1998" {
+		t.Errorf("workspace lock digest = %q, want %q", got, "211f1998")
+	}
+	path := workspaceLockPathForPlatform(
+		canonical,
+		t.TempDir(),
+		func(string) (string, error) { return canonical, nil },
+		"windows",
+	)
+	if got := filepath.Base(path); got != ".aidlc-audit-211f1998.lock" {
+		t.Errorf("workspace lock name = %q, want known Unicode vector", got)
 	}
 }
 

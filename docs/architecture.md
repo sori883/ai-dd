@@ -491,7 +491,8 @@ lock releaseのerrorでは作成済み`CreatedIntent`とerrorを同時に返す�
 half-writeを避けますが、fsync、power-loss耐久、複数fileのatomicity、全OSでの同一semanticsは
 保証しません。
 
-lockは可能ならsymlinkを解決した絶対project path（Windowsはlowercase）、NUL、
+lockは可能ならsymlinkを解決した絶対project path（Windowsは本家のECMAScript default lowercaseと
+同じU+0130展開・Final Sigma文脈を適用）、NUL、
 `__workspace__`から本家互換のMD5先頭8文字を作り、system tempの
 `.aidlc-audit-<hash>.lock`を`Mkdir`で排他取得します。MD5はidentity互換用であり、security用途では
 ありません。owner stampはPID、epoch milliseconds、random generation tokenを持ち、100ms間隔・

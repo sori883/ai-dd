@@ -43,8 +43,30 @@ type intentCreateOps struct {
 	resolveDir          func(*os.Root, string) (string, error)
 	createRecord        func(*os.Root, string) error
 	writeRegistry       func(*os.Root, []json.RawMessage, intentRegistryEntry) error
+	activeSpace         func(*os.Root) string
 	completeActiveSpace func(*os.Root, string) error
 	saveActiveIntent    func(*os.Root, string) error
+}
+
+type intentCreateLockedOps struct {
+	openProject         func(string) (*os.Root, error)
+	openChild           func(*os.Root, string) (*os.Root, error)
+	closeRoot           func(*os.Root) error
+	readRegistry        func(*os.Root) ([]json.RawMessage, error)
+	now                 func() time.Time
+	uuid                func(time.Time) (string, error)
+	resolveDir          func(*os.Root, string) (string, error)
+	createRecord        func(*os.Root, string) error
+	writeRegistry       func(*os.Root, []json.RawMessage, intentRegistryEntry) error
+	activeSpace         func(*os.Root) string
+	completeActiveSpace func(*os.Root, string) error
+	saveActiveIntent    func(*os.Root, string) error
+}
+
+type preparedIntentCreate struct {
+	projectPath string
+	spacePath   string
+	input       IntentCreateInput
 }
 
 // CreateIntent creates an intent core transaction inside an existing space.
@@ -105,8 +127,28 @@ func systemIntentCreateOps() intentCreateOps {
 		) error {
 			return writeIntentRegistry(rows, entry, registryWriteOperations(root))
 		},
+		activeSpace: func(root *os.Root) string {
+			return ActiveSpace(root.FS())
+		},
 		completeActiveSpace: completeActiveSpaceCursor,
 		saveActiveIntent:    saveIntentCursor,
+	}
+}
+
+func (ops intentCreateOps) lockedOperations() intentCreateLockedOps {
+	return intentCreateLockedOps{
+		openProject:         ops.openProject,
+		openChild:           ops.openChild,
+		closeRoot:           ops.closeRoot,
+		readRegistry:        ops.readRegistry,
+		now:                 ops.now,
+		uuid:                ops.uuid,
+		resolveDir:          ops.resolveDir,
+		createRecord:        ops.createRecord,
+		writeRegistry:       ops.writeRegistry,
+		activeSpace:         ops.activeSpace,
+		completeActiveSpace: ops.completeActiveSpace,
+		saveActiveIntent:    ops.saveActiveIntent,
 	}
 }
 
@@ -115,24 +157,63 @@ func createIntent(
 	root RootInput,
 	input IntentCreateInput,
 	ops intentCreateOps,
-) (created CreatedIntent, err error) {
+) (CreatedIntent, error) {
+	return createIntentWithCallback(ctx, root, input, ops, nil)
+}
+
+func createIntentWithCallback(
+	ctx context.Context,
+	root RootInput,
+	input IntentCreateInput,
+	ops intentCreateOps,
+	after func(CreatedIntent) error,
+) (CreatedIntent, error) {
 	if ctxErr := context.Cause(ctx); ctxErr != nil {
 		return CreatedIntent{}, ctxErr
 	}
-	projectPath := ResolveRoot(root)
-	if !filepath.IsAbs(projectPath) {
-		return CreatedIntent{}, fmt.Errorf("resolve project root %q: %w", projectPath, fs.ErrInvalid)
-	}
-	spacePath, err := localizeSpace(input.SpaceName)
+	prepared, err := prepareIntentCreate(root, input)
 	if err != nil {
 		return CreatedIntent{}, err
 	}
-	repos := append([]string{}, input.Repos...)
-	var scope *string
+	return withIntentCreateLock(ctx, prepared.projectPath, ops, func() (CreatedIntent, bool, error) {
+		created, committed, err := createIntentLocked(prepared, ops.lockedOperations())
+		if err != nil || after == nil {
+			return created, committed, err
+		}
+		if err := after(created); err != nil {
+			return created, committed, err
+		}
+		return created, committed, nil
+	})
+}
+
+func prepareIntentCreate(root RootInput, input IntentCreateInput) (preparedIntentCreate, error) {
+	projectPath := ResolveRoot(root)
+	if !filepath.IsAbs(projectPath) {
+		return preparedIntentCreate{}, fmt.Errorf(
+			"resolve project root %q: %w",
+			projectPath,
+			fs.ErrInvalid,
+		)
+	}
+	spacePath, err := localizeSpace(input.SpaceName)
+	if err != nil {
+		return preparedIntentCreate{}, err
+	}
+	input.Repos = append([]string{}, input.Repos...)
 	if input.Scope != nil {
 		value := *input.Scope
-		scope = &value
+		input.Scope = &value
 	}
+	return preparedIntentCreate{projectPath: projectPath, spacePath: spacePath, input: input}, nil
+}
+
+func withIntentCreateLock(
+	ctx context.Context,
+	projectPath string,
+	ops intentCreateOps,
+	run func() (CreatedIntent, bool, error),
+) (created CreatedIntent, err error) {
 	committed := false
 	lock, err := ops.acquireLock(ctx, projectPath)
 	if err != nil {
@@ -146,24 +227,38 @@ func createIntent(
 			err = errors.Join(err, fmt.Errorf("release workspace lock: %w", releaseErr))
 		}
 	}()
+	created, committed, err = run()
+	return created, err
+}
 
-	projectRoot, err := ops.openProject(projectPath)
+func createIntentLocked(
+	prepared preparedIntentCreate,
+	ops intentCreateLockedOps,
+) (created CreatedIntent, committed bool, err error) {
+	projectRoot, err := ops.openProject(prepared.projectPath)
 	if err != nil {
-		return CreatedIntent{}, fmt.Errorf("open project root %q: %w", projectPath, err)
+		return CreatedIntent{}, false, fmt.Errorf(
+			"open project root %q: %w",
+			prepared.projectPath,
+			err,
+		)
 	}
 	defer func() {
 		if closeErr := ops.closeRoot(projectRoot); closeErr != nil {
 			if !committed {
 				created = CreatedIntent{}
 			}
-			err = errors.Join(err, fmt.Errorf("close project root %q: %w", projectPath, closeErr))
+			err = errors.Join(
+				err,
+				fmt.Errorf("close project root %q: %w", prepared.projectPath, closeErr),
+			)
 		}
 	}()
 
-	childPath := filepath.Join("aidlc", "spaces", spacePath, "intents")
+	childPath := filepath.Join("aidlc", "spaces", prepared.spacePath, "intents")
 	intentsRoot, err := ops.openChild(projectRoot, childPath)
 	if err != nil {
-		return CreatedIntent{}, fmt.Errorf("open intents root %q: %w", childPath, err)
+		return CreatedIntent{}, false, fmt.Errorf("open intents root %q: %w", childPath, err)
 	}
 	defer func() {
 		if closeErr := ops.closeRoot(intentsRoot); closeErr != nil {
@@ -176,46 +271,48 @@ func createIntent(
 
 	rows, err := ops.readRegistry(intentsRoot)
 	if err != nil {
-		return CreatedIntent{}, err
+		return CreatedIntent{}, false, err
 	}
 	now := ops.now()
 	uuid, err := ops.uuid(now)
 	if err != nil {
-		return CreatedIntent{}, err
+		return CreatedIntent{}, false, err
 	}
-	base, err := intentDirBase(input.Label, now)
+	base, err := intentDirBase(prepared.input.Label, now)
 	if err != nil {
-		return CreatedIntent{}, err
+		return CreatedIntent{}, false, err
 	}
 	dirName, err := ops.resolveDir(intentsRoot, base)
 	if err != nil {
-		return CreatedIntent{}, err
+		return CreatedIntent{}, false, err
 	}
 	if err := ops.createRecord(intentsRoot, dirName); err != nil {
-		return CreatedIntent{}, err
+		return CreatedIntent{}, false, err
 	}
-	slug := intentSlug(input.Label)
+	slug := intentSlug(prepared.input.Label)
 	entry := intentRegistryEntry{
-		UUID: uuid, Slug: slug, DirName: dirName, Scope: scope, Repos: repos, Status: "in-flight",
+		UUID: uuid, Slug: slug, DirName: dirName,
+		Scope: prepared.input.Scope, Repos: prepared.input.Repos, Status: "in-flight",
 	}
 	if err := ops.writeRegistry(intentsRoot, rows, entry); err != nil {
-		return CreatedIntent{}, err
+		return CreatedIntent{}, false, err
 	}
 	committed = true
 	created = CreatedIntent{
 		UUID:      uuid,
 		Slug:      slug,
 		DirName:   dirName,
-		RecordDir: filepath.Join(projectPath, childPath, dirName),
-		SpaceName: input.SpaceName,
+		RecordDir: filepath.Join(prepared.projectPath, childPath, dirName),
+		SpaceName: prepared.input.SpaceName,
 	}
-	if err := ops.completeActiveSpace(projectRoot, input.SpaceName); err != nil {
-		return created, err
+	sharedSpaceName := ops.activeSpace(projectRoot)
+	if err := ops.completeActiveSpace(projectRoot, sharedSpaceName); err != nil {
+		return created, committed, err
 	}
 	if err := ops.saveActiveIntent(intentsRoot, dirName); err != nil {
-		return created, err
+		return created, committed, err
 	}
-	return created, nil
+	return created, committed, nil
 }
 
 func uuidV7(now time.Time, random io.Reader) (string, error) {

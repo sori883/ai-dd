@@ -290,7 +290,8 @@ go vet -tags=integration ./...
 unit testはUUIDv7、slug・予約語・UTC日付・suffix、正確なstub、strict registry decode、未知field保持、
 atomic writer、write・short write・Close・Rename・cleanupの原因保持を確認します。lock testは本家互換identityと
 owner stamp、600回上限、context優先、自分のgenerationだけのrelease、stale・malformed lockの
-fail-closedを固定します。上の正規表現を変更する場合は`go test -list`で対象testを確認してください。
+fail-closedに加え、Windows lock identityのU+0130・Final Sigma互換vectorを固定します。
+上の正規表現を変更する場合は`go test -list`で対象testを確認してください。
 
 integration testは実`os.Root`で既存Space、invalid registryの前後snapshot、registry/`active-intent`の
 symlink・特殊file、project/Space link境界を確認します。helper subprocessは同じprojectへ同時作成する

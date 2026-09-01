@@ -55,7 +55,8 @@ full stateまで延長できる構造にする。
 3. UUIDv7、24文字slug、予約語、UTC date、directory collisionを解決する。
 4. record directoryとheader-only state stubをexclusiveに作る。
 5. 既存registry raw rowを保持し、新規rowをatomic appendする。ここをdurable create commitとする。
-6. shared active-spaceを不在時だけno-replace補完し、対象Spaceのactive-intentを安全に置換する。
+6. shared active-spaceを不在時だけ`ActiveSpace`のfallback値でno-replace補完し、対象Spaceの
+   active-intentを安全に置換する。Intent作成先だけを理由にshared selectionを切り替えない。
 7. Rootとlockを解放する。
 
 registry commit前のerrorはzero resultを返す。commit後のcursor、Close、lock release errorは
@@ -65,9 +66,11 @@ rollback、fsync、power-loss耐久、multi-file atomicityは保証せず、本�
 ## Workspace lock
 
 本家と同じcanonical identity、MD5先頭8文字、system temp lock directoryを用い、Go process同士と
-通常の本家processとのmkdir排他を共有する。取得時はowner PID、epoch milliseconds、random tokenを
-owner stampへ保存し、自分のtokenと一致するgenerationだけを解放する。100ms間隔、最大600 retriesを
-上限とし、より短いcaller deadlineまたはcancelを優先する。取得失敗errorにはlock pathを含める。
+通常の本家processとのmkdir排他を共有する。Windows pathはECMAScript default lowercaseの
+U+0130展開とFinal Sigma文脈をGo標準Unicode tableへ補い、本家と同じidentityにする。取得時は
+owner PID、epoch milliseconds、random tokenをowner stampへ保存し、自分のtokenと一致する
+generationだけを解放する。100ms間隔、最大600 retriesを上限とし、より短いcaller deadlineまたは
+cancelを優先する。取得失敗errorにはlock pathを含める。
 
 最初のGo版はowner generation probeとreap gateを実装せず、既存lockを自動削除しない。dead ownerや
 malformed stampもfail-closedとし、doctor相当を実装するまで診断後の手動復旧とする。Goが作るstampは
@@ -110,7 +113,8 @@ public CLI、store/interface、広いpackage分割は追加しない。公開CLI
 4. registry不存在・valid append、field順・indent・LF、scope/repos省略、未知field保持。
 5. malformed・非配列・invalid row、symlink・特殊file、write/short-write/Close/Rename/cleanup failure。
 6. active-space no-replace補完、active-intent安全置換、commit前後のresult/error境界。
-7. lock identity、owner stamp、contended wait、context cancel・deadline、owner不一致release拒否、cleanup。
+7. lock identity、Windows Unicode lowercase固定vector、owner stamp、contended wait、
+   context cancel・deadline、owner不一致release拒否、cleanup。
 8. helper subprocessによる2 process同時作成と、distinct UUID・directory・2 registry rows。
 9. 既存Space・Intent read/list/switchの回帰。
 

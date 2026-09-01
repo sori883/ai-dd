@@ -322,8 +322,18 @@ func TestCreateIntentRunsLockedTransactionAndReturnsCommittedMetadata(t *testing
 				}
 				return nil
 			},
-			completeActiveSpace: func(*os.Root, string) error {
+			activeSpace: func(root *os.Root) string {
+				steps = append(steps, "read active-space")
+				if root != projectRoot {
+					t.Error("active-space read used a root other than the project root")
+				}
+				return "default"
+			},
+			completeActiveSpace: func(_ *os.Root, name string) error {
 				steps = append(steps, "complete active-space")
+				if name != "default" {
+					t.Errorf("active-space completion = %q, want shared fallback default", name)
+				}
 				return nil
 			},
 			saveActiveIntent: func(*os.Root, string) error {
@@ -352,6 +362,7 @@ func TestCreateIntentRunsLockedTransactionAndReturnsCommittedMetadata(t *testing
 		"resolve 260901-build-auth",
 		"create 260901-build-auth",
 		"write registry",
+		"read active-space",
 		"complete active-space",
 		"save active-intent",
 		"close child",
@@ -360,6 +371,76 @@ func TestCreateIntentRunsLockedTransactionAndReturnsCommittedMetadata(t *testing
 	}
 	if !slices.Equal(steps, wantSteps) {
 		t.Errorf("steps = %q, want locked transaction order %q", steps, wantSteps)
+	}
+}
+
+func TestCreateIntentCallbackRunsBeforeWorkspaceLockRelease(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	lockHeld := false
+	steps := []string{}
+	ops := successfulIntentCreateOps()
+	ops.acquireLock = func(context.Context, string) (workspaceLockReceipt, error) {
+		steps = append(steps, "acquire")
+		lockHeld = true
+		return workspaceLockReceipt{path: "lock", token: "token"}, nil
+	}
+	ops.releaseLock = func(workspaceLockReceipt) error {
+		steps = append(steps, "release")
+		lockHeld = false
+		return nil
+	}
+	created, err := createIntentWithCallback(
+		context.Background(),
+		RootInput{ExplicitDir: project},
+		IntentCreateInput{SpaceName: "team", Label: "Build Auth"},
+		ops,
+		func(CreatedIntent) error {
+			steps = append(steps, "additional work")
+			if !lockHeld {
+				t.Error("additional work ran after the workspace lock was released")
+			}
+			return nil
+		},
+	)
+	if err != nil || created == (CreatedIntent{}) {
+		t.Errorf("createIntentWithCallback() = (%+v, %v), want committed result", created, err)
+	}
+	wantSteps := []string{"acquire", "additional work", "release"}
+	if !slices.Equal(steps, wantSteps) {
+		t.Errorf("steps = %q, want callback inside outer lock %q", steps, wantSteps)
+	}
+}
+
+func TestCreateIntentLockedDoesNotManageWorkspaceLock(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	prepared, err := prepareIntentCreate(
+		RootInput{ExplicitDir: project},
+		IntentCreateInput{SpaceName: "team", Label: "Build Auth"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := successfulIntentCreateOps()
+	ops.acquireLock = func(context.Context, string) (workspaceLockReceipt, error) {
+		t.Fatal("caller-held createIntentLocked reacquired the workspace lock")
+		return workspaceLockReceipt{}, nil
+	}
+	ops.releaseLock = func(workspaceLockReceipt) error {
+		t.Fatal("caller-held createIntentLocked released the workspace lock")
+		return nil
+	}
+	created, committed, err := createIntentLocked(prepared, ops.lockedOperations())
+	if err != nil || !committed || created == (CreatedIntent{}) {
+		t.Errorf(
+			"createIntentLocked() = (%+v, %t, %v), want committed result without lock management",
+			created,
+			committed,
+			err,
+		)
 	}
 }
 
@@ -441,6 +522,7 @@ func successfulIntentCreateOps() intentCreateOps {
 		writeRegistry: func(*os.Root, []json.RawMessage, intentRegistryEntry) error {
 			return nil
 		},
+		activeSpace:         func(*os.Root) string { return "default" },
 		completeActiveSpace: func(*os.Root, string) error { return nil },
 		saveActiveIntent:    func(*os.Root, string) error { return nil },
 	}
