@@ -8,7 +8,7 @@ ai-ddは、単一のGo moduleと単一の実行ファイルを保ちながら、
 src/cmd/aidlc/main.go
   ├─ src/internal/buildinfo
   ├─ src/internal/cli (arguments, output, exit code)
-  └─ src/internal/workspace (CreateSpace / ReadSpaces / ReadIntents / SwitchSpace / SwitchIntent callbacks)
+  └─ src/internal/workspace (space・intentのread/write API)
 
 src/internal/workspace
   ├─ project root resolution
@@ -19,7 +19,8 @@ src/internal/workspace
   ├─ ReadSelection: project → current space → intents (read-only, no CLI yet)
   ├─ CreateSpace: explicit creation within an existing project
   ├─ SwitchSpace: explicit shared space-cursor update within an existing project
-  └─ SwitchIntent: explicit shared intent-cursor update within the active space
+  ├─ SwitchIntent: explicit shared intent-cursor update within the active space
+  └─ CreateIntent: lock-backed core creation within an existing space (no CLI yet)
 ```
 
 ## Package境界
@@ -27,7 +28,7 @@ src/internal/workspace
 - `src/cmd/aidlc`: composition rootです。process引数、stdout、stderr、build情報と作成・一覧・切替callbackを組み立て、`cli.Run`の戻り値を`os.Exit`へ渡します。callbackが呼ばれたときだけcwdと環境変数を読みます。ドメイン判断や出力整形は置きません。
 - `src/internal/cli`: CLIの引数解釈、stdout/stderrの分離、終了コード、help/version、space create/list/switch、bare space、intent list/switchとbare intentの表示契約を所有します。`io.Writer`とcallbackを受け取るため、process全体を起動せずにテストできます。
 - `src/internal/buildinfo`: linkerが差し替える`Version`と`Commit`、およびそのsnapshotを所有します。既定値は`dev`と`unknown`です。
-- `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、spaceの新規作成、space・intentの共有cursor切替を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。space一覧は`ReadSpaces`、intent一覧は`ReadIntents`を通じてCLIへ接続し、`ReadSelection`は内部APIのままです。書込みは`CreateSpace`・`SwitchSpace`・`SwitchIntent`の明示呼出しだけで行い、接続APIのRoot生存期間も内部で管理します。
+- `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、spaceとIntent coreの新規作成、space・intentの共有cursor切替を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。space一覧は`ReadSpaces`、intent一覧は`ReadIntents`を通じてCLIへ接続し、`ReadSelection`と`CreateIntent`は内部APIのままです。書込みは`CreateSpace`・`SwitchSpace`・`SwitchIntent`・`CreateIntent`の明示呼出しだけで行い、接続APIのRoot生存期間も内部で管理します。
 
 `internal`配下はmodule外からimportできません。今後の機能も、CLIから直接filesystemやnetworkへ到達させず、責務ごとのpackageをcomposition rootで接続します。
 
@@ -466,6 +467,61 @@ multi-file transaction、owner・ACL・特殊mode・hardlink identityの保持�
 詳細と承認は[Intent切替の実装計画](ram/decisions/2026-09-01-intent-switch-plan.md)、
 構文・検証は[Intent切替CLI](development.md#intent切替cli)を参照してください。
 
+## Intent作成の内部coreとworkspace lock
+
+`workspace.CreateIntent(ctx, root, input) (CreatedIntent, error)`は、callerが選択・検証した
+`SpaceName`、`Label`、任意の`Scope`・`Repos`を受け取り、既存SpaceのIntent coreを作成する
+内部APIです。結果はUUID、正規化slug、実directory名、record path、Space名を返します。
+scopeとreposの意味検証はcaller責務で、coreはreposの順序を維持し、空ならfieldを省略します。
+公開CLI、session binding、audit、full state、workspace scanはまだ接続しません。
+
+処理はproject identityを共有するWORKSPACE lockを取得してから、次の順で行います。
+
+1. 既存projectとSpaceの`intents` Rootを開き、`intents.json`全体をstrictに検証します。
+2. UUIDv7、24文字slug、予約語、UTC日付と`-2`から`-999`の衝突suffixを決めます。
+3. record directoryと正確に`# AI-DLC State Tracking\n`だけを持つstate stubを排他的に作ります。
+4. 既存registry rowのraw JSONと未知fieldを保持し、新規rowを2-space indent・末尾LFで
+   sibling tempからRenameします。このRename成功を作成のcommit境界とします。
+5. shared `active-space`が不在ならno-replaceで補完し、対象Spaceの`active-intent`を
+   安全な一時file置換で保存します。
+
+registry commit前のerrorではzero resultを返します。commit後のcursor、取得済みRootのClose、
+lock releaseのerrorでは作成済み`CreatedIntent`とerrorを同時に返すため、callerは自動retryせず
+結果を確認できます。stub・registry・cursorの途中成果物はrollbackしません。registryのRenameは
+half-writeを避けますが、fsync、power-loss耐久、複数fileのatomicity、全OSでの同一semanticsは
+保証しません。
+
+lockは可能ならsymlinkを解決した絶対project path（Windowsはlowercase）、NUL、
+`__workspace__`から本家互換のMD5先頭8文字を作り、system tempの
+`.aidlc-audit-<hash>.lock`を`Mkdir`で排他取得します。MD5はidentity互換用であり、security用途では
+ありません。owner stampはPID、epoch milliseconds、random generation tokenを持ち、100ms間隔・
+最大600 retriesで待ちます。callerのcancel/deadlineを優先し、自分のtokenと一致するgenerationだけを
+解放します。stale・malformed・dead ownerは自動回収せず、診断後の手動復旧が必要です。
+
+projectの初回path symlinkは既存root規則どおり追従します。Space名は正規化前にsingle componentとして
+検証し、以後のchild accessは`os.Root`内で行います。内向き相対linkは許可され、外向き・絶対・
+broken linkとregistry/`active-intent`のsymlink・特殊fileは拒否します。ただし`os.Root`はmountやdeviceを
+防ぐ完全sandboxではありません。
+
+### Intent作成coreの意図的な差分
+
+比較対象はローカルAI-DLC `2.6.123`です。authored core、canonical Codex dist、配置済みCodex distの
+作成関連`aidlc-lib.ts`と`aidlc-utility.ts`が同一であることを
+[原典調査](ram/research/2026-09-01-intent-create-contracts.md)で静的に確認した範囲であり、
+最新upstream全体との一致は主張しません。
+
+| 本家の挙動 | 採用した挙動 | 理由 | 利用者・互換性への影響 |
+| --- | --- | --- | --- |
+| malformed・非配列registryを空listとして上書きし得る | 既存rowをstrict検証し、異常時は無変更でerror | registry消失を防ぐ | 壊れたworkspaceは作成前に修復が必要 |
+| raw coreが不在Space treeも作成し得る | 既存Spaceを必須にする | typoによる暗黙Space作成を防ぐ | Spaceは既存APIで先に作成する |
+| cursor failureをbest-effortで吸収 | commit済み結果とerrorを返す | 失敗通知と重複retry防止を両立する | errorでもIntentが作成済みの場合がある |
+| 通常path操作 | `os.Root`、single component、通常file制約 | root外linkと特殊fileへの書込みを拒否する | 外向き・絶対linkやsymlink cursorは拒否される |
+| owner generation付きstale-lock reaper | 既存lockを自動回収しない | 誤ったlock奪取を避ける | crash後は診断と手動復旧が必要 |
+
+詳細と承認は
+[Intent作成coreの実装計画](ram/decisions/2026-09-01-intent-create-core-plan.md)、
+検証手順は[Intent作成core](development.md#intent作成core内部api)を参照してください。
+
 ## ビルド情報
 
 `Version`と`Commit`は通常のstring変数として安全な既定値を持ち、release buildでは`go build -ldflags -X`で差し替えます。build timestampは再現可能なbuildを損なうため保持しません。
@@ -475,7 +531,7 @@ multi-file transaction、owner・ACL・特殊mode・hardlink identityの保持�
 - AI-DLCの33ステージとagent実行
 - 設定ファイルとshell completion
 - ancestor探索、project自体の自動作成、既存spaceの自動修復
-- intent作成、space・intentの削除、registry/state本文の解釈
+- Intent作成の公開CLI・full handler、space・intentの削除、registry/state本文の解釈
 - `ReadSelection`・intent読み取りの公開CLI/status接続、space/intent明示override、session binding
 - Cobra、Viper、GoReleaserなどの外部依存
 - release、署名、公証、installer

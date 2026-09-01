@@ -98,7 +98,7 @@ path操作に独自の検証とFS境界を用意する必要があります。
 既存CIのquality jobでも統合テストを実行します。ただしCIの実行OSはUbuntuであり、
 6 targetのcross buildを各OSの実行証拠とは扱いません。space一覧は`ReadSpaces`、intent一覧は
 `ReadIntents`、intent切替は`SwitchIntent`経由で公開CLIに接続していますが、
-`ReadSelection`、intent作成、sessionは未接続・未実装です。help/version smokeを一覧や切替の
+`ReadSelection`、Intent作成の内部core、sessionは公開CLIへ未接続です。help/version smokeを一覧や切替の
 検証とせず、space/intentの機能E2Eも完全な
 workspace lifecycleの検証とは区別します。
 
@@ -269,7 +269,44 @@ session・registry・state・audit・configの無変更を確認します。Unix
 
 制約とローカルAI-DLC `2.6.123`からの承認済み変更は
 [Intent切替](architecture.md#intent切替)・[差分表](architecture.md#intent切替の意図的な差分)を参照してください。
-session binding、rebind offer、UUID stamp、audit、intent作成はまだ一連で動きません。
+session binding、rebind offer、UUID stamp、audit、Intent作成の内部coreはまだ公開CLIとして一連で動きません。
+
+### Intent作成core（内部API）
+
+`workspace.CreateIntent`は、callerが決定した既存Space、label、任意scope・reposを受け取り、
+workspace lock下でrecord、registry、共有cursorを作成します。公開CLIはまだ接続していないため、
+`go run ./src/cmd/aidlc intent create ...`は利用手順ではありません。full state、session binding、audit、
+workspace scanもこのcoreの対象外です。
+
+通常の検証は次のコマンドで行います。
+
+```sh
+go test -count=1 -run '^(TestUUIDV7|TestIntentSlug|TestNormalizeIntentLabel|TestIntentDirBase|TestResolveIntentDirName|TestCreateIntent|TestDecodeIntentRegistryForMutation|TestReadIntentRegistryForMutation|TestWriteIntentRegistry|TestWorkspaceLock|TestAcquireWorkspaceLock|TestInitializeWorkspaceLock|TestReleaseWorkspaceLock|TestWaitForWorkspaceLock)' ./src/internal/workspace
+go test -tags=integration -count=1 -run '^(TestCreateIntentIntegration|TestCreateIntentHelperProcess)' ./src/internal/workspace
+go test -tags=integration -race -shuffle=on ./...
+go vet -tags=integration ./...
+```
+
+unit testはUUIDv7、slug・予約語・UTC日付・suffix、正確なstub、strict registry decode、未知field保持、
+atomic writer、write・short write・Close・Rename・cleanupの原因保持を確認します。lock testは本家互換identityと
+owner stamp、600回上限、context優先、自分のgenerationだけのrelease、stale・malformed lockの
+fail-closedを固定します。上の正規表現を変更する場合は`go test -list`で対象testを確認してください。
+
+integration testは実`os.Root`で既存Space、invalid registryの前後snapshot、registry/`active-intent`の
+symlink・特殊file、project/Space link境界を確認します。helper subprocessは同じprojectへ同時作成する
+2 processがlockで直列化され、UUIDとdirectoryが重複せず、registryに2 row残ることを実証します。
+Windowsでsymlink作成権限が不足する場合は、そのcaseだけ理由付きでskipします。
+
+registry tempのRename成功がcommit境界です。そこより前のerrorはzero result、以後のcursor・Root Close・
+lock release errorは作成済み結果とerrorの両方を返します。自動retryやrollbackはせず、途中directory・
+stub・tempが残る場合があります。fsync、power-loss耐久、複数fileのatomic性は保証しません。
+約60秒のlock待機より短いdeadlineが必要なら、callerが`context.Context`へ設定します。stale lockは
+自動回収しないため、lock pathを含むerrorを確認してから手動で診断・復旧してください。
+
+本家ローカル`2.6.123`からの承認済み変更と安全境界は
+[Intent作成の内部core](architecture.md#intent作成の内部coreとworkspace-lock)・
+[差分表](architecture.md#intent作成coreの意図的な差分)を参照してください。公開CLIを変更しないため、
+CLI buildや配布E2Eをこの内部APIのnative実行証拠として扱いません。
 
 ### Space作成CLI
 
