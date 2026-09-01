@@ -215,8 +215,9 @@ integrationでは初回project link、内向き相対child link、外向き・�
 
 ### Intent切替CLI
 
-shared `active-space`が指すspaceの既存Intentを選び、そのspaceの
-`intents/active-intent`だけを更新します。明示形とbare形は同じ操作です。
+shared `active-space`が指すspaceの既存Intentを選び、通常はそのspaceの
+`intents/active-intent`を更新します。shared `active-space`が不在のときだけ
+`aidlc/active-space`も補完します。明示形とbare形は同じ操作です。
 
 ```sh
 go run ./src/cmd/aidlc intent switch build-auth --project-dir /path/to/existing-project
@@ -253,7 +254,7 @@ Rename前の失敗でも補完済みactive-spaceやcleanup失敗のtempは残り
 Root Close、出力失敗ではactive-intentも保存済みの場合があり、自動rollbackしません。
 
 ```sh
-go test -count=1 -run '^(TestSwitchIntent|TestResolveIntentTarget|TestCompleteCursorNoReplace|TestReplaceCursor)' ./src/internal/workspace
+go test -count=1 -run '^(TestSwitchIntent|TestResolveIntentTarget|TestCompleteCursorNoReplace|TestReplaceCursor|TestReplaceSpaceCursor|TestSaveCursorInRoot)' ./src/internal/workspace
 go test -tags=integration -count=1 -run '^TestSwitchIntent' ./src/internal/workspace
 go test -count=1 -run '^(TestRunIntentSwitch|TestRunHelpIncludesIntentSwitch)' ./src/internal/cli
 go test -count=1 -run '^(TestIntentSwitcher|TestMainIntentSwitch)' ./src/cmd/aidlc

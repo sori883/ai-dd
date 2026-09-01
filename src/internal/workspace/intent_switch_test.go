@@ -194,6 +194,47 @@ func TestSwitchIntentSavesActiveIntent(t *testing.T) {
 	}
 }
 
+func TestSwitchIntentResavesSameTargetWithLFAndPreservesMode(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	dirName := "240901-build-auth"
+	intentsPath := filepath.Join(project, "aidlc", "spaces", "team", "intents")
+	if err := os.MkdirAll(filepath.Join(intentsPath, dirName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{
+		filepath.Join(project, "aidlc", "active-space"):       "team\n",
+		filepath.Join(intentsPath, "active-intent"):           dirName,
+		filepath.Join(intentsPath, dirName, "aidlc-state.md"): "state",
+	} {
+		if err := os.WriteFile(name, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cursorPath := filepath.Join(intentsPath, "active-intent")
+	if err := os.Chmod(cursorPath, 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	selection, err := SwitchIntent(RootInput{ExplicitDir: project}, dirName)
+	if err != nil {
+		t.Fatalf("SwitchIntent() error = %v, want nil", err)
+	}
+	wantSelection := IntentSelection{SpaceName: "team", DirName: dirName}
+	if selection != wantSelection {
+		t.Errorf("SwitchIntent() selection = %+v, want %+v", selection, wantSelection)
+	}
+	data, err := os.ReadFile(cursorPath)
+	if err != nil || string(data) != dirName+"\n" {
+		t.Errorf("active-intent = (%q, %v), want %q", data, err, dirName+"\n")
+	}
+	info, err := os.Stat(cursorPath)
+	if err != nil || info.Mode().Perm() != 0o640 {
+		t.Errorf("active-intent mode = (%v, %v), want 0640", info, err)
+	}
+}
+
 func TestSwitchIntentCompletesMissingActiveSpace(t *testing.T) {
 	t.Parallel()
 
