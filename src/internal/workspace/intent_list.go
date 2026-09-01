@@ -170,9 +170,21 @@ func optionalRegistryStrings(fields map[string]json.RawMessage, name string) ([]
 	if !ok || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return nil, true
 	}
-	var values []string
-	if err := json.Unmarshal(raw, &values); err != nil || values == nil {
+	var members []json.RawMessage
+	if err := json.Unmarshal(raw, &members); err != nil || members == nil {
 		return nil, false
+	}
+	values := make([]string, 0, len(members))
+	for _, member := range members {
+		trimmed := bytes.TrimSpace(member)
+		if len(trimmed) == 0 || trimmed[0] != '"' {
+			return nil, false
+		}
+		var value string
+		if err := json.Unmarshal(member, &value); err != nil {
+			return nil, false
+		}
+		values = append(values, value)
 	}
 	return values, true
 }

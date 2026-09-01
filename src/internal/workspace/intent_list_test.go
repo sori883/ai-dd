@@ -290,6 +290,7 @@ func TestListIntentsRejectsInvalidRegistryRows(t *testing.T) {
 		{name: "scope wrong type", row: `{"uuid":"uuid","slug":"slug","status":"planning","scope":{}}`},
 		{name: "repos wrong type", row: `{"uuid":"uuid","slug":"slug","status":"planning","repos":"api"}`},
 		{name: "repos member wrong type", row: `{"uuid":"uuid","slug":"slug","status":"planning","repos":["api",1]}`},
+		{name: "repos null member", row: `{"uuid":"uuid","slug":"slug","status":"planning","repos":["api",null]}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -323,14 +324,18 @@ func TestListIntentsAcceptsStructuralRegistryValues(t *testing.T) {
                 "scope":null,
                 "repos":null,
                 "unknown":{"is":"ignored"}
-            }
+            },
+            {"uuid":"empty-repos","slug":"empty-repos","status":"planning","repos":[]}
         ]`)},
 	}
 	got, err := ListIntents(intentsFS, new(string))
 	if err != nil {
 		t.Fatalf("ListIntents() error = %v, want nil", err)
 	}
-	assertIntents(t, got, []Intent{{Repos: []string{}}})
+	assertIntents(t, got, []Intent{
+		{Repos: []string{}},
+		{UUID: "empty-repos", Slug: "empty-repos", Status: "planning", Repos: []string{}},
+	})
 }
 
 func assertIntents(t *testing.T, got, want []Intent) {
