@@ -119,6 +119,9 @@ dataへの影響を検証する。snapshot比較は並行更新に対する一�
 このscenarioの成功からintent作成・切替、session binding、並行更新中の一貫したsnapshot、
 完全なworkspace lifecycleや完全sandboxを主張しない。
 
+実施済みの記録: [2026-09-01 Intent一覧の配布E2E](e2e-runs/2026-09-01-intent-list.md)。
+45起動すべてで期待exit・stdout/stderr・filesystem不変に一致した。
+
 ## Space切替scenario
 
 未使用scenario内にbinaryと独立した既存project fixtureを用意する。以下は検証手順であり、

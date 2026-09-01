@@ -123,3 +123,33 @@ darwin/linux/windowsのamd64/arm64 cross buildである。
 
 Issue #25に紐づくPRを作成し、自動マージせず引き渡す。
 IssueはPRマージ後に閉じる。承認記録時点では実装・レビュー・E2Eは未実施。
+
+## 実装・検証結果
+
+2026-09-01、Issue #25の承認scopeで実装を完了した。
+製品差分を `fb016aa28e83902df785ee82795c9c156daabcdf` に固定し、
+base `d770479230b7a3ca2d5eb572207330de06809156` からの最終独立reviewで
+blocking findingはなかった。
+
+最初の固定head `2470882ea660600932c9f14738e0222cebd81762` に対するreviewでは、
+Go標準JSON decoderがrepos配列内のnullを空文字列へ変換するP1を発見した。
+現headで失敗する回帰testを追加して16件目のREDを観測し、
+各要素をRawMessageでstring token検証する最小修正後にGREENと全回帰PASSを確認した。
+最終reviewではP1解消と追加P0-P2なしを確認している。
+
+- 実際のassertion RED→GREENは初期15件とreview修正1件の合計16件。
+  compile failureや構造整理、追加時点でGREENのguardは件数に含めない。
+- 通常・shuffle・race・integration race、vet両構成、tidy差分、gofmt、
+  diff check、gopls通常/integrationを通過した。最終coverageは全体86.1%。
+- darwin/linux/windowsのamd64/arm64でCLI 6個とtest binary 18個をcross compileした。
+  native実行はmacOS/arm64だけであり、他OSの実行成功とは扱わない。
+- 配布binaryをGo/NodeをPATHから呼べない環境で45回起動し、期待exit・stdout/stderrと
+  fixture全体のpath・内容・mode・mtime・symlink先の無変更に全件一致した。
+- 外部Go module/tool、CI、store/interface/router、session/audit、
+  intent作成・切替、status修復、migrationは追加していない。
+
+具体的なartifact、command、TDD、review、cross-build、生ログ、未検証範囲は
+[Intent一覧の実装検証・配布E2E](../../e2e-runs/2026-09-01-intent-list.md)へ記録した。
+承認済みの意図的な差分4点は変更しておらず、新しい意図的差分も追加していない。
+後続の証跡commitは文書だけで、配布binaryのsource commitとは区別する。
+PRはIssue #25へ紐づけ、自動マージしない。IssueのCloseはマージ後とする。
