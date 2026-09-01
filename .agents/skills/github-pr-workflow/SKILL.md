@@ -45,7 +45,8 @@ GitHub上の変更記録を、後から実装状況を判断できる日本語�
 - Issue・PRの作成・編集、branchのpush、close、mergeは外部状態の変更である。
   ユーザーの明示依頼または承認済みのリポジトリ運用フローに含まれる操作だけを行う。
 - IssueやPRを作る前に既存の同一対象を検索し、再実行時は重複作成せず既存項目を確認する。
-- ラベル、担当者、milestone、reviewerを推測して設定しない。
+- Issueの分類ラベルは[Issue作成](references/issue-creation.md)に定めるリポジトリ規則で決める。
+  それ以外のラベル、担当者、milestone、reviewerを推測して設定しない。
 - 自動マージを設定しない。mergeはユーザーが明示的に依頼した場合だけ行う。
 - mergeと作業完了を確認するまでIssueをcloseしない。自動closeされなかった場合も、条件を
   確認してからcloseする。

@@ -19,8 +19,8 @@
 2. 不確かなAPI、ライブラリ、互換性、設計判断を `technical_researcher` へ委譲する。独立した読み取り調査だけを並列化できる。
 3. `project_planner` がリポジトリと調査結果を統合し、スコープ、対象ファイル、TDD slice、検証、リスクを提示する。
 4. ユーザーが計画を明示承認する。承認前はコード、設定、Issue、PRを変更しない。
-5. 親エージェントが `github-pr-workflow` skillを使って日本語のGitHub Issueを作成し、
-   番号と承認済み計画を `go_tdd_implementer` に渡す。
+5. 親エージェントが `github-pr-workflow` skillを使い、主要な成果に対応する分類ラベルを
+   1つ付けて日本語のGitHub Issueを作成し、番号と承認済み計画を `go_tdd_implementer` に渡す。
 6. 実装担当が1 behaviorずつREDを観測し、最小GREEN、GREEN上のrefactorを繰り返す。
 7. `independent_reviewer` が固定したbase/headを読み取り専用でレビューする。
 8. P0/P1、受入条件違反、またはblockingなテスト不足を実装担当へ戻し、修正後に再レビューする。
@@ -34,6 +34,8 @@ Issue・PRの作成、更新、参照には
 `.agents/skills/github-pr-workflow/SKILL.md`を使用する。
 
 - 現在の実装状況は、default branchへマージ済みのPRを第一の履歴根拠とする。
+- Issueには `機能開発` または `ユーザーリクエスト` の分類ラベルを主要な成果に応じて1つ付け、
+  両方を同時に付けない。`bug`や`documentation`等の補助ラベルは必要に応じて併用できる。
 - Draft、Open、未マージのClosed PRは、default branchの実装済み機能に含めない。
 - マージ済みPRは導入時点の証拠であるため、後続PR、revert、現在のコードとテストを照合して
   現在も有効か判断する。
