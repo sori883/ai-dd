@@ -1,7 +1,7 @@
 # Intent作成の内部coreとworkspace lockの実装計画
 
 - 日付: 2026-09-01
-- 状態: Accepted
+- 状態: Accepted（実装・独立review完了、PR待ち）
 - GitHub Issue: [#31](https://github.com/sori883/ai-dd/issues/31)
 - base: `d5fd5444a744d721b83d588120c9b9a83e853573`
 - 作業branch: `codex/intent-create-core`
@@ -66,8 +66,9 @@ rollback、fsync、power-loss耐久、multi-file atomicityは保証せず、本�
 ## Workspace lock
 
 本家と同じcanonical identity、MD5先頭8文字、system temp lock directoryを用い、Go process同士と
-通常の本家processとのmkdir排他を共有する。Windows pathはECMAScript default lowercaseの
-U+0130展開とFinal Sigma文脈をGo標準Unicode tableへ補い、本家と同じidentityにする。取得時は
+通常の本家processとのmkdir排他を共有する。Windows pathは比較対象のBun Windows `1.3.14`が
+同梱するICU `73.2` / Unicode 15を基準とし、ECMAScript default lowercaseのU+0130展開と
+Final Sigma文脈をGo `1.26.4`のUnicode 15 tableへ補い、本家と同じidentityにする。取得時は
 owner PID、epoch milliseconds、random tokenをowner stampへ保存し、自分のtokenと一致する
 generationだけを解放する。100ms間隔、最大600 retriesを上限とし、より短いcaller deadlineまたは
 cancelを優先する。取得失敗errorにはlock pathを含める。
@@ -141,3 +142,21 @@ helper subprocessのintegration testを内部featureの実行証拠とする。
 Issue #31から単独TDD、固定base/headの独立review、必要な修正、最終検証、日本語PRへ進む。
 PRはIssueへ紐づけ、自動マージしない。Issueはmergeと作業完了を確認した後にcloseする。
 承認記録時点では実装、review、PRは未実施である。
+
+## 実装・検証結果
+
+単独writerが13個のobservable sliceでRED→GREENを行い、内部API、registry writer、workspace
+lock、実filesystem integration、2 process同時作成を実装した。初回reviewのshared
+active-space補完、Windows Unicode lowercase、caller-held lock primitiveの指摘はcommit
+`24b9cffc99af66187b60e9f98a651133b94c9fc0`で修正した。
+
+Unicodeの再reviewでは、macOS Bunのsystem ICU結果をWindowsへ外挿したP1候補が出たが、Bun
+`1.3.14`の固定sourceとUnicode 15.0公式dataを再調査し、reviewerが指摘を撤回した。将来の
+Go Unicode table更新を検知するU+1C89の追加時GREEN guardをcommit
+`fb2632dc448c896064c749bf5e273f9958d3a494`で固定した。このguardは挙動変更ではないためTDD
+RED件数へ含めない。新しい外部moduleや意図的な本家差分は追加していない。
+
+親が通常shuffle、race shuffle、integration race shuffle、vet両構成、tidy差分、gofmt、
+gopls、diff checkをfresh実行し、全てPASSした。darwin・linux・windowsのamd64/arm64向け
+workspace integration test binaryも6構成でcross compileした。macOS / arm64以外でのnative
+実行証拠ではない。詳細は[実装検証記録](../../e2e-runs/2026-09-01-intent-create-core.md)に残す。

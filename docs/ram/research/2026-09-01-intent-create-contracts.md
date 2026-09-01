@@ -64,16 +64,27 @@ WORKSPACE lock identityは、可能ならrealpathした絶対project path（Wind
 owner-stamped directory lockを待つ。本家はowner PID、generation、random token、reap gateを使い、
 死んだgenerationだけを自動回収する。
 
-WindowsのlowercaseはBun 1.3.14のECMAScript default lowercaseであり、Goの
-`strings.ToLower`だけでは一致しない。Unicode 15.0/15.1のlocale-insensitive lowercase差を
-原典dataとruntime vectorで限定すると、U+0130を`i\u0307`へ展開する規則と、Cased・
-Case_Ignorable文脈でU+03A3をfinal sigmaへ変換する規則の2系統である。Go標準のUnicode tableと
-この2規則で本家のwell-formed Unicode pathを再現できる。
+Windowsのlowercase比較基準は、本家CIが固定するBun `1.3.14`のWindows buildである。Bun
+`1.3.14`はWebKit `5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b`を固定し、Windows artifactは
+ICU `73.2`を同梱する。ICU 73.2とGo `1.26.4`はいずれもUnicode 15.0 tableを使う。
+Unicode 15.0公式dataとの全scalar比較では、Goのsimple lowercase、`Cased`、
+`Case_Ignorable`に差はなかった。ECMAScript default full lowercaseへ追加で必要なのは、
+U+0130を`i\u0307`へ展開する規則と、Cased・Case_Ignorable文脈でU+03A3をfinal sigmaへ
+変換する規則の2系統である。Go標準のUnicode tableとこの2規則で、比較対象のWindows buildに
+おけるwell-formed Unicode pathを再現する。
 
 固定vector `C:\\Projects\\AİB\\ΟΣ`は
 `c:\\projects\\ai\u0307b\\ος`へ変換され、NULと`__workspace__`を加えたMD5先頭8文字は
 `211f1998`、lock名は`.aidlc-audit-211f1998.lock`となる。ASCII-only変換、case folding、
 現行Go identityとのdual scheme、hash scheme変更は本家と別lockを作り得るため採用しない。
+
+調査途中では、macOS上のBun `1.3.14`がU+1C89をU+1C8Aへ変換することから、Windowsでも
+Unicode 17相当と推定した。しかしmacOS buildはsystem ICUを使い、Windows buildは上記のICU
+73.2を同梱するため、この推定は誤りとして撤回した。macOS runtimeとの全scalar比較で観測した
+55 mapping差はWindows lock identityへ適用しない。将来のGo Unicode table更新によるdriftを
+検知するため、`C:\\Projects\\AᲉB`はU+1C89を変換せず、MD5先頭8文字`a3f33a77`となることを
+固定vectorにする。Windows Bun `1.3.14`実機でのnative照合は未実施であり、現時点の根拠は
+固定source、同梱ICU version、Unicode 15.0公式dataとの全範囲比較である。
 
 本家はrollbackしない。stub失敗ではdirectory、registry失敗ではdirectoryとstub、cursor以降の
 失敗ではregistryまでの成果物が残り得る。cursorとsessionの失敗は成功結果へ反映されない。
@@ -87,8 +98,11 @@ registry不存在・malformed・非配列は空listとして扱うため、新�
 - `docs/実装_aidlc-workflows/core/tools/aidlc-lib.ts:18617-18689`
 - `docs/実装_aidlc-workflows/core/tools/aidlc-utility.ts:268-270`
 - `docs/実装_aidlc-workflows/core/tools/aidlc-utility.ts:5512-5700`
+- [Bun 1.3.14のWebKit固定とplatform別ICU](https://github.com/oven-sh/bun/blob/0d9b296af33f2b851fcbf4df3e9ec89751734ba4/scripts/build/deps/webkit.ts)
+- [固定WebKitのWindows ICU 73.2 build](https://github.com/oven-sh/WebKit/blob/5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b/build-icu.ps1#L34)
+- [JavaScriptCoreの`u_strToLower`委譲](https://github.com/oven-sh/WebKit/blob/5488984d20e0dbfe4be2c3ba8fb18eb81a5e0e8b/Source/WTF/wtf/text/StringImpl.cpp#L389-L445)
 - ECMAScript 2024 `String.prototype.toLowerCase` §22.1.3.28
-- Unicode 15.1 `SpecialCasing.txt`
+- Unicode 15.0 `SpecialCasing.txt`、`UnicodeData.txt`、`DerivedCoreProperties.txt`
 
 ## Go版への示唆
 
@@ -96,8 +110,8 @@ registry不存在・malformed・非配列は空listとして扱うため、新�
 cursor stagingを持つ。再利用できるのは`spaceSlug`のJS小文字化補正、new-file writer、
 `completeActiveSpaceCursor`、`saveIntentCursor`、strict registry row検証である。
 
-不足しているのはUUIDv7、Intent用24文字slug、UTC dateと衝突解決、未知fieldを保持するregistry
-writer、cross-process workspace lock、CreateIntent API、failure injectionと並行process testである。
+調査時点で不足していたのはUUIDv7、Intent用24文字slug、UTC dateと衝突解決、未知fieldを保持する
+registry writer、cross-process workspace lock、CreateIntent API、failure injectionと並行process testである。
 これらはGo標準libraryだけで実装できる。registry既存行はtyped structへ再encodeせず、
 `json.RawMessage`として検証・保持する必要がある。
 
