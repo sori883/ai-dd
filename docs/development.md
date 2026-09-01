@@ -313,6 +313,35 @@ stub・tempが残る場合があります。fsync、power-loss耐久、複数fil
 [差分表](architecture.md#intent作成coreの意図的な差分)を参照してください。公開CLIを変更しないため、
 CLI buildや配布E2Eをこの内部APIのnative実行証拠として扱いません。
 
+### 読み取り専用workspace分析（内部API）
+
+`workspace.Detect`は、callerが`os.OpenRoot`で開いた既存projectの`*os.Root`を借りて
+workspace signalを算出します。scannerはRootをCloseせず、file・directory・cursorを
+作成・修復・更新しません。内部I/Oやparseのerrorは対象signalの不在に吸収されるため、
+callerは返値だけから「存在しない」と「読めない」を区別できません。RootのClose errorを
+扱う責任もcallerにあります。
+
+対象testは次で実行します。
+
+```sh
+go test -count=1 -run '^(TestDetect|TestParseGitmodules)' ./src/internal/workspace
+go test -tags=integration -count=1 -run '^TestDetect' ./src/internal/workspace
+```
+
+unit testはroot signal、全言語拡張子、観測順と20%閾値、weakly typedな
+`package.json`、framework固定順、build優先順、nestedの深さ3・UTF-16順・除外、
+`.gitmodules`の部分parseと安全検証、注入したI/O failureの吸収を固定します。
+integration testは実`os.Root`でknown result、caller所有Rootの生存、treeの前後snapshot、
+内向き相対・root外相対・絶対・broken symlinkの境界を確認します。
+Windowsでsymlink作成権限がない場合は、該当caseだけを理由付きでskipします。
+
+同数言語の順序はnativeのdirectory列挙順に依存し、Bun・Go・OS・filesystem間での
+完全互換は保証しません。`os.Root`のroot外・絶対symlink拒否、mount・device・
+並行変更の限界と本家ローカル`2.6.123`との比較範囲は
+[読み取り専用workspace分析](architecture.md#読み取り専用workspace分析)を参照してください。
+このAPIはstageや公開CLIに未接続のため、CLI build・help/version smoke・配布E2Eは
+検出結果やread-only性のnative実行証拠にはなりません。
+
 ### Space作成CLI
 
 既存projectへ新しいspaceを作ります。複数単語の名前は引用してください。
