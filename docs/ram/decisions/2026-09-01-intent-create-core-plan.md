@@ -137,4 +137,3 @@ helper subprocessのintegration testを内部featureの実行証拠とする。
 Issue #31から単独TDD、固定base/headの独立review、必要な修正、最終検証、日本語PRへ進む。
 PRはIssueへ紐づけ、自動マージしない。Issueはmergeと作業完了を確認した後にcloseする。
 承認記録時点では実装、review、PRは未実施である。
-

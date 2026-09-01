@@ -91,4 +91,3 @@ writer、cross-process workspace lock、CreateIntent API、failure injectionと�
 本家testはUUID・slug、予約語、full creation、active cursor、repos、2 process concurrencyを主に固定する。
 Go版ではUTC境界、`-999` exhaustion、malformed registry無変更、各write/close/cursor失敗、owner違いの
 lock解放拒否、context cancellation、partial artifactも追加で固定する。
-
