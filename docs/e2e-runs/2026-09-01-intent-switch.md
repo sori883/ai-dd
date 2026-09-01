@@ -126,9 +126,15 @@ CLIとworkspace integration test binaryをcross compileした。合計12 artifac
 | linux | PASS | PASS |
 | windows | PASS | PASS |
 
-artifact rootは`/tmp/ai-dd-issue-29-cross-final.RSDPcU/`。12 fileのSHA-256 manifestを
-path順で連結して得たSHA-256は
-`541d63f2180d36be03305d1645e656cc254a9b42364a69d7752c15e67a940d39`である。
+artifact rootは`/tmp/ai-dd-issue-29-cross-final.RSDPcU/`。12 fileに対する次のcommandの
+出力SHA-256は`541d63f2180d36be03305d1645e656cc254a9b42364a69d7752c15e67a940d39`である。
+
+```sh
+find /tmp/ai-dd-issue-29-cross-final.RSDPcU -maxdepth 1 -type f \
+  -exec shasum -a 256 {} + | LC_ALL=C sort | shasum -a 256
+```
+
+これは各fileの`shasum`出力行全体を辞書順に並べたmanifestのhashである。
 一時directoryのため長期保持は保証しない。
 
 ## 本家との差分と限界
