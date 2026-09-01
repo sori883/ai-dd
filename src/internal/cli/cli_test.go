@@ -42,6 +42,8 @@ Usage:
   aidlc space [--json] [--project-dir <path>]
   aidlc intent list [--json] [--project-dir <path>]
   aidlc intent [--json] [--project-dir <path>]
+  aidlc intent switch <target> [--project-dir <path>]
+  aidlc intent <target> [--project-dir <path>]
 
 Commands:
   help       Show help
@@ -50,6 +52,7 @@ Commands:
   space list    List spaces (space is an alias)
   space switch  Select an existing space
   intent list   List intents (intent is an alias)
+  intent switch Select an existing intent
 
 Flags:
   --help     Show help

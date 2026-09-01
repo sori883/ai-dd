@@ -21,6 +21,8 @@ Usage:
   aidlc space [--json] [--project-dir <path>]
   aidlc intent list [--json] [--project-dir <path>]
   aidlc intent [--json] [--project-dir <path>]
+  aidlc intent switch <target> [--project-dir <path>]
+  aidlc intent <target> [--project-dir <path>]
 
 Commands:
   help       Show help
@@ -29,6 +31,7 @@ Commands:
   space list    List spaces (space is an alias)
   space switch  Select an existing space
   intent list   List intents (intent is an alias)
+  intent switch Select an existing intent
 
 Flags:
   --help     Show help
@@ -44,6 +47,7 @@ type Dependencies struct {
 	ListSpaces    func(explicitDir string) ([]workspace.Space, error)
 	SwitchSpace   func(rawName, explicitDir string) (string, error)
 	ListIntents   func(explicitDir string) (workspace.IntentListing, error)
+	SwitchIntent  func(target, explicitDir string) (workspace.IntentSelection, error)
 	PrepareOutput func()
 }
 
@@ -130,6 +134,22 @@ func Run(
 			dependencies.ListSpaces,
 		)
 	}
+	isIntentSwitch := len(command) >= 2 && command[0] == "intent" && command[1] == "switch"
+	if isIntentSwitch {
+		if dependencies.PrepareOutput != nil {
+			dependencies.PrepareOutput()
+		}
+		if err != nil {
+			return writeCommandError(stderr, err)
+		}
+		return runIntentSwitch(
+			command[2:],
+			explicitDir,
+			stdout,
+			stderr,
+			dependencies.SwitchIntent,
+		)
+	}
 	isIntentList := len(command) >= 2 && command[0] == "intent" && command[1] == "list"
 	isBareIntent := len(command) == 1 && command[0] == "intent"
 	if isIntentList || isBareIntent {
@@ -151,10 +171,35 @@ func Run(
 			dependencies.ListIntents,
 		)
 	}
+	isBareIntentSwitch := len(command) >= 2 && command[0] == "intent" && !isIntentVerb(command[1])
+	if isBareIntentSwitch {
+		if dependencies.PrepareOutput != nil {
+			dependencies.PrepareOutput()
+		}
+		if err != nil {
+			return writeCommandError(stderr, err)
+		}
+		return runIntentSwitch(
+			command[1:],
+			explicitDir,
+			stdout,
+			stderr,
+			dependencies.SwitchIntent,
+		)
+	}
 
 	_, _ = fmt.Fprintf(stderr, "aidlc: unknown arguments: %q\n\n", strings.Join(args, " "))
 	_, _ = io.WriteString(stderr, helpText)
 	return 2
+}
+
+func isIntentVerb(value string) bool {
+	switch value {
+	case "help", "list", "switch", "create", "archive", "rename", "show", "birth":
+		return true
+	default:
+		return false
+	}
 }
 
 func writeStdout(stdout, stderr io.Writer, output string) int {

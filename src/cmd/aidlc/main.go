@@ -23,6 +23,11 @@ func main() {
 			ListSpaces:  spaceLister(os.Getwd, os.Getenv, workspace.ReadSpaces),
 			SwitchSpace: spaceSwitcher(os.Getwd, os.Getenv, workspace.SwitchSpace),
 			ListIntents: intentLister(os.Getwd, os.Getenv, workspace.ReadIntents),
+			SwitchIntent: intentSwitcher(
+				os.Getwd,
+				os.Getenv,
+				workspace.SwitchIntent,
+			),
 			PrepareOutput: func() {
 				// Recognized workspace commands promise exit 1 for writes to closed stdout or stderr pipes.
 				signal.Ignore(syscall.SIGPIPE)
@@ -47,6 +52,25 @@ func intentLister(
 			ClaudeProjectDir: getenv("CLAUDE_PROJECT_DIR"),
 			WorkingDir:       workingDir,
 		})
+	}
+}
+
+func intentSwitcher(
+	getwd func() (string, error),
+	getenv func(string) string,
+	switchIntent func(workspace.RootInput, string) (workspace.IntentSelection, error),
+) func(string, string) (workspace.IntentSelection, error) {
+	return func(target, explicitDir string) (workspace.IntentSelection, error) {
+		workingDir, err := getwd()
+		if err != nil {
+			return workspace.IntentSelection{}, fmt.Errorf("read working directory: %w", err)
+		}
+		return switchIntent(workspace.RootInput{
+			ExplicitDir:      explicitDir,
+			AIDLCProjectDir:  getenv("AIDLC_PROJECT_DIR"),
+			ClaudeProjectDir: getenv("CLAUDE_PROJECT_DIR"),
+			WorkingDir:       workingDir,
+		}, target)
 	}
 }
 

@@ -347,6 +347,117 @@ func TestIntentListerWorkingDirectoryFailure(t *testing.T) {
 	}
 }
 
+func TestIntentSwitcherRootInput(t *testing.T) {
+	t.Parallel()
+
+	want := workspace.RootInput{
+		ExplicitDir: "explicit", AIDLCProjectDir: "aidlc env", ClaudeProjectDir: "claude env", WorkingDir: "cwd",
+	}
+	steps := []string{}
+	callback := intentSwitcher(
+		func() (string, error) {
+			steps = append(steps, "cwd")
+			return want.WorkingDir, nil
+		},
+		func(key string) string {
+			steps = append(steps, key)
+			return map[string]string{
+				"AIDLC_PROJECT_DIR":  want.AIDLCProjectDir,
+				"CLAUDE_PROJECT_DIR": want.ClaudeProjectDir,
+			}[key]
+		},
+		func(input workspace.RootInput, target string) (workspace.IntentSelection, error) {
+			steps = append(steps, "switch")
+			if input != want || target != "Build-Auth" {
+				t.Errorf("switch received (%+v, %q), want all root inputs and raw target", input, target)
+			}
+			return workspace.IntentSelection{SpaceName: "team", DirName: "240901-build-auth"}, nil
+		},
+	)
+	if len(steps) != 0 {
+		t.Fatalf("constructing callback performed work: %q", steps)
+	}
+	selection, err := callback("Build-Auth", want.ExplicitDir)
+	wantSelection := workspace.IntentSelection{SpaceName: "team", DirName: "240901-build-auth"}
+	if selection != wantSelection || err != nil {
+		t.Errorf("callback() = (%+v, %v), want (%+v, nil)", selection, err, wantSelection)
+	}
+	wantSteps := []string{"cwd", "AIDLC_PROJECT_DIR", "CLAUDE_PROJECT_DIR", "switch"}
+	if !slices.Equal(steps, wantSteps) {
+		t.Errorf("callback steps = %q, want %q", steps, wantSteps)
+	}
+}
+
+func TestIntentSwitcherWorkingDirectoryFailure(t *testing.T) {
+	t.Parallel()
+
+	cause := errors.New("injected working directory failure")
+	callback := intentSwitcher(
+		func() (string, error) { return "partial path", cause },
+		func(string) string {
+			t.Error("environment read after cwd failure")
+			return ""
+		},
+		func(workspace.RootInput, string) (workspace.IntentSelection, error) {
+			t.Error("workspace switch called after cwd failure")
+			return workspace.IntentSelection{}, nil
+		},
+	)
+	selection, err := callback("target", "explicit")
+	if selection != (workspace.IntentSelection{}) || !errors.Is(err, cause) {
+		t.Errorf("callback() = (%+v, %v), want zero and cwd cause", selection, err)
+	}
+}
+
+func TestIntentSwitcherLazyCLIInputs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+		code int
+	}{
+		{name: "no arguments"},
+		{name: "help", args: []string{"help"}},
+		{name: "version", args: []string{"version"}},
+		{name: "unknown", args: []string{"unknown"}, code: 2},
+		{name: "reserved create", args: []string{"intent", "create"}, code: 2},
+		{name: "missing target", args: []string{"intent", "switch"}, code: 1},
+		{name: "raw help", args: []string{"intent", "switch", "help"}, code: 1},
+		{name: "empty target", args: []string{"intent", ""}, code: 1},
+		{name: "extra target", args: []string{"intent", "target", "extra"}, code: 1},
+		{name: "json", args: []string{"intent", "target", "--json"}, code: 1},
+		{name: "missing project", args: []string{"intent", "target", "--project-dir"}, code: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			callback := intentSwitcher(
+				func() (string, error) {
+					t.Error("cwd read without a valid intent switch")
+					return "", errors.New("unexpected cwd read")
+				},
+				func(string) string {
+					t.Error("environment read without a valid intent switch")
+					return ""
+				},
+				func(workspace.RootInput, string) (workspace.IntentSelection, error) {
+					t.Error("workspace called without a valid intent switch")
+					return workspace.IntentSelection{}, nil
+				},
+			)
+			var stdout, stderr bytes.Buffer
+			code := cli.Run(tt.args, &stdout, &stderr, buildinfo.Info{}, cli.Dependencies{
+				SwitchIntent: callback,
+			})
+			if code != tt.code {
+				t.Errorf("exit=%d, want %d; stderr=%q", code, tt.code, stderr.String())
+			}
+		})
+	}
+}
+
 func TestSpaceListerLazyCLIInputs(t *testing.T) {
 	t.Parallel()
 

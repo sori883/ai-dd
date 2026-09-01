@@ -344,6 +344,126 @@ func TestMainIntentListClosedPipes(t *testing.T) {
 	}
 }
 
+func TestMainIntentSwitch(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	dirName := "240901-build-auth"
+	intentsRoot := filepath.Join(project, "aidlc", "spaces", "default", "intents")
+	if err := os.MkdirAll(filepath.Join(intentsRoot, dirName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for path, content := range map[string]string{
+		filepath.Join(intentsRoot, dirName, "aidlc-state.md"): "state",
+		filepath.Join(project, "keep.txt"):                    "unchanged",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := mainProcess(t, "intent", "build-auth", "--project-dir", project)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	state := runMainProcess(t, cmd)
+	if got := state.ExitCode(); got != 0 {
+		t.Errorf("main exit=%d (%s), want 0; stderr=%q", got, state, stderr.String())
+	}
+	const want = "Active intent → 240901-build-auth (space: default)\n"
+	if stdout.String() != want || stderr.Len() != 0 {
+		t.Errorf("stdout/stderr = %q/%q, want %q/empty", stdout.String(), stderr.String(), want)
+	}
+	for path, content := range map[string]string{
+		filepath.Join(project, "aidlc", "active-space"):       "default\n",
+		filepath.Join(intentsRoot, "active-intent"):           dirName + "\n",
+		filepath.Join(intentsRoot, dirName, "aidlc-state.md"): "state",
+		filepath.Join(project, "keep.txt"):                    "unchanged",
+	} {
+		data, err := os.ReadFile(path)
+		if err != nil || string(data) != content {
+			t.Errorf("file %q = (%q, %v), want %q", path, data, err, content)
+		}
+	}
+}
+
+func TestMainIntentSwitchClosedPipes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		args            []string
+		hasClosedStdout bool
+		hasClosedStderr bool
+		wantSaved       bool
+	}{
+		{name: "explicit success", args: []string{"intent", "switch", "build-auth"}, wantSaved: true},
+		{name: "bare stdout", args: []string{"intent", "build-auth"}, hasClosedStdout: true, wantSaved: true},
+		{name: "stderr syntax", args: []string{"intent", "switch", "help"}, hasClosedStderr: true},
+		{name: "stderr unknown", args: []string{"intent", "missing"}, hasClosedStderr: true},
+		{
+			name: "both", args: []string{"intent", "switch", "build-auth"},
+			hasClosedStdout: true, hasClosedStderr: true, wantSaved: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			project := t.TempDir()
+			dirName := "240901-build-auth"
+			intentsRoot := filepath.Join(project, "aidlc", "spaces", "default", "intents")
+			if err := os.MkdirAll(filepath.Join(intentsRoot, dirName), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(
+				filepath.Join(intentsRoot, dirName, "aidlc-state.md"),
+				[]byte("state"),
+				0o600,
+			); err != nil {
+				t.Fatal(err)
+			}
+			before := mainTreeSnapshot(t, project)
+			args := append(slices.Clone(tt.args), "--project-dir", project)
+			cmd := mainProcess(t, args...)
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &stdout, &stderr
+			if tt.hasClosedStdout {
+				cmd.Stdout = closedPipeWriter(t)
+			}
+			if tt.hasClosedStderr {
+				cmd.Stderr = closedPipeWriter(t)
+			}
+			state := runMainProcess(t, cmd)
+			wantCode := 1
+			if tt.wantSaved && !tt.hasClosedStdout {
+				wantCode = 0
+			}
+			if got := state.ExitCode(); got != wantCode {
+				t.Errorf("main exit=%d (%s), want %d", got, state, wantCode)
+			}
+			if tt.wantSaved {
+				for path, content := range map[string]string{
+					filepath.Join(project, "aidlc", "active-space"): "default\n",
+					filepath.Join(intentsRoot, "active-intent"):     dirName + "\n",
+				} {
+					data, err := os.ReadFile(path)
+					if err != nil || string(data) != content {
+						t.Errorf("saved cursor %q = (%q, %v), want %q", path, data, err, content)
+					}
+				}
+			} else if after := mainTreeSnapshot(t, project); !maps.Equal(before, after) {
+				t.Error("rejected intent switch changed the project")
+			}
+			if tt.hasClosedStdout && !tt.hasClosedStderr {
+				if message := mainErrorJSON(t, stderr.String()); !strings.Contains(message, "write stdout:") {
+					t.Errorf("JSON error=%q, want stdout failure", message)
+				}
+			} else if tt.hasClosedStderr && stderr.Len() != 0 {
+				t.Errorf("closed stderr=%q, want empty", stderr.String())
+			}
+		})
+	}
+}
+
 func TestMainSpaceCreateClosedPipes(t *testing.T) {
 	t.Parallel()
 
@@ -433,7 +553,6 @@ func TestMainRootCommandsKeepSIGPIPE(t *testing.T) {
 		{name: "unknown space subcommand", args: []string{"space", "unknown"}, closeStderr: true},
 		{name: "bare JSON separate value", args: []string{"space", "--json", "false"}, closeStderr: true},
 		{name: "unknown intent subcommand", args: []string{"intent", "create"}, closeStderr: true},
-		{name: "intent bare JSON separate value", args: []string{"intent", "--json", "false"}, closeStderr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

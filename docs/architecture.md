@@ -8,7 +8,7 @@ ai-ddは、単一のGo moduleと単一の実行ファイルを保ちながら、
 src/cmd/aidlc/main.go
   ├─ src/internal/buildinfo
   ├─ src/internal/cli (arguments, output, exit code)
-  └─ src/internal/workspace (CreateSpace / ReadSpaces / ReadIntents / SwitchSpace callbacks)
+  └─ src/internal/workspace (CreateSpace / ReadSpaces / ReadIntents / SwitchSpace / SwitchIntent callbacks)
 
 src/internal/workspace
   ├─ project root resolution
@@ -18,32 +18,36 @@ src/internal/workspace
   ├─ ReadIntents: project → active space → registry and record list (read-only CLI)
   ├─ ReadSelection: project → current space → intents (read-only, no CLI yet)
   ├─ CreateSpace: explicit creation within an existing project
-  └─ SwitchSpace: explicit shared-cursor update within an existing project
+  ├─ SwitchSpace: explicit shared space-cursor update within an existing project
+  └─ SwitchIntent: explicit shared intent-cursor update within the active space
 ```
 
 ## Package境界
 
 - `src/cmd/aidlc`: composition rootです。process引数、stdout、stderr、build情報と作成・一覧・切替callbackを組み立て、`cli.Run`の戻り値を`os.Exit`へ渡します。callbackが呼ばれたときだけcwdと環境変数を読みます。ドメイン判断や出力整形は置きません。
-- `src/internal/cli`: CLIの引数解釈、stdout/stderrの分離、終了コード、help/version、space create/list/switch、bare space、intent listとbare intentの表示契約を所有します。`io.Writer`とcallbackを受け取るため、process全体を起動せずにテストできます。
+- `src/internal/cli`: CLIの引数解釈、stdout/stderrの分離、終了コード、help/version、space create/list/switch、bare space、intent list/switchとbare intentの表示契約を所有します。`io.Writer`とcallbackを受け取るため、process全体を起動せずにテストできます。
 - `src/internal/buildinfo`: linkerが差し替える`Version`と`Commit`、およびそのsnapshotを所有します。既定値は`dev`と`unknown`です。
-- `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、spaceの新規作成・共有cursor切替を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。space一覧は`ReadSpaces`、intent一覧は`ReadIntents`を通じてCLIへ接続し、`ReadSelection`は内部APIのままです。書込みは`CreateSpace`・`SwitchSpace`の明示呼出しだけで行い、接続APIのRoot生存期間も内部で管理します。
+- `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、spaceの新規作成、space・intentの共有cursor切替を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。space一覧は`ReadSpaces`、intent一覧は`ReadIntents`を通じてCLIへ接続し、`ReadSelection`は内部APIのままです。書込みは`CreateSpace`・`SwitchSpace`・`SwitchIntent`の明示呼出しだけで行い、接続APIのRoot生存期間も内部で管理します。
 
 `internal`配下はmodule外からimportできません。今後の機能も、CLIから直接filesystemやnetworkへ到達させず、責務ごとのpackageをcomposition rootで接続します。
 
 ## 手動DI
 
 `main`が`os.Args[1:]`、`os.Stdout`、`os.Stderr`、`buildinfo.Current()`と
-`cli.Dependencies`へ、作成・切替それぞれの`func(rawName, explicitDir string) (string, error)`、
-space一覧の`func(explicitDir string) ([]workspace.Space, error)`、intent一覧の
-`func(explicitDir string) (workspace.IntentListing, error)`をまとめて`cli.Run`へ渡します。
+`cli.Dependencies`へ、space作成・切替の
+`func(rawName, explicitDir string) (string, error)`、space一覧の
+`func(explicitDir string) ([]workspace.Space, error)`、intent一覧の
+`func(explicitDir string) (workspace.IntentListing, error)`、intent切替の
+`func(target, explicitDir string) (workspace.IntentSelection, error)`をまとめて`cli.Run`へ渡します。
 CLIは構文検証後にだけcallbackを1度呼びます。callback内で`os.Getwd()`、
 `AIDLC_PROJECT_DIR`、`CLAUDE_PROJECT_DIR`を読み、flag値と合わせた`RootInput`を
-`workspace.CreateSpace`、`workspace.ReadSpaces`、`workspace.ReadIntents`または`workspace.SwitchSpace`へ渡します。
+`workspace.CreateSpace`、`workspace.ReadSpaces`、`workspace.ReadIntents`、`workspace.SwitchSpace`または
+`workspace.SwitchIntent`へ渡します。
 help/versionと構文エラーではcwd・環境・FSへ到達しません。
 CLI packageはglobalなprocess I/Oを参照せず、各実行の出力と終了コードを決定的に検証できます。
 
 `main`はnil可の`PrepareOutput func()`も渡します。CLIは認識済み`space create`、
-`space list`、`space switch`、bare `space`、`intent list`、bare `intent`で、構文エラーを含む最初の出力・callbackより前に1度だけ呼びます。`main`側のhookで
+`space list`、`space switch`、bare `space`、`intent list`、`intent switch`、bare intent一覧・切替で、構文エラーを含む最初の出力・callbackより前に1度だけ呼びます。`main`側のhookで
 `SIGPIPE`を無視し、Unixの閉じたstdout/stderr pipeへのwriteもerrorとして扱い、exit 1へ到達させます。
 signalのprocess-global設定は`main`だけが所有し、CLI package自身には置きません。
 help/version/未知commandではhookを呼ばず、従来のsignal・出力挙動を維持します。
@@ -204,7 +208,8 @@ CLIは`intent list`とbare `intent`を受理します。human形式はspace名�
 `uuid`、`slug`、`status`、`repos`、`dirName`、`active`の順で1行出力します。active不在と
 dirName不在はnull、reposは配列です。内部`scope`は公開しません。認識済み構文・query・Close・
 出力失敗はexit 1で、stderrへ書ける場合はJSON errorを1行出力します。stdoutの部分出力は
-残り得て、stderrも書けない場合はexit 1だけを保証します。未知subcommandは従来形式・exit 2です。
+残り得て、stderrも書けない場合はexit 1だけを保証します。予約済みの未実装
+subcommandは従来形式・exit 2です。それ以外のbare `intent <target>`は下記の切替です。
 
 ### Intent一覧の意図的な差分
 
@@ -220,7 +225,7 @@ dirName不在はnull、reposは配列です。内部`scope`は公開しません
 | 一覧のJSON/出力は本家runtimeのserializerとwrite挙動に従う | Go標準JSON encoderと明示的short-write検出を使う | 標準libraryだけで出力失敗をexit 1へ伝える | JSONのHTML escape等は本家runtimeと異なり得る。閉pipeを含むwrite失敗は正常終了しない |
 
 承認と詳細は[intent一覧の実装計画](ram/decisions/2026-09-01-intent-list-plan.md)を参照してください。
-session binding、intent作成・切替、state本文、audit、registry修復は対象外です。各readerを別々に
+`ListIntents`・`ReadIntents`自体は作成・切替・書込みをしません。session binding、intent作成、state本文、audit、registry修復は対象外です。各readerを別々に
 呼ぶため並行更新中の一貫したsnapshotは保証せず、`os.Root`もmountやdeviceを防ぐ完全sandboxではありません。
 
 ## Workspace読み取りの接続
@@ -405,6 +410,62 @@ fsyncによるcrash/powerloss耐久性は保証しません。Rootもmountやdev
 bare `space <name>`、session binding、harness include、audit等は段階的な未実装範囲であり、
 恒久的な非互換方針ではありません。
 
+## Intent切替
+
+`workspace.SwitchIntent(input RootInput, target string) (IntentSelection, error)`は、shared
+`active-space`が指すspaceの既存Intentを選び、その`intents/active-intent`へ
+UTF-8の`<実際のdirName>\n`を保存します。`IntentSelection`は`SpaceName`と
+`DirName`を持ち、APIのerror時はzero valueです。ただしRename後のRoot Close errorでは
+cursorが変更済みの場合があり、CLIの成功出力が失敗した場合も同様です。
+どちらも自動rollbackは行いません。
+
+既存のroot優先順位と`os.Root`境界を使い、shared `ActiveSpace`を読んでから
+space名を1 componentとして検証し、対象の`intents` Rootを開きます。その同じRootの
+FSで`ListIntents(..., &emptyOverride)`を呼び、active-intent cursorの読取りと1件
+fallbackを避けた一覧から対象を決めます。`dirName`のcase-sensitive完全一致が
+最優先で、なければ`DirName != nil`のslug完全一致が一意な場合だけ選びます。
+複数のslug一致は候補directory名を含むAmbiguous、0件はUnknownとして保存前に
+失敗します。registry-only行は選択できず、markerを持つorphanは完全directory名か
+一意な派生slugで選べます。targetはtrim・slugify・case変換しません。
+
+target解決後にshared `aidlc/active-space`が不在なら、同じRoot内で書込みと
+Close済みのstaging fileをhard linkし、`<space>\n`をno-replaceでbest-effort補完します。
+競合で先に現れたcursorは上書きせず、補完失敗もIntent切替の成否へ昇格しません。
+`active-intent`はSpace切替と共通のprivate cursor primitiveで、既存symlink・非regularを
+拒否し、一時fileのwrite・short write・permission復元・Closeが成功してから
+Renameします。親Rootとintents Rootは内部で逆順Closeし、先行errorと結合します。
+
+CLIは`intent switch <target>`とbare `intent <target>`を同じcallbackへ接続します。
+bare `list`は一覧、`switch`は明示subcommand、`create`・`archive`・`rename`・`show`・
+`birth`・`help`は予約verbとしてtargetにしません。予約名のrecordも`intent switch <name>`なら
+指定できますが、raw `help`・`-h`・空targetは明示形でも拒否します。`--json`は
+一覧専用で、switchでは構文errorです。成功時はstdoutに
+`Active intent → <dirName> (space: <space>)\n`の1行、stderr空、exit 0です。
+認識済みswitchの構文・query・保存・Close・出力errorは、stderrに書ければ
+JSON errorを1行出しexit 1です。stdoutの部分出力や保存済みcursorは残り得て、
+stderrも書けなければexit 1だけを保証します。
+
+### Intent切替の意図的な差分
+
+比較対象はローカルAI-DLC `2.6.123`のpublic CLI・対象解決・共有cursor保存経路を、
+[原典調査](ram/research/2026-09-01-intent-switch-contracts.md)に記した範囲で静的に確認したものです。
+最新upstream全体や全workflowとの完全互換は主張しません。
+
+| 本家の挙動 | 採用した挙動 | 理由 | 利用者・互換性への影響 |
+| --- | --- | --- | --- |
+| `active-intent`を直接best-effort write | 一時fileから置換し、保存失敗をerror通知 | 失敗を成功表示しない | directory書込権限が必要。error時にも置換済みの場合がある |
+| 通常のpath操作 | 既存projectと`os.Root`境界、cursorの通常file制約 | root外linkや特殊cursorへの書込みを防ぐ | 外向き・絶対linkとcursor symlinkを拒否。初回project linkと内向き相対linkは許可 |
+| 余剰引数・一部flagを無視し、helpを表示 | 厳格構文とJSON error・exit 1、project-dir等号形 | 誤入力をcallback前に検出し、既存Go CLIと揃える | 従来無視された入力やhelp要求がerrorになる |
+
+active-spaceのno-replace補完とtarget解決順は本家に合わせます。session binding、
+rebind offer、UUID stamp、auditは段階的な未実装範囲であり、恒久的な差分方針ではありません。
+一覧と保存間の同時変更、active-spaceとの競合、全OSのatomic性、fsync・crash耐久、
+multi-file transaction、owner・ACL・特殊mode・hardlink identityの保持は保証しません。
+`os.Root`もmountやdeviceを防ぐ完全sandboxではありません。
+
+詳細と承認は[Intent切替の実装計画](ram/decisions/2026-09-01-intent-switch-plan.md)、
+構文・検証は[Intent切替CLI](development.md#intent切替cli)を参照してください。
+
 ## ビルド情報
 
 `Version`と`Commit`は通常のstring変数として安全な既定値を持ち、release buildでは`go build -ldflags -X`で差し替えます。build timestampは再現可能なbuildを損なうため保持しません。
@@ -414,7 +475,7 @@ bare `space <name>`、session binding、harness include、audit等は段階的�
 - AI-DLCの33ステージとagent実行
 - 設定ファイルとshell completion
 - ancestor探索、project自体の自動作成、既存spaceの自動修復
-- intent作成・切替、space・intentの削除、registry/state本文の解釈
+- intent作成、space・intentの削除、registry/state本文の解釈
 - `ReadSelection`・intent読み取りの公開CLI/status接続、space/intent明示override、session binding
 - Cobra、Viper、GoReleaserなどの外部依存
 - release、署名、公証、installer

@@ -225,7 +225,7 @@ func TestSwitchSpaceCursorFailurePreservesOldFile(t *testing.T) {
 						return err
 					}
 					defer func() { err = errors.Join(err, root.Close()) }()
-					ops := cursorOperations(root)
+					ops := cursorOperations(root, ".active-space-")
 					ops.openFile = func(path string, flags int, mode fs.FileMode) (*os.File, error) {
 						ownedTemp = path
 						return root.OpenFile(path, flags, mode)
@@ -249,7 +249,7 @@ func TestSwitchSpaceCursorFailurePreservesOldFile(t *testing.T) {
 					if stage == "cleanup" {
 						ops.remove = func(string) error { return cleanupCause }
 					}
-					return replaceSpaceCursor(name, ops)
+					return replaceCursor("active-space", name, ops)
 				},
 			)
 			if stage == "short write" {
@@ -331,6 +331,9 @@ func TestSwitchSpaceRootCloseFailures(t *testing.T) {
 				func(root *os.Root, name string) error {
 					return saveCursorInRoot(
 						name,
+						"active-space",
+						".active-space-",
+						"aidlc",
 						func() (*os.Root, error) { return root.OpenRoot("aidlc") },
 						func(root *os.Root) error {
 							roots = append(roots, root)

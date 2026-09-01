@@ -166,7 +166,7 @@ func TestRunIntentListStrictArgumentsAndLazyCallback(t *testing.T) {
 		{name: "JSON after command", args: []string{"intent", "list", "--json"}, wantCalls: 1, wantPrepare: 1},
 		{name: "project split", args: []string{"intent", "list", "--project-dir", "project path"}, wantCalls: 1, wantPrepare: 1, wantDir: "project path"},
 		{name: "project equals with dash", args: []string{"intent", "list", "--project-dir=-project"}, wantCalls: 1, wantPrepare: 1, wantDir: "-project"},
-		{name: "bare JSON separate value remains unknown", args: []string{"intent", "--json", "false"}, wantCode: 2},
+		{name: "bare switch rejects JSON", args: []string{"intent", "--json", "false"}, wantCode: 1, wantPrepare: 1},
 		{name: "list JSON separate value is extra", args: []string{"intent", "list", "--json", "false"}, wantCode: 1, wantPrepare: 1},
 		{name: "JSON equals is unknown flag", args: []string{"intent", "--json=false"}, wantCode: 1, wantPrepare: 1},
 		{name: "duplicate JSON", args: []string{"intent", "list", "--json", "--json"}, wantCode: 1, wantPrepare: 1},
@@ -175,8 +175,6 @@ func TestRunIntentListStrictArgumentsAndLazyCallback(t *testing.T) {
 		{name: "duplicate project", args: []string{"intent", "list", "--project-dir=one", "--project-dir=two"}, wantCode: 1, wantPrepare: 1},
 		{name: "extra positional", args: []string{"intent", "list", "extra"}, wantCode: 1, wantPrepare: 1},
 		{name: "create remains unknown", args: []string{"intent", "create"}, wantCode: 2},
-		{name: "switch remains unknown", args: []string{"intent", "switch"}, wantCode: 2},
-		{name: "target remains unknown", args: []string{"intent", "target"}, wantCode: 2},
 		{name: "dedicated help remains unknown", args: []string{"intent", "help"}, wantCode: 2},
 	}
 	for _, tt := range tests {
