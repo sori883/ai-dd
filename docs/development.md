@@ -97,8 +97,9 @@ path操作に独自の検証とFS境界を用意する必要があります。
 
 既存CIのquality jobでも統合テストを実行します。ただしCIの実行OSはUbuntuであり、
 6 targetのcross buildを各OSの実行証拠とは扱いません。space一覧は`ReadSpaces`、intent一覧は
-`ReadIntents`経由で公開CLIに接続していますが、`ReadSelection`、intent作成・切替、sessionは
-未接続・未実装です。help/version smokeを一覧の検証とせず、space/intent一覧E2Eも完全な
+`ReadIntents`、intent切替は`SwitchIntent`経由で公開CLIに接続していますが、
+`ReadSelection`、intent作成、sessionは未接続・未実装です。help/version smokeを一覧や切替の
+検証とせず、space/intentの機能E2Eも完全な
 workspace lifecycleの検証とは区別します。
 
 ### Space一覧CLI
@@ -158,7 +159,7 @@ human/JSONがSIGPIPE終了でなくexit 1となること、既存help/version/�
 ### Intent一覧CLI
 
 現在spaceのintent registryとrecord directoryをread-onlyで相関して表示します。bare `intent`は
-`intent list`のaliasです。intentの作成・切替やstate本文の読取りは行いません。
+`intent list`のaliasです。一覧操作自体はintentの作成・切替やstate本文の読取りを行いません。
 
 ```sh
 go run ./src/cmd/aidlc intent list --project-dir /path/to/existing-project
@@ -187,10 +188,11 @@ bare aliasはflagを除いた位置引数が`intent`だけの場合です。
 
 | 入力（`aidlc`省略） | 結果 |
 | --- | --- |
-| `intent --json false` | `intent false`が未知subcommandとなり、従来形式・exit 2 |
+| `intent --json false` | bare切替target `false`への`--json`指定としてJSON error・exit 1 |
 | `intent list --json false` | 認識済みlistの余剰位置引数としてJSON error・exit 1 |
 | `intent --json=false` | bare一覧の未知flagとしてJSON error・exit 1 |
-| `intent create` / `intent switch` / `intent help` | 未実装subcommandとして従来形式・exit 2 |
+| `intent switch` | 認識済みswitchのtarget欠落としてJSON error・exit 1 |
+| `intent create` / `intent help` | 予約または専用verbの従来形式・exit 2 |
 
 成功時はstdoutだけへ一覧を出してexit 0です。認識済み一覧の構文・接続・query・Close・出力失敗は
 exit 1で、stderrへ書ける場合はJSON errorを1行出力します。stdout失敗では部分出力が残り得ます。
@@ -210,6 +212,63 @@ integrationでは初回project link、内向き相対child link、外向き・�
 本家ローカル`2.6.123`との比較範囲と承認済み変更は
 [Intent一覧の契約](architecture.md#intent一覧cliとread-only接続)・
 [差分表](architecture.md#intent一覧の意図的な差分)を参照してください。
+
+### Intent切替CLI
+
+shared `active-space`が指すspaceの既存Intentを選び、そのspaceの
+`intents/active-intent`だけを更新します。明示形とbare形は同じ操作です。
+
+```sh
+go run ./src/cmd/aidlc intent switch build-auth --project-dir /path/to/existing-project
+go run ./src/cmd/aidlc intent build-auth --project-dir=/path/to/existing-project
+```
+
+rootは明示flag、`AIDLC_PROJECT_DIR`、`CLAUDE_PROJECT_DIR`、cwdの順です。既存projectと
+対象spaceの`intents/`が必要で、open失敗で低優先rootへfallbackしません。targetは
+trim・slugify・case変換せず、まず`dirName`のcase-sensitive完全一致、次に一意な
+slug完全一致で解決します。slugが複数directoryに一致すればAmbiguous、0件なら
+Unknownとして保存前に拒否します。registry-only行は選択できませんが、markerを
+持つorphanは完全directory名か一意な派生slugで選べます。
+
+bare `intent`だけと`intent list`は一覧です。bareの`list`・`switch`・`create`・`archive`・
+`rename`・`show`・`birth`・`help`はtargetにしません。`list`等の名前を持つrecordは
+`intent switch list`のように明示形で指定できます。rawの空文字・`help`・`-h`は
+明示形でも拒否します。caseの異なる`Help`等は通常targetです。
+
+`--project-dir path`と`--project-dir=path`はcommandの前・途中・target後に置けます。
+重複・欠落・空値、未知flag、余剰target、`--json`はcallback前に拒否し、cwd・環境変数・
+FSを読みません。分離形の次tokenが`-`始まりなら値欠落です。`-dir`という実pathは
+`--project-dir=-dir`または`--project-dir ./-dir`で指定します。`--json`は一覧専用です。
+
+成功はstdoutに`Active intent → <dirName> (space: <space>)\n`だけを出し、stderr空、
+exit 0です。認識済みswitchの構文・query・保存・Close・出力失敗はexit 1で、
+stderrに書ければJSON errorを1行出します。stdout失敗では部分出力と保存済み
+cursorが残り得ます。stderrも書けなければexit 1だけを保証します。
+
+shared `active-space`が不在なら、完成済みstaging fileとhard linkで`<space>\n`を
+no-replace補完します。競合で先に作られた値は上書きせず、補完失敗はbest-effortです。
+`active-intent`は一時fileから置換し、既存symlink・非regularを拒否します。既存permissionの
+9bitだけを復元し、owner・ACL・特殊mode・hardlink identityは保持保証しません。
+Rename前の失敗でも補完済みactive-spaceやcleanup失敗のtempは残り得ます。Rename後、
+Root Close、出力失敗ではactive-intentも保存済みの場合があり、自動rollbackしません。
+
+```sh
+go test -count=1 -run '^(TestSwitchIntent|TestResolveIntentTarget|TestCompleteCursorNoReplace|TestReplaceCursor)' ./src/internal/workspace
+go test -tags=integration -count=1 -run '^TestSwitchIntent' ./src/internal/workspace
+go test -count=1 -run '^(TestRunIntentSwitch|TestRunHelpIncludesIntentSwitch)' ./src/internal/cli
+go test -count=1 -run '^(TestIntentSwitcher|TestMainIntentSwitch)' ./src/cmd/aidlc
+```
+
+unit testはexact・unique slug・Ambiguous・Unknown、非公開seamでのopen・write・short write・
+Chmod・Close・Rename・cleanup失敗、no-replaceの順序と競合を固定します。integrationは
+初回project link、内向き相対child link、外向き・絶対・broken link、cursor型とmode、
+session・registry・state・audit・configの無変更を確認します。Unixの通常testは実mainに
+閉じたstdout/stderr pipeを接続し、SIGPIPE終了でなくexit 1に到達することと、
+出力errorで保存済みcursorを取り消さないことを確認します。
+
+制約とローカルAI-DLC `2.6.123`からの承認済み変更は
+[Intent切替](architecture.md#intent切替)・[差分表](architecture.md#intent切替の意図的な差分)を参照してください。
+session binding、rebind offer、UUID stamp、audit、intent作成はまだ一連で動きません。
 
 ### Space作成CLI
 
@@ -347,7 +406,7 @@ CIは`CGO_ENABLED=0`で次の6ターゲットのCLIをbuildします。
 - `windows/arm64`
 
 ローカルでは次のloopで、CLIとintegrationタグ付きworkspaceテストバイナリを確認できます。
-mainはspace作成・一覧・切替とintent一覧のためworkspaceをimportしますが、CLI buildはworkspaceの`_test.go`や
+mainはspace作成・一覧・切替とintent一覧・切替のためworkspaceをimportしますが、CLI buildはworkspaceの`_test.go`や
 integrationタグ付きテストをcompileしないため、テストバイナリも別に確認します。
 いずれもコンパイルの確認であり、各OSでのテスト実行とは区別します。
 

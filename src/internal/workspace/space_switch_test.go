@@ -162,6 +162,9 @@ func TestSaveCursorInRootOpenFailure(t *testing.T) {
 	cause := fs.ErrPermission
 	err := saveCursorInRoot(
 		"default",
+		"active-space",
+		".active-space-",
+		"aidlc",
 		func() (*os.Root, error) { return nil, cause },
 		func(*os.Root) error {
 			t.Error("close called without acquired aidlc root")
@@ -199,8 +202,8 @@ func TestReplaceSpaceCursorNonRegular(t *testing.T) {
 				t.Error("nonregular cursor reached temporary file creation")
 				return nil, fs.ErrPermission
 			}
-			if err := replaceSpaceCursor("default", ops); !errors.Is(err, fs.ErrInvalid) {
-				t.Errorf("replaceSpaceCursor() error=%v, want fs.ErrInvalid", err)
+			if err := replaceCursor("active-space", "default", ops); !errors.Is(err, fs.ErrInvalid) {
+				t.Errorf("replaceCursor() error=%v, want fs.ErrInvalid", err)
 			}
 		})
 	}
@@ -243,7 +246,7 @@ func TestReplaceSpaceCursorPreservesPermissions(t *testing.T) {
 		steps = append(steps, "rename")
 		return nil
 	}
-	if err := replaceSpaceCursor("default", ops); err != nil {
+	if err := replaceCursor("active-space", "default", ops); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(steps, []string{"write", "chmod", "close", "rename"}) {
@@ -260,8 +263,8 @@ func TestReplaceSpaceCursorShortWrite(t *testing.T) {
 		t.Error("short write reached rename")
 		return nil
 	}
-	if err := replaceSpaceCursor("default", ops); !errors.Is(err, io.ErrShortWrite) {
-		t.Errorf("replaceSpaceCursor() error = %v, want io.ErrShortWrite", err)
+	if err := replaceCursor("active-space", "default", ops); !errors.Is(err, io.ErrShortWrite) {
+		t.Errorf("replaceCursor() error = %v, want io.ErrShortWrite", err)
 	}
 }
 
@@ -293,8 +296,8 @@ func TestReplaceSpaceCursorRetriesCollision(t *testing.T) {
 		t.Errorf("removed unowned or published temp %q", name)
 		return nil
 	}
-	if err := replaceSpaceCursor("default", ops); err != nil {
-		t.Errorf("replaceSpaceCursor() error = %v, want collision retry success", err)
+	if err := replaceCursor("active-space", "default", ops); err != nil {
+		t.Errorf("replaceCursor() error = %v, want collision retry success", err)
 	}
 	if attempts != 2 {
 		t.Errorf("temp attempts = %d, want 2", attempts)
@@ -314,8 +317,8 @@ func TestReplaceSpaceCursorCollisionLimit(t *testing.T) {
 		t.Errorf("removed unowned collision %q", name)
 		return nil
 	}
-	if err := replaceSpaceCursor("default", ops); !errors.Is(err, fs.ErrExist) {
-		t.Errorf("replaceSpaceCursor() error = %v, want fs.ErrExist", err)
+	if err := replaceCursor("active-space", "default", ops); !errors.Is(err, fs.ErrExist) {
+		t.Errorf("replaceCursor() error = %v, want fs.ErrExist", err)
 	}
 	if attempts != cursorTempAttempts {
 		t.Errorf("attempts = %d, want bounded limit %d", attempts, cursorTempAttempts)
@@ -395,7 +398,7 @@ func TestReplaceSpaceCursorFailures(t *testing.T) {
 				}
 				return step("remove")
 			}
-			err = replaceSpaceCursor("default", ops)
+			err = replaceCursor("active-space", "default", ops)
 			for _, cause := range failures {
 				if !errors.Is(err, cause) {
 					t.Errorf("error %v lost cause %v", err, cause)

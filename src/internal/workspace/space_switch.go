@@ -1,30 +1,13 @@
 package workspace
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 )
-
-const cursorTempAttempts = 10
-
-// cursorOps is a private failure-injection seam for this one-file replacement.
-// Filesystem operations stay bound to the same aidlc root.
-type cursorOps struct {
-	lstat    func(string) (fs.FileInfo, error)
-	tempName func() string
-	openFile func(string, int, fs.FileMode) (*os.File, error)
-	write    func(*os.File, string) (int, error)
-	chmod    func(*os.File, fs.FileMode) error
-	close    func(*os.File) error
-	rename   func(string, string) error
-	remove   func(string) error
-}
 
 // SwitchSpace selects a listed space by updating the shared active-space cursor.
 // The project must already exist; the synthetic default space need not exist.
@@ -88,108 +71,10 @@ func saveSpaceCursor(root *os.Root, name string) error {
 	}
 	return saveCursorInRoot(
 		name,
+		"active-space",
+		".active-space-",
+		"aidlc",
 		func() (*os.Root, error) { return root.OpenRoot("aidlc") },
 		(*os.Root).Close,
 	)
-}
-
-func saveCursorInRoot(
-	name string,
-	open func() (*os.Root, error),
-	closeRoot func(*os.Root) error,
-) (err error) {
-	root, err := open()
-	if err != nil {
-		return fmt.Errorf("open cursor parent %q: %w", "aidlc", err)
-	}
-	defer func() {
-		if closeErr := closeRoot(root); closeErr != nil {
-			err = errors.Join(err, fmt.Errorf("close cursor parent %q: %w", "aidlc", closeErr))
-		}
-	}()
-	return replaceSpaceCursor(name, cursorOperations(root))
-}
-
-func cursorOperations(root *os.Root) cursorOps {
-	return cursorOps{
-		lstat:    root.Lstat,
-		tempName: func() string { return ".active-space-" + rand.Text() },
-		openFile: root.OpenFile,
-		write:    (*os.File).WriteString,
-		chmod:    (*os.File).Chmod,
-		close:    (*os.File).Close,
-		rename:   root.Rename,
-		remove:   root.Remove,
-	}
-}
-
-func replaceSpaceCursor(name string, ops cursorOps) (err error) {
-	info, err := ops.lstat("active-space")
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("inspect active-space cursor: %w", err)
-	}
-	if err == nil && !info.Mode().IsRegular() {
-		return fmt.Errorf("active-space cursor must be a regular file: %w", fs.ErrInvalid)
-	}
-	mode := fs.FileMode(0o666)
-	var oldMode *fs.FileMode
-	if err == nil {
-		mode = 0o600
-		permissions := info.Mode().Perm()
-		oldMode = &permissions
-	}
-	var temp string
-	var file *os.File
-	for range cursorTempAttempts {
-		temp = ops.tempName()
-		file, err = ops.openFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
-		if !errors.Is(err, fs.ErrExist) {
-			break
-		}
-	}
-	if err != nil {
-		return fmt.Errorf("create temporary cursor %q: %w", temp, err)
-	}
-	isRenamed := false
-	defer func() {
-		if !isRenamed {
-			if cleanupErr := ops.remove(temp); cleanupErr != nil {
-				err = errors.Join(err, fmt.Errorf("remove temporary cursor %q: %w", temp, cleanupErr))
-			}
-		}
-	}()
-	if err := writeCursorFile(
-		file,
-		name+"\n",
-		oldMode,
-		ops,
-	); err != nil {
-		return err
-	}
-	if err := ops.rename(temp, "active-space"); err != nil {
-		return fmt.Errorf("replace active-space cursor: %w", err)
-	}
-	isRenamed = true
-	return nil
-}
-
-func writeCursorFile(file *os.File, content string, oldMode *fs.FileMode, ops cursorOps) (err error) {
-	defer func() {
-		if closeErr := ops.close(file); closeErr != nil {
-			err = errors.Join(err, fmt.Errorf("close temporary cursor: %w", closeErr))
-		}
-	}()
-	n, err := ops.write(file, content)
-	if err == nil && n != len(content) {
-		err = io.ErrShortWrite
-	}
-	if err != nil {
-		return fmt.Errorf("write temporary cursor: %w", err)
-	}
-	if oldMode != nil {
-		if err := ops.chmod(file, *oldMode); err != nil {
-			return fmt.Errorf("restore cursor permissions: %w", err)
-		}
-	}
-	return nil
 }

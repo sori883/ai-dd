@@ -27,16 +27,18 @@ sandbox rootそのものへ実行物を直置きせず、必ずscenarioごとの
 | Space listing | 配布binaryからshared cursorの一覧・human/JSON・bare aliasと無変更を確認 | 実施可能 |
 | Space switching | 配布binaryから既存spaceを選び、shared cursor保存・失敗境界・周辺dataの無変更を確認 | 実施可能 |
 | Intent listing | 配布binaryから現在spaceのregistry・record相関、human/JSON・bare aliasと無変更を確認 | 実施可能 |
+| Intent switching | 配布binaryから現在spaceのIntentを解決し、shared cursor保存・失敗境界・周辺dataの無変更を確認 | 実施可能 |
 | 配布・install | binaryがCodex向け資産を対象projectへ安全に展開できること | 未実装 |
 | workspace lifecycle | project root、space、intent、stateを配布先から一連で扱えること | 未実装 |
 
 Go版CLIはhelp/version、`aidlc space create <name> [--project-dir <path>]`、
 `aidlc space list [--json] [--project-dir <path>]`とbare `aidlc space`、
 `aidlc space switch <name> [--project-dir <path>]`、`aidlc intent list [--json] [--project-dir <path>]`と
-bare `aidlc intent`を公開している。help/versionの起動確認は引き続きsmokeとして扱い、
-space作成・一覧・切替とintent一覧は別の機能E2Eとして記録する。各CLIはmainでroot入力を
+bare `aidlc intent`、`aidlc intent switch <target> [--project-dir <path>]`とbare
+`aidlc intent <target> [--project-dir <path>]`を公開している。help/versionの起動確認は引き続きsmokeとして扱い、
+space作成・一覧・切替とintent一覧・切替は別の機能E2Eとして記録する。各CLIはmainでroot入力を
 組み立てて既存resolverへ接続するため、その経路も検証対象になる。
-`ReadSelection`、session binding、intent作成・切替は公開CLIへ未接続・未実装なので、
+`ReadSelection`、session binding、intent作成は公開CLIへ未接続・未実装なので、
 このE2Eを完全なworkspace lifecycleや完全なAI-DLC配布E2Eとは扱わない。
 
 ## 実行証跡
@@ -52,6 +54,7 @@ space作成・一覧・切替とintent一覧は別の機能E2Eとして記録す
 - space作成では生成path・file本文、継承元と既存cursor等の前後snapshot、重複拒否後の無変更
 - space一覧では出力の行・active・JSON形式と、成功・構文/接続/出力失敗時のfixture前後snapshot
 - intent一覧ではregistry/recordの相関・順序・active・human/JSON形式と、成功・構文/接続/query/出力失敗時のfixture前後snapshot
+- intent切替では対象解決、active-space補完、active-intentの内容・mode、失敗時の部分保存と周辺dataの無変更
 - space切替ではcursorの内容・mode、親directory・tempの残存、周辺dataの無変更、errorでも保存済みかの確認
 - その時点で未実装のため確認できなかった範囲
 
@@ -102,7 +105,7 @@ dataへの影響を検証する。snapshot比較は並行更新に対する一�
 2. registry欠損・不正JSON・非配列・読取errorではdisk recordをfallback表示し、有効な配列内の
    不正rowは部分表示せずJSON error・exit 1となることを確認する。state本文は解釈しない。
 3. project-dirの分離形・等号形とflagの前・途中・後配置、root優先順位、未作成project、
-   値なしJSON、未知・重複・欠落・空flag値、余剰位置引数、未知intent subcommandを確認する。
+   値なしJSON、未知・重複・欠落・空flag値、余剰位置引数、予約済みの未実装intent subcommandを確認する。
    構文errorではcwd・環境変数・FS callbackを呼ばない。
 4. 初回project link、project内相対intents link、外向き・絶対・broken linkを確認する。
    child不在・broken linkはspace名を保持した空一覧、外向き・絶対linkは接続errorとして区別する。
@@ -121,6 +124,42 @@ dataへの影響を検証する。snapshot比較は並行更新に対する一�
 
 実施済みの記録: [2026-09-01 Intent一覧の配布E2E](e2e-runs/2026-09-01-intent-list.md)。
 45起動すべてで期待exit・stdout/stderr・filesystem不変に一致した。
+
+## Intent切替scenario
+
+未使用scenario内にbinaryと独立した既存project fixtureを用意する。以下は検証手順であり、
+実行済みの証拠はsource commitを固定した後の個別実施記録で示す。
+
+1. `intent switch <target>`とbare `intent <target>`を実行し、成功1行
+   `Active intent → <dirName> (space: <space>)\n`・exit 0と、`active-intent`の正確な
+   `<dirName>\n`を確認する。
+2. exact directoryがslugの曖昧性より優先されること、一意slug、Ambiguousの候補名、
+   Unknown、registry-onlyの拒否、orphan、重複registry行、case-sensitive targetを確認する。
+3. `active-space`不在時の`<space>\n`補完、既存値の保持、同一target再保存、
+   `active-intent`のpermission保持を確認する。補完失敗がbest-effortであることと、
+   cursor保存失敗の決定的注入はunit/integration testで別に固定する。
+4. project-dirの全位置・分離形・等号形、root優先順位、未作成project、target欠落・
+   raw help/-h・空値・余剰・未知・重複・空flag値・`--json`を確認する。bareの予約verbは
+   targetでなく、明示`switch`では同名recordを選べることも固定する。
+5. 初回project link、境界内相対intents link、外向き・絶対・broken link、
+   `active-intent`のsymlink（danglingを含む）・非regular fileを確認する。失敗後の
+   cursor、外側fixture、tempの状態を記録する。
+6. `aidlc/.aidlc-sessions/`のbinding・current-session・rebind-offer・session file、対象と
+   他spaceのregistry・state・audit、`.codex/config.toml`等を保護fixtureに含める。
+   許可された`active-space`補完と`active-intent`更新、その親dirのmetadata以外を
+   前後snapshotで比較する。
+7. Unixでは読み口を閉じた実pipeをstdout、stderr、両方へ接続する。SIGPIPE終了でなく
+   exit 1となり、stderrが書ける場合だけJSON errorが届くこと、stdout失敗で保存済み
+   cursorを取り消さないことを確認する。部分stdoutは残り得て、stderrも書けなければ
+   exit 1だけを保証する。help/version/未知commandのSIGPIPE挙動は維持する。
+
+一覧と保存間の並行変更、multi-file transaction、rollback、全OSでのatomic更新、
+fsync・crash耐久、owner・ACL・特殊mode・hardlink identity、mount/deviceを含む完全sandboxは
+このE2Eの成功から主張しない。session binding、rebind offer、UUID stamp、audit、intent作成も
+未検証・未実装として区別する。
+
+構文と保存境界は[Intent切替CLI](development.md#intent切替cli)、ローカル本家`2.6.123`からの
+承認済み変更は[Intent切替](architecture.md#intent切替)・[差分表](architecture.md#intent切替の意図的な差分)を参照する。
 
 ## Space切替scenario
 
