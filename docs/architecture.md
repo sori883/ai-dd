@@ -14,6 +14,7 @@ src/internal/workspace
   ├─ project root resolution
   ├─ active-space and space listing (read-only)
   ├─ active-intent and intent listing (read-only)
+  ├─ Detect: caller-owned project Root → read-only workspace signals
   ├─ ReadSpaces: project → shared-cursor space list (read-only CLI)
   ├─ ReadIntents: project → active space → registry and record list (read-only CLI)
   ├─ ReadSelection: project → current space → intents (read-only, no CLI yet)
@@ -28,7 +29,7 @@ src/internal/workspace
 - `src/cmd/aidlc`: composition rootです。process引数、stdout、stderr、build情報と作成・一覧・切替callbackを組み立て、`cli.Run`の戻り値を`os.Exit`へ渡します。callbackが呼ばれたときだけcwdと環境変数を読みます。ドメイン判断や出力整形は置きません。
 - `src/internal/cli`: CLIの引数解釈、stdout/stderrの分離、終了コード、help/version、space create/list/switch、bare space、intent list/switchとbare intentの表示契約を所有します。`io.Writer`とcallbackを受け取るため、process全体を起動せずにテストできます。
 - `src/internal/buildinfo`: linkerが差し替える`Version`と`Commit`、およびそのsnapshotを所有します。既定値は`dev`と`unknown`です。
-- `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、spaceとIntent coreの新規作成、space・intentの共有cursor切替を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。space一覧は`ReadSpaces`、intent一覧は`ReadIntents`を通じてCLIへ接続し、`ReadSelection`と`CreateIntent`は内部APIのままです。書込みは`CreateSpace`・`SwitchSpace`・`SwitchIntent`・`CreateIntent`の明示呼出しだけで行い、接続APIのRoot生存期間も内部で管理します。
+- `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、read-onlyのworkspace分析、spaceとIntent coreの新規作成、space・intentの共有cursor切替を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。space一覧は`ReadSpaces`、intent一覧は`ReadIntents`を通じてCLIへ接続し、`ReadSelection`・`CreateIntent`・`Detect`は内部APIのままです。書込みは`CreateSpace`・`SwitchSpace`・`SwitchIntent`・`CreateIntent`の明示呼出しだけで行い、接続APIのRoot生存期間も内部で管理します。`Detect`は例外としてcaller所有の既存`*os.Root`を借り、Closeしません。
 
 `internal`配下はmodule外からimportできません。今後の機能も、CLIから直接filesystemやnetworkへ到達させず、責務ごとのpackageをcomposition rootで接続します。
 
@@ -525,6 +526,46 @@ broken linkとregistry/`active-intent`のsymlink・特殊fileは拒否します�
 詳細と承認は
 [Intent作成coreの実装計画](ram/decisions/2026-09-01-intent-create-core-plan.md)、
 検証手順は[Intent作成core](development.md#intent作成core内部api)を参照してください。
+
+## 読み取り専用workspace分析
+
+`workspace.Detect(projectRoot *os.Root) ScanResult`は、callerが既に開いたproject Rootから
+`ProjectType`、`Languages`、`Frameworks`、`BuildSystem`、`NestedRoot`、
+`Submodules`を算出する内部APIです。Rootの選択・open・Closeはcallerが所有し、
+scannerはfilesystemを書き換えず、個別のread・Stat・JSON parse errorをそのsignalの不在として
+吸収します。空の`NestedRoot`はnested hitなし、non-nilの空`Submodules`は有効な
+`.gitmodules` entryなしを表します。
+
+root直下fileと既知source directoryを言語別に数え、frameworkは固定順、build systemは
+本家の優先順でまとめます。`package.json`はplain objectだけをdocumentとして認め、
+weakly typedなdependency fieldにはJavaScriptの`Object.keys`・object spread・truthinessの
+必要範囲を適用します。rootにBrownfield signalがない場合だけ、除外directoryと
+symlinkを飛ばして最大3階層のnested workspaceを探します。hit後はその下へ降りず、
+nested pathだけをJavaScriptのUTF-16 code-unit順で並べ、`/`区切りで返します。
+
+言語はcount降順のstable sortで、secondaryは
+`max(1, floor(primary count * 0.2))`以上を残します。
+systemのdirectory列挙順を保つため`Root.Open`と`File.ReadDir(-1)`を使い、同数に新しい
+lexical tie-breakは追加しません。そのため、Bun・Go・OS・filesystemが異なる場合の
+同数言語の表示順は完全互換を保証しません。`.gitmodules`は安全なpathの宣言順を保ち、
+`<path>/.git`の存在だけで`Initialized`を決めます。Git commandやrepositoryの妥当性検証は
+行いません。このAPIはstage graph、state、audit、Intent作成core、CLIにはまだ接続していません。
+
+### Workspace分析の意図的な差分
+
+比較対象はローカルAI-DLC `2.6.123`の`detectWorkspace`とそのhelperです。
+authored implementation、canonical Codex dist、配置済みCodexの対象`aidlc-utility.ts`が
+同一SHA-256であることを[2026-09-02の原典調査](ram/research/2026-09-02-workspace-detection-contracts.md)に
+記録した範囲で確認しました。最新upstream全体との一致は主張しません。
+
+| 本家の挙動 | 採用した挙動 | 理由 | 利用者・互換性への影響 |
+| --- | --- | --- | --- |
+| 通常のfilesystem APIがconfigやsubmoduleのroot外・絶対symlinkを追従し得る | 既存`os.Root`境界でroot外・絶対linkを拒否し、内向き相対linkだけをRootの規則で参照 | 承認済みworkspace APIの安全境界を継承し、scannerから緩和経路を作らない | 境界外configの本文signalは得られず、境界外のsubmodule `.git`は未初期化となる |
+
+`os.Root`もmountやdeviceを防ぐ完全sandboxではなく、並行変更中の一貫したsnapshotも
+保証しません。詳細と承認は
+[読み取り専用ワークスペース分析の実装計画](ram/decisions/2026-09-02-workspace-detection-plan.md)、
+検証手順は[読み取り専用workspace分析](development.md#読み取り専用workspace分析内部api)を参照してください。
 
 ## ビルド情報
 
