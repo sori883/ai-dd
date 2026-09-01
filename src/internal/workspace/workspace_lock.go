@@ -122,6 +122,9 @@ func normalizeWorkspaceLockCanonical(canonical, platform string) string {
 	return canonical
 }
 
+// Lock compatibility is pinned to Bun 1.3.14 on Windows (ICU 73.2,
+// Unicode 15), matching Go 1.26.4's Unicode 15 tables. Do not follow a host
+// system ICU result, including Bun on macOS; fixed vectors detect table drift.
 func ecmaScriptDefaultLower(value string) string {
 	runes := []rune(value)
 	var lowered strings.Builder

@@ -117,6 +117,30 @@ func TestWorkspaceLockPathMatchesKnownWindowsUnicodeIdentity(t *testing.T) {
 	}
 }
 
+func TestWorkspaceLockPathKeepsBunWindowsUnicode15Identity(t *testing.T) {
+	t.Parallel()
+
+	canonical := `C:\Projects\AᲉB`
+	wantLower := `c:\projects\aᲉb`
+	identity := workspaceLockIdentity(canonical, "windows")
+	if want := wantLower + "\x00" + workspaceLockSentinel; identity != want {
+		t.Errorf("workspaceLockIdentity() = %q, want Bun Windows Unicode 15 value %q", identity, want)
+	}
+	digest := md5.Sum([]byte(identity)) //nolint:gosec // Compatibility identity, not security.
+	if got := fmt.Sprintf("%x", digest[:4]); got != "a3f33a77" {
+		t.Errorf("workspace lock digest = %q, want %q", got, "a3f33a77")
+	}
+	path := workspaceLockPathForPlatform(
+		canonical,
+		t.TempDir(),
+		func(string) (string, error) { return canonical, nil },
+		"windows",
+	)
+	if got := filepath.Base(path); got != ".aidlc-audit-a3f33a77.lock" {
+		t.Errorf("workspace lock name = %q, want Bun Windows Unicode 15 guard", got)
+	}
+}
+
 func TestAcquireWorkspaceLockWritesCompatibleOwnerAndReleaseRemovesOwnGeneration(t *testing.T) {
 	t.Parallel()
 
