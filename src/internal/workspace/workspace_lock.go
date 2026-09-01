@@ -123,8 +123,9 @@ func normalizeWorkspaceLockCanonical(canonical, platform string) string {
 }
 
 // Lock compatibility is pinned to Bun 1.3.14 on Windows (ICU 73.2,
-// Unicode 15), matching Go 1.26.4's Unicode 15 tables. Do not follow a host
-// system ICU result, including Bun on macOS; fixed vectors detect table drift.
+// Unicode 15). The Unicode 15 overlays keep newer Go Unicode tables from
+// changing lock identities. Do not follow a host system ICU result, including
+// Bun on macOS; fixed vectors detect table drift.
 func ecmaScriptDefaultLower(value string) string {
 	runes := []rune(value)
 	var lowered strings.Builder
@@ -140,10 +141,23 @@ func ecmaScriptDefaultLower(value string) string {
 				lowered.WriteRune('\u03c3')
 			}
 		default:
-			lowered.WriteRune(unicode.ToLower(char))
+			lowered.WriteRune(unicode15Lower(char))
 		}
 	}
 	return lowered.String()
+}
+
+func unicode15Lower(char rune) rune {
+	switch char {
+	case '\U00001c89', '\U0000a7cb', '\U0000a7cc', '\U0000a7ce',
+		'\U0000a7d2', '\U0000a7d4', '\U0000a7da', '\U0000a7dc':
+		return char
+	}
+	if runeInRange(char, '\U00010d50', '\U00010d65') ||
+		runeInRange(char, '\U00016ea0', '\U00016eb8') {
+		return char
+	}
+	return unicode.ToLower(char)
 }
 
 func isFinalSigma(runes []rune, index int) bool {
@@ -170,6 +184,12 @@ func nearestCasedBefore(runes []rune, index int) bool {
 }
 
 func isCased(char rune) bool {
+	if char == '\u0295' {
+		return true
+	}
+	if isUnicode15Uncased(char) {
+		return false
+	}
 	return unicode.In(
 		char,
 		unicode.Lu,
@@ -180,7 +200,27 @@ func isCased(char rune) bool {
 	)
 }
 
+func isUnicode15Uncased(char rune) bool {
+	switch char {
+	case '\U0000a7d2', '\U0000a7d4', '\U0000a7f1':
+		return true
+	}
+	return runeInRange(char, '\U00001c89', '\U00001c8a') ||
+		runeInRange(char, '\U0000a7cb', '\U0000a7cf') ||
+		runeInRange(char, '\U0000a7da', '\U0000a7dc') ||
+		runeInRange(char, '\U00010d50', '\U00010d65') ||
+		runeInRange(char, '\U00010d70', '\U00010d85') ||
+		runeInRange(char, '\U00016ea0', '\U00016eb8') ||
+		runeInRange(char, '\U00016ebb', '\U00016ed3')
+}
+
 func isCaseIgnorable(char rune) bool {
+	if char == '\U0001171e' {
+		return true
+	}
+	if isUnicode15NotCaseIgnorable(char) {
+		return false
+	}
 	if unicode.In(char, unicode.Mn, unicode.Me, unicode.Cf, unicode.Lm, unicode.Sk) {
 		return true
 	}
@@ -192,6 +232,34 @@ func isCaseIgnorable(char rune) bool {
 	default:
 		return false
 	}
+}
+
+func isUnicode15NotCaseIgnorable(char rune) bool {
+	switch char {
+	case '\u0897', '\U0000a7f1', '\U00010d4e', '\U00010d6f', '\U00010ec5',
+		'\U000113ce', '\U000113d0', '\U000113d2', '\U00011b60', '\U00011b66',
+		'\U00011dd9', '\U00011f5a', '\U0001e6e3', '\U0001e6e6', '\U0001e6f5',
+		'\U0001e6ff':
+		return true
+	}
+	return runeInRange(char, '\U00001acf', '\U00001add') ||
+		runeInRange(char, '\U00001ae0', '\U00001aeb') ||
+		runeInRange(char, '\U00010d69', '\U00010d6d') ||
+		runeInRange(char, '\U00010efa', '\U00010efc') ||
+		runeInRange(char, '\U000113bb', '\U000113c0') ||
+		runeInRange(char, '\U000113e1', '\U000113e2') ||
+		runeInRange(char, '\U00011b62', '\U00011b64') ||
+		runeInRange(char, '\U0001611e', '\U00016129') ||
+		runeInRange(char, '\U0001612d', '\U0001612f') ||
+		runeInRange(char, '\U00016d40', '\U00016d42') ||
+		runeInRange(char, '\U00016d6b', '\U00016d6c') ||
+		runeInRange(char, '\U00016ff2', '\U00016ff3') ||
+		runeInRange(char, '\U0001e5ee', '\U0001e5ef') ||
+		runeInRange(char, '\U0001e6ee', '\U0001e6ef')
+}
+
+func runeInRange(char, first, last rune) bool {
+	return first <= char && char <= last
 }
 
 func acquireWorkspaceLock(

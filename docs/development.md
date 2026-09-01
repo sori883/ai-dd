@@ -291,8 +291,10 @@ unit testはUUIDv7、slug・予約語・UTC日付・suffix、正確なstub、str
 atomic writer、write・short write・Close・Rename・cleanupの原因保持を確認します。lock testは本家互換identityと
 owner stamp、600回上限、context優先、自分のgenerationだけのrelease、stale・malformed lockの
 fail-closedに加え、Windows lock identityのU+0130・Final Sigma互換vectorを固定します。
-U+1C89の固定vectorは、将来GoのUnicode tableが更新されてもBun Windows `1.3.14`の
-ICU `73.2` / Unicode 15 identityから無言で逸脱しないことを検知し、macOSのsystem ICU結果は基準にしません。
+Unicode 15から後に追加されたlowercase・Cased・Case_Ignorable propertyは明示overlayで打ち消し、
+Go `1.26.4`（Unicode 15）と監査済みのGo `1.27.0`（Unicode 17）でBun Windows `1.3.14`の
+ICU `73.2` / Unicode 15 identityを維持します。未監査のGo Unicode versionはtestで再調査を要求し、
+macOSのsystem ICU結果は基準にしません。
 上の正規表現を変更する場合は`go test -list`で対象testを確認してください。
 
 integration testは実`os.Root`で既存Space、invalid registryの前後snapshot、registry/`active-intent`の

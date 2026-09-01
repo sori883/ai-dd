@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 )
 
 func TestWorkspaceLockPathUsesCanonicalWorkspaceIdentity(t *testing.T) {
@@ -139,6 +140,129 @@ func TestWorkspaceLockPathKeepsBunWindowsUnicode15Identity(t *testing.T) {
 	if got := filepath.Base(path); got != ".aidlc-audit-a3f33a77.lock" {
 		t.Errorf("workspace lock name = %q, want Bun Windows Unicode 15 guard", got)
 	}
+}
+
+func TestECMAScriptDefaultLowerKeepsUnicode15IdentityRunes(t *testing.T) {
+	t.Parallel()
+
+	identityRunes := []rune{
+		'\U00001c89', '\U0000a7cb', '\U0000a7cc', '\U0000a7ce',
+		'\U0000a7d2', '\U0000a7d4', '\U0000a7da', '\U0000a7dc',
+	}
+	identityRunes = appendRuneRange(identityRunes, '\U00010d50', '\U00010d65')
+	identityRunes = appendRuneRange(identityRunes, '\U00016ea0', '\U00016eb8')
+	if len(identityRunes) != 55 {
+		t.Fatalf("Unicode 15 lowercase identity set has %d runes, want 55", len(identityRunes))
+	}
+	for _, char := range identityRunes {
+		if got := ecmaScriptDefaultLower(string(char)); got != string(char) {
+			t.Errorf("ecmaScriptDefaultLower(U+%04X) = %U, want identity", char, []rune(got))
+		}
+	}
+}
+
+func TestIsCasedUsesUnicode15Overlay(t *testing.T) {
+	t.Parallel()
+
+	if !isCased('\u0295') {
+		t.Error("isCased(U+0295) = false, want Unicode 15 true")
+	}
+	notCased := []rune{'\U0000a7d2', '\U0000a7d4', '\U0000a7f1'}
+	notCased = appendRuneRange(notCased, '\U00001c89', '\U00001c8a')
+	notCased = appendRuneRange(notCased, '\U0000a7cb', '\U0000a7cf')
+	notCased = appendRuneRange(notCased, '\U0000a7da', '\U0000a7dc')
+	notCased = appendRuneRange(notCased, '\U00010d50', '\U00010d65')
+	notCased = appendRuneRange(notCased, '\U00010d70', '\U00010d85')
+	notCased = appendRuneRange(notCased, '\U00016ea0', '\U00016eb8')
+	notCased = appendRuneRange(notCased, '\U00016ebb', '\U00016ed3')
+	if len(notCased) != 107 {
+		t.Fatalf("Unicode 15 non-Cased overlay has %d runes, want 107", len(notCased))
+	}
+	for _, char := range notCased {
+		if isCased(char) {
+			t.Errorf("isCased(U+%04X) = true, want Unicode 15 false", char)
+		}
+	}
+}
+
+func TestIsCaseIgnorableUsesUnicode15Overlay(t *testing.T) {
+	t.Parallel()
+
+	if !isCaseIgnorable('\U0001171e') {
+		t.Error("isCaseIgnorable(U+1171E) = false, want Unicode 15 true")
+	}
+	notIgnorable := []rune{
+		'\u0897', '\U0000a7f1', '\U00010d4e', '\U00010d6f', '\U00010ec5',
+		'\U000113ce', '\U000113d0', '\U000113d2', '\U00011b60', '\U00011b66',
+		'\U00011dd9', '\U00011f5a', '\U0001e6e3', '\U0001e6e6', '\U0001e6f5',
+		'\U0001e6ff',
+	}
+	notIgnorable = appendRuneRange(notIgnorable, '\U00001acf', '\U00001add')
+	notIgnorable = appendRuneRange(notIgnorable, '\U00001ae0', '\U00001aeb')
+	notIgnorable = appendRuneRange(notIgnorable, '\U00010d69', '\U00010d6d')
+	notIgnorable = appendRuneRange(notIgnorable, '\U00010efa', '\U00010efc')
+	notIgnorable = appendRuneRange(notIgnorable, '\U000113bb', '\U000113c0')
+	notIgnorable = appendRuneRange(notIgnorable, '\U000113e1', '\U000113e2')
+	notIgnorable = appendRuneRange(notIgnorable, '\U00011b62', '\U00011b64')
+	notIgnorable = appendRuneRange(notIgnorable, '\U0001611e', '\U00016129')
+	notIgnorable = appendRuneRange(notIgnorable, '\U0001612d', '\U0001612f')
+	notIgnorable = appendRuneRange(notIgnorable, '\U00016d40', '\U00016d42')
+	notIgnorable = appendRuneRange(notIgnorable, '\U00016d6b', '\U00016d6c')
+	notIgnorable = appendRuneRange(notIgnorable, '\U00016ff2', '\U00016ff3')
+	notIgnorable = appendRuneRange(notIgnorable, '\U0001e5ee', '\U0001e5ef')
+	notIgnorable = appendRuneRange(notIgnorable, '\U0001e6ee', '\U0001e6ef')
+	if len(notIgnorable) != 88 {
+		t.Fatalf("Unicode 15 non-Case_Ignorable overlay has %d runes, want 88", len(notIgnorable))
+	}
+	for _, char := range notIgnorable {
+		if isCaseIgnorable(char) {
+			t.Errorf("isCaseIgnorable(U+%04X) = true, want Unicode 15 false", char)
+		}
+	}
+	if isCased('\U0000a7f1') || isCaseIgnorable('\U0000a7f1') {
+		t.Error("U+A7F1 must be neither Cased nor Case_Ignorable in Unicode 15")
+	}
+}
+
+func TestECMAScriptDefaultLowerUsesUnicode15FinalSigmaContext(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "AΣᲉ", want: "aςᲉ"},
+		{input: "ᲉΣ", want: "Ᲊσ"},
+		{input: "AΣʕ", want: "aσʕ"},
+		{input: "ʕΣ", want: "ʕς"},
+		{input: "AΣ\u0897B", want: "aς\u0897b"},
+		{input: "AΣ\U0001171eB", want: "aσ\U0001171eb"},
+		{input: "AΣ\uA7F1B", want: "aς\uA7F1b"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+
+			if got := ecmaScriptDefaultLower(tt.input); got != tt.want {
+				t.Errorf("ecmaScriptDefaultLower(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnicodeVersionIsAuditedForBunWindowsCompatibility(t *testing.T) {
+	t.Parallel()
+
+	if unicode.Version != "15.0.0" && unicode.Version != "17.0.0" {
+		t.Fatalf("unicode.Version = %q; audit the Bun Windows Unicode 15 overlay", unicode.Version)
+	}
+}
+
+func appendRuneRange(target []rune, first, last rune) []rune {
+	for char := first; char <= last; char++ {
+		target = append(target, char)
+	}
+	return target
 }
 
 func TestAcquireWorkspaceLockWritesCompatibleOwnerAndReleaseRemovesOwnGeneration(t *testing.T) {

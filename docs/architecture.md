@@ -495,8 +495,9 @@ lockは可能ならsymlinkを解決した絶対project path（Windowsは本家�
 同じU+0130展開・Final Sigma文脈を適用）、NUL、
 `__workspace__`から本家互換のMD5先頭8文字を作り、system tempの
 `.aidlc-audit-<hash>.lock`を`Mkdir`で排他取得します。MD5はidentity互換用であり、security用途では
-ありません。lowercase互換はGo `1.26.4`のUnicode 15 tableとBun Windows `1.3.14`の
-ICU `73.2` / Unicode 15を基準とし、Bun macOSのsystem ICU結果には追従しません。
+ありません。lowercase互換はBun Windows `1.3.14`のICU `73.2` / Unicode 15を基準とし、
+GoのUnicode tableへUnicode 15 overlayを適用してtoolchain更新によるlock identityの変化を防ぎます。
+Bun macOSのsystem ICU結果には追従せず、未監査のGo Unicode versionはtestで拒否します。
 owner stampはPID、epoch milliseconds、random generation tokenを持ち、100ms間隔・
 最大600 retriesで待ちます。callerのcancel/deadlineを優先し、自分のtokenと一致するgenerationだけを
 解放します。stale・malformed・dead ownerは自動回収せず、診断後の手動復旧が必要です。
