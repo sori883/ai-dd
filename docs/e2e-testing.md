@@ -161,6 +161,10 @@ fsync・crash耐久、owner・ACL・特殊mode・hardlink identity、mount/devic
 構文と保存境界は[Intent切替CLI](development.md#intent切替cli)、ローカル本家`2.6.123`からの
 承認済み変更は[Intent切替](architecture.md#intent切替)・[差分表](architecture.md#intent切替の意図的な差分)を参照する。
 
+実施済みの記録: [2026-09-01 Intent切替の配布E2E](e2e-runs/2026-09-01-intent-switch.md)。
+最初のdriver失敗を別scenarioへ保存したうえで、新しいscenarioの32起動すべてが期待結果と
+宣言済みfilesystem差分に一致した。
+
 ## Space切替scenario
 
 未使用scenario内にbinaryと独立した既存project fixtureを用意する。以下は検証手順であり、

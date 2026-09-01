@@ -45,7 +45,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [Space一覧をCLIへ接続する実装計画](decisions/2026-08-31-space-list-plan.md) | Accepted（Issue #21、引数境界の具体化、TDD・独立レビュー・53起動の配布E2Eを記録） |
 | 意思決定 | [Space切替を共有カーソルへ接続する実装計画](decisions/2026-09-01-space-switch-plan.md) | Accepted（Issue #23、17項目TDD・独立レビュー・76起動の配布E2Eを記録） |
 | 意思決定 | [Intent一覧をCLIへ接続する実装計画](decisions/2026-09-01-intent-list-plan.md) | Accepted（Issue #25、16項目TDD・P1修正後の独立レビュー・45起動の配布E2Eを記録） |
-| 意思決定 | [Intent切替を共有カーソルへ接続する実装計画](decisions/2026-09-01-intent-switch-plan.md) | Accepted（Issue #29、bare/explicit・安全なcursor保存・strict CLI） |
+| 意思決定 | [Intent切替を共有カーソルへ接続する実装計画](decisions/2026-09-01-intent-switch-plan.md) | Accepted（Issue #29、13項目TDD・P2/P3修正後の独立review・32起動の配布E2Eを記録） |
 | 意思決定 | [本家AI-DLCとの差分を自発的に提示する](decisions/2026-08-31-upstream-difference-reporting.md) | Superseded（下記の意図的な差分に限定する方針へ置換） |
 | 意思決定 | [本家との差分提示を意図的な仕様・挙動の変更に限定する](decisions/2026-08-31-intentional-upstream-difference-reporting.md) | Accepted |
 | 意思決定 | [GitHub Issue・PRを日本語の実装記録として運用する](decisions/2026-09-01-japanese-github-pr-workflow.md) | Accepted（Issue #27、マージ済みPR起点・日本語運用・通常の対象外は非記載・自動マージなし） |

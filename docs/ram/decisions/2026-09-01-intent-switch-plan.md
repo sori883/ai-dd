@@ -140,3 +140,34 @@ binary source/hash、stdout、stderr、exit、filesystem snapshotを記録し、
 Issue #29から単独TDD、固定base/headの独立review、必要な修正、最終検証、配布E2E、PRへ進む。
 PRはIssueへ紐づけ、自動マージしない。Issueはマージと作業完了を確認した後にcloseする。
 承認記録時点では実装、review、E2E、PRは未実施である。
+
+## 実装・検証結果
+
+2026-09-01、Issue #29の承認scopeで実装を完了した。製品差分を
+`e4541fc2d65a0ad8eba79ded24debe27a90d085e`へ固定し、base
+`37dd654f080ceeade0d5516b0262bd66b3df13bb`からの最終独立reviewはNo findingsだった。
+
+初回head `e1f5e571bc7cfdf39577684cf29082f78ba27dbc`のreviewではP0/P1なし、
+同一target再保存test不足のP2 1件と、targeted command・説明のP3 2件を発見した。
+同じ実装担当が追加時点GREENの回帰guardと文書修正を行い、再reviewで3件の解消と
+追加findingなしを確認した。
+
+- observableなassertion RED→GREENはworkspace 5、CLI 6、main 2の合計13 slice。
+  review guard、compile failure、構造整理はRED件数に含めない。
+- raw RED transcriptの一部は永続化されず、commandと失敗要旨のturn要約だけが残る。
+  final test sourceとfresh GREENは再現可能だが、過去の遷移を独立再現した証拠とは扱わない。
+- 通常・integration・shuffle/race・integration race、vet、tidy差分、gofmt、gopls、
+  diff checkを通過し、通常coverageは全体88.0%だった。
+- darwin/linux/windowsのamd64/arm64でCLIとworkspace integration test binaryの
+  合計12 artifactをcross compileした。native実行はmacOS/arm64だけである。
+- clean sourceから配布binaryを作り32回起動した。期待exit・stdout/stderrに全件一致し、
+  宣言したcursor更新14回以外のfixture差分はなかった。
+- 最初のE2E driverは検査器側の2件の誤りでFAILしたためscenarioを保存し、
+  新しいscenarioで検査器単独testを通した後に全caseを完走した。
+
+具体的なartifact、command、hash、TDD、review、cross-build、最初のdriver失敗、
+未検証範囲は[Intent切替の実装検証・配布E2E](../../e2e-runs/2026-09-01-intent-switch.md)へ記録した。
+承認済みの意図的な差分3点は変更せず、新しい意図的差分も追加していない。
+外部module/tool、CI、session binding、rebind、UUID stamp、audit、Intent作成は追加していない。
+後続の証跡commitは文書だけで、検証binaryのsource commitとは区別する。
+PRはIssue #29へ紐づけ、自動マージしない。Issueのcloseはマージ後とする。
