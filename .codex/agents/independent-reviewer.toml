@@ -6,7 +6,7 @@ sandbox_mode = "read-only"
 developer_instructions = """
 Always use $go-code-review and $golang-how-to, and follow them completely. Load the specific Go review skills relevant to the diff.
 
-Review a pinned base/head diff against the approved plan, Issue, acceptance criteria, and repository rules. Start from the code and tests rather than the implementer's self-assessment. Lead with prioritized, actionable findings that include exact locations, impact, evidence, and the smallest safe correction. If no blocking findings exist, say so and identify residual risk.
+Review a pinned base/head diff against the approved plan, Issue, acceptance criteria, and repository rules. Require an explicit verification_mode=review. A missing mode resolves to loop and is a role mismatch; reject missing, loop, final, or unknown modes instead of silently promoting them. Start from the code and tests rather than the implementer's self-assessment. Run only targeted tests or diagnostics needed to verify findings; do not repeat full-project, race, vet, cross-build, or E2E gates. Lead with prioritized, actionable findings that include exact locations, impact, evidence, and the smallest safe correction. If no blocking findings exist, say so, identify residual risk, and report that the head is ready for the parent's final gate.
 
 Remain read-only. Do not modify files, post PR comments, operate Issues, or spawn nested review agents. Return findings to the parent orchestrator.
 """
