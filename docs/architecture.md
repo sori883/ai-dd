@@ -628,11 +628,14 @@ core runner pathとの衝突として拒否します。unknown fieldは無視し
 
 parserは本家2.6.123のzero-dependency frontmatter subsetだけを扱います。file先頭delimiter、LF / CRLF、
 同一行scalar、quote除去、block marker空値、indent block list、single-line flow listを対象とし、一般YAML
-parserではありません。keywordsはfrontmatter全体で最初のvalid block sequenceをflowより優先し、blockが
-なければ最初のflow sequenceを使います。block matcherはkeyとitem間のJavaScript whitespace行を許容し、
-dash後が複数whitespaceだけのitemも本家regexどおり成立させて1文字のwhitespaceを保持します。flowは
-quote内comma / bracketとterminal commentを扱い、malformed listはemptyになります。loaderはcacheを
-持たず、毎回FSを読み、返すslice・keywords・recordごとのrunner pointerをcallerが所有します。
+parserではありません。scalarとflow値のtrimはECMAScript whitespaceに合わせ、U+FEFFを除去し、U+0085
+は保持します。keywordsはfrontmatter全体で最初のvalid block sequenceをflowより優先し、blockがなければ
+最初のflow sequenceを使います。block matcherはkeyとitem間のJavaScript whitespace行を許容し、dash後が
+複数whitespaceだけのitemも本家regexどおり成立させて1文字のwhitespaceを保持します。outer matcherは
+CR / LFだけをitem境界とし、inner extractorはCR / LF / U+2028 / U+2029をpayloadとして読みません。
+matcher成立後に抽出結果がemptyでもflowへfallbackしません。flowはquote内comma / bracketとterminal
+commentを扱い、malformed listはemptyになります。loaderはcacheを持たず、毎回FSを読み、返すslice・
+keywords・recordごとのrunner pointerをcallerが所有します。
 
 ### Scope metadata readerの意図的な差分
 

@@ -47,14 +47,18 @@ metadataは`name`、`plugin`、`depth`、`description`、`keywords`、`testStrat
 ## zero-dependency frontmatter
 
 frontmatterはfile先頭の`---`とLFまたはCRLFで始まり、次のclosing `---`までである。scalarは周囲の
-空白を除き、両端のsingle / double quoteを外す。`>`、`|`、`>-`、`|-`はblock scalar markerなので
-空値として扱う。
+ECMAScript whitespaceを除き、両端のsingle / double quoteを外す。ECMAScript側ではU+FEFFをtrimし、
+U+0085はtrimしない。`>`、`|`、`>-`、`|-`はblock scalar markerなので空値として扱う。
 
 keywordsは、frontmatter全体から最初のvalid indent `- ` block sequenceを先に探索し、見つからない場合だけ
 最初のsingle-line flow sequenceを使う。先行するflowや空・不正block keyは、後続のvalid blockを抑止しない。
 block keyと最初のitemの間にJavaScript whitespaceだけの行があっても、正規表現の`\s*`が吸収してblockが
 成立する。またdash後に複数のhorizontal whitespaceだけがあるitemもmatcherは成立し、抽出結果は空ではなく
-1文字のwhitespaceになる。このmatcher成立判定とitem抽出は別の正規表現境界である。
+1文字のwhitespaceになる。outer blockの`[^\r\n]+`はU+2028 / U+2029を受理する一方、inner extractorの
+`(.+?)`はCR / LF / U+2028 / U+2029をmatchしない。U+2028 / U+2029だけのitemやseparator後にpayloadが
+続くitemはblock自体は成立しても抽出されず、後続flowへfallbackしない。payload末尾だけのU+2028 / U+2029
+は末尾`\s*`側で扱われ、payloadを抽出する。lone CRより前にouter payloadがなければblockは成立せず、後続
+flowを探索する。このmatcher成立判定とitem抽出は別の正規表現境界である。
 flow parserはquote内のcommaとclosing bracketをseparatorにせず、closing bracket後は空白または`#` comment
 だけを受理する。unclosed quote/bracketや余分なsuffixはempty listとなる。unknown YAML全般を解釈する
 parserではなく、本家がscope metadataに使う狭いfrontmatter primitiveである。
@@ -63,6 +67,9 @@ parserではなく、本家がscope metadataに使う狭いfrontmatter primitive
 Issue #37内で本家`t309`のblock-first二段階探索へ修正した。これは新しい意図的差分ではない。
 再reviewではblock regexの空白境界に残るparity bugを検出し、空白行を挟むblockとwhitespace-only itemを
 本家2.6.123と一致させた。これも新しい意図的差分ではない。
+final reviewではGoとECMAScriptのtrim集合、およびblock outer / innerのline terminator境界に残るparity bugを
+検出した。本家2.6.123のauthored `listField`をBun 1.3.14で実行してU+0085 / U+FEFF / U+2028 / U+2029 /
+lone CRの結果を照合し、Issue #37内で一致させた。これらも新しい意図的差分ではない。
 
 ## Go版の承認済み差分
 

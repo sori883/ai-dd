@@ -160,7 +160,7 @@ func scalarField(frontmatter, key string) string {
 		if !strings.HasPrefix(line, prefix) {
 			continue
 		}
-		raw := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+		raw := trimJavaScriptWhitespace(strings.TrimPrefix(line, prefix))
 		if raw == ">" || raw == "|" || raw == ">-" || raw == "|-" {
 			return ""
 		}
@@ -201,33 +201,62 @@ func matchBlockList(lines []string) ([]string, bool) {
 	for start < len(lines) && isJavaScriptWhitespaceOnly(lines[start]) {
 		start++
 	}
-	if start == len(lines) || !isBlockListItemLine(lines[start]) {
+	if start == len(lines) {
+		return nil, false
+	}
+	first, ok := matchBlockListItemLine(lines[start])
+	if !ok {
 		return nil, false
 	}
 
-	end := start + 1
-	for end < len(lines) && isBlockListItemLine(lines[end]) {
-		end++
+	matched := []string{first}
+	if len(first) != len(lines[start]) {
+		return matched, true
 	}
-	return lines[start:end], true
+	for _, line := range lines[start+1:] {
+		itemLine, ok := matchBlockListItemLine(line)
+		if !ok {
+			break
+		}
+		matched = append(matched, itemLine)
+		if len(itemLine) != len(line) {
+			break
+		}
+	}
+	return matched, true
 }
 
-func isBlockListItemLine(line string) bool {
+func matchBlockListItemLine(line string) (string, bool) {
 	index := 0
 	for index < len(line) && isHorizontalListSpace(line[index]) {
 		index++
 	}
 	if index == 0 || index >= len(line) || line[index] != '-' {
-		return false
+		return "", false
 	}
 	remainder := line[index+1:]
-	return len(remainder) >= 2 && isHorizontalListSpace(remainder[0])
+	if len(remainder) < 2 || !isHorizontalListSpace(remainder[0]) {
+		return "", false
+	}
+
+	content := remainder[1:]
+	if terminator := strings.IndexAny(content, "\r\n"); terminator >= 0 {
+		if terminator == 0 {
+			return "", false
+		}
+		end := index + 2 + terminator
+		return line[:end+1], true
+	}
+	return line, true
 }
 
 func extractBlockListItems(lines []string) []string {
 	items := make([]string, 0, len(lines))
 	for _, line := range lines {
-		item := extractBlockListItem(line)
+		item, ok := extractBlockListItem(line)
+		if !ok {
+			continue
+		}
 		item = trimListQuotes(item)
 		if item != "" {
 			items = append(items, item)
@@ -236,7 +265,7 @@ func extractBlockListItems(lines []string) []string {
 	return items
 }
 
-func extractBlockListItem(line string) string {
+func extractBlockListItem(line string) (string, bool) {
 	dash := strings.IndexByte(line, '-')
 	remainder := line[dash+1:]
 	start := 0
@@ -252,7 +281,11 @@ func extractBlockListItem(line string) string {
 		}
 		end -= size
 	}
-	return item[:end]
+	item = item[:end]
+	if strings.ContainsAny(item, "\r\n\u2028\u2029") {
+		return "", false
+	}
+	return item, true
 }
 
 func isHorizontalListSpace(value byte) bool {
@@ -279,8 +312,12 @@ func isJavaScriptWhitespace(r rune) bool {
 	}
 }
 
+func trimJavaScriptWhitespace(value string) string {
+	return strings.TrimFunc(value, isJavaScriptWhitespace)
+}
+
 func parseInlineList(raw string) []string {
-	text := strings.TrimSpace(raw)
+	text := trimJavaScriptWhitespace(raw)
 	if text == "" || text == "[]" {
 		return []string{}
 	}
@@ -351,7 +388,7 @@ func parseInlineList(raw string) []string {
 }
 
 func unquoteScalar(value string) string {
-	value = strings.TrimSpace(value)
+	value = trimJavaScriptWhitespace(value)
 	if len(value) < 2 {
 		return value
 	}

@@ -1,7 +1,7 @@
 # Scope metadata read-only APIの実装計画
 
 - 日付: 2026-09-02
-- 状態: Accepted（Issue #37実装・再review P1解消・fresh再検証・6構成cross compile完了、再々review待ち）
+- 状態: Accepted（Issue #37実装・final review P2互換修正・fresh再検証・6構成cross compile完了）
 - GitHub Issue: [#37](https://github.com/sori883/ai-dd/issues/37)
 - base: `a6c19f673c685facc450fb3c0399bf06b36c4542`
 - 作業branch: `codex/scope-metadata-reader`
@@ -95,6 +95,13 @@ fixtureは`testing/fstest.MapFS`と最小error injection FSだけを使い、本
 - 再review P1: block keyと最初のitemの間の空・空白行、dash後が空白だけのitemに本家regexとの差が残って
   いた。固定head `dd22500`へ回帰testを追加してREDを確認し、matcher成立判定とitem抽出を分離してGREENに
   した。重複keyの前後でもblock-first順を維持する。これもparity bug修正であり、意図的差分ではない。
+- final review P2: scalar / flow / unquoteでGo `strings.TrimSpace`を使ったため、ECMAScriptとU+FEFF / U+0085
+  の扱いが逆だった。public `ReadAll`回帰testでREDを確認し、既存JavaScript whitespace述語を使う共通trim
+  へ置換してGREENにした。これはparity bug修正であり、意図的差分ではない。
+- final review P2: block outer matcherの`[^\r\n]+`とinner extractorのdot境界が混在していた。
+  U+2028 / U+2029、lone CR、trailing separatorを本家Bun 1.3.14で照合し、outer matcherとinner extractorを
+  分離した回帰testをREDからGREENにした。block成立後のempty抽出はflowへfallbackしない。これもparity bug
+  修正であり、意図的差分ではない。
 
 ## 所有権と対象外
 
@@ -125,3 +132,7 @@ fresh実行してすべて成功した。6構成のtest binary cross compileも�
 native実行とは扱わない。
 
 再review P1修正後にも同じfresh検証と6構成cross compileを再実行し、すべて成功した。
+
+final review P2修正後にも新規targeted、scope package、全体shuffle、race、vet、tidy diff、gofmt、
+gopls、diff checkをfresh実行してすべて成功した。scope test binaryの6構成cross compileもrepository外へ
+再実行して成功したが、各target OSでのnative実行証拠とは扱わない。

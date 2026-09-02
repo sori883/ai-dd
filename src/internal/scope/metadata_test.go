@@ -108,6 +108,71 @@ func TestReadAllParsesFrontmatterLineContracts(t *testing.T) {
 	}
 }
 
+func TestReadAllUsesJavaScriptWhitespaceForScalarAndFlowValues(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		frontmatter  string
+		wantName     string
+		wantKeywords []string
+	}{
+		{
+			name:         "byte order marks are trimmed from scalars",
+			frontmatter:  "name: \ufeffscope\ufeff",
+			wantName:     "scope",
+			wantKeywords: []string{},
+		},
+		{
+			name:         "next line characters are retained in scalars",
+			frontmatter:  "name: \u0085scope\u0085",
+			wantName:     "\u0085scope\u0085",
+			wantKeywords: []string{},
+		},
+		{
+			name:         "byte order mark terminates a flow list",
+			frontmatter:  "name: fixture\nkeywords: [flow]\ufeff",
+			wantName:     "fixture",
+			wantKeywords: []string{"flow"},
+		},
+		{
+			name:         "next line character invalidates a flow suffix",
+			frontmatter:  "name: fixture\nkeywords: [flow]\u0085",
+			wantName:     "fixture",
+			wantKeywords: []string{},
+		},
+		{
+			name:         "byte order marks are trimmed from flow items",
+			frontmatter:  "name: fixture\nkeywords: [\ufeffflow\ufeff]",
+			wantName:     "fixture",
+			wantKeywords: []string{"flow"},
+		},
+		{
+			name:         "next line characters are retained in flow items",
+			frontmatter:  "name: fixture\nkeywords: [\u0085flow\u0085]",
+			wantName:     "fixture",
+			wantKeywords: []string{"\u0085flow\u0085"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			body := "---\n" + tt.frontmatter + "\n---\n"
+			got, err := ReadAll(fstest.MapFS{"scope.md": {Data: []byte(body)}})
+			if err != nil {
+				t.Fatalf("ReadAll() error = %v", err)
+			}
+			if gotName := got[0].Name; gotName != tt.wantName {
+				t.Errorf("Name = %q, want %q", gotName, tt.wantName)
+			}
+			if gotKeywords := got[0].Keywords; !reflect.DeepEqual(gotKeywords, tt.wantKeywords) {
+				t.Errorf("Keywords = %q, want %q", gotKeywords, tt.wantKeywords)
+			}
+		})
+	}
+}
+
 func TestReadAllParsesKeywordLists(t *testing.T) {
 	t.Parallel()
 
@@ -251,6 +316,95 @@ func TestReadAllMatchesUpstreamBlockKeywordBoundaries(t *testing.T) {
 				"  -   \n" +
 				"keywords: [after]",
 			want: []string{" "},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			body := "---\nname: fixture\n" + tt.frontmatter + "\n---\n"
+			got, err := ReadAll(fstest.MapFS{"scope.md": {Data: []byte(body)}})
+			if err != nil {
+				t.Fatalf("ReadAll() error = %v", err)
+			}
+			if gotKeywords := got[0].Keywords; !reflect.DeepEqual(gotKeywords, tt.want) {
+				t.Errorf("Keywords = %q, want %q", gotKeywords, tt.want)
+			}
+		})
+	}
+}
+
+func TestReadAllMatchesUpstreamBlockLineTerminatorBoundaries(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		frontmatter string
+		want        []string
+	}{
+		{
+			name: "line separator item keeps matched empty block",
+			frontmatter: "keywords:\n" +
+				"  - \u2028\n" +
+				"keywords: [flow]",
+			want: []string{},
+		},
+		{
+			name: "paragraph separator item keeps matched empty block",
+			frontmatter: "keywords:\n" +
+				"  - \u2029\n" +
+				"keywords: [flow]",
+			want: []string{},
+		},
+		{
+			name: "line separator before payload is not extracted",
+			frontmatter: "keywords:\n" +
+				"  - \u2028payload\n" +
+				"keywords: [flow]",
+			want: []string{},
+		},
+		{
+			name: "paragraph separator before payload is not extracted",
+			frontmatter: "keywords:\n" +
+				"  - \u2029payload\n" +
+				"keywords: [flow]",
+			want: []string{},
+		},
+		{
+			name: "line separator inside payload is not extracted",
+			frontmatter: "keywords:\n" +
+				"  - payload\u2028suffix\n" +
+				"keywords: [flow]",
+			want: []string{},
+		},
+		{
+			name: "lone carriage return before payload falls back to flow",
+			frontmatter: "keywords:\n" +
+				"  - \rpayload\n" +
+				"keywords: [flow]",
+			want: []string{"flow"},
+		},
+		{
+			name: "carriage return suffix ends the outer block sequence",
+			frontmatter: "keywords:\n" +
+				"  - first\rsuffix\n" +
+				"  - second\n" +
+				"keywords: [flow]",
+			want: []string{"first"},
+		},
+		{
+			name: "trailing line separator leaves preceding payload",
+			frontmatter: "keywords:\n" +
+				"  - payload\u2028\n" +
+				"keywords: [flow]",
+			want: []string{"payload"},
+		},
+		{
+			name: "trailing paragraph separator leaves preceding payload",
+			frontmatter: "keywords:\n" +
+				"  - payload\u2029\n" +
+				"keywords: [flow]",
+			want: []string{"payload"},
 		},
 	}
 	for _, tt := range tests {
