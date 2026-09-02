@@ -47,7 +47,7 @@ func TestBuildInitialBrownfieldGolden(t *testing.T) {
 		t.Fatalf("BuildInitial() error = %v", err)
 	}
 
-	const wantState = `# AI-DLC State Tracking
+	wantState := `# AI-DLC State Tracking
 
 ## Project Information
 - **Project**: Sample project
@@ -66,7 +66,7 @@ func TestBuildInitialBrownfieldGolden(t *testing.T) {
 - **Stages to Skip**: 1.2 (market-research), 4.1 (deployment-pipeline)
 - **Depth**: Standard
 - **Test Strategy**: Standard
-- **Review Override**: 
+- **Review Override**:__GOLDEN_SPACE__
 
 ## Workspace State
 - **Project Root**: /project
@@ -124,6 +124,7 @@ Per unit: [TBD]
 - **Next Action**: Execute intent-capture
 - **Pending Artifacts**: none
 `
+	wantState = strings.Replace(wantState, "__GOLDEN_SPACE__", " ", 1)
 	if got.StateContent != wantState {
 		t.Errorf("StateContent = %q, want %q", got.StateContent, wantState)
 	}
