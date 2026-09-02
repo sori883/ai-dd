@@ -5,7 +5,7 @@
 - 計画承認日: 2026-09-02
 - 実装担当: `go_tdd_implementer`（Luna / max）
 - verification mode: `loop`
-- 状態: Accepted（実装loop・targeted検証完了、独立review待ち）
+- 状態: Accepted（実装loop・targeted検証完了、独立review完了、final検証結果はPRへ記録）
 
 ## 目的と所有範囲
 
@@ -70,3 +70,13 @@ go test -count=1 -run '^TestBuildBundle' ./src/internal/memory
 - dedupeは将来のgraph/manifest/read orchestrationで扱う前提で、同一path重複を保持する。
 - 比較対象はローカルv2.6.123の`aidlc-steering.ts`確認範囲に限られ、最新upstream、全workflow、全harness、全配布物の完全互換は未確認である。
 - packageはinternal APIのみで、workspaceやCLIへ未接続である。
+
+## 独立review記録
+
+固定base `c1126c4b472d001575c56f8c1b553fc4bbfa16b0`からhead
+`27cdddf27acccac6cc3aac8f40ada9ea9f44ee1d`までを対象に独立reviewを実施し、blocking findingはなかった。
+P3指摘に従い、参照実装のtemplate preamble・substantive判定の根拠行を正確な
+`aidlc-steering.ts:25-53`、関数本体を`43-53`へ修正した。
+
+このreviewでは全体test、race、vet、cross compile、配布E2Eなどのfinal検証は実施していない。
+final検証の結果は親agentが実施後にPRへ記録する。ここでの状態はfinal成功を意味しない。

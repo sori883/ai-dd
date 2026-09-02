@@ -3,7 +3,7 @@
 - 調査日: 2026-09-02
 - 比較対象: ローカルAI-DLC v2.6.123（`docs/実装_aidlc-workflows`）
 - 対象Issue: [#49「Memory bundle filterを実装する」](https://github.com/sori883/ai-dd/issues/49)
-- 確認範囲: `core/tools/aidlc-steering.ts:25-50`のtemplate preambleとsubstantive判定。最新upstream、全workflow、全harnessの完全なparityは確認していない。
+- 確認範囲: `core/tools/aidlc-steering.ts:25-53`のtemplate preambleとsubstantive判定。最新upstream、全workflow、全harnessの完全なparityは確認していない。
 
 ## 本家の根拠
 
@@ -11,7 +11,7 @@
 `TEMPLATE_PREAMBLE_LINES`として定義している。これは説明用のpreambleであり、著者が追加した
 blockquoteを誤ってfilterしないため、行単位で完全一致させる。
 
-`aidlc-steering.ts:42-50`の`isSubstantiveRuleText`は、次の順序で判定する。
+`aidlc-steering.ts:43-53`の`isSubstantiveRuleText`は、次の順序で判定する。
 
 1. `<!--[\s\S]*?-->`をglobal・non-greedyに置換してclosed HTML commentを除去する。
 2. `\r?\n`で行分割する。

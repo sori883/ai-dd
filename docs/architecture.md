@@ -99,7 +99,7 @@ U+000A/U+000D/U+2028/U+2029）でtrimします。trim後に空、`#`開始、shi
 substantiveです。一般のblockquote、frontmatterのfield、変更済みpreambleは保持対象です。
 
 このfilterはmerge、override、frontmatter解釈、layer間の優先順位付けを行いません。preambleの判定は
-ローカルAI-DLC v2.6.123 `core/tools/aidlc-steering.ts:25-50`の文字列と処理を根拠にしており、今回の
+ローカルAI-DLC v2.6.123 `core/tools/aidlc-steering.ts:25-53`の文字列と処理を根拠にしており、今回の
 Go移植で新たな利用者向けの意図的差分は採用していません。詳細な比較範囲と未確認事項は[Memory bundle filterの参照契約](ram/research/2026-09-02-memory-bundle-filter-contracts.md)と
 [実装計画](ram/decisions/2026-09-02-memory-bundle-filter-plan.md)を参照してください。
 
