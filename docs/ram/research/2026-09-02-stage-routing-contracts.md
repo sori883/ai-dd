@@ -41,7 +41,9 @@ plugin selectionで無効化されたnodeにだけ現れ、通常の有効node�
 
 本家runtime loaderはparse結果を`StageEntry[]`へcastし、各field、重複slug・number、enumを
 この境界では検証しない。Go版は承認済みfail-closed境界として、必須field、array shape、
-execution enum、identity重複をLoad時に検証する。
+execution enum、identity重複をLoad時に検証する。本家`JSON.parse`のobject keyは完全一致であり、
+大小文字違いは別keyである。Goの`encoding/json`によるstruct field照合は大小文字違いも受理するため、
+各stageをexact-keyの`map[string]json.RawMessage`境界でdecodeしてこの差を持ち込まない。
 
 ## Scope gridとrouting
 
@@ -64,8 +66,10 @@ runtimeのstage解決では、cellが厳密に`EXECUTE`のときだけ実行し�
 graph順で出力される。
 
 新しいGo APIの`ScopeNames`は、JSON objectの記述順を外部契約にせず、explicit gridとfallbackの
-どちらも名前昇順で返す。これは本家のcanonical grid・fallback・metadata列挙の決定性と整合させる
-新設内部APIの順序契約であり、利用者向け仕様の意図的な差分ではない。
+どちらもJavaScript `.sort()`と同じUTF-16 code-unit順で返す。Goの通常のstring sortはUTF-8 byte順となり、
+非BMP文字とBMP文字の境界で順序が異なるため、UTF-16 code-unit列を比較する。これは本家のcanonical
+grid・fallback・metadata列挙の決定性と整合させる新設内部APIの順序契約であり、利用者向け仕様の
+意図的な差分ではない。
 
 本家loaderはgridのreadまたはJSON parseが失敗すると、enabled graphの各`stage.scopes`を
 転置する。runtime `loadScopeMapping`系の`transposeScopeGridForMapping`はscope名をsortし、
@@ -93,3 +97,9 @@ Snapshotはenabled stageとscope actionだけを公開し、scope metadata Markd
 agent dispatch、state遷移を解釈しない。full AI-DLC dataをtest fixtureへ複製せず、syntheticな
 `testing/fstest.MapFS`で境界を固定する。供給された`fs.FS`のcontainment、更新中の2 file間の一貫性、
 data versionの自動migrationはこのread-only loaderの保証外である。
+
+## 独立reviewでの互換修正
+
+Issue #35の独立reviewで、Go標準decoderの大小文字を無視するstruct field照合と、通常のstring sortが
+上記本家契約からずれることを確認した。stage exact-key decodeとUTF-16 code-unit比較へ修正した。
+いずれも承認済みの本家互換契約を満たす通常のparity bug修正であり、新しい意図的な差分ではない。

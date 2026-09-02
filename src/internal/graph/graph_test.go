@@ -58,6 +58,60 @@ func TestLoadPreservesEnabledStageOrder(t *testing.T) {
 	}
 }
 
+func TestLoadRequiresExactStageFieldNames(t *testing.T) {
+	t.Parallel()
+
+	const remainingFields = `,"number":"1.1","name":"stage name","phase":"inception","execution":"ALWAYS","lead_agent":"orchestrator","support_agents":[],"mode":"inline"}`
+	tests := []struct {
+		name       string
+		slugFields string
+		wantSlug   string
+		wantError  bool
+	}{
+		{
+			name:       "wrong case alone is unknown",
+			slugFields: `"Slug":"wrong"`,
+			wantError:  true,
+		},
+		{
+			name:       "exact key before alias wins",
+			slugFields: `"slug":"exact","Slug":"wrong"`,
+			wantSlug:   "exact",
+		},
+		{
+			name:       "exact key after alias wins",
+			slugFields: `"Slug":"wrong","slug":"exact"`,
+			wantSlug:   "exact",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dataFS := fstest.MapFS{
+				"stage-graph.json": {Data: []byte(`[{` + tt.slugFields + remainingFields + `]`)},
+				"scope-grid.json":  {Data: []byte(`{}`)},
+			}
+			snapshot, err := Load(dataFS)
+			if tt.wantError {
+				if err == nil {
+					t.Fatalf("Load() error = nil, Stages() = %#v", snapshot.Stages())
+				}
+				if !strings.Contains(err.Error(), "slug is required") {
+					t.Errorf("Load() error = %q, want slug-required context", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if got := snapshot.Stages()[0].Slug; got != tt.wantSlug {
+				t.Errorf("Stages()[0].Slug = %q, want %q", got, tt.wantSlug)
+			}
+		})
+	}
+}
+
 func TestLoadRoutesScopes(t *testing.T) {
 	t.Parallel()
 
@@ -99,6 +153,44 @@ func TestLoadRoutesScopes(t *testing.T) {
 	}
 	if _, ok := snapshot.Scope("unknown"); ok {
 		t.Error("Scope(\"unknown\") found, want false")
+	}
+}
+
+func TestLoadSortsScopeNamesByJavaScriptUTF16Order(t *testing.T) {
+	t.Parallel()
+
+	stage := stageFixture("stage", "1.1")
+	stage["scopes"] = []string{"\ue000", "😀"}
+	graphData := mustJSON(t, []any{stage})
+	tests := []struct {
+		name     string
+		gridData []byte
+	}{
+		{
+			name: "explicit grid",
+			gridData: []byte(`{
+				"\ue000":{"stages":{"stage":"SKIP"}},
+				"😀":{"stages":{"stage":"EXECUTE"}}
+			}`),
+		},
+		{name: "fallback"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dataFS := fstest.MapFS{"stage-graph.json": {Data: graphData}}
+			if tt.gridData != nil {
+				dataFS["scope-grid.json"] = &fstest.MapFile{Data: tt.gridData}
+			}
+			snapshot, err := Load(dataFS)
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if got, want := snapshot.ScopeNames(), []string{"😀", "\ue000"}; !reflect.DeepEqual(got, want) {
+				t.Errorf("ScopeNames() = %q, want JavaScript UTF-16 order %q", got, want)
+			}
+		})
 	}
 }
 

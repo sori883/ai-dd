@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"slices"
+	"unicode/utf16"
 )
 
 // Action is the routing decision for a stage in a scope.
@@ -73,8 +74,8 @@ func Load(dataFS fs.FS) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("load stage graph: read stage-graph.json: %w", err)
 	}
-	var rawStages []stageDocument
-	if err := json.Unmarshal(data, &rawStages); err != nil {
+	rawStages, err := decodeStageDocuments(data)
+	if err != nil {
 		return Snapshot{}, fmt.Errorf("load stage graph: decode stage-graph.json: %w", err)
 	}
 	if err := validateStageDocuments(rawStages); err != nil {
@@ -123,7 +124,9 @@ func Load(dataFS fs.FS) (Snapshot, error) {
 		scopeNames = append(scopeNames, name)
 		scopes[name] = Scope{actions: actions}
 	}
-	slices.Sort(scopeNames)
+	slices.SortFunc(scopeNames, func(a, b string) int {
+		return slices.Compare(utf16.Encode([]rune(a)), utf16.Encode([]rune(b)))
+	})
 	return Snapshot{stages: stages, scopeNames: scopeNames, scopes: scopes}, nil
 }
 
@@ -138,6 +141,63 @@ type stageDocument struct {
 	Mode          string   `json:"mode"`
 	Scopes        []string `json:"scopes"`
 	Enabled       *bool    `json:"enabled"`
+}
+
+func decodeStageDocuments(data []byte) ([]stageDocument, error) {
+	var rawStages []json.RawMessage
+	if err := json.Unmarshal(data, &rawStages); err != nil {
+		return nil, err
+	}
+	if rawStages == nil {
+		return nil, nil
+	}
+
+	stages := make([]stageDocument, len(rawStages))
+	for index, raw := range rawStages {
+		stage, err := decodeStageDocument(raw)
+		if err != nil {
+			return nil, fmt.Errorf("stage %d: %w", index, err)
+		}
+		stages[index] = stage
+	}
+	return stages, nil
+}
+
+func decodeStageDocument(data []byte) (stageDocument, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return stageDocument{}, err
+	}
+	if fields == nil {
+		return stageDocument{}, nil
+	}
+
+	var stage stageDocument
+	stageFields := []struct {
+		name   string
+		target any
+	}{
+		{name: "slug", target: &stage.Slug},
+		{name: "number", target: &stage.Number},
+		{name: "name", target: &stage.Name},
+		{name: "phase", target: &stage.Phase},
+		{name: "execution", target: &stage.Execution},
+		{name: "lead_agent", target: &stage.LeadAgent},
+		{name: "support_agents", target: &stage.SupportAgents},
+		{name: "mode", target: &stage.Mode},
+		{name: "scopes", target: &stage.Scopes},
+		{name: "enabled", target: &stage.Enabled},
+	}
+	for _, field := range stageFields {
+		raw, exists := fields[field.name]
+		if !exists {
+			continue
+		}
+		if err := json.Unmarshal(raw, field.target); err != nil {
+			return stageDocument{}, fmt.Errorf("field %q: %w", field.name, err)
+		}
+	}
+	return stage, nil
 }
 
 func validateStageDocuments(stages []stageDocument) error {

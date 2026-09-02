@@ -1,7 +1,7 @@
 # Stage graph・scope routing内部APIの実装計画
 
 - 日付: 2026-09-02
-- 状態: Accepted（実装完了、独立review待ち）
+- 状態: Accepted（独立review P1/P2修正完了、再review待ち）
 - GitHub Issue: [#35](https://github.com/sori883/ai-dd/issues/35)
 - base: `e720440`
 - 作業branch: `codex/graph-routing`
@@ -36,7 +36,8 @@ func (Scope) Actions() map[string]Action
 `Stage`はslug、number、name、phase、execution、lead agent、support agents、mode、fallback用scopes、
 enabled判定を保持する。`Action`のzero valueは未知sentinelとし、正常snapshotには保存しない。
 scope内でstage cellが欠損した場合の公開結果は本家runtimeどおり`SKIP`、未知scopeはbool falseである。
-`ScopeNames`はexplicit gridとfallbackのどちらも名前昇順とし、JSON objectの記述順を契約にしない。
+`ScopeNames`はexplicit gridとfallbackのどちらも本家JavaScript互換のUTF-16 code-unit順とし、
+JSON objectの記述順を契約にしない。
 
 Snapshotが返すstage slice、scope name slice、stage内slice、action mapは防御的copyとし、callerの変更で
 保存済みsnapshotを変化させない。nil FSはpanicせずerrorにする。loaderは`fs.FS`だけを受け取り、
@@ -49,10 +50,10 @@ stage graphはJSON配列順を保つ。`enabled:false`は公開stageから除外
 
 stage graphのread、欠損、JSON decode、構造validation errorは文脈付きerrorとし、zero Snapshotを返す。
 必須field、`support_agents`のstring array、slug・number重複、`ALWAYS` / `CONDITIONAL`以外を
-fail-closedにする。unknown JSON fieldは無視する。
+fail-closedにする。stage field名は大小文字を含む完全一致で解釈し、unknown JSON fieldは無視する。
 
 scope gridのread errorまたはJSON構文errorだけは、enabled stageの`scopes` membershipを純粋転置する。
-scope名をsortし、各enabled stageをmembershipに応じて`EXECUTE` / `SKIP`へする。
+scope名をUTF-16 code-unit順にsortし、各enabled stageをmembershipに応じて`EXECUTE` / `SKIP`へする。
 compiler / designer側のinitialization特例はruntime `loadScopeMapping` queryの対象外なので持ち込まない。
 
 構文上validなgridのtop-level、scope entry、必須`stages`が構造不正ならfallbackせずerrorにする。
@@ -82,6 +83,10 @@ runnable assertionへ到達してから次を順にRED、最小GREEN、GREEN上�
 
 test fixtureは`testing/fstest.MapFS`で必要最小限のJSONだけを作り、本家data一式をrepositoryへ
 複製しない。unknown field、partial action map、disabled stage referenceも回帰guardで固定する。
+
+独立reviewで見つかった`encoding/json`の大小文字を無視するstruct field照合とGo string sortの
+UTF-16順との差は、それぞれexact-key decodeとUTF-16 code-unit比較の回帰testを先にREDとして固定して
+修正した。どちらも本計画の本家互換契約を満たすparity bug修正で、新しい意図的な差分ではない。
 
 ## 所有権と対象外
 

@@ -580,17 +580,19 @@ support agents、mode、fallback用scopesを保持します。
 Snapshotは`Stages`、`ScopeNames`、`Scope`を、Scopeは`Action`と`Actions`を公開します。
 未知scopeはbool false、partial action mapにstage cellがない場合は本家runtimeどおり`SKIP`です。
 disabled stageへのgrid参照は全graphに存在するためvalidですが、公開`Actions`からは除外します。
-`ScopeNames`はexplicit gridとfallbackのどちらも名前昇順で、JSON objectの記述順には依存しません。
+`ScopeNames`はexplicit gridとfallbackのどちらも本家JavaScript互換のUTF-16 code-unit順で、
+JSON objectの記述順には依存しません。
 返すslice、map、Stage内sliceは防御的copyで、callerの変更はsnapshotへ反映されません。
 
 scope gridのread errorまたはJSON構文errorでは、enabled stageの`scopes`をruntime
-`loadScopeMapping`系と同じ純粋membershipで転置します。scope名をsortし、各enabled stageに
+`loadScopeMapping`系と同じ純粋membershipで転置します。scope名を同じUTF-16順にsortし、各enabled stageに
 `EXECUTE`または`SKIP`を作ります。compiler / designer側のinitialization特例はこのqueryの
 対象ではありません。scopeのdescription、depth、keywords、test strategy等は
 `.codex/scopes/*.md`側のmetadataであり、このpackageは読みません。
 
 stage graphのread・decode error、必須field、`support_agents`、slug・number重複、execution enumを
-fail-closedにします。gridは構文上validでもtop-level、scope entry、必須`stages`が構造不正なら
+fail-closedにします。stage field名は本家`JSON.parse`と同じ完全一致で読み、大小文字違いは
+unknown fieldとして無視します。gridは構文上validでもtop-level、scope entry、必須`stages`が構造不正なら
 fallbackせずerrorにし、action enumと全graphへのstage参照も検証します。unknown JSON fieldは
 将来互換のため無視します。nil FSはpanicせずerrorで、error時はzero Snapshotです。
 

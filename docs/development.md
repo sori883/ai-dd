@@ -362,7 +362,8 @@ fail-closedにし、disabled stage参照だけはvalidとして公開actionか�
 
 `Stages`、`ScopeNames`、`Scope.Actions`の返値はcaller側で自由に変更できますが、保存済みSnapshotには
 反映されません。`Scope.Action`はcell欠損を`ActionSkip`として返します。unknown JSON fieldは無視し、
-`ScopeNames`はJSON objectの記述順にかかわらず名前昇順です。scope prose metadataは別の
+stage field名は大小文字を含めた完全一致で解釈します。`ScopeNames`はJSON objectの記述順にかかわらず
+本家JavaScript互換のUTF-16 code-unit順です。scope prose metadataは別の
 `.codex/scopes/*.md`から取得する将来consumerの責務です。
 
 gridのread errorとJSON構文errorはfallbackするため、その成功結果だけで「dataが存在する」と
