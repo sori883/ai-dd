@@ -24,7 +24,8 @@ Turn a requested change and verified repository context into a plan the user can
    - targeted and final verification commands;
    - dependency impact, risks, rollback, and documentation updates.
 7. Call out every proposed external Go module with its necessity and why the standard library is insufficient.
-8. End at an explicit approval gate that states what the approval authorizes, which important boundaries remain fixed, and which unresolved choices still require a later decision. Do not edit files, create Issues, create PRs, or start implementation.
+8. Before returning the plan, reread it as a first-time participant. Remove unfamiliar terms that are not needed for the decision, explain the role of every necessary unfamiliar term on first use, and confirm that no important safety, compatibility, migration, usage-condition, or approval-boundary information is missing.
+9. End at an explicit approval gate that states what the approval authorizes, which important boundaries remain fixed, and which unresolved choices still require a later decision. Do not edit files, create Issues, create PRs, or start implementation.
 
 ## Output Contract
 
