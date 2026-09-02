@@ -10,6 +10,8 @@ src/cmd/aidlc/main.go
   ├─ src/internal/cli (arguments, output, exit code)
   └─ src/internal/workspace (space・intentのread/write API)
 
+src/internal/graph (stage graph・scope routingのread-only query)
+
 src/internal/workspace
   ├─ project root resolution
   ├─ active-space and space listing (read-only)
@@ -30,6 +32,7 @@ src/internal/workspace
 - `src/internal/cli`: CLIの引数解釈、stdout/stderrの分離、終了コード、help/version、space create/list/switch、bare space、intent list/switchとbare intentの表示契約を所有します。`io.Writer`とcallbackを受け取るため、process全体を起動せずにテストできます。
 - `src/internal/buildinfo`: linkerが差し替える`Version`と`Commit`、およびそのsnapshotを所有します。既定値は`dev`と`unknown`です。
 - `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、read-onlyのworkspace分析、spaceとIntent coreの新規作成、space・intentの共有cursor切替を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。space一覧は`ReadSpaces`、intent一覧は`ReadIntents`を通じてCLIへ接続し、`ReadSelection`・`CreateIntent`・`Detect`は内部APIのままです。書込みは`CreateSpace`・`SwitchSpace`・`SwitchIntent`・`CreateIntent`の明示呼出しだけで行い、接続APIのRoot生存期間も内部で管理します。`Detect`は例外としてcaller所有の既存`*os.Root`を借り、Closeしません。
+- `src/internal/graph`: data directory基準の`fs.FS`からcompiled stage graphとscope gridを読み、enabled stageとrouting actionのimmutable snapshotを返します。filesystem write、project root選択、scope metadata Markdown、state遷移、agent実行は所有しません。
 
 `internal`配下はmodule外からimportできません。今後の機能も、CLIから直接filesystemやnetworkへ到達させず、責務ごとのpackageをcomposition rootで接続します。
 
@@ -567,13 +570,52 @@ authored implementation、canonical Codex dist、配置済みCodexの対象`aidl
 [読み取り専用ワークスペース分析の実装計画](ram/decisions/2026-09-02-workspace-detection-plan.md)、
 検証手順は[読み取り専用workspace分析](development.md#読み取り専用workspace分析内部api)を参照してください。
 
+## Stage graph・scope routing
+
+`graph.Load(dataFS fs.FS) (Snapshot, error)`は、data directoryをrootとするread-only FSから
+`stage-graph.json`と`scope-grid.json`を読みます。stageはJSON配列順を維持し、`enabled:false`を
+公開snapshotから除外します。`Stage`はslug、number、name、phase、execution、lead agent、
+support agents、mode、fallback用scopesを保持します。
+
+Snapshotは`Stages`、`ScopeNames`、`Scope`を、Scopeは`Action`と`Actions`を公開します。
+未知scopeはbool false、partial action mapにstage cellがない場合は本家runtimeどおり`SKIP`です。
+disabled stageへのgrid参照は全graphに存在するためvalidですが、公開`Actions`からは除外します。
+`ScopeNames`はexplicit gridとfallbackのどちらも名前昇順で、JSON objectの記述順には依存しません。
+返すslice、map、Stage内sliceは防御的copyで、callerの変更はsnapshotへ反映されません。
+
+scope gridのread errorまたはJSON構文errorでは、enabled stageの`scopes`をruntime
+`loadScopeMapping`系と同じ純粋membershipで転置します。scope名をsortし、各enabled stageに
+`EXECUTE`または`SKIP`を作ります。compiler / designer側のinitialization特例はこのqueryの
+対象ではありません。scopeのdescription、depth、keywords、test strategy等は
+`.codex/scopes/*.md`側のmetadataであり、このpackageは読みません。
+
+stage graphのread・decode error、必須field、`support_agents`、slug・number重複、execution enumを
+fail-closedにします。gridは構文上validでもtop-level、scope entry、必須`stages`が構造不正なら
+fallbackせずerrorにし、action enumと全graphへのstage参照も検証します。unknown JSON fieldは
+将来互換のため無視します。nil FSはpanicせずerrorで、error時はzero Snapshotです。
+
+### Stage routingの意図的な差分
+
+比較対象はローカルAI-DLC `2.6.123`のruntime graph / scope loaderです。
+[原典調査](ram/research/2026-09-02-stage-routing-contracts.md)に記したsourceとcanonical / 配置済み
+Codex dataだけを静的に確認した範囲であり、最新upstream全体との一致は主張しません。
+
+| 本家の挙動 | 採用した挙動 | 理由 | 利用者・互換性への影響 |
+| --- | --- | --- | --- |
+| JSON parse後のgraph/gridをruntime typeへcastし、構造・enum・参照をLoad境界では網羅検証しない | 必須stage field、重複、execution/action enum、grid構造、stage参照をLoad時にfail-closed検証する | 壊れたroutingを正常snapshotとして後続へ渡さない | 本家で遅延errorや暗黙SKIPになり得るmalformed dataがLoad errorになる。正常data、grid read/syntax fallback、missing actionのSKIPは維持 |
+
+`fs.FS`自体はsandboxを保証しません。供給FSのcontainmentとlifecycle、2 data fileの並行更新中の
+一貫性、version migrationはcaller側の責務です。詳細と承認は
+[Stage routingの実装計画](ram/decisions/2026-09-02-stage-routing-plan.md)、検証手順は
+[Stage graph・scope routing](development.md#stage-graphscope-routing内部api)を参照してください。
+
 ## ビルド情報
 
 `Version`と`Commit`は通常のstring変数として安全な既定値を持ち、release buildでは`go build -ldflags -X`で差し替えます。build timestampは再現可能なbuildを損なうため保持しません。
 
 ## 現在の対象外
 
-- AI-DLCの33ステージとagent実行
+- stage遷移の実行、agent dispatch、stage definition・scope metadataの編集
 - 設定ファイルとshell completion
 - ancestor探索、project自体の自動作成、既存spaceの自動修復
 - Intent作成の公開CLI・full handler、space・intentの削除、registry/state本文の解釈
