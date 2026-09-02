@@ -71,13 +71,16 @@
 
 - agentへの実装・review handoffには `verification_mode` として `loop`、`review`、`final` の
   いずれかを明示してください。未指定時は `loop` として扱います。
+- modeがagentの役割と一致しない場合は暗黙に別modeへ昇格せず停止してください。reviewerは明示された
+  `review`だけを受理し、implementerは`loop`または親が明示した`final`だけを受理します。
 - `loop`では、実装、refactor、review findingの修正に必要な最小のtargeted testだけを実行します。
   全package test、race、vet、全体lint、cross compile、配布E2Eは実行しません。
 - `review`では、findingの再現や解消確認に必要なtargeted test・診断だけを実行します。reviewerは
   最終検証を代行せず、全検証をreviewや再reviewのたびに繰り返しません。
 - `final`は、承認範囲の実装とblocking findingの修正が終わり、対象差分が安定した後に、親エージェントが
-  1回だけ開始します。承認済み計画に定めた全package test、race、vet、format、lint、cross compile、
-  配布E2E等のうち該当する検証をこのmodeへ集約します。
+  1回だけ開始します。承認済み計画に定めた全package test、race、vet、format check、lint、
+  cross compile、配布E2E等のうち該当する検証をこのmodeへ集約します。`final`は対象ファイルを変更しない
+  read-onlyな検証とし、Go codeの`gofmt`適用はreview前の`loop`で完了させます。
 - `final`の検証後に対象ファイルが変わった場合、その証拠はstaleです。`loop`のtargeted確認へ戻り、
   差分が再び安定してから`final`を再実行してください。
 

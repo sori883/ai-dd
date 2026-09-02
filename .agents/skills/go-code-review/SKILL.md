@@ -35,10 +35,12 @@ If there are no blocking findings, say so explicitly and list residual risks or 
 
 ## Verification Cadence
 
-Operate in `review` mode. Run only safe targeted tests or diagnostics that materially reproduce a finding or confirm
-its resolution. Do not run full-project tests, project-wide race or vet, full linters, cross compilation, or
-distribution E2E during review or re-review. Those checks belong to the parent's `final` gate after the diff has no
-blocking findings.
+Require an explicit `verification_mode=review`. A missing mode resolves to `loop`, which is a role mismatch; reject it
+instead of silently promoting it to `review`. Reject `loop`, `final`, and unknown modes for the same reason.
+
+Run only safe targeted tests or diagnostics that materially reproduce a finding or confirm its resolution. Do not run
+full-project tests, any race or vet command, full linters, cross compilation, or distribution E2E during review or
+re-review. Those checks belong to the parent's `final` gate after the diff has no blocking findings.
 
 When no blocking findings remain, report that the fixed head is ready for `final`. Do not treat a re-review as a
 request to repeat the final gate.

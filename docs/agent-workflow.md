@@ -21,8 +21,13 @@
 | `review` | 固定base/headのreview・再review | findingの再現・解消に必要なtargeted testまたは診断 | `independent_reviewer` |
 | `final` | blocking findingがなく差分が安定した後 | 計画に定めた全検証を1回 | 親エージェント |
 
-handoffにmodeがなければ`loop`とする。個々のTDD sliceやreview finding修正の完了を、`final`の開始条件と
-解釈しない。`final`は親エージェントだけが明示的に開始し、必要な場合は実行自体をimplementerへ委譲できる。
+handoffにmodeがなければ`loop`とする。agentの役割とmodeが一致しなければ暗黙に昇格せず停止する。
+reviewerは明示された`review`だけ、implementerは`loop`または親が明示した`final`だけを受理する。
+個々のTDD sliceやreview finding修正の完了を、`final`の開始条件と解釈しない。`final`は親エージェント
+だけが明示的に開始し、必要な場合は実行自体をimplementerへ委譲できる。
+
+Go codeの`gofmt`適用は実装変更として`loop`中かつreview前に完了させ、適用後のtargeted testを確認する。
+固定headのreview後に行う`final`はread-onlyとし、`gofmt -l`等でformatを確認するだけでファイルを変更しない。
 
 ## 標準フロー
 
@@ -82,7 +87,7 @@ skillは `skill-creator` の `quick_validate.py`、agentとproject configはTOML
 vet、全体lint、cross compile、配布E2Eを途中のhandoffごとに実行しない。
 
 `final`では、Go moduleが存在する実装なら`go test ./...`、`go vet ./...`、必要な場合の
-`go test -race ./...`、`gofmt`、`git diff --check`と、計画に含まれるcross compile・配布E2E等を
+`go test -race ./...`、`gofmt -l`、`git diff --check`と、計画に含まれるcross compile・配布E2E等を
 1回実行する。skill・agent設定の変更では、上記validatorと設定ロードを`final`へ集約する。
 
 ## 参考資料
