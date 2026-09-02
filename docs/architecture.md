@@ -693,6 +693,48 @@ filesystem write、Intent作成、CLI接続、stage本文実行はこの内部AP
 確認範囲は[初期 state builderの参照契約](ram/research/2026-09-02-initial-state-builder-contracts.md)、
 実装・targeted検証手順は[初期 state builder](development.md#初期-aidlc-state-builder内部api)を参照してください。
 
+## 初期state永続化writer
+
+`state.WriteInitial(recordRoot *os.Root, initial Initial) error`は、既にcallerが開いたrecord rootの
+固定leafへbuilderの2つのpayloadを保存します。`project-description.json`へ
+`Initial.ProjectDescriptionJSON`を保存してから、`aidlc-state.md`へ`Initial.StateContent`を保存します。
+payloadは文字列をそのままbytesとして扱い、空payloadも有効です。record rootの選択・open・Close、lock、
+record directoryの作成はcallerの責務であり、writerはrootをCloseしません。
+
+既存の`aidlc-state.md`は、sidecarの保存後、stateの置換前に`Lstat`で通常fileであることを確認し、非truncateの
+`O_WRONLY` open/closeをwrite barrierとして実行します。directory、symlink、その他の特殊file、または
+barrierの失敗ではfail-closedし、stateを変更しません。sidecarは本家の保存順どおり既にcommit済みとなり、
+rollbackしません。stateが不存在の場合はbarrierを省略して作成します。既存stubの存在は前提にしません。
+
+各leafは同一directoryの一意なsibling temporary fileを`O_WRONLY|O_CREATE|O_EXCL`で作成し、全量write、
+close、`Root.Rename`の順で置換します。short writeは失敗として扱い、close前のrenameは行いません。
+衝突したtemporary fileは再試行するだけで削除せず、writerが取得したtemporary fileだけを失敗時にcleanup
+します。Windowsで既存leafの原子的置換が保証されない場合もdelete-before-rename fallbackは行いません。
+
+sidecarのrename成功が最初のcommit境界です。sidecarの作成・書込み・close・renameに失敗した場合はstateへ
+進まず、stateの保存に失敗した場合はsidecarをrollbackせず、旧state（または不存在状態）を保持します。
+したがって2ファイル全体の原子的commitや、crash後のdurabilityはこのAPIの保証ではありません。
+
+### 初期state永続化writerの意図的な差分
+
+比較対象はローカルAI-DLC `2.6.123`の`writeStateFile` / `writeFileAtomic`と初期state build経路であり、
+最新upstream全体との一致は主張しません。成功bytes、保存順、partial commit、temporaryのclose-before-rename、
+Windowsでの非atomic可能性は本家に合わせています。2026-09-02にユーザーから、nonregular stateを検出したら
+異常として停止する方針の明示承認を得ています。
+根拠範囲は`docs/実装_aidlc-workflows/core/tools/aidlc-lib.ts:16453-16478`の`writeStateFile`、同`:18166-18199`の
+`writeFileAtomic`、および初期state build経路です。
+
+| 本家の挙動 | 採用した挙動 | 理由 | 利用者・互換性への影響 |
+| --- | --- | --- | --- |
+| temporary cleanupのerrorを抑止 | 元の失敗原因とcleanup errorを`errors.Join`で返す | cleanup失敗も診断可能にする | `errors.Is`で元原因とcleanup原因を個別に検査でき、失敗時のerror文字列は追加情報を含む |
+| `aidlc-state.md`の存在確認・write可否確認後、nonregular leafもatomic renameの対象になり得る | `Lstat`で通常file以外（symlink、directory、FIFO等）を検出したらfail-closedし、stateを変更しない | 異常なstate対象を黙って置換せず、FIFO等へのblockや意図しないleafの置換を避けて診断可能にする | 通常workspaceの挙動は不変。特殊なleafがあるworkspaceではsidecar commit後にerrorとなり、既存leafの種類・内容を保持する |
+
+nonregular leafを復旧するforce/repair操作は現時点のinternal writer・Go CLIにはありません。明示確認後、利用者または
+将来の上位CLIが異常leafを削除せず一意な別名へ退避し、同じ初期化処理を再実行することで通常stateを作成できます。
+symlinkの場合はリンク本体を退避し、リンク先は変更しません。自動削除や低レベルwriterのforceは追加しません。
+
+詳細な根拠、TDDの対象、確認範囲は[初期state永続化writerの実装計画](ram/decisions/2026-09-02-initial-state-writer-plan.md)を参照してください。
+
 ## ビルド情報
 
 `Version`と`Commit`は通常のstring変数として安全な既定値を持ち、release buildでは`go build -ldflags -X`で差し替えます。build timestampは再現可能なbuildを損なうため保持しません。

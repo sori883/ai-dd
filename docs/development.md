@@ -447,6 +447,59 @@ cross compile、配布E2Eを実行しません。独立review後に差分が安�
 final gateを一度実施します。根拠と確認範囲は[初期 state builderの参照契約](ram/research/2026-09-02-initial-state-builder-contracts.md)、
 計画と実施記録は[初期 state builderの実装計画](ram/decisions/2026-09-02-initial-state-builder-plan.md)を参照してください。
 
+### 初期state永続化writer（内部API）
+
+`state.WriteInitial`は、callerが開いたrecord `*os.Root`に対して、builderが返した
+`Initial.ProjectDescriptionJSON`と`Initial.StateContent`をそれぞれ固定leafへ保存します。
+sidecarの`project-description.json`を先に保存し、その成功後に`aidlc-state.md`を保存します。payloadは
+exact bytesとして扱い、空payloadも保存できます。rootのopen・Close、lock、record directory作成はcallerが
+担い、writerはrootをCloseしません。
+
+```go
+func WriteInitial(recordRoot *os.Root, initial Initial) error
+```
+
+既存stateがある場合は、sidecarの保存後、stateの置換前に`Lstat`で通常fileか確認し、非truncateの`O_WRONLY`
+open/closeをwrite barrierとして実行します。directory、symlink、特殊file、barrier失敗ではfail-closedして
+stateを変更しませんが、sidecarは本家と同じくcommit済みでrollbackしません。state不存在時はbarrierを省略して
+作成します（stub必須ではありません）。
+
+各leafは同一directoryの一意なsibling temporaryを`O_EXCL`で作成し、全量write、close、
+`Root.Rename`の順で置換します。short writeを検出し、close前にrenameしません。衝突したtemporaryは
+再試行するだけで削除せず、失敗時にcleanupするのはwriterが取得したtemporaryだけです。Windowsで既存leafの
+原子的置換が保証されない場合にdelete-before-renameへfallbackしません。
+
+sidecarのrename成功後にstate保存が失敗してもsidecarはrollbackせず、旧state（または不存在状態）を保ちます。
+本家AI-DLC `2.6.123`との比較では、成功bytes、保存順、partial commit、cleanup対象を本家に合わせています。
+2026-09-02にユーザーから、nonregular stateを検出したら異常として停止する方針の明示承認を得ています。
+承認済みの意図的差分は次の2件です。
+
+| 本家の挙動 | 採用した挙動 | 理由 | 利用者・互換性への影響 |
+| --- | --- | --- | --- |
+| temporary cleanupのerrorを抑止 | 元の失敗原因とcleanup errorを`errors.Join`して返す | cleanup失敗も診断可能にする | `errors.Is`で元原因とcleanup原因を個別に検査できる |
+| `aidlc-state.md`のnonregular leafもrename対象になり得る | `Lstat`で通常file以外を検出したらfail-closedし、stateを変更しない | 異常な対象を黙って置換せず、FIFO等へのblockや意図しないleafの置換を避ける | 特殊leafがあるworkspaceではsidecar commit後にerrorとなり、既存leafの種類・内容を保持する |
+
+根拠範囲はローカルAI-DLC `2.6.123`の`docs/実装_aidlc-workflows/core/tools/aidlc-lib.ts:16453-16478`
+（`writeStateFile`）、同`:18166-18199`（`writeFileAtomic`）、および初期state build経路です。
+nonregular leafのforce/repair操作は現時点のinternal writer・Go CLIにはありません。明示確認後、利用者または将来の
+上位CLIが異常leafを削除せず一意な別名へ退避し、同じ初期化処理を再実行します。symlinkの場合はリンク本体を退避し、
+リンク先は変更しません。自動削除や低レベルwriterのforceは追加しません。
+詳細は[初期state永続化writerの実装計画](ram/decisions/2026-09-02-initial-state-writer-plan.md)を参照してください。
+
+loop中は次のtargeted testだけを実行します。
+
+```sh
+go test -count=1 -run '^TestWriteInitial' ./src/internal/state
+go test -tags=integration -count=1 -run '^TestWriteInitial' ./src/internal/state
+```
+
+unit testは保存順、exact bytes、barrier、各failure point、short write、close-before-rename、collision時の
+非破壊、partial commit、cleanup errorのcauseをfailure-injection seamで検証します。integration testは実際の
+`os.Root`でstub置換、state不存在作成、empty payload、root継続利用、成功後のtemporary不存在、nonregular
+stateのfail-closedを検証します。CIでは`go test -tags=integration -count=1 ./src/internal/state`を専用stepで
+実行します。loopでは全体test、race、vet、lint、cross compile、配布E2Eを実行せず、独立review後に親agentが
+final gateを実施します。
+
 ### Space作成CLI
 
 既存projectへ新しいspaceを作ります。複数単語の名前は引用してください。
