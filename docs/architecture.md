@@ -38,7 +38,7 @@ src/internal/workspace
 - `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、read-onlyのworkspace分析、spaceとIntent coreの新規作成、space・intentの共有cursor切替を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。space一覧は`ReadSpaces`、intent一覧は`ReadIntents`を通じてCLIへ接続し、`ReadSelection`・`CreateIntent`・`Detect`は内部APIのままです。書込みは`CreateSpace`・`SwitchSpace`・`SwitchIntent`・`CreateIntent`の明示呼出しだけで行い、接続APIのRoot生存期間も内部で管理します。`Detect`は例外としてcaller所有の既存`*os.Root`を借り、Closeしません。
 - `src/internal/graph`: data directory基準の`fs.FS`からcompiled stage graphとscope gridを読み、enabled stageとrouting actionのimmutable snapshotを返します。filesystem write、project root選択、scope metadata Markdown、state遷移、agent実行は所有しません。
 - `src/internal/scope`: scopes directory基準の`fs.FS`から直下Markdownの狭いfrontmatter metadataを読みます。plugin選択、graph join、state、CLI、write、Root lifecycleは所有しません。
-- `src/internal/memory`: Memory root基準の`fs.FS`から`org.md`、`team.md`、`project.md`、`phases/<phase>.md`を固定順で読む4層source acquisitionを所有します。内容のmerge・override・frontmatter parse・substantive判定、workspace path解決、Rootのopen/Closeは所有しません。実filesystemの呼出側は`os.Root.FS()`を渡し、readerはRootをCloseしません。
+- `src/internal/memory`: Memory root基準の`fs.FS`から`org.md`、`team.md`、`project.md`、`phases/<phase>.md`を固定順で読む4層source acquisitionと、取得済みsourceからsubstantiveなbundleを作る純粋なfilterを所有します。merge・override・frontmatter parseなどのworkflow判断、workspace path解決、Rootのopen/Closeは所有しません。実filesystemの呼出側は`os.Root.FS()`を渡し、readerはRootをCloseしません。
 
 `internal`配下はmodule外からimportできません。今後の機能も、CLIから直接filesystemやnetworkへ到達させず、責務ごとのpackageをcomposition rootで接続します。
 
@@ -84,6 +84,24 @@ Go 1.26.0〜1.26.4のroot外leaf symlinkに関するGO-2026-4970を考慮し、C
 Go 1.26.5以降を前提にします。固定候補pathには末尾slashがないため、このreaderのpath契約には
 該当条件を持ち込みません。詳細な根拠、差分承認、未解決事項は[Memory source readerの参照契約](ram/research/2026-09-02-memory-source-reader-contracts.md)と
 [実装計画](ram/decisions/2026-09-02-memory-source-reader-plan.md)を参照してください。
+
+## Memory bundle filter（内部API）
+
+`memory.BuildBundle(sources []memory.Source) []memory.Source`は、source acquisitionが返した
+各layerの本文を本家AI-DLC v2.6.123のsubstantive判定へ通し、入力順のまま採用sourceだけを返します。
+`Layer`、`Path`、`Content`は変更せず、duplicate pathもdeduplicateしません。nil、空、全件filter時も
+caller-ownedのnon-nil空sliceを返し、入力sliceやglobal cache・I/O・その他の副作用は持ちません。
+
+判定は本文からclosed HTML commentを`/<!--[\s\S]*?-->/g`相当でglobal・non-greedyに除去し、
+`/\r?\n/`相当で行分割した各行をECMAScriptのtrim集合（U+0009、U+000B、U+000C、FEFF、Zs、
+U+000A/U+000D/U+2028/U+2029）でtrimします。trim後に空、`#`開始、shipped template preambleの
+12行、ASCII hyphenだけの3文字以上の行しかない本文はfilterし、それ以外の行が1つでもあれば
+substantiveです。一般のblockquote、frontmatterのfield、変更済みpreambleは保持対象です。
+
+このfilterはmerge、override、frontmatter解釈、layer間の優先順位付けを行いません。preambleの判定は
+ローカルAI-DLC v2.6.123 `core/tools/aidlc-steering.ts:25-53`の文字列と処理を根拠にしており、今回の
+Go移植で新たな利用者向けの意図的差分は採用していません。詳細な比較範囲と未確認事項は[Memory bundle filterの参照契約](ram/research/2026-09-02-memory-bundle-filter-contracts.md)と
+[実装計画](ram/decisions/2026-09-02-memory-bundle-filter-plan.md)を参照してください。
 
 ## 手動DI
 
