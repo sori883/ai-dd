@@ -241,6 +241,9 @@ func TestWriteInitialIntegrationKeepsReadOnlyStateAfterSidecar(t *testing.T) {
 	if err := os.WriteFile(statePath, oldState, 0o444); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(statePath, 0o444); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
 		if err := os.Chmod(statePath, 0o600); err != nil {
 			t.Errorf("restore state permissions: %v", err)
