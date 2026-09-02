@@ -445,6 +445,111 @@ func TestReadAllMatchesUpstreamBlockLineTerminatorBoundaries(t *testing.T) {
 	}
 }
 
+func TestReadAllMatchesUpstreamInnerListWhitespaceBacktracking(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		afterDash string
+		want      []string
+	}{
+		{
+			name:      "spaces before lone carriage return",
+			afterDash: "  \rdescription: suffix",
+			want:      []string{" "},
+		},
+		{
+			name:      "tabs before lone carriage return",
+			afterDash: "\t\t\rdescription: suffix",
+			want:      []string{"\t"},
+		},
+		{
+			name:      "mixed whitespace before lone carriage return",
+			afterDash: " \t\rdescription: suffix",
+			want:      []string{"\t"},
+		},
+		{
+			name:      "spaces before line separator",
+			afterDash: "  \u2028\nkeywords: [flow]",
+			want:      []string{" "},
+		},
+		{
+			name:      "tabs before line separator",
+			afterDash: "\t\t\u2028\nkeywords: [flow]",
+			want:      []string{"\t"},
+		},
+		{
+			name:      "mixed whitespace before line separator",
+			afterDash: " \t\u2028\nkeywords: [flow]",
+			want:      []string{"\t"},
+		},
+		{
+			name:      "spaces before paragraph separator",
+			afterDash: "  \u2029\nkeywords: [flow]",
+			want:      []string{" "},
+		},
+		{
+			name:      "tabs before paragraph separator",
+			afterDash: "\t\t\u2029\nkeywords: [flow]",
+			want:      []string{"\t"},
+		},
+		{
+			name:      "mixed whitespace before paragraph separator",
+			afterDash: " \t\u2029\nkeywords: [flow]",
+			want:      []string{"\t"},
+		},
+		{
+			name:      "spaces at block end",
+			afterDash: "  ",
+			want:      []string{" "},
+		},
+		{
+			name:      "tabs at block end",
+			afterDash: "\t\t",
+			want:      []string{"\t"},
+		},
+		{
+			name:      "mixed whitespace at block end",
+			afterDash: " \t",
+			want:      []string{"\t"},
+		},
+		{
+			name:      "one space before lone carriage return is empty",
+			afterDash: " \rdescription: suffix",
+			want:      []string{},
+		},
+		{
+			name:      "one tab before line separator is empty",
+			afterDash: "\t\u2028\nkeywords: [flow]",
+			want:      []string{},
+		},
+		{
+			name:      "one space before paragraph separator is empty",
+			afterDash: " \u2029\nkeywords: [flow]",
+			want:      []string{},
+		},
+		{
+			name:      "one tab at block end is empty",
+			afterDash: "\t",
+			want:      []string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			body := "---\nname: fixture\nkeywords:\n  -" + tt.afterDash + "\n---\n"
+			got, err := ReadAll(fstest.MapFS{"scope.md": {Data: []byte(body)}})
+			if err != nil {
+				t.Fatalf("ReadAll() error = %v", err)
+			}
+			if gotKeywords := got[0].Keywords; !reflect.DeepEqual(gotKeywords, tt.want) {
+				t.Errorf("Keywords = %q, want %q", gotKeywords, tt.want)
+			}
+		})
+	}
+}
+
 func TestReadAllParsesOptionalMetadata(t *testing.T) {
 	t.Parallel()
 

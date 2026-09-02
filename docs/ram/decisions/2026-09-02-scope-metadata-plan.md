@@ -1,7 +1,7 @@
 # Scope metadata read-only APIの実装計画
 
 - 日付: 2026-09-02
-- 状態: Accepted（Issue #37実装・post-fix review P2とfrontmatter改行保持の互換修正・fresh再検証・6構成cross compile完了）
+- 状態: Accepted（Issue #37実装・final matrix P2までの互換修正・fresh再検証・6構成cross compile完了）
 - GitHub Issue: [#37](https://github.com/sori883/ai-dd/issues/37)
 - base: `a6c19f673c685facc450fb3c0399bf06b36c4542`
 - 作業branch: `codex/scope-metadata-reader`
@@ -108,6 +108,10 @@ fixtureは`testing/fstest.MapFS`と最小error injection FSだけを使い、本
   認識してもfrontmatter capture自体は正規化しない本家境界を確認した。raw `\r\r\n` fixtureをpublic
   `ReadAll`でREDにし、capture内の改行を保持してBun 1.3.14と同じ先頭itemだけを返すよう修正した。これも
   parity bug修正であり、意図的差分ではない。
+- final matrix review P2: inner `[ \t]+(.+?)\s*$`のbacktrackingが不足し、複数horizontal whitespaceの
+  直後がlone CR / U+2028 / U+2029の場合に最後のspace / tabをcaptureへ残せていなかった。space / tab /
+  mixed runとblock終端、1文字runも本家Bun 1.3.14でmatrix照合し、public `ReadAll`でREDからGREENにした。
+  これもparity bug修正であり、意図的差分ではない。
 
 ## 所有権と対象外
 
@@ -148,3 +152,5 @@ post-fix review P2修正後にも同じfresh検証と6構成cross compileをrepo
 frontmatter改行保持の追補修正後にもtargeted、scope package、全体shuffle、race、vet、tidy diff、gofmt、
 gopls、diff checkをfresh実行し、すべて成功した。scope test binaryの6構成cross compileもrepository外へ
 再実行して成功したが、各target OSでのnative実行証拠とは扱わない。
+
+final matrix P2修正後にも同じfresh検証と6構成cross compileをrepository外へ再実行し、すべて成功した。

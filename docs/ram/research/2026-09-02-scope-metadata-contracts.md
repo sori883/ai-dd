@@ -55,8 +55,10 @@ keywordsは、frontmatter全体から最初のvalid indent `- ` block sequence�
 最初のsingle-line flow sequenceを使う。先行するflowや空・不正block keyは、後続のvalid blockを抑止しない。
 block keyと最初のitemの間にJavaScript whitespaceだけの行があっても、正規表現の`\s*`が吸収してblockが
 成立する。またdash後に複数のhorizontal whitespaceだけがあるitemもmatcherは成立し、抽出結果は空ではなく
-1文字のwhitespaceになる。outer blockの`[^\r\n]+`はU+2028 / U+2029を受理する一方、inner extractorの
-`(.+?)`はCR / LF / U+2028 / U+2029をmatchしない。U+2028 / U+2029だけのitemやseparator後にpayloadが
+1文字のwhitespaceになる。inner `[ \t]+`は貪欲だが、直後がlone CR / U+2028 / U+2029またはblock終端で
+`(.+?)`が別の文字をmatchできない場合、2文字以上のrunでは最後のspace / tabをdot captureへ残す。runが
+1文字ならprefixに必要なためinner抽出は成立しない。outer blockの`[^\r\n]+`はU+2028 / U+2029を受理する
+一方、inner extractorの`(.+?)`はCR / LF / U+2028 / U+2029をmatchしない。U+2028 / U+2029だけのitemやseparator後にpayloadが
 続くitemはblock自体は成立しても抽出されず、後続flowへfallbackしない。payload末尾だけのU+2028 / U+2029
 は末尾`\s*`側で扱われ、payloadを抽出する。lone CRより前にouter payloadがなければblockは成立せず、後続
 flowを探索する。outerがpayload後のlone CRをoptional terminatorとして消費し、直後のindent itemも反復
@@ -81,6 +83,10 @@ post-fix reviewではoptional lone CR直後に反復itemが隣接する場合の
 inner行を分割する本家構造へ一致させた。追補の直接実行では、`frontmatterBlock`がdelimiterのLF / CRLFを
 認識しつつcapture内部を変換しないことと、raw `\r\r\n` fixtureが先頭itemだけになることを確認した。Go版の
 body全体CRLF正規化を除去して一致させた。いずれも新しい意図的差分ではない。
+final matrix reviewでは、innerのhorizontal whitespace runに必要な正規表現backtrackingが不足するparity
+bugを検出した。space / tab / mixed runとlone CR / U+2028 / U+2029 / block終端のmatrix、および1文字runを
+本家Bun 1.3.14で照合し、最後のhorizontal 1文字を必要時だけdot captureへ残すよう一致させた。これも新しい
+意図的差分ではない。
 
 ## Go版の承認済み差分
 

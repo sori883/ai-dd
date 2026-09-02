@@ -295,9 +295,20 @@ func extractBlockListItems(block string) []string {
 func extractBlockListItem(line string) (string, bool) {
 	dash := strings.IndexByte(line, '-')
 	remainder := line[dash+1:]
-	start := 0
-	for start+1 < len(remainder) && isHorizontalListSpace(remainder[start]) {
-		start++
+	horizontalEnd := 0
+	for horizontalEnd < len(remainder) && isHorizontalListSpace(remainder[horizontalEnd]) {
+		horizontalEnd++
+	}
+	if horizontalEnd == 0 {
+		return "", false
+	}
+
+	start := horizontalEnd
+	if start == len(remainder) || startsWithListLineTerminator(remainder[start:]) {
+		if start == 1 {
+			return "", false
+		}
+		start--
 	}
 	item := remainder[start:]
 	end := len(item)
@@ -313,6 +324,11 @@ func extractBlockListItem(line string) (string, bool) {
 		return "", false
 	}
 	return item, true
+}
+
+func startsWithListLineTerminator(value string) bool {
+	r, _ := utf8.DecodeRuneInString(value)
+	return strings.ContainsRune("\r\n\u2028\u2029", r)
 }
 
 func isHorizontalListSpace(value byte) bool {
