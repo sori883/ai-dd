@@ -1,7 +1,7 @@
 # 初期state永続化writerの実装計画
 
 - 日付: 2026-09-02
-- 状態: Accepted（Issue #45、実装完了・独立review前）
+- 状態: Accepted（Issue #45、P2修正完了・再review待ち）
 - GitHub Issue: [#45](https://github.com/sori883/ai-dd/issues/45)
 - 承認: 2026-09-02、ユーザー承認済み計画を親agentから受領
 - base: `3a6932d`
@@ -40,10 +40,21 @@ delete-before-rename fallbackは行わない。
 
 ## 意図的な差分
 
-比較対象はローカルAI-DLC `2.6.123`の`writeFileAtomic`とstate-build経路であり、最新upstream全体との
-一致は主張しない。本家がtemporary cleanup errorを抑止するのに対し、Go版は元errorとcleanup errorを
-`errors.Join`で返す。これは失敗原因を失わないための承認済み唯一の意図的差分である。その他の成功bytes、
-保存順、partial commit、Windowsの非atomic可能性は本家に合わせる。
+比較対象はローカルAI-DLC `2.6.123`の`writeStateFile`（`docs/実装_aidlc-workflows/core/tools/aidlc-lib.ts:16453-16478`）と
+`writeFileAtomic`（同`:18166-18199`）、および初期state build経路である。最新upstream全体との一致は主張しない。
+その他の成功bytes、保存順、partial commit、temporaryのclose-before-rename、Windowsの非atomic可能性は本家に合わせる。
+
+cleanup errorの扱いに加えて、nonregular stateを異常として停止する方針を意図的に採用した。2026-09-02、
+本家との差分説明を行ったうえで、ユーザーから「異常として停止するでOK」と明示承認を得た。
+
+| 本家の挙動 | 採用した挙動 | 理由 | 利用者・互換性への影響 |
+| --- | --- | --- | --- |
+| temporary cleanupのerrorを抑止 | 元の失敗原因とcleanup errorを`errors.Join`で返す | cleanup失敗も診断可能にする | `errors.Is`で元原因とcleanup原因を個別に検査でき、error文字列は追加情報を含む |
+| `aidlc-state.md`の存在確認・write可否確認後、nonregular leafもatomic renameの対象になり得る | `Lstat`で通常file以外（symlink、directory、FIFO等）を検出したらfail-closedし、stateを変更しない | 異常なstate対象を黙って置換せず、FIFO等へのblockや意図しないleafの置換を避けて診断可能にする | 通常workspaceの挙動は不変。特殊leafではsidecar commit後にerrorとなり、既存leafの種類・内容を保持する |
+
+nonregular leafを復旧するforce/repair操作は現時点のinternal writer・Go CLIにはない。明示確認後、利用者または将来の
+上位CLIが異常leafを削除せず一意な別名へ退避し、同じ初期化処理を再実行する。symlinkの場合はリンク本体を退避し、
+リンク先は変更しない。自動削除や低レベルwriterのforceは今回追加しない。
 
 ## TDDと検証
 
@@ -98,5 +109,7 @@ ok
 
 targeted testではsidecar→stateの順序、exact bytes、既存stateのwrite barrier、nonregular fail-closed、
 empty payload、各failure point、short write、close-before-rename、collisionしたtemporaryの非破壊、
-sidecar成功後のpartial commit、cleanup errorのcause、caller-owned root継続利用を固定した。独立reviewと
-親agentによるfinal gateは未実施であり、実行後にこの記録を更新する。
+sidecar成功後のpartial commit、cleanup errorのcause、caller-owned root継続利用を固定した。追加の実filesystem
+testではdirectory・symlinkの種類と内容を保持すること、0444 regular stateのbytesとmodeを保持すること、
+sidecarがcommit済みでwriter temporaryが残らないことを確認する。独立reviewと親agentによるfinal gateは未実施であり、
+実行後にこの記録を更新する。

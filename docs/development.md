@@ -471,7 +471,19 @@ stateを変更しませんが、sidecarは本家と同じくcommit済みでrollb
 
 sidecarのrename成功後にstate保存が失敗してもsidecarはrollbackせず、旧state（または不存在状態）を保ちます。
 本家AI-DLC `2.6.123`との比較では、成功bytes、保存順、partial commit、cleanup対象を本家に合わせています。
-承認済みの唯一の意図的差分は、本家が抑止するcleanup errorをGo版では元の失敗原因と`errors.Join`して返すことです。
+2026-09-02にユーザーから、nonregular stateを検出したら異常として停止する方針の明示承認を得ています。
+承認済みの意図的差分は次の2件です。
+
+| 本家の挙動 | 採用した挙動 | 理由 | 利用者・互換性への影響 |
+| --- | --- | --- | --- |
+| temporary cleanupのerrorを抑止 | 元の失敗原因とcleanup errorを`errors.Join`して返す | cleanup失敗も診断可能にする | `errors.Is`で元原因とcleanup原因を個別に検査できる |
+| `aidlc-state.md`のnonregular leafもrename対象になり得る | `Lstat`で通常file以外を検出したらfail-closedし、stateを変更しない | 異常な対象を黙って置換せず、FIFO等へのblockや意図しないleafの置換を避ける | 特殊leafがあるworkspaceではsidecar commit後にerrorとなり、既存leafの種類・内容を保持する |
+
+根拠範囲はローカルAI-DLC `2.6.123`の`docs/実装_aidlc-workflows/core/tools/aidlc-lib.ts:16453-16478`
+（`writeStateFile`）、同`:18166-18199`（`writeFileAtomic`）、および初期state build経路です。
+nonregular leafのforce/repair操作は現時点のinternal writer・Go CLIにはありません。明示確認後、利用者または将来の
+上位CLIが異常leafを削除せず一意な別名へ退避し、同じ初期化処理を再実行します。symlinkの場合はリンク本体を退避し、
+リンク先は変更しません。自動削除や低レベルwriterのforceは追加しません。
 詳細は[初期state永続化writerの実装計画](ram/decisions/2026-09-02-initial-state-writer-plan.md)を参照してください。
 
 loop中は次のtargeted testだけを実行します。

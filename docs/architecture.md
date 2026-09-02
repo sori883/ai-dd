@@ -717,13 +717,21 @@ sidecarのrename成功が最初のcommit境界です。sidecarの作成・書込
 
 ### 初期state永続化writerの意図的な差分
 
-比較対象はローカルAI-DLC `2.6.123`の`writeFileAtomic`と初期state build経路であり、最新upstream全体との
-一致は主張しません。成功bytes、保存順、partial commit、temporaryのclose-before-rename、Windowsでの
-非atomic可能性は本家に合わせています。唯一の承認済み差分は、cleanupが失敗したときのエラー処理です。
+比較対象はローカルAI-DLC `2.6.123`の`writeStateFile` / `writeFileAtomic`と初期state build経路であり、
+最新upstream全体との一致は主張しません。成功bytes、保存順、partial commit、temporaryのclose-before-rename、
+Windowsでの非atomic可能性は本家に合わせています。2026-09-02にユーザーから、nonregular stateを検出したら
+異常として停止する方針の明示承認を得ています。
+根拠範囲は`docs/実装_aidlc-workflows/core/tools/aidlc-lib.ts:16453-16478`の`writeStateFile`、同`:18166-18199`の
+`writeFileAtomic`、および初期state build経路です。
 
 | 本家の挙動 | 採用した挙動 | 理由 | 利用者・互換性への影響 |
 | --- | --- | --- | --- |
 | temporary cleanupのerrorを抑止 | 元の失敗原因とcleanup errorを`errors.Join`で返す | cleanup失敗も診断可能にする | `errors.Is`で元原因とcleanup原因を個別に検査でき、失敗時のerror文字列は追加情報を含む |
+| `aidlc-state.md`の存在確認・write可否確認後、nonregular leafもatomic renameの対象になり得る | `Lstat`で通常file以外（symlink、directory、FIFO等）を検出したらfail-closedし、stateを変更しない | 異常なstate対象を黙って置換せず、FIFO等へのblockや意図しないleafの置換を避けて診断可能にする | 通常workspaceの挙動は不変。特殊なleafがあるworkspaceではsidecar commit後にerrorとなり、既存leafの種類・内容を保持する |
+
+nonregular leafを復旧するforce/repair操作は現時点のinternal writer・Go CLIにはありません。明示確認後、利用者または
+将来の上位CLIが異常leafを削除せず一意な別名へ退避し、同じ初期化処理を再実行することで通常stateを作成できます。
+symlinkの場合はリンク本体を退避し、リンク先は変更しません。自動削除や低レベルwriterのforceは追加しません。
 
 詳細な根拠、TDDの対象、確認範囲は[初期state永続化writerの実装計画](ram/decisions/2026-09-02-initial-state-writer-plan.md)を参照してください。
 
