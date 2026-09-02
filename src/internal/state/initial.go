@@ -218,17 +218,77 @@ func BuildInitial(input Input) (Initial, error) {
 	if rawDescription == "" {
 		rawDescription = projectDescriptionValue
 	}
-	descriptionJSON, err := json.Marshal(rawDescription)
+	descriptionJSON, err := jsonStringifyString(rawDescription)
 	if err != nil {
 		return Initial{}, fmt.Errorf("build initial state: encode project description: %w", err)
 	}
-	descriptionJSON = append(descriptionJSON, '\n')
+	descriptionJSON += "\n"
 
 	return Initial{
 		StateContent:           stateContent,
 		ProjectDescriptionJSON: string(descriptionJSON),
 		Routing:                routing,
 	}, nil
+}
+
+// jsonStringifyString uses encoding/json for JSON syntax and restores the
+// five characters that JSON.stringify leaves unescaped but encoding/json
+// escapes for HTML-safe output.
+func jsonStringifyString(value string) (string, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return restoreJSONStringEscapes(data), nil
+}
+
+func restoreJSONStringEscapes(data []byte) string {
+	var builder strings.Builder
+	builder.Grow(len(data))
+	for index := 0; index < len(data); {
+		if data[index] != '\\' {
+			builder.WriteByte(data[index])
+			index++
+			continue
+		}
+		if index+1 >= len(data) {
+			builder.WriteByte(data[index])
+			index++
+			continue
+		}
+		if data[index+1] == '\\' {
+			builder.Write(data[index : index+2])
+			index += 2
+			continue
+		}
+		if data[index+1] == 'u' && index+6 <= len(data) {
+			switch string(data[index : index+6]) {
+			case `\u003c`:
+				builder.WriteByte('<')
+				index += 6
+				continue
+			case `\u003e`:
+				builder.WriteByte('>')
+				index += 6
+				continue
+			case `\u0026`:
+				builder.WriteByte('&')
+				index += 6
+				continue
+			case `\u2028`:
+				builder.WriteRune('\u2028')
+				index += 6
+				continue
+			case `\u2029`:
+				builder.WriteRune('\u2029')
+				index += 6
+				continue
+			}
+		}
+		builder.Write(data[index : index+2])
+		index += 2
+	}
+	return builder.String()
 }
 
 func resolveTier(override, fallback, field string) (string, error) {

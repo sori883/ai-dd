@@ -426,6 +426,9 @@ graph順のmissing cellはSKIPです。Greenfieldでraw mappingのreverse-engine
 mappingだけをSKIPへ補正し、skip末尾に理由を付けます。firstは補正後mapping、nextは本家と同じraw
 mappingから解決します。初期化stageは`[x]`、firstだけ`[-]`、他は`[ ]`です。State Version 8、
 Project Description Source `project-description.json`、section/field/comment/空行/末尾LFはgoldenで固定します。
+sidecarは標準`encoding/json`でJSON構文を生成し、本家`JSON.stringify`がescapeしない`<`、`>`、`&`、
+U+2028、U+2029の過剰escapeだけを安全に戻してから末尾LFを付けます。quote、backslash、制御文字の
+JSON escape、およびraw値中のliteralな`\u`列は保持します。
 
 loop中の最小検証は次のとおりです。
 
@@ -435,6 +438,7 @@ go test -count=1 -run '^TestBuildInitialRoutingAndOwnership$' ./src/internal/sta
 go test -count=1 -run '^TestBuildInitialGreenfield' ./src/internal/state
 go test -count=1 -run '^TestBuildInitialResolvesOverridesAndReview$' ./src/internal/state
 go test -count=1 -run '^TestBuildInitialFallbackAndErrors$' ./src/internal/state
+go test -count=1 -run '^TestBuildInitialProjectDescriptionJSONMatchesJSONStringifyEscaping$' ./src/internal/state
 go test -count=1 ./src/internal/state
 ```
 

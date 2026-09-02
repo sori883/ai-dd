@@ -41,7 +41,7 @@ callerが変更してもbuilder内部や相互の結果を壊さない。raw des
 - reviewは未指定/adversarialを空保存、advisory/noneをcanonical lowercaseで保存する。
 - graph順のexecute/skip、missing cell SKIP、Greenfield reverse-engineering補正、incremental warning bool、
   first/next/phase/agent/countを構造化して返す。
-- raw descriptionをJSON string + LFで返し、stateのProject表示には安全なpreviewだけを使う。
+- raw descriptionを本家`JSON.stringify`互換のJSON string + LFで返し、stateのProject表示には安全なpreviewだけを使う。
 - unknown scope、無効設定、metadata不一致などの境界はcontext付きerrorにし、部分結果を返さない。
 
 ## TDD sliceと実施証拠
@@ -93,3 +93,21 @@ loop中は全package test、race、vet、全体lint、cross compile、配布E2E�
 
 次のsliceではstate writer、audit bootstrap、workspace Detect/CreateIntentとの接続、public intent create
 CLIを別Issueで扱う。state builderにfilesystem権限を追加しない。
+
+## P1 review修正（2026-09-02）
+
+独立reviewで、標準`encoding/json`が`<`、`>`、`&`、U+2028、U+2029をHTML安全化のためescapeするため、
+本家2.6.123の`JSON.stringify`とsidecar byteが一致しないことが判明した。`aidlc-utility.ts:5964-5967`
+の`${JSON.stringify(rawProjectDesc)}\n`を根拠に、標準ライブラリのみでJSON構文を生成し、該当5文字の
+過剰escapeだけを安全に復元する実装へ修正した。quote、backslash、U+0000〜U+001Fのescapeとliteralな
+`\u`列は回帰テストで保持を確認する。これは本家との意図的な仕様差分ではなく、byte互換性の修正である。
+回帰テストのTDD evidenceは次のとおりである。
+
+```text
+RED  go test -count=1 -run '^TestBuildInitialProjectDescriptionJSONMatchesJSONStringifyEscaping$' ./src/internal/state
+     FAIL: got \\"\\u003c\\u003e\\u0026\\u2028\\u2029...\\\\u003c\\"\\n, want unescaped <>&/U+2028/U+2029
+GREEN go test -count=1 -run '^TestBuildInitialProjectDescriptionJSONMatchesJSONStringifyEscaping$' ./src/internal/state
+     ok
+GREEN go test -count=1 ./src/internal/state
+     ok   github.com/sori883/ai-dd/src/internal/state
+```

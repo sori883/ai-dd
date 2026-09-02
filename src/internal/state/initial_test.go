@@ -132,6 +132,38 @@ Per unit: [TBD]
 	}
 }
 
+func TestBuildInitialProjectDescriptionJSONMatchesJSONStringifyEscaping(t *testing.T) {
+	t.Parallel()
+
+	snapshot := loadTestSnapshot(t, []map[string]any{
+		stageFixture("workspace-scaffold", "0.1", "initialization"),
+	}, map[string]any{
+		"classic": map[string]any{"stages": map[string]any{
+			"workspace-scaffold": "EXECUTE",
+		}},
+	})
+	rawDescription := "<>&\u2028\u2029\"\\\b\f\n\r\t\x00 literal \\u003c"
+
+	got, err := BuildInitial(Input{
+		Graph:                     snapshot,
+		Scope:                     "classic",
+		ScopeMetadata:             scope.Metadata{Name: "classic", Depth: "Standard"},
+		Workspace:                 WorkspaceInfo{ProjectType: "Brownfield"},
+		ProjectRoot:               "/project",
+		ProjectDescription:        rawDescription,
+		ProjectDescriptionPreview: "preview",
+		StartDate:                 "2026-09-02T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("BuildInitial() error = %v", err)
+	}
+
+	want := "\"<>&\u2028\u2029\\\"\\\\\\b\\f\\n\\r\\t\\u0000 literal \\\\u003c\"\n"
+	if got.ProjectDescriptionJSON != want {
+		t.Errorf("ProjectDescriptionJSON = %q, want JSON.stringify-compatible output %q", got.ProjectDescriptionJSON, want)
+	}
+}
+
 func TestBuildInitialRoutingAndOwnership(t *testing.T) {
 	t.Parallel()
 

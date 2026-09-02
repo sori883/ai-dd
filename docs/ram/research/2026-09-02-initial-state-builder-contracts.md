@@ -65,8 +65,9 @@ func BuildInitial(input Input) (Initial, error)
 raw値が空の場合は本家の`flags.arguments || "[Project description]"`に合わせて既定値を使う。
 
 返却する`Initial`は、canonical `aidlc-state.md`の`StateContent`、raw descriptionを標準
-`encoding/json`でstring化した`ProjectDescriptionJSON`、後続consumerが使える`Routing`を含む。
-I/Oはなく、返却routingのexecute/skip sliceはbuilder内部や相互で共有しない。
+`encoding/json`でJSON構文化した後に本家`JSON.stringify`との過剰escape差分を補正した
+`ProjectDescriptionJSON`、後続consumerが使える`Routing`を含む。I/Oはなく、返却routingの
+execute/skip sliceはbuilder内部や相互で共有しない。
 
 ## 設定解決
 
@@ -103,8 +104,11 @@ State Versionは`8`、Project Description Sourceは`project-description.json`固
 phase statusは初期化を`Verified`、first stageのphaseを`Active`、残りをeffective mappingにEXECUTEが
 あれば`Pending`、なければ`Skipped`とする。construction phaseには`Per unit: [TBD]`を置く。
 
-sidecarは`json.Marshal(ProjectDescription)`の結果へLFを1つ加える。previewへraw値を再利用したり、
-sidecarを読み書きしたりしない。
+sidecarは`encoding/json`のJSON string化を基盤にし、`JSON.stringify`がescapeしない`<`、`>`、`&`、
+U+2028、U+2029の過剰escapeだけを安全に戻した結果へLFを1つ加える。quote、backslash、U+0000〜
+U+001FのJSON escapeと、raw値中のliteralな`\u`列は保持する。previewへraw値を再利用したり、sidecarを
+読み書きしたりしない。本家の書込み根拠は`aidlc-utility.ts:5964-5967`の
+`${JSON.stringify(rawProjectDesc)}\n`である。
 
 ## 本家との差分と限界
 

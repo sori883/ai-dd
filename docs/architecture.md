@@ -667,8 +667,9 @@ filesystemへ触れずに初期stateの内容を作ります。`state`はworkspa
 `Input.ProjectDescription`はsidecarへ保存するraw文字列、`Input.ProjectDescriptionPreview`はcallerが
 解決済みの安全なsingle-line表示値です。builderはraw値をstate本文へ再利用しません。返却される
 `Initial`は`StateContent`、`ProjectDescriptionJSON`、構造化`Routing`を持ち、sidecar内容は標準
-`encoding/json`でstring化して末尾LFを付けます。raw値が空なら本家と同じ`[Project description]`を
-使います。execute/skipの`StageRoute` sliceはgraphや相互の結果と共有しません。
+`encoding/json`でJSON構文を生成した後、本家`JSON.stringify`がescapeしない`<`、`>`、`&`、
+U+2028、U+2029の過剰escapeだけを安全に戻して末尾LFを付けます。raw値が空なら本家と同じ
+`[Project description]`を使います。execute/skipの`StageRoute` sliceはgraphや相互の結果と共有しません。
 
 depthは明示override > scope metadata、test strategyは明示override > scope metadata > effective depthで
 解決し、3値をcase-insensitiveに`Minimal` / `Standard` / `Comprehensive`へcanonicalizeします。
