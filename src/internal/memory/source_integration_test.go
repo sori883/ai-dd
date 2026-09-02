@@ -4,9 +4,12 @@ package memory_test
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
+	"syscall"
 	"testing"
 
 	"github.com/sori883/ai-dd/src/internal/memory"
@@ -50,9 +53,7 @@ func TestReadSourcesIntegrationAllowsInRootSymlink(t *testing.T) {
 
 	root, memoryDir := openMemoryRoot(t)
 	writeMemoryFile(t, memoryDir, "org-target.md", "in root")
-	if err := os.Symlink("org-target.md", filepath.Join(memoryDir, "org.md")); err != nil {
-		t.Skipf("symlink creation unavailable: %v", err)
-	}
+	createMemorySymlink(t, "org-target.md", filepath.Join(memoryDir, "org.md"))
 
 	got, err := memory.ReadSources(root.FS(), "implementation")
 	if err != nil {
@@ -74,9 +75,7 @@ func TestReadSourcesIntegrationRejectsOutwardSymlink(t *testing.T) {
 	if err := os.WriteFile(outsidePath, []byte("outside secret"), 0o600); err != nil {
 		t.Fatalf("write outside fixture: %v", err)
 	}
-	if err := os.Symlink(outsidePath, filepath.Join(memoryDir, "org.md")); err != nil {
-		t.Skipf("symlink creation unavailable: %v", err)
-	}
+	createMemorySymlink(t, outsidePath, filepath.Join(memoryDir, "org.md"))
 
 	got, err := memory.ReadSources(root.FS(), "implementation")
 	if err == nil {
@@ -94,6 +93,32 @@ func TestReadSourcesIntegrationRejectsOutwardSymlink(t *testing.T) {
 	}
 	if info.Mode()&os.ModeSymlink == 0 {
 		t.Errorf("outward source mode = %v, want symlink retained", info.Mode())
+	}
+}
+
+func TestMemorySymlinkErrorClassification(t *testing.T) {
+	tests := []struct {
+		name string
+		goos string
+		err  error
+		want bool
+	}{
+		{name: "windows permission", goos: "windows", err: fs.ErrPermission, want: true},
+		{name: "windows privilege", goos: "windows", err: syscall.Errno(1314), want: true},
+		{name: "windows unsupported", goos: "windows", err: errors.ErrUnsupported, want: true},
+		{name: "wrapped windows permission", goos: "windows", err: fmt.Errorf("create link: %w", fs.ErrPermission), want: true},
+		{name: "windows disk full", goos: "windows", err: syscall.Errno(112), want: false},
+		{name: "windows path failure", goos: "windows", err: errors.New("path is invalid"), want: false},
+		{name: "unix permission", goos: "darwin", err: fs.ErrPermission, want: false},
+		{name: "unix privilege", goos: "linux", err: syscall.Errno(1314), want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isExpectedSymlinkUnavailable(tt.goos, tt.err); got != tt.want {
+				t.Errorf("isExpectedSymlinkUnavailable(%q, %v) = %t, want %t", tt.goos, tt.err, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -127,4 +152,21 @@ func writeMemoryFile(t *testing.T, memoryDir, name, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write %q: %v", name, err)
 	}
+}
+
+func createMemorySymlink(t *testing.T, target, link string) {
+	t.Helper()
+
+	if err := os.Symlink(target, link); err != nil {
+		if isExpectedSymlinkUnavailable(runtime.GOOS, err) {
+			t.Skipf("Windows symlink unavailable (Developer Mode, privilege, or filesystem support required): %v", err)
+		}
+		t.Fatal(err)
+	}
+}
+
+func isExpectedSymlinkUnavailable(goos string, err error) bool {
+	return goos == "windows" &&
+		(errors.Is(err, fs.ErrPermission) || errors.Is(err, errors.ErrUnsupported) ||
+			errors.Is(err, syscall.Errno(1314)))
 }
