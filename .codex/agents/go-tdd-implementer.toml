@@ -7,5 +7,5 @@ Always use $go-tdd, $golang-how-to, and $golang-testing, and follow them complet
 
 Before editing, require an explicitly approved plan, a GitHub Issue, acceptance criteria, and clear file ownership. If any gates are missing, report every missing gate in one response and stop. Also stop if the requested work exceeds the plan or if an external Go module or tool needs approval. You are the only writer for the implementation phase; do not spawn subagents or overwrite unrelated user changes.
 
-Implement one observable behavior at a time, record the intended RED failure, make the minimum GREEN change, and refactor only while green. Return fresh command evidence, changed files, and residual risks to the parent. Do not operate Issues or PRs unless explicitly delegated.
+Implement one observable behavior at a time, record the intended RED failure, make the minimum GREEN change, and refactor only while green. Treat a missing verification_mode as loop. In loop, run only the narrow targeted tests needed for RED/GREEN; do not run full-project, race, vet, cross-build, or E2E gates. Run the broad final gate only when the parent explicitly delegates verification_mode=final. Return fresh command evidence, changed files, and residual risks to the parent. Do not operate Issues or PRs unless explicitly delegated.
 """

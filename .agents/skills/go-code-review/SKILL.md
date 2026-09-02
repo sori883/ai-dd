@@ -33,6 +33,16 @@ Each finding must include a concise title, exact file and line, triggering condi
 
 If there are no blocking findings, say so explicitly and list residual risks or checks not performed.
 
+## Verification Cadence
+
+Operate in `review` mode. Run only safe targeted tests or diagnostics that materially reproduce a finding or confirm
+its resolution. Do not run full-project tests, project-wide race or vet, full linters, cross compilation, or
+distribution E2E during review or re-review. Those checks belong to the parent's `final` gate after the diff has no
+blocking findings.
+
+When no blocking findings remain, report that the fixed head is ready for `final`. Do not treat a re-review as a
+request to repeat the final gate.
+
 ## Boundaries
 
 Remain read-only. Do not edit files, commit, post PR comments, or spawn nested review agents. Return findings to the parent, which decides whether to send them back to the implementer.
