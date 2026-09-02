@@ -44,6 +44,8 @@ jobs:
         run: go test -tags=integration -count=1 ./src/internal/workspace
       - name: Test state filesystem integration
         run: go test -tags=integration -count=1 ./src/internal/state
+      - name: Test memory filesystem integration
+        run: go test -tags=integration -count=1 ./src/internal/memory
       - name: Check module metadata
         run: go mod tidy -diff
       - name: Smoke test native binary
