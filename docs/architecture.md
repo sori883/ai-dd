@@ -12,6 +12,8 @@ src/cmd/aidlc/main.go
 
 src/internal/graph (stage graph・scope routingのread-only query)
 
+src/internal/scope (scope Markdown frontmatterのread-only metadata query)
+
 src/internal/workspace
   ├─ project root resolution
   ├─ active-space and space listing (read-only)
@@ -33,6 +35,7 @@ src/internal/workspace
 - `src/internal/buildinfo`: linkerが差し替える`Version`と`Commit`、およびそのsnapshotを所有します。既定値は`dev`と`unknown`です。
 - `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、read-onlyのworkspace分析、spaceとIntent coreの新規作成、space・intentの共有cursor切替を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。space一覧は`ReadSpaces`、intent一覧は`ReadIntents`を通じてCLIへ接続し、`ReadSelection`・`CreateIntent`・`Detect`は内部APIのままです。書込みは`CreateSpace`・`SwitchSpace`・`SwitchIntent`・`CreateIntent`の明示呼出しだけで行い、接続APIのRoot生存期間も内部で管理します。`Detect`は例外としてcaller所有の既存`*os.Root`を借り、Closeしません。
 - `src/internal/graph`: data directory基準の`fs.FS`からcompiled stage graphとscope gridを読み、enabled stageとrouting actionのimmutable snapshotを返します。filesystem write、project root選択、scope metadata Markdown、state遷移、agent実行は所有しません。
+- `src/internal/scope`: scopes directory基準の`fs.FS`から直下Markdownの狭いfrontmatter metadataを読みます。plugin選択、graph join、state、CLI、write、Root lifecycleは所有しません。
 
 `internal`配下はmodule外からimportできません。今後の機能も、CLIから直接filesystemやnetworkへ到達させず、責務ごとのpackageをcomposition rootで接続します。
 
@@ -610,6 +613,49 @@ Codex dataだけを静的に確認した範囲であり、最新upstream全体�
 一貫性、version migrationはcaller側の責務です。詳細と承認は
 [Stage routingの実装計画](ram/decisions/2026-09-02-stage-routing-plan.md)、検証手順は
 [Stage graph・scope routing](development.md#stage-graphscope-routing内部api)を参照してください。
+
+## Scope metadata reader
+
+`scope.ReadAll(scopesFS fs.FS) ([]Metadata, error)`は、scopes directoryへroot化済みのread-only FSから
+直下`.md`だけを読みます。filenameを本家JavaScript互換のUTF-16 code-unit順に処理し、filenameの
+prefixやstemとfrontmatter `name`の一致は検証しません。duplicate nameはsort順の先後両filenameを
+示して失敗します。error時にpartial resultを返しません。
+
+Metadataはname、plugin、depth、description、keywords、test strategy、runner、skeleton、review cap、
+freeform defaultを保持します。nameだけが必須です。runnerはexact true / falseだけをpointerへ保持し、
+invalidは未指定です。skeletonとreview capは既知値以外をerrorにし、pluginの`aidlc-` prefixを
+core runner pathとの衝突として拒否します。unknown fieldは無視します。
+
+parserは本家2.6.123のzero-dependency frontmatter subsetだけを扱います。file先頭delimiter、LF / CRLF、
+同一行scalar、quote除去、block marker空値、indent block list、single-line flow listを対象とし、一般YAML
+parserではありません。scalarとflow値のtrimはECMAScript whitespaceに合わせ、U+FEFFを除去し、U+0085
+は保持します。opening / closing delimiterではLF / CRLFを認識しますが、captureしたfrontmatter内部の
+改行は変換しません。keywordsはfrontmatter全体で最初のvalid block sequenceをflowより優先し、blockが
+なければ最初のflow sequenceを使います。block matcherはkeyとitem間のJavaScript whitespace行を許容し、
+dash後が複数whitespaceだけのitemも本家regexどおり成立させて1文字のwhitespaceを保持します。horizontal
+whitespace runの直後がlone CR / U+2028 / U+2029 / block終端の場合も、runが2文字以上ならinner regexの
+backtrackingで最後のspace / tabをitemとして保持し、runが1文字ならemptyです。outer matcherはCR / LFだけを
+item境界とし、inner extractorはCR / LF / U+2028 / U+2029をpayloadとして読みません。
+outerのraw captureはoptional CR / LF terminatorと直後の反復itemを保持し、innerではCRLF / LFだけを
+itemへ分割します。そのためlone CRで連結された反復itemはinnerで1行の不正値となりemptyです。matcher
+成立後に抽出結果がemptyでもflowへfallbackしません。flowはquote内comma / bracketとterminal commentを
+扱い、malformed listはemptyになります。loaderはcacheを持たず、毎回FSを読み、返すslice・keywords・
+recordごとのrunner pointerをcallerが所有します。
+
+### Scope metadata readerの意図的な差分
+
+比較対象は[参照契約](ram/research/2026-09-02-scope-metadata-contracts.md)に記したローカルAI-DLC
+`2.6.123`の範囲であり、最新upstream全体との一致は主張しません。
+
+| 本家の挙動 | 採用した挙動 | 理由 | 利用者・互換性への影響 |
+| --- | --- | --- | --- |
+| root列挙の任意errorをemptyへ吸収 | `fs.ErrNotExist`だけempty、他errorはcause保持 | 欠損と読取不能を区別 | permission / I/O異常をcallerが検知できる |
+| 空scalarが次fieldを値として読む場合がある | scalarは同一行だけを読む | 隣接fieldの誤読防止 | malformed inputが別field値に化けない。正常配布dataは不変 |
+| global cacheをresetまで再利用 | cacheなしで毎回再読込しcaller所有値を返す | stale readと共有mutationを避ける | 呼出しごとのI/Oは増えるが変更を次回読取で観測する |
+
+供給`fs.FS`自体のcontainmentとlifecycleはcallerの責務です。詳細と承認は
+[Scope metadataの実装計画](ram/decisions/2026-09-02-scope-metadata-plan.md)、検証手順は
+[Scope metadata reader](development.md#scope-metadata-reader内部api)を参照してください。
 
 ## ビルド情報
 
