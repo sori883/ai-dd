@@ -1,7 +1,7 @@
 # 初期state永続化writerの実装計画
 
 - 日付: 2026-09-02
-- 状態: Accepted（Issue #45、独立review完了・final待ち）
+- 状態: Accepted（Issue #45、独立review・final完了）
 - GitHub Issue: [#45](https://github.com/sori883/ai-dd/issues/45)
 - 承認: 2026-09-02、ユーザー承認済み計画を親agentから受領
 - base: `3a6932d`
@@ -76,7 +76,7 @@ go test -tags=integration -count=1 -run '^TestWriteInitial' ./src/internal/state
 ```
 
 loopでは全体test、race、vet、lint、cross compile、配布E2Eを実行しない。Go変更にはgofmtを適用し、
-親agentが独立review後にfinal gateを実施する。
+独立review後に親agentがfinal gateを一度だけ実施する。
 
 ## 所有権
 
@@ -119,3 +119,21 @@ sidecarがcommit済みでwriter temporaryが残らないことを確認する。
 1. nonregular stateをfail-closedする意図的差分について、ユーザー承認、本家挙動、採用理由、互換性影響、Issue #45とRAMの記録を追加した。
 2. 実filesystem integrationにdirectory・symlinkの種類/内容保持、read-only regular stateのsidecar commit・旧state bytes・mode保持、writer temporary不在のassertを追加した。
 3. read-only fixtureは作成後に`Chmod(0444)`を実行し、process umaskに依存しない前提へ修正した。
+
+## Final検証記録
+
+固定head `58d429b`に対して、親agentが承認済みfinal gateを実行し、以下の項目がすべてexit 0となった。
+
+- 通常buildの全package test（`go test -count=1 -shuffle=on ./...`）。
+- integration tag付き全package test、通常全package race test、integration tag付き全package race test。
+- `go vet ./...`およびintegration tag付きvet。
+- `go mod tidy -diff`。
+- `src`配下の全Go fileに対する`gofmt -l`（出力なし）。
+- state package 3ファイルへの`gopls check`。
+- `git diff --check`。
+- state integration test binaryのdarwin/linux/windows × amd64/arm64、6構成cross compile。これはcompileのみであり、native実行ではない。
+
+配布E2Eは、`WriteInitial`がまだCLIへ接続されていないinternal APIであるため、計画上非該当であり、成功済み検証としては扱わない。
+
+残余riskは、Windowsではread-only permission testがskipされること、symlinkを作成できない環境ではsymlink fixtureがskipされること、
+2ファイルpair transaction・fsync・lost-update防止・Windowsでのrename atomicityをwriterが保証しないことである。
