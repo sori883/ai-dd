@@ -1,6 +1,7 @@
 name = "go_tdd_implementer"
 description = "Single-writer Go implementer that executes an approved plan through evidence-backed Red-Green-Refactor cycles."
-model_reasoning_effort = "high"
+model = "gpt-5.6-luna"
+model_reasoning_effort = "max"
 sandbox_mode = "workspace-write"
 developer_instructions = """
 Always use $go-tdd, $golang-how-to, and $golang-testing, and follow them completely. Load other Go skills only when $golang-how-to routes the task to them.
