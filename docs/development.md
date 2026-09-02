@@ -375,6 +375,33 @@ gridのread errorとJSON構文errorはfallbackするため、その成功結果�
 [差分表](architecture.md#stage-routingの意図的な差分)を参照してください。内部APIだけの変更なので、
 CLI build、help/version smoke、配布E2Eをroutingのnative実行証拠として扱いません。
 
+### Scope metadata reader（内部API）
+
+`scope.ReadAll`には`.codex/scopes`等のscope directoryへroot化した`fs.FS`を渡します。project rootや
+`.codex` rootをそのまま渡すAPIではありません。readerはread-onlyで、Rootのopen / Close、path選択、
+plugin selection、graph join、state、writeはcallerまたは後続consumerが所有します。
+
+対象testは次で実行します。
+
+```sh
+go test -count=1 ./src/internal/scope
+```
+
+testは`testing/fstest.MapFS`と最小error stubだけを使い、本家11scope一式を複製しません。basic metadata、
+直下`.md` filterとUTF-16 filename順、filename/name decoupling、LF / CRLF、scalar quoteとblock marker、
+block / flow keywords、optional値、validation、duplicate、個別/root I/O error、nil FS、no-cacheとcaller ownershipを
+固定します。
+
+root `fs.ErrNotExist`は非nil empty sliceです。その他のroot error、部分entries付きerror、個別file error、
+frontmatter / name / validation / duplicate errorは文脈とcauseを保ち、partial resultを返しません。
+keywordsのmalformed flowは本家primitiveどおりempty listであり、一般YAML validationの証拠ではありません。
+`fs.FS`自体のsandbox性はこのAPIが保証しません。
+
+本家ローカル`2.6.123`との比較範囲、同一行scalar・error区別・no-cacheの承認済み差分は
+[Scope metadata reader](architecture.md#scope-metadata-reader)と
+[参照契約](ram/research/2026-09-02-scope-metadata-contracts.md)を参照してください。内部APIだけの変更なので、
+CLI build、help/version smoke、配布E2Eをscope metadata読取のnative実行証拠として扱いません。
+
 ### Space作成CLI
 
 既存projectへ新しいspaceを作ります。複数単語の名前は引用してください。
