@@ -642,7 +642,20 @@ authored implementation、canonical Codex dist、配置済みCodexの対象`aidl
 `graph.Load(dataFS fs.FS) (Snapshot, error)`は、data directoryをrootとするread-only FSから
 `stage-graph.json`と`scope-grid.json`を読みます。stageはJSON配列順を維持し、`enabled:false`を
 公開snapshotから除外します。`Stage`はslug、number、name、phase、execution、lead agent、
-support agents、mode、fallback用scopesを保持します。
+support agents、mode、fallback用scopesを保持します。さらに、Stageが生成する必須成果物
+`produces`、条件付き成果物`optional_produces`、入力成果物の`consumes`、依存・表示順序の
+`requires_stage`をcompiled metadataとして保持します。`Consume`は`artifact`、`required`、
+任意の`conditional_on`（`brownfield`または`greenfield`）を値として持ちます。
+
+`produces`、`consumes`、`requires_stage`はJSON上の必須配列です。欠損・`null`・型不正はLoad
+errorとし、空配列は有効です。`optional_produces`は欠損を許容し、存在する場合は配列として
+読みます。`consumes`の`artifact`と`required`は必須で、`required:false`と欠損を区別します。
+stageおよびconsume行のfield名は大小文字を含む完全一致で解釈し、未知fieldは無視します。
+
+`requires_stage`は全graphの既知slugを参照し、参照先の`number`が当該stageより前であることと、
+同一stage内の重複edgeがないことをLoad時に検証します。このmetadata検証は依存先stageを実行
+closureへ自動追加せず、`enabled`やscope内外でedgeを絞りません。producer-consumerの意味検証と
+scopeごとの実行計画への反映は、後続のStage Plan builderが所有します。
 
 Snapshotは`Stages`、`ScopeNames`、`Scope`を、Scopeは`Action`と`Actions`を公開します。
 未知scopeはbool false、partial action mapにstage cellがない場合は本家runtimeどおり`SKIP`です。
@@ -658,10 +671,11 @@ scope gridのread errorまたはJSON構文errorでは、enabled stageの`scopes`
 `.codex/scopes/*.md`側のmetadataであり、このpackageは読みません。
 
 stage graphのread・decode error、必須field、`support_agents`、slug・number重複、execution enumを
-fail-closedにします。stage field名は本家`JSON.parse`と同じ完全一致で読み、大小文字違いは
-unknown fieldとして無視します。gridは構文上validでもtop-level、scope entry、必須`stages`が構造不正なら
-fallbackせずerrorにし、action enumと全graphへのstage参照も検証します。unknown JSON fieldは
-将来互換のため無視します。nil FSはpanicせずerrorで、error時はzero Snapshotです。
+fail-closedにします。Stage metadataの必須配列、consume行の必須field、conditional値、依存edgeの
+既知slug・number順・重複も同じ境界で検証します。stage field名は本家`JSON.parse`と同じ完全一致で
+読み、大小文字違いはunknown fieldとして無視します。gridは構文上validでもtop-level、scope entry、
+必須`stages`が構造不正ならfallbackせずerrorにし、action enumと全graphへのstage参照も検証します。
+unknown JSON fieldは将来互換のため無視します。nil FSはpanicせずerrorで、error時はzero Snapshotです。
 
 ### Stage routingの意図的な差分
 
@@ -671,10 +685,12 @@ Codex dataだけを静的に確認した範囲であり、最新upstream全体�
 
 | 本家の挙動 | 採用した挙動 | 理由 | 利用者・互換性への影響 |
 | --- | --- | --- | --- |
-| JSON parse後のgraph/gridをruntime typeへcastし、構造・enum・参照をLoad境界では網羅検証しない | 必須stage field、重複、execution/action enum、grid構造、stage参照をLoad時にfail-closed検証する | 壊れたroutingを正常snapshotとして後続へ渡さない | 本家で遅延errorや暗黙SKIPになり得るmalformed dataがLoad errorになる。正常data、grid read/syntax fallback、missing actionのSKIPは維持 |
+| JSON parse後のgraph/gridをruntime typeへcastし、構造・enum・参照をLoad境界では網羅検証しない | 必須stage field、metadata配列とconsume行、依存edgeの既知slug・number順・重複、execution/action enum、grid構造、stage参照をLoad時にfail-closed検証する | 壊れたroutingやStage Planの入力を正常snapshotとして後続へ渡さない | 本家で遅延errorや暗黙SKIPになり得るmalformed dataがLoad errorになる。正常data、grid read/syntax fallback、missing actionのSKIPは維持 |
 
 `fs.FS`自体はsandboxを保証しません。供給FSのcontainmentとlifecycle、2 data fileの並行更新中の
 一貫性、version migrationはcaller側の責務です。詳細と承認は
+[Stage catalog metadataの参照契約](ram/research/2026-09-03-stage-catalog-metadata-contracts.md)、
+[Stage catalog metadataの実装計画](ram/decisions/2026-09-03-stage-catalog-metadata-plan.md)、
 [Stage routingの実装計画](ram/decisions/2026-09-02-stage-routing-plan.md)、検証手順は
 [Stage graph・scope routing](development.md#stage-graphscope-routing内部api)を参照してください。
 
