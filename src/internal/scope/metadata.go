@@ -169,26 +169,16 @@ func scalarField(frontmatter, key string) string {
 
 func listField(frontmatter, key string) []string {
 	lines := strings.Split(frontmatter, "\n")
+	prefix := key + ":"
 	for index, line := range lines {
-		prefix := key + ":"
-		if strings.TrimRight(line, " \t") == prefix {
-			items := []string{}
-			for _, itemLine := range lines[index+1:] {
-				withoutIndent := strings.TrimLeft(itemLine, " \t")
-				if withoutIndent == itemLine || len(withoutIndent) < 2 || withoutIndent[0] != '-' {
-					break
-				}
-				if withoutIndent[1] != ' ' && withoutIndent[1] != '\t' {
-					break
-				}
-				item := strings.TrimSpace(withoutIndent[2:])
-				item = trimListQuotes(item)
-				if item != "" {
-					items = append(items, item)
-				}
-			}
+		if strings.TrimRight(line, " \t") != prefix {
+			continue
+		}
+		if items, ok := blockListItems(lines[index+1:]); ok {
 			return items
 		}
+	}
+	for _, line := range lines {
 		if !strings.HasPrefix(line, prefix) {
 			continue
 		}
@@ -198,6 +188,30 @@ func listField(frontmatter, key string) []string {
 		}
 	}
 	return []string{}
+}
+
+func blockListItems(lines []string) ([]string, bool) {
+	items := []string{}
+	matched := false
+	for _, line := range lines {
+		withoutIndent := strings.TrimLeft(line, " \t")
+		if withoutIndent == line || len(withoutIndent) < 2 || withoutIndent[0] != '-' {
+			break
+		}
+		if withoutIndent[1] != ' ' && withoutIndent[1] != '\t' {
+			break
+		}
+		item := strings.TrimSpace(withoutIndent[2:])
+		if item == "" {
+			break
+		}
+		matched = true
+		item = trimListQuotes(item)
+		if item != "" {
+			items = append(items, item)
+		}
+	}
+	return items, matched
 }
 
 func parseInlineList(raw string) []string {

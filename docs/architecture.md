@@ -628,9 +628,10 @@ core runner pathとの衝突として拒否します。unknown fieldは無視し
 
 parserは本家2.6.123のzero-dependency frontmatter subsetだけを扱います。file先頭delimiter、LF / CRLF、
 同一行scalar、quote除去、block marker空値、indent block list、single-line flow listを対象とし、一般YAML
-parserではありません。flow keywordsはquote内comma / bracketとterminal commentを扱い、malformed listは
-emptyになります。loaderはcacheを持たず、毎回FSを読み、返すslice・keywords・runner pointerをcallerが
-所有します。
+parserではありません。keywordsはfrontmatter全体で最初のvalid block sequenceをflowより優先し、blockが
+なければ最初のflow sequenceを使います。flowはquote内comma / bracketとterminal commentを扱い、
+malformed listはemptyになります。loaderはcacheを持たず、毎回FSを読み、返すslice・keywords・recordごとの
+runner pointerをcallerが所有します。
 
 ### Scope metadata readerの意図的な差分
 

@@ -158,6 +158,68 @@ func TestReadAllParsesKeywordLists(t *testing.T) {
 	}
 }
 
+func TestReadAllUsesBlockFirstKeywordSearch(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		frontmatter string
+		want        []string
+	}{
+		{
+			name: "block wins after flow",
+			frontmatter: "keywords: [flow]\n" +
+				"keywords:\n" +
+				"  - block",
+			want: []string{"block"},
+		},
+		{
+			name: "empty block does not hide flow",
+			frontmatter: "keywords:\n" +
+				"description: boundary\n" +
+				"keywords: [flow]",
+			want: []string{"flow"},
+		},
+		{
+			name: "invalid block does not hide valid block",
+			frontmatter: "keywords:\n" +
+				"  -invalid\n" +
+				"keywords:\n" +
+				"  - block",
+			want: []string{"block"},
+		},
+		{
+			name: "first valid block wins",
+			frontmatter: "keywords:\n" +
+				"  - first-block\n" +
+				"keywords:\n" +
+				"  - second-block\n" +
+				"keywords: [flow]",
+			want: []string{"first-block"},
+		},
+		{
+			name: "first flow wins without block",
+			frontmatter: "keywords: [first-flow]\n" +
+				"keywords: [second-flow]",
+			want: []string{"first-flow"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			body := "---\nname: fixture\n" + tt.frontmatter + "\n---\n"
+			got, err := ReadAll(fstest.MapFS{"scope.md": {Data: []byte(body)}})
+			if err != nil {
+				t.Fatalf("ReadAll() error = %v", err)
+			}
+			if gotKeywords := got[0].Keywords; !reflect.DeepEqual(gotKeywords, tt.want) {
+				t.Errorf("Keywords = %q, want %q", gotKeywords, tt.want)
+			}
+		})
+	}
+}
+
 func TestReadAllParsesOptionalMetadata(t *testing.T) {
 	t.Parallel()
 
@@ -403,6 +465,42 @@ func TestReadAllRereadsAndReturnsCallerOwnedSlices(t *testing.T) {
 	want := []Metadata{{Name: "second", Keywords: []string{"two"}}}
 	if !reflect.DeepEqual(second, want) {
 		t.Errorf("second ReadAll() = %#v, want fresh filesystem result %#v", second, want)
+	}
+}
+
+func TestReadAllReturnsCallerOwnedRunnerPointers(t *testing.T) {
+	t.Parallel()
+
+	scopesFS := fstest.MapFS{
+		"a-first.md":  {Data: []byte("---\nname: first\nrunner: true\n---\n")},
+		"b-second.md": {Data: []byte("---\nname: second\nrunner: true\n---\n")},
+	}
+	first, err := ReadAll(scopesFS)
+	if err != nil {
+		t.Fatalf("first ReadAll() error = %v", err)
+	}
+	if first[0].Runner == nil || first[1].Runner == nil {
+		t.Fatalf("first ReadAll() runner pointers = %p, %p, want non-nil", first[0].Runner, first[1].Runner)
+	}
+	if first[0].Runner == first[1].Runner {
+		t.Fatalf("first ReadAll() runner pointers share address %p", first[0].Runner)
+	}
+	*first[0].Runner = false
+	if !*first[1].Runner {
+		t.Error("mutating the first Runner changed the second record")
+	}
+
+	second, err := ReadAll(scopesFS)
+	if err != nil {
+		t.Fatalf("second ReadAll() error = %v", err)
+	}
+	for index, item := range second {
+		if item.Runner == nil || !*item.Runner {
+			t.Errorf("second ReadAll()[%d].Runner = %v, want independent true pointer", index, item.Runner)
+		}
+		if item.Runner == first[0].Runner || item.Runner == first[1].Runner {
+			t.Errorf("second ReadAll()[%d].Runner reused a prior pointer %p", index, item.Runner)
+		}
 	}
 }
 

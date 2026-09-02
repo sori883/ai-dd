@@ -14,6 +14,7 @@
 - `docs/実装_aidlc-workflows/core/tools/aidlc-lib.ts:20712-20845,21170-21230,22873-22925`
 - `docs/実装_aidlc-workflows/tests/unit/t125-scope-files.test.ts`
 - `docs/実装_aidlc-workflows/tests/unit/t225-scope-name-decoupling.test.ts:256-282`
+- `docs/実装_aidlc-workflows/tests/unit/t309-listfield-flow-sequence.test.ts`
 - `docs/実装_aidlc-workflows/core/scopes/*.md`
 - `docs/実装_aidlc-workflows/dist/codex/.codex/scopes/*.md`
 - `docs/配布_ai-dlc/.codex/scopes/*.md`
@@ -49,10 +50,14 @@ frontmatterはfile先頭の`---`とLFまたはCRLFで始まり、次のclosing `
 空白を除き、両端のsingle / double quoteを外す。`>`、`|`、`>-`、`|-`はblock scalar markerなので
 空値として扱う。
 
-keywordsは、indentされた`- ` block sequenceとsingle-line flow sequenceを扱う。flow parserは
-quote内のcommaとclosing bracketをseparatorにせず、closing bracket後は空白または`#` commentだけを
-受理する。unclosed quote/bracketや余分なsuffixはempty listとなる。unknown YAML全般を解釈する
+keywordsは、frontmatter全体から最初のvalid indent `- ` block sequenceを先に探索し、見つからない場合だけ
+最初のsingle-line flow sequenceを使う。先行するflowや空・不正block keyは、後続のvalid blockを抑止しない。
+flow parserはquote内のcommaとclosing bracketをseparatorにせず、closing bracket後は空白または`#` comment
+だけを受理する。unclosed quote/bracketや余分なsuffixはempty listとなる。unknown YAML全般を解釈する
 parserではなく、本家がscope metadataに使う狭いfrontmatter primitiveである。
+
+独立reviewで、当初のGo実装が文書順の最初のkeywords keyを即採用していたparity bugを検出した。
+Issue #37内で本家`t309`のblock-first二段階探索へ修正した。これは新しい意図的差分ではない。
 
 ## Go版の承認済み差分
 

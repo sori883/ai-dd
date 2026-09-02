@@ -389,8 +389,8 @@ go test -count=1 ./src/internal/scope
 
 testは`testing/fstest.MapFS`と最小error stubだけを使い、本家11scope一式を複製しません。basic metadata、
 直下`.md` filterとUTF-16 filename順、filename/name decoupling、LF / CRLF、scalar quoteとblock marker、
-block / flow keywords、optional値、validation、duplicate、個別/root I/O error、nil FS、no-cacheとcaller ownershipを
-固定します。
+block-first二段階探索を含むblock / flow keywords、optional値、validation、duplicate、個別/root I/O error、
+nil FS、no-cacheとslice・runner pointerのcaller ownershipを固定します。
 
 root `fs.ErrNotExist`は非nil empty sliceです。その他のroot error、部分entries付きerror、個別file error、
 frontmatter / name / validation / duplicate errorは文脈とcauseを保ち、partial resultを返しません。

@@ -1,7 +1,7 @@
 # Scope metadata read-only APIの実装計画
 
 - 日付: 2026-09-02
-- 状態: Accepted（Issue #37実装・TDD完了、独立review待ち）
+- 状態: Accepted（Issue #37実装・独立review P1修正／P2 guard・fresh再検証・6構成cross compile完了、再review待ち）
 - GitHub Issue: [#37](https://github.com/sori883/ai-dd/issues/37)
 - base: `a6c19f673c685facc450fb3c0399bf06b36c4542`
 - 作業branch: `codex/scope-metadata-reader`
@@ -48,8 +48,9 @@ func ReadAll(scopesFS fs.FS) ([]Metadata, error)
 - root直下の`.md` suffixだけを対象にし、filenameをJavaScript互換のUTF-16 code-unit順に読む。
 - filename prefix、stemとfrontmatter nameの一致は検証しない。unknown fieldは無視する。
 - frontmatterはfile先頭`---`、LF / CRLF、同一行scalar、quote除去、block marker空値を扱う。
-- keywordsは本家のindent block listとsingle-line flow listだけを扱い、quoted comma / bracket、
-  terminal comment、malformed emptyを固定する。
+- keywordsは本家のindent block listとsingle-line flow listだけを扱う。frontmatter全体で最初のvalid
+  block sequenceを優先し、blockがなければ最初のflow sequenceを使う。quoted comma / bracket、
+  terminal comment、malformed emptyも固定する。
 - nameだけを必須とする。depth / descriptionの空値、plugin / testStrategyの未指定を受理する。
 - plugin `aidlc-` prefix、invalid skeleton、invalid review_capはfileと値を示すerrorにする。
 - duplicate nameはUTF-16 sort順の先後両filenameを示す。
@@ -73,13 +74,23 @@ compile failureをREDにせず、最小stubでrunnable assertionへ到達して�
 1. basic scalar metadataとblock keywords。
 2. 直下`.md` filter、filename/name decoupling、UTF-16順。
 3. LF / CRLF、quote、block marker、same-line scalar。
-4. block / flow keywordsとmalformed empty。
+4. block / flow keywords、block-first二段階探索とmalformed empty。
 5. optional値とplugin / skeleton / review_cap validation。
 6. duplicate、frontmatter/name、個別read errorのnil partial result。
 7. root missing / other / partial errorとnil FS。
 8. no-cacheとcaller ownershipは先行GREEN上のguardとして固定する。
 
 fixtureは`testing/fstest.MapFS`と最小error injection FSだけを使い、本家11scope一式を複製しない。
+
+## 独立review修正
+
+固定head `bf35047`のreviewで次を確認し、Issue #37の範囲内で修正・guard追加した。
+
+- P1: list parserが文書順の最初のkeywords keyを即採用していた。本家`t309`どおりblock探索をflow探索
+  より先に行う回帰testを追加し、flow-before-block、空・不正block-before-valid、複数候補の先頭選択を
+  REDからGREENにした。これはparity bug修正であり、新しい意図的差分ではない。
+- P2: `Runner *bool`がrecord間・ReadAll呼出し間で共有されないguardを追加した。現実装は追加時からGREEN
+  だったため、RED件数には含めない。
 
 ## 所有権と対象外
 
@@ -104,3 +115,7 @@ git diff --check
 
 darwin、linux、windowsのamd64 / arm64へscope test binaryをrepository外にcross compileする。
 これは各OSでのnative実行証拠とは区別する。内部read-only APIなので配布CLI E2Eは行わない。
+
+独立review修正後、上記targeted、全体shuffle、race、vet、tidy diff、gofmt、gopls、diff checkを
+fresh実行してすべて成功した。6構成のtest binary cross compileも再実行して成功したが、各target OSでの
+native実行とは扱わない。
