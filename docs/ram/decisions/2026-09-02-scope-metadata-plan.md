@@ -1,7 +1,7 @@
 # Scope metadata read-only APIの実装計画
 
 - 日付: 2026-09-02
-- 状態: Accepted（Issue #37実装・final matrix P2までの互換修正・fresh再検証・6構成cross compile完了）
+- 状態: Accepted（Issue #37実装・互換修正・fresh再検証・6構成cross compile・最終独立review完了）
 - GitHub Issue: [#37](https://github.com/sori883/ai-dd/issues/37)
 - base: `a6c19f673c685facc450fb3c0399bf06b36c4542`
 - 作業branch: `codex/scope-metadata-reader`
@@ -154,3 +154,5 @@ gopls、diff checkをfresh実行し、すべて成功した。scope test binary�
 再実行して成功したが、各target OSでのnative実行証拠とは扱わない。
 
 final matrix P2修正後にも同じfresh検証と6構成cross compileをrepository外へ再実行し、すべて成功した。
+固定head `bb2fca4`の最終独立reviewはP0〜P3のfindingなし。本家Bun 1.3.14とpublic `ReadAll`の
+16境界caseが一致し、outer / inner matcherの構造化419,904組比較も差分0だった。
