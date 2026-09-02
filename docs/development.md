@@ -406,6 +406,43 @@ keywordsのmalformed flowは本家primitiveどおりempty listであり、一般
 [参照契約](ram/research/2026-09-02-scope-metadata-contracts.md)を参照してください。内部APIだけの変更なので、
 CLI build、help/version smoke、配布E2Eをscope metadata読取のnative実行証拠として扱いません。
 
+### 初期 aidlc-state.md builder（内部API）
+
+`state.BuildInitial`は、`graph.Snapshot`、該当scopeの`scope.Metadata`、workspace分析の専用
+`state.WorkspaceInfo`、開始日時、raw project description、callerが解決済みのsafe previewを受け取り、
+canonicalな`aidlc-state.md`と`project-description.json`のインメモリ内容、構造化routingを返します。
+filesystem、audit、CLI、plugin選択、Intent作成、stage本文実行は行いません。
+
+```go
+func BuildInitial(input Input) (Initial, error)
+```
+
+depthは`DepthOverride` → scope `Depth`、test strategyは`TestStrategyOverride` → scope `TestStrategy` →
+effective depthの順です。両者は`minimal`、`standard`、`comprehensive`をcase-insensitiveに受け、
+`Minimal`、`Standard`、`Comprehensive`へ正規化します。reviewは未指定または`adversarial`を空欄、
+`advisory` / `none`をcanonical lowercaseでstateへ保存します。
+
+graph順のmissing cellはSKIPです。Greenfieldでraw mappingのreverse-engineeringがEXECUTEならeffective
+mappingだけをSKIPへ補正し、skip末尾に理由を付けます。firstは補正後mapping、nextは本家と同じraw
+mappingから解決します。初期化stageは`[x]`、firstだけ`[-]`、他は`[ ]`です。State Version 8、
+Project Description Source `project-description.json`、section/field/comment/空行/末尾LFはgoldenで固定します。
+
+loop中の最小検証は次のとおりです。
+
+```sh
+go test -count=1 -run '^TestBuildInitialBrownfieldGolden$' ./src/internal/state
+go test -count=1 -run '^TestBuildInitialRoutingAndOwnership$' ./src/internal/state
+go test -count=1 -run '^TestBuildInitialGreenfield' ./src/internal/state
+go test -count=1 -run '^TestBuildInitialResolvesOverridesAndReview$' ./src/internal/state
+go test -count=1 -run '^TestBuildInitialFallbackAndErrors$' ./src/internal/state
+go test -count=1 ./src/internal/state
+```
+
+これらはTDDのRED/GREEN、gofmt後のtargeted確認に使います。loopでは全package test、race、vet、lint、
+cross compile、配布E2Eを実行しません。独立review後に差分が安定した場合だけ、親agentが承認済み計画の
+final gateを一度実施します。根拠と確認範囲は[初期 state builderの参照契約](ram/research/2026-09-02-initial-state-builder-contracts.md)、
+計画と実施記録は[初期 state builderの実装計画](ram/decisions/2026-09-02-initial-state-builder-plan.md)を参照してください。
+
 ### Space作成CLI
 
 既存projectへ新しいspaceを作ります。複数単語の名前は引用してください。
