@@ -828,19 +828,20 @@ func TestLoadRejectsInvalidScopeActions(t *testing.T) {
 func TestSnapshotReturnsDefensiveCopies(t *testing.T) {
 	t.Parallel()
 
-	stage := stageFixture("stage", "1.1")
+	stage := stageFixture("stage", "1.2")
 	stage["support_agents"] = []string{"reviewer"}
 	stage["scopes"] = []string{"classic"}
 	stage["produces"] = []string{"intent-statement"}
 	stage["optional_produces"] = []string{"questions"}
 	stage["consumes"] = []map[string]any{{"artifact": "project-description", "required": true}}
-	stage["requires_stage"] = []string{}
+	stage["requires_stage"] = []string{"dependency"}
+	dependency := stageFixture("dependency", "1.1")
 	grid := map[string]any{
 		"classic": map[string]any{
-			"stages": map[string]any{"stage": "EXECUTE"},
+			"stages": map[string]any{"stage": "EXECUTE", "dependency": "EXECUTE"},
 		},
 	}
-	snapshot, err := Load(fixtureFS(t, []any{stage}, grid))
+	snapshot, err := Load(fixtureFS(t, []any{stage, dependency}, grid))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -852,9 +853,10 @@ func TestSnapshotReturnsDefensiveCopies(t *testing.T) {
 	stages[0].Produces[0] = "changed"
 	stages[0].OptionalProduces[0] = "changed"
 	stages[0].Consumes[0].Artifact = "changed"
+	stages[0].RequiresStages[0] = "changed"
 	if got, want := snapshot.Stages()[0], (Stage{
 		Slug:             "stage",
-		Number:           "1.1",
+		Number:           "1.2",
 		Name:             "stage name",
 		Phase:            "inception",
 		Execution:        "ALWAYS",
@@ -866,7 +868,7 @@ func TestSnapshotReturnsDefensiveCopies(t *testing.T) {
 		Produces:         []string{"intent-statement"},
 		OptionalProduces: []string{"questions"},
 		Consumes:         []Consume{{Artifact: "project-description", Required: true}},
-		RequiresStages:   []string{},
+		RequiresStages:   []string{"dependency"},
 	}); !reflect.DeepEqual(got, want) {
 		t.Errorf("Stages() after caller mutation = %#v, want %#v", got, want)
 	}
