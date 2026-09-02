@@ -4,8 +4,8 @@
 - 分類: `機能開発`
 - 計画承認日: 2026-09-02
 - 実装担当: `go_tdd_implementer`（Luna / max）
-- verification mode: `loop`
-- 状態: Accepted（実装loop・targeted検証完了、独立review待ち）
+- verification mode: `loop`（実装） / `final`（親による最終検証）
+- 状態: Accepted（独立review・final完了）
 
 ## 目的と所有範囲
 
@@ -97,4 +97,34 @@ go test -tags=integration -count=1 -run '^TestReadSources' ./src/internal/memory
 - Go 1.26.5未満、Node/Bunの全OS path解釈、最新upstreamと全配布物の完全互換は未確認である。
 - packageは内部APIのみで、CLI、workspace resolver、stage routing、配布E2Eには未接続である。
 
-この記録時点では独立reviewとparent管理のfinal gateが未実施であり、完了を先取りしない。
+## 独立review・final検証記録
+
+独立re-reviewではblocking findingはなく、P2「symlink作成失敗を理由不問でskipする」指摘を解消した。
+in-root / outward symlinkのfixtureは、Windowsのpermission・privilege・unsupportedだけをskipし、
+ENOSPC、EIO、path異常、非Windowsの失敗はfatalにするerror分類helperとtable testを追加した。
+修正対象は`src/internal/memory/source_integration_test.go`のみである。
+
+fixed head `47ce628f5a48f9c8d0baa0d69a428004447b10e0`に対し、親agentがGo 1.26.8で次を実行し、
+すべてexit 0を確認した。
+
+- `go test -count=1 -shuffle=on ./...`
+- `go test -tags=integration -count=1 -shuffle=on ./...`
+- `go test -count=1 -race -shuffle=on ./...`
+- `go test -tags=integration -count=1 -race -shuffle=on ./...`
+- `go vet ./...`
+- `go vet -tags=integration ./...`
+- `go mod tidy -diff`（差分なし）
+- `gofmt -l src`（出力なし）
+- `gopls check`（`src/internal/memory/source.go`、`source_test.go`、`source_integration_test.go`、指摘なし）
+- `git diff --check`
+- darwin/linux/windows × amd64/arm64のCLI buildとMemory integration test binary cross compile
+- working tree clean
+
+`working tree clean`は上記fixed headでのfinal gate時点の証拠であり、このRAM最終記録を追記した後の作業tree状態を示すものではない。
+
+cross compileは各OS上でのnative test実行ではなく、対象形式のcompile確認である。Memory readerはinternal
+APIのため、配布E2Eは未接続経路として非該当とした。
+
+上記final実績は、残余リスク（並行更新中の一貫snapshot、`os.Root`で防げないmount/device等、
+symlink作成権限不足時のcase skip、Go 1.26.5未満・Node/Bunの全OS path解釈・最新upstream・全配布物の
+未確認、CLI等への未接続）を変更しない。
