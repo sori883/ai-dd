@@ -545,6 +545,9 @@ func stageFixture(slug, number, phase string) map[string]any {
 		"lead_agent":     leadAgentForPhase(phase),
 		"support_agents": []string{},
 		"mode":           "inline",
+		"produces":       []string{},
+		"consumes":       []map[string]any{},
+		"requires_stage": []string{},
 	}
 }
 

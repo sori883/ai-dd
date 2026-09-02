@@ -29,28 +29,34 @@ func TestLoadPreservesEnabledStageOrder(t *testing.T) {
 
 	want := []Stage{
 		{
-			Slug:          "first",
-			Number:        "1.1",
-			Name:          "first name",
-			Phase:         "inception",
-			Execution:     "ALWAYS",
-			LeadAgent:     "orchestrator",
-			SupportAgents: []string{"reviewer"},
-			Mode:          "inline",
-			Scopes:        []string{"classic"},
-			Enabled:       true,
+			Slug:           "first",
+			Number:         "1.1",
+			Name:           "first name",
+			Phase:          "inception",
+			Execution:      "ALWAYS",
+			LeadAgent:      "orchestrator",
+			SupportAgents:  []string{"reviewer"},
+			Mode:           "inline",
+			Scopes:         []string{"classic"},
+			Enabled:        true,
+			Produces:       []string{},
+			Consumes:       []Consume{},
+			RequiresStages: []string{},
 		},
 		{
-			Slug:          "last",
-			Number:        "1.3",
-			Name:          "last name",
-			Phase:         "inception",
-			Execution:     "CONDITIONAL",
-			LeadAgent:     "orchestrator",
-			SupportAgents: []string{},
-			Mode:          "inline",
-			Scopes:        []string{},
-			Enabled:       true,
+			Slug:           "last",
+			Number:         "1.3",
+			Name:           "last name",
+			Phase:          "inception",
+			Execution:      "CONDITIONAL",
+			LeadAgent:      "orchestrator",
+			SupportAgents:  []string{},
+			Mode:           "inline",
+			Scopes:         []string{},
+			Enabled:        true,
+			Produces:       []string{},
+			Consumes:       []Consume{},
+			RequiresStages: []string{},
 		},
 	}
 	if got := snapshot.Stages(); !reflect.DeepEqual(got, want) {
@@ -58,10 +64,317 @@ func TestLoadPreservesEnabledStageOrder(t *testing.T) {
 	}
 }
 
+func TestLoadPreservesStageArtifactMetadata(t *testing.T) {
+	t.Parallel()
+
+	first := stageFixture("first", "1.1")
+	first["produces"] = []string{"intent-statement", "stakeholder-map"}
+	first["optional_produces"] = []string{"questions"}
+	first["consumes"] = []map[string]any{
+		{"artifact": "project-description", "required": true},
+		{"artifact": "workspace-summary", "required": false, "conditional_on": "brownfield"},
+	}
+	first["requires_stage"] = []string{}
+	second := stageFixture("second", "1.2")
+	second["produces"] = []string{"requirements"}
+	second["consumes"] = []map[string]any{
+		{"artifact": "intent-statement", "required": true, "conditional_on": "greenfield"},
+	}
+	second["requires_stage"] = []string{"first"}
+
+	snapshot, err := Load(fixtureFS(t, []any{first, second}, map[string]any{}))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	want := []Stage{
+		{
+			Slug:             "first",
+			Number:           "1.1",
+			Name:             "first name",
+			Phase:            "inception",
+			Execution:        "ALWAYS",
+			LeadAgent:        "orchestrator",
+			SupportAgents:    []string{},
+			Mode:             "inline",
+			Scopes:           []string{},
+			Enabled:          true,
+			Produces:         []string{"intent-statement", "stakeholder-map"},
+			OptionalProduces: []string{"questions"},
+			Consumes: []Consume{
+				{Artifact: "project-description", Required: true},
+				{Artifact: "workspace-summary", Required: false, ConditionalOn: "brownfield"},
+			},
+			RequiresStages: []string{},
+		},
+		{
+			Slug:          "second",
+			Number:        "1.2",
+			Name:          "second name",
+			Phase:         "inception",
+			Execution:     "ALWAYS",
+			LeadAgent:     "orchestrator",
+			SupportAgents: []string{},
+			Mode:          "inline",
+			Scopes:        []string{},
+			Enabled:       true,
+			Produces:      []string{"requirements"},
+			Consumes: []Consume{
+				{Artifact: "intent-statement", Required: true, ConditionalOn: "greenfield"},
+			},
+			RequiresStages: []string{"first"},
+		},
+	}
+	if got := snapshot.Stages(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Stages() = %#v, want %#v", got, want)
+	}
+}
+
+func TestLoadValidatesStageConsumes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		consumes any
+		wantErr  string
+	}{
+		{
+			name:     "missing artifact",
+			consumes: []any{map[string]any{"required": true}},
+			wantErr:  "artifact is required",
+		},
+		{
+			name:     "null artifact",
+			consumes: []any{map[string]any{"artifact": nil, "required": true}},
+			wantErr:  `field "artifact" must be a string`,
+		},
+		{
+			name:     "empty artifact",
+			consumes: []any{map[string]any{"artifact": "", "required": true}},
+			wantErr:  "artifact is required",
+		},
+		{
+			name:     "missing required",
+			consumes: []any{map[string]any{"artifact": "intent-statement"}},
+			wantErr:  "required is required",
+		},
+		{
+			name:     "null required",
+			consumes: []any{map[string]any{"artifact": "intent-statement", "required": nil}},
+			wantErr:  `field "required" must be a boolean`,
+		},
+		{
+			name:     "invalid conditional",
+			consumes: []any{map[string]any{"artifact": "intent-statement", "required": true, "conditional_on": "any"}},
+			wantErr:  "conditional_on",
+		},
+		{
+			name:     "empty conditional",
+			consumes: []any{map[string]any{"artifact": "intent-statement", "required": true, "conditional_on": ""}},
+			wantErr:  "conditional_on",
+		},
+		{
+			name:     "wrong case artifact key",
+			consumes: []any{map[string]any{"Artifact": "intent-statement", "required": true}},
+			wantErr:  "artifact is required",
+		},
+		{
+			name:     "wrong case required key",
+			consumes: []any{map[string]any{"artifact": "intent-statement", "Required": true}},
+			wantErr:  "required is required",
+		},
+		{
+			name: "required false is preserved",
+			consumes: []any{map[string]any{
+				"artifact": "intent-statement", "required": false,
+			}},
+		},
+		{
+			name: "conditional values are preserved",
+			consumes: []any{map[string]any{
+				"artifact": "intent-statement", "required": true, "conditional_on": "greenfield",
+			}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			stage := stageFixture("stage", "1.1")
+			stage["consumes"] = tt.consumes
+			got, err := Load(fixtureFS(t, []any{stage}, map[string]any{}))
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("Load() error = nil, snapshot = %#v", got)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("Load() error = %q, want context %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			consume := got.Stages()[0].Consumes[0]
+			if tt.name == "required false is preserved" && consume.Required {
+				t.Errorf("Consumes()[0].Required = true, want false")
+			}
+			if tt.name == "conditional values are preserved" && consume.ConditionalOn != "greenfield" {
+				t.Errorf("Consumes()[0].ConditionalOn = %q, want greenfield", consume.ConditionalOn)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsMalformedConsumeRows(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		consumes string
+		wantErr  string
+	}{
+		{name: "null row", consumes: `[null]`, wantErr: "must be an object"},
+		{name: "array row", consumes: `[[]]`, wantErr: "cannot unmarshal array"},
+		{name: "non-string artifact", consumes: `[{"artifact":1,"required":true}]`, wantErr: "artifact"},
+		{name: "non-boolean required", consumes: `[{"artifact":"intent-statement","required":"true"}]`, wantErr: "required"},
+		{name: "non-string conditional", consumes: `[{"artifact":"intent-statement","required":true,"conditional_on":1}]`, wantErr: "conditional_on"},
+		{name: "null conditional", consumes: `[{"artifact":"intent-statement","required":true,"conditional_on":null}]`, wantErr: "conditional_on"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			stage := stageFixture("stage", "1.1")
+			stage["consumes"] = json.RawMessage(tt.consumes)
+			got, err := Load(fixtureFS(t, []any{stage}, map[string]any{}))
+			if err == nil {
+				t.Fatalf("Load() error = nil, snapshot = %#v", got)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("Load() error = %q, want context %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestLoadAllowsMissingOrEmptyOptionalProduces(t *testing.T) {
+	t.Parallel()
+
+	missing := stageFixture("missing", "1.1")
+	empty := stageFixture("empty", "1.2")
+	empty["optional_produces"] = []string{}
+
+	snapshot, err := Load(fixtureFS(t, []any{missing, empty}, map[string]any{}))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	stages := snapshot.Stages()
+	if stages[0].OptionalProduces != nil {
+		t.Errorf("missing OptionalProduces = %#v, want nil", stages[0].OptionalProduces)
+	}
+	if stages[1].OptionalProduces == nil || len(stages[1].OptionalProduces) != 0 {
+		t.Errorf("empty OptionalProduces = %#v, want non-nil empty slice", stages[1].OptionalProduces)
+	}
+}
+
+func TestLoadValidatesRequiresStageEdges(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		stages     []any
+		wantErr    string
+		wantStages int
+	}{
+		{
+			name: "unknown dependency",
+			stages: []any{
+				stageWithRequires("stage", "1.2", "missing"),
+			},
+			wantErr: "unknown stage",
+		},
+		{
+			name: "forward dependency",
+			stages: []any{
+				stageWithRequires("first", "1.1", "second"),
+				stageFixture("second", "1.2"),
+			},
+			wantErr: "must precede",
+		},
+		{
+			name: "self dependency",
+			stages: []any{
+				stageWithRequires("stage", "1.1", "stage"),
+			},
+			wantErr: "must precede",
+		},
+		{
+			name: "duplicate dependency",
+			stages: []any{
+				stageWithRequires("first", "1.1"),
+				stageWithRequires("second", "1.2", "first", "first"),
+			},
+			wantErr: "duplicates",
+		},
+		{
+			name: "disabled dependency remains known",
+			stages: []any{
+				stageWithRequires("disabled", "1.1"),
+				stageWithRequires("second", "1.2", "disabled"),
+			},
+			wantStages: 1,
+		},
+		{
+			name: "input order does not replace number order",
+			stages: []any{
+				stageWithRequires("second", "1.2", "first"),
+				stageFixture("first", "1.1"),
+			},
+			wantStages: 2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if tt.name == "disabled dependency remains known" {
+				testStage := tt.stages[0].(map[string]any)
+				testStage["enabled"] = false
+			}
+			got, err := Load(fixtureFS(t, tt.stages, map[string]any{}))
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("Load() error = nil, snapshot = %#v", got)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("Load() error = %q, want context %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if gotStages := len(got.Stages()); gotStages != tt.wantStages {
+				t.Errorf("Stages() length = %d, want %d", gotStages, tt.wantStages)
+			}
+		})
+	}
+}
+
+func stageWithRequires(slug, number string, dependencies ...string) map[string]any {
+	stage := stageFixture(slug, number)
+	if dependencies == nil {
+		dependencies = []string{}
+	}
+	stage["requires_stage"] = dependencies
+	return stage
+}
+
 func TestLoadRequiresExactStageFieldNames(t *testing.T) {
 	t.Parallel()
 
-	const remainingFields = `,"number":"1.1","name":"stage name","phase":"inception","execution":"ALWAYS","lead_agent":"orchestrator","support_agents":[],"mode":"inline"}`
+	const remainingFields = `,"number":"1.1","name":"stage name","phase":"inception","execution":"ALWAYS","lead_agent":"orchestrator","support_agents":[],"mode":"inline","produces":[],"consumes":[],"requires_stage":[]}`
 	tests := []struct {
 		name       string
 		slugFields string
@@ -109,6 +422,47 @@ func TestLoadRequiresExactStageFieldNames(t *testing.T) {
 				t.Errorf("Stages()[0].Slug = %q, want %q", got, tt.wantSlug)
 			}
 		})
+	}
+}
+
+func TestLoadRequiresExactMetadataFieldNames(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		field      string
+		wrongKey   string
+		wrongValue any
+	}{
+		{name: "produces", field: "produces", wrongKey: "Produces", wrongValue: []string{}},
+		{name: "consumes", field: "consumes", wrongKey: "Consumes", wrongValue: []any{}},
+		{name: "requires stage", field: "requires_stage", wrongKey: "Requires_Stage", wrongValue: []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			stage := stageFixture("stage", "1.1")
+			delete(stage, tt.field)
+			stage[tt.wrongKey] = tt.wrongValue
+			got, err := Load(fixtureFS(t, []any{stage}, map[string]any{}))
+			if err == nil {
+				t.Fatalf("Load() error = nil, snapshot = %#v", got)
+			}
+			if !strings.Contains(err.Error(), tt.field) {
+				t.Errorf("Load() error = %q, want field context %q", err, tt.field)
+			}
+		})
+	}
+
+	stage := stageFixture("optional", "1.1")
+	stage["Optional_Produces"] = []string{"ignored"}
+	snapshot, err := Load(fixtureFS(t, []any{stage}, map[string]any{}))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := snapshot.Stages()[0].OptionalProduces; got != nil {
+		t.Errorf("OptionalProduces = %#v, want nil for unknown case-variant key", got)
 	}
 }
 
@@ -315,6 +669,13 @@ func TestLoadRejectsInvalidStageGraphStructure(t *testing.T) {
 		{name: "missing support agents", stages: []any{stageWithout("support_agents")}, wantContext: "support_agents"},
 		{name: "null support agents", stages: []any{stageWith("support_agents", nil)}, wantContext: "support_agents"},
 		{name: "missing mode", stages: []any{stageWithout("mode")}, wantContext: "mode"},
+		{name: "missing produces", stages: []any{stageWithout("produces")}, wantContext: "produces"},
+		{name: "null produces", stages: []any{stageWith("produces", nil)}, wantContext: "produces"},
+		{name: "null optional produces", stages: []any{stageWith("optional_produces", nil)}, wantContext: "optional_produces"},
+		{name: "missing consumes", stages: []any{stageWithout("consumes")}, wantContext: "consumes"},
+		{name: "null consumes", stages: []any{stageWith("consumes", nil)}, wantContext: "consumes"},
+		{name: "missing requires stage", stages: []any{stageWithout("requires_stage")}, wantContext: "requires_stage"},
+		{name: "null requires stage", stages: []any{stageWith("requires_stage", nil)}, wantContext: "requires_stage"},
 		{name: "invalid execution", stages: []any{stageWith("execution", "SOMETIMES")}, wantContext: "execution"},
 		{
 			name: "duplicate slug",
@@ -361,6 +722,11 @@ func TestLoadRejectsWrongStageJSONTypes(t *testing.T) {
 		{name: "top-level object", graph: `{}`},
 		{name: "support agents object", graph: `[{"slug":"stage","number":"1.1","name":"stage","phase":"inception","execution":"ALWAYS","lead_agent":"orchestrator","support_agents":{},"mode":"inline"}]`},
 		{name: "support agent non-string", graph: `[{"slug":"stage","number":"1.1","name":"stage","phase":"inception","execution":"ALWAYS","lead_agent":"orchestrator","support_agents":[1],"mode":"inline"}]`},
+		{name: "produces object", graph: `[{"slug":"stage","number":"1.1","name":"stage","phase":"inception","execution":"ALWAYS","lead_agent":"orchestrator","support_agents":[],"mode":"inline","produces":{},"consumes":[],"requires_stage":[]}]`},
+		{name: "produces non-string", graph: `[{"slug":"stage","number":"1.1","name":"stage","phase":"inception","execution":"ALWAYS","lead_agent":"orchestrator","support_agents":[],"mode":"inline","produces":[1],"consumes":[],"requires_stage":[]}]`},
+		{name: "optional produces object", graph: `[{"slug":"stage","number":"1.1","name":"stage","phase":"inception","execution":"ALWAYS","lead_agent":"orchestrator","support_agents":[],"mode":"inline","produces":[],"optional_produces":{},"consumes":[],"requires_stage":[]}]`},
+		{name: "consumes object", graph: `[{"slug":"stage","number":"1.1","name":"stage","phase":"inception","execution":"ALWAYS","lead_agent":"orchestrator","support_agents":[],"mode":"inline","produces":[],"consumes":{},"requires_stage":[]}]`},
+		{name: "requires stage object", graph: `[{"slug":"stage","number":"1.1","name":"stage","phase":"inception","execution":"ALWAYS","lead_agent":"orchestrator","support_agents":[],"mode":"inline","produces":[],"consumes":[],"requires_stage":{}}]`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -462,15 +828,20 @@ func TestLoadRejectsInvalidScopeActions(t *testing.T) {
 func TestSnapshotReturnsDefensiveCopies(t *testing.T) {
 	t.Parallel()
 
-	stage := stageFixture("stage", "1.1")
+	stage := stageFixture("stage", "1.2")
 	stage["support_agents"] = []string{"reviewer"}
 	stage["scopes"] = []string{"classic"}
+	stage["produces"] = []string{"intent-statement"}
+	stage["optional_produces"] = []string{"questions"}
+	stage["consumes"] = []map[string]any{{"artifact": "project-description", "required": true}}
+	stage["requires_stage"] = []string{"dependency"}
+	dependency := stageFixture("dependency", "1.1")
 	grid := map[string]any{
 		"classic": map[string]any{
-			"stages": map[string]any{"stage": "EXECUTE"},
+			"stages": map[string]any{"stage": "EXECUTE", "dependency": "EXECUTE"},
 		},
 	}
-	snapshot, err := Load(fixtureFS(t, []any{stage}, grid))
+	snapshot, err := Load(fixtureFS(t, []any{stage, dependency}, grid))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -479,17 +850,25 @@ func TestSnapshotReturnsDefensiveCopies(t *testing.T) {
 	stages[0].Slug = "changed"
 	stages[0].SupportAgents[0] = "changed"
 	stages[0].Scopes[0] = "changed"
+	stages[0].Produces[0] = "changed"
+	stages[0].OptionalProduces[0] = "changed"
+	stages[0].Consumes[0].Artifact = "changed"
+	stages[0].RequiresStages[0] = "changed"
 	if got, want := snapshot.Stages()[0], (Stage{
-		Slug:          "stage",
-		Number:        "1.1",
-		Name:          "stage name",
-		Phase:         "inception",
-		Execution:     "ALWAYS",
-		LeadAgent:     "orchestrator",
-		SupportAgents: []string{"reviewer"},
-		Mode:          "inline",
-		Scopes:        []string{"classic"},
-		Enabled:       true,
+		Slug:             "stage",
+		Number:           "1.2",
+		Name:             "stage name",
+		Phase:            "inception",
+		Execution:        "ALWAYS",
+		LeadAgent:        "orchestrator",
+		SupportAgents:    []string{"reviewer"},
+		Mode:             "inline",
+		Scopes:           []string{"classic"},
+		Enabled:          true,
+		Produces:         []string{"intent-statement"},
+		OptionalProduces: []string{"questions"},
+		Consumes:         []Consume{{Artifact: "project-description", Required: true}},
+		RequiresStages:   []string{"dependency"},
 	}); !reflect.DeepEqual(got, want) {
 		t.Errorf("Stages() after caller mutation = %#v, want %#v", got, want)
 	}
@@ -558,6 +937,9 @@ func stageFixture(slug, number string) map[string]any {
 		"support_agents": []string{},
 		"mode":           "inline",
 		"scopes":         []string{},
+		"produces":       []string{},
+		"consumes":       []map[string]any{},
+		"requires_stage": []string{},
 	}
 }
 

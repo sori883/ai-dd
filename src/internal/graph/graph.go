@@ -2,11 +2,14 @@
 package graph
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"slices"
+	"strconv"
+	"strings"
 	"unicode/utf16"
 )
 
@@ -22,18 +25,29 @@ const (
 	ActionSkip Action = "SKIP"
 )
 
+// Consume describes one artifact required or optionally used by a stage.
+type Consume struct {
+	Artifact      string `json:"artifact"`
+	Required      bool   `json:"required"`
+	ConditionalOn string `json:"conditional_on"`
+}
+
 // Stage is the routing metadata required by the AI-DLC runtime.
 type Stage struct {
-	Slug          string
-	Number        string
-	Name          string
-	Phase         string
-	Execution     string
-	LeadAgent     string
-	SupportAgents []string
-	Mode          string
-	Scopes        []string
-	Enabled       bool
+	Slug             string
+	Number           string
+	Name             string
+	Phase            string
+	Execution        string
+	LeadAgent        string
+	SupportAgents    []string
+	Mode             string
+	Scopes           []string
+	Enabled          bool
+	Produces         []string
+	OptionalProduces []string
+	Consumes         []Consume
+	RequiresStages   []string
 }
 
 // Scope contains the routing actions for one scope.
@@ -91,16 +105,20 @@ func Load(dataFS fs.FS) (Snapshot, error) {
 			continue
 		}
 		stages = append(stages, Stage{
-			Slug:          raw.Slug,
-			Number:        raw.Number,
-			Name:          raw.Name,
-			Phase:         raw.Phase,
-			Execution:     raw.Execution,
-			LeadAgent:     raw.LeadAgent,
-			SupportAgents: raw.SupportAgents,
-			Mode:          raw.Mode,
-			Scopes:        raw.Scopes,
-			Enabled:       true,
+			Slug:             raw.Slug,
+			Number:           raw.Number,
+			Name:             raw.Name,
+			Phase:            raw.Phase,
+			Execution:        raw.Execution,
+			LeadAgent:        raw.LeadAgent,
+			SupportAgents:    raw.SupportAgents,
+			Mode:             raw.Mode,
+			Scopes:           raw.Scopes,
+			Enabled:          true,
+			Produces:         raw.Produces,
+			OptionalProduces: raw.OptionalProduces,
+			Consumes:         consumeValues(raw.Consumes),
+			RequiresStages:   raw.RequiresStages,
 		})
 		enabledSlugs[raw.Slug] = struct{}{}
 	}
@@ -131,16 +149,31 @@ func Load(dataFS fs.FS) (Snapshot, error) {
 }
 
 type stageDocument struct {
-	Slug          string   `json:"slug"`
-	Number        string   `json:"number"`
-	Name          string   `json:"name"`
-	Phase         string   `json:"phase"`
-	Execution     string   `json:"execution"`
-	LeadAgent     string   `json:"lead_agent"`
-	SupportAgents []string `json:"support_agents"`
-	Mode          string   `json:"mode"`
-	Scopes        []string `json:"scopes"`
-	Enabled       *bool    `json:"enabled"`
+	Slug                    string   `json:"slug"`
+	Number                  string   `json:"number"`
+	Name                    string   `json:"name"`
+	Phase                   string   `json:"phase"`
+	Execution               string   `json:"execution"`
+	LeadAgent               string   `json:"lead_agent"`
+	SupportAgents           []string `json:"support_agents"`
+	Mode                    string   `json:"mode"`
+	Scopes                  []string `json:"scopes"`
+	Enabled                 *bool    `json:"enabled"`
+	Produces                []string
+	ProducesPresent         bool
+	OptionalProduces        []string
+	OptionalProducesPresent bool
+	Consumes                []consumeDocument
+	ConsumesPresent         bool
+	RequiresStages          []string
+	RequiresStagesPresent   bool
+}
+
+type consumeDocument struct {
+	Consume
+	ArtifactPresent      bool
+	RequiredPresent      bool
+	ConditionalOnPresent bool
 }
 
 func decodeStageDocuments(data []byte) ([]stageDocument, error) {
@@ -197,7 +230,146 @@ func decodeStageDocument(data []byte) (stageDocument, error) {
 			return stageDocument{}, fmt.Errorf("field %q: %w", field.name, err)
 		}
 	}
+	if raw, exists := fields["produces"]; exists {
+		stage.ProducesPresent = true
+		var err error
+		stage.Produces, err = decodeStringArray(raw)
+		if err != nil {
+			return stageDocument{}, fmt.Errorf("field %q: %w", "produces", err)
+		}
+	}
+	if raw, exists := fields["optional_produces"]; exists {
+		stage.OptionalProducesPresent = true
+		var err error
+		stage.OptionalProduces, err = decodeStringArray(raw)
+		if err != nil {
+			return stageDocument{}, fmt.Errorf("field %q: %w", "optional_produces", err)
+		}
+	}
+	if raw, exists := fields["consumes"]; exists {
+		stage.ConsumesPresent = true
+		var err error
+		stage.Consumes, err = decodeConsumes(raw)
+		if err != nil {
+			return stageDocument{}, fmt.Errorf("field %q: %w", "consumes", err)
+		}
+	}
+	if raw, exists := fields["requires_stage"]; exists {
+		stage.RequiresStagesPresent = true
+		var err error
+		stage.RequiresStages, err = decodeStringArray(raw)
+		if err != nil {
+			return stageDocument{}, fmt.Errorf("field %q: %w", "requires_stage", err)
+		}
+	}
 	return stage, nil
+}
+
+func decodeStringArray(data json.RawMessage) ([]string, error) {
+	if isJSONNull(data) {
+		return nil, errors.New("must be an array")
+	}
+
+	var rawValues []json.RawMessage
+	if err := json.Unmarshal(data, &rawValues); err != nil {
+		return nil, err
+	}
+	if rawValues == nil {
+		return nil, errors.New("must be an array")
+	}
+	values := make([]string, len(rawValues))
+	for index, rawValue := range rawValues {
+		if isJSONNull(rawValue) {
+			return nil, fmt.Errorf("item %d must be a string", index)
+		}
+		if err := json.Unmarshal(rawValue, &values[index]); err != nil {
+			return nil, fmt.Errorf("item %d must be a string: %w", index, err)
+		}
+	}
+	return values, nil
+}
+
+func decodeConsumes(data json.RawMessage) ([]consumeDocument, error) {
+	if isJSONNull(data) {
+		return nil, errors.New("must be an array")
+	}
+
+	var rawConsumes []json.RawMessage
+	if err := json.Unmarshal(data, &rawConsumes); err != nil {
+		return nil, err
+	}
+	if rawConsumes == nil {
+		return nil, errors.New("must be an array")
+	}
+
+	consumes := make([]consumeDocument, len(rawConsumes))
+	for index, rawConsume := range rawConsumes {
+		consume, err := decodeConsume(rawConsume)
+		if err != nil {
+			return nil, fmt.Errorf("item %d: %w", index, err)
+		}
+		consumes[index] = consume
+	}
+	return consumes, nil
+}
+
+func decodeConsume(data json.RawMessage) (consumeDocument, error) {
+	if isJSONNull(data) {
+		return consumeDocument{}, errors.New("must be an object")
+	}
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return consumeDocument{}, err
+	}
+	if fields == nil {
+		return consumeDocument{}, errors.New("must be an object")
+	}
+
+	var consume consumeDocument
+	if raw, exists := fields["artifact"]; exists {
+		consume.ArtifactPresent = true
+		if isJSONNull(raw) {
+			return consumeDocument{}, errors.New(`field "artifact" must be a string`)
+		}
+		if err := json.Unmarshal(raw, &consume.Artifact); err != nil {
+			return consumeDocument{}, fmt.Errorf("field %q: %w", "artifact", err)
+		}
+	}
+	if raw, exists := fields["required"]; exists {
+		consume.RequiredPresent = true
+		if isJSONNull(raw) {
+			return consumeDocument{}, errors.New(`field "required" must be a boolean`)
+		}
+		if err := json.Unmarshal(raw, &consume.Required); err != nil {
+			return consumeDocument{}, fmt.Errorf("field %q: %w", "required", err)
+		}
+	}
+	if raw, exists := fields["conditional_on"]; exists {
+		consume.ConditionalOnPresent = true
+		if isJSONNull(raw) {
+			return consumeDocument{}, errors.New(`field "conditional_on" must be a string`)
+		}
+		if err := json.Unmarshal(raw, &consume.ConditionalOn); err != nil {
+			return consumeDocument{}, fmt.Errorf("field %q: %w", "conditional_on", err)
+		}
+	}
+	return consume, nil
+}
+
+func isJSONNull(data []byte) bool {
+	return bytes.Equal(bytes.TrimSpace(data), []byte("null"))
+}
+
+func consumeValues(documents []consumeDocument) []Consume {
+	if documents == nil {
+		return nil
+	}
+	consumes := make([]Consume, len(documents))
+	for index, document := range documents {
+		consumes[index] = document.Consume
+	}
+	return consumes
 }
 
 func validateStageDocuments(stages []stageDocument) error {
@@ -228,6 +400,15 @@ func validateStageDocuments(stages []stageDocument) error {
 		if stage.SupportAgents == nil {
 			return fmt.Errorf("stage %d: support_agents array is required", index)
 		}
+		if !stage.ProducesPresent || stage.Produces == nil {
+			return fmt.Errorf("stage %d: produces array is required", index)
+		}
+		if !stage.ConsumesPresent || stage.Consumes == nil {
+			return fmt.Errorf("stage %d: consumes array is required", index)
+		}
+		if !stage.RequiresStagesPresent || stage.RequiresStages == nil {
+			return fmt.Errorf("stage %d: requires_stage array is required", index)
+		}
 		if stage.Execution != "ALWAYS" && stage.Execution != "CONDITIONAL" {
 			return fmt.Errorf("stage %d: execution %q is invalid", index, stage.Execution)
 		}
@@ -240,7 +421,72 @@ func validateStageDocuments(stages []stageDocument) error {
 		slugs[stage.Slug] = struct{}{}
 		numbers[stage.Number] = struct{}{}
 	}
+	for index, stage := range stages {
+		seenDependencies := make(map[string]struct{}, len(stage.RequiresStages))
+		for dependencyIndex, dependency := range stage.RequiresStages {
+			if _, duplicate := seenDependencies[dependency]; duplicate {
+				return fmt.Errorf("stage %d: requires_stage[%d] duplicates %q", index, dependencyIndex, dependency)
+			}
+			seenDependencies[dependency] = struct{}{}
+
+			dependencyStage, exists := findStageDocument(stages, dependency)
+			if !exists {
+				return fmt.Errorf("stage %d: requires_stage[%d] references unknown stage %q", index, dependencyIndex, dependency)
+			}
+			if !stageNumberBefore(dependencyStage.Number, stage.Number) {
+				return fmt.Errorf("stage %d: requires_stage[%d] dependency %q (%s) must precede stage %q (%s)", index, dependencyIndex, dependency, dependencyStage.Number, stage.Slug, stage.Number)
+			}
+		}
+		for consumeIndex, consume := range stage.Consumes {
+			if !consume.ArtifactPresent || consume.Artifact == "" {
+				return fmt.Errorf("stage %d: consumes[%d].artifact is required", index, consumeIndex)
+			}
+			if !consume.RequiredPresent {
+				return fmt.Errorf("stage %d: consumes[%d].required is required", index, consumeIndex)
+			}
+			if consume.ConditionalOnPresent && consume.ConditionalOn != "brownfield" && consume.ConditionalOn != "greenfield" {
+				return fmt.Errorf("stage %d: consumes[%d].conditional_on %q is invalid", index, consumeIndex, consume.ConditionalOn)
+			}
+		}
+	}
 	return nil
+}
+
+func findStageDocument(stages []stageDocument, slug string) (stageDocument, bool) {
+	for _, stage := range stages {
+		if stage.Slug == slug {
+			return stage, true
+		}
+	}
+	return stageDocument{}, false
+}
+
+func stageNumberBefore(dependency, stage string) bool {
+	dependencyPhase, dependencyIndex, dependencyOK := parseStageNumber(dependency)
+	stagePhase, stageIndex, stageOK := parseStageNumber(stage)
+	if !dependencyOK || !stageOK {
+		return false
+	}
+	if dependencyPhase != stagePhase {
+		return dependencyPhase < stagePhase
+	}
+	return dependencyIndex < stageIndex
+}
+
+func parseStageNumber(number string) (int, int, bool) {
+	parts := strings.Split(number, ".")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	phase, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, false
+	}
+	index, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, false
+	}
+	return phase, index, true
 }
 
 type scopeDocument struct {
@@ -337,6 +583,10 @@ func (s Snapshot) Stages() []Stage {
 	for index, stage := range s.stages {
 		stage.SupportAgents = slices.Clone(stage.SupportAgents)
 		stage.Scopes = slices.Clone(stage.Scopes)
+		stage.Produces = slices.Clone(stage.Produces)
+		stage.OptionalProduces = slices.Clone(stage.OptionalProduces)
+		stage.Consumes = slices.Clone(stage.Consumes)
+		stage.RequiresStages = slices.Clone(stage.RequiresStages)
 		stages[index] = stage
 	}
 	return stages
