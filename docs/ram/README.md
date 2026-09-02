@@ -60,6 +60,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [本家との差分提示を意図的な仕様・挙動の変更に限定する](decisions/2026-08-31-intentional-upstream-difference-reporting.md) | Accepted |
 | 意思決定 | [GitHub Issue・PRを日本語の実装記録として運用する](decisions/2026-09-01-japanese-github-pr-workflow.md) | Accepted（Issue #27、マージ済みPR起点・日本語運用・通常の対象外は非記載・自動マージなし） |
 | 意思決定 | [GitHub Issueを主要な成果で分類する](decisions/2026-09-01-github-issue-classification-labels.md) | Accepted（`機能開発` / `ユーザーリクエスト`、全14 Issueへ適用） |
+| 意思決定 | [計画・Issue・PRを自己完結した分かりやすい文章にする](decisions/2026-09-02-self-contained-development-artifacts.md) | Accepted（Issue #51、今後生成する成果物へ適用） |
 | 調査 | [既存AI-DLCの配布形式](research/2026-08-29-existing-distribution-format.md) | Current for local v2.6.123 snapshot |
 | 調査 | [共通space読み取りの参照契約](research/2026-08-31-space-reading-contracts.md) | Current for local v2.6.123 snapshot |
 | 調査 | [Space作成の参照契約](research/2026-08-31-space-creation-contracts.md) | Current for local v2.6.123 snapshot（U+0130小文字化の追加調査を含む） |
