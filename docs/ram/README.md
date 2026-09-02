@@ -50,7 +50,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [読み取り専用ワークスペース分析の実装計画](decisions/2026-09-02-workspace-detection-plan.md) | Accepted（Issue #33、7項目TDD・P1修正後の独立review・6構成cross compile） |
 | 意思決定 | [Stage graph・scope routing内部APIの実装計画](decisions/2026-09-02-stage-routing-plan.md) | Accepted（Issue #35、TDD・P1/P2修正後review・6構成cross compile） |
 | 意思決定 | [Scope metadata read-only APIの実装計画](decisions/2026-09-02-scope-metadata-plan.md) | Accepted（Issue #37、7項目RED/GREEN＋block-first・ECMAScript trim・raw改行とinner backtrackingを含むblock regex parity修正・Runner ownership guard・最終review指摘なし・6構成cross compile） |
-| 意思決定 | [初期 aidlc-state.md builderの実装計画](decisions/2026-09-02-initial-state-builder-plan.md) | Accepted（Issue #43、実装完了・独立review P1修正） |
+| 意思決定 | [初期 aidlc-state.md builderの実装計画](decisions/2026-09-02-initial-state-builder-plan.md) | Accepted（Issue #43、5項目TDD・P1修正後の独立review完了） |
 | 意思決定 | [検証頻度をloop・review・finalへ分離する](decisions/2026-09-02-validation-cadence.md) | Accepted（Issue #39、修正中はtargeted、差分安定後に全検証を1回） |
 | 意思決定 | [go_tdd_implementerをLuna / maxで運用する](decisions/2026-09-02-go-tdd-implementer-luna-max.md) | Accepted（Issue #41、実装担当のみLuna / maxへ固定） |
 | 意思決定 | [本家AI-DLCとの差分を自発的に提示する](decisions/2026-08-31-upstream-difference-reporting.md) | Superseded（下記の意図的な差分に限定する方針へ置換） |

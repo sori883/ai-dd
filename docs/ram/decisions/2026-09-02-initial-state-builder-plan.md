@@ -1,7 +1,7 @@
 # 初期 aidlc-state.md builderの実装計画
 
 - 日付: 2026-09-02
-- 状態: Accepted（実装完了、独立review前）
+- 状態: Accepted（実装・P1修正・独立review完了）
 - GitHub Issue: [#43](https://github.com/sori883/ai-dd/issues/43)
 - 承認: 2026-09-02、ユーザーが実装計画を明示承認
 - base: `3a14925`
@@ -111,3 +111,6 @@ GREEN go test -count=1 -run '^TestBuildInitialProjectDescriptionJSONMatchesJSONS
 GREEN go test -count=1 ./src/internal/state
      ok   github.com/sori883/ai-dd/src/internal/state
 ```
+
+修正後の固定head `1b80110`を再reviewし、前回P1の解消と追加のblocking findingがないことを確認した。
+targeted test以外の全体検証はreview modeでは実行せず、差分安定後のfinal gateへ進めた。
