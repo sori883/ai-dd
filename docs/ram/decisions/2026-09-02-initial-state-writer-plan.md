@@ -1,7 +1,7 @@
 # 初期state永続化writerの実装計画
 
 - 日付: 2026-09-02
-- 状態: Accepted（Issue #45、P2修正完了・再review待ち）
+- 状態: Accepted（Issue #45、独立review完了・final待ち）
 - GitHub Issue: [#45](https://github.com/sori883/ai-dd/issues/45)
 - 承認: 2026-09-02、ユーザー承認済み計画を親agentから受領
 - base: `3a6932d`
@@ -111,5 +111,11 @@ targeted testではsidecar→stateの順序、exact bytes、既存stateのwrite 
 empty payload、各failure point、short write、close-before-rename、collisionしたtemporaryの非破壊、
 sidecar成功後のpartial commit、cleanup errorのcause、caller-owned root継続利用を固定した。追加の実filesystem
 testではdirectory・symlinkの種類と内容を保持すること、0444 regular stateのbytesとmodeを保持すること、
-sidecarがcommit済みでwriter temporaryが残らないことを確認する。独立reviewと親agentによるfinal gateは未実施であり、
-実行後にこの記録を更新する。
+sidecarがcommit済みでwriter temporaryが残らないことを確認する。固定head `959a40b`の独立reviewではblocking findingがなく、
+親agentによるfinal gateは未実施である。
+
+独立reviewで確認・修正した事項:
+
+1. nonregular stateをfail-closedする意図的差分について、ユーザー承認、本家挙動、採用理由、互換性影響、Issue #45とRAMの記録を追加した。
+2. 実filesystem integrationにdirectory・symlinkの種類/内容保持、read-only regular stateのsidecar commit・旧state bytes・mode保持、writer temporary不在のassertを追加した。
+3. read-only fixtureは作成後に`Chmod(0444)`を実行し、process umaskに依存しない前提へ修正した。
