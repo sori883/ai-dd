@@ -657,6 +657,42 @@ recordごとのrunner pointerをcallerが所有します。
 [Scope metadataの実装計画](ram/decisions/2026-09-02-scope-metadata-plan.md)、検証手順は
 [Scope metadata reader](development.md#scope-metadata-reader内部api)を参照してください。
 
+## 初期 aidlc-state.md builder
+
+`state.BuildInitial(input Input) (Initial, error)`は、既に解決済みの`graph.Snapshot`、該当scopeの
+`scope.Metadata`、workspace分析の専用`WorkspaceInfo`、開始日時、project descriptionを受け取り、
+filesystemへ触れずに初期stateの内容を作ります。`state`はworkspace packageをimportせず、
+`WorkspaceInfo`に`ProjectType`、`Languages`、`Frameworks`、`BuildSystem`だけを持たせます。
+
+`Input.ProjectDescription`はsidecarへ保存するraw文字列、`Input.ProjectDescriptionPreview`はcallerが
+解決済みの安全なsingle-line表示値です。builderはraw値をstate本文へ再利用しません。返却される
+`Initial`は`StateContent`、`ProjectDescriptionJSON`、構造化`Routing`を持ち、sidecar内容は標準
+`encoding/json`でJSON構文を生成した後、本家`JSON.stringify`がescapeしない`<`、`>`、`&`、
+U+2028、U+2029の過剰escapeだけを安全に戻して末尾LFを付けます。raw値が空なら本家と同じ
+`[Project description]`を使います。execute/skipの`StageRoute` sliceはgraphや相互の結果と共有しません。
+
+depthは明示override > scope metadata、test strategyは明示override > scope metadata > effective depthで
+解決し、3値をcase-insensitiveに`Minimal` / `Standard` / `Comprehensive`へcanonicalizeします。
+review overrideは未指定または`adversarial`を空保存し、`advisory` / `none`だけcanonical lowercaseで保存
+します。未知scope・無効設定・scope metadataとの不一致はerrorです。
+
+stage routingはgraph順、missing cellは`SKIP`です。Greenfieldでraw scopeがreverse-engineeringをEXECUTE
+しているときだけeffective mappingをSKIPへ補正し、skip末尾へ`number (reverse-engineering — greenfield)`
+を追加します。incremental scopeで同条件の場合は構造化warning boolを返します。firstは補正後mappingの
+最初のpost-init EXECUTE、該当なしは`intent-capture` / `IDEATION` / `aidlc-product-agent`へfallbackします。
+nextは補正前raw mappingでfirstより後の最初のEXECUTE、該当なしは`none`です。
+
+state本文は本家2.6.123のsection、field、コメント、phase順、空行、末尾LFを維持します。初期化stageは
+`[x]`、それ以外は`[ ]`、補正後firstだけ`[-]`、phaseは`Verified` / `Active` / `Pending` / `Skipped`を
+本家と同じ規則で出します。State Versionは`8`、Project Description Sourceは`project-description.json`
+固定です。
+
+本家の`handleIntentCreateStateBuild`が同時に担うworkspace scan、plugin選択、audit、state/sidecarの
+filesystem write、Intent作成、CLI接続、stage本文実行はこの内部APIの責務ではありません。Goのpackage
+分離と専用DTOは段階移植の依存方向であり、利用者が観測する意図的な本家差分ではありません。根拠と
+確認範囲は[初期 state builderの参照契約](ram/research/2026-09-02-initial-state-builder-contracts.md)、
+実装・targeted検証手順は[初期 state builder](development.md#初期-aidlc-state-builder内部api)を参照してください。
+
 ## ビルド情報
 
 `Version`と`Commit`は通常のstring変数として安全な既定値を持ち、release buildでは`go build -ldflags -X`で差し替えます。build timestampは再現可能なbuildを損なうため保持しません。
