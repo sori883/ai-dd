@@ -391,8 +391,9 @@ testは`testing/fstest.MapFS`と最小error stubだけを使い、本家11scope�
 直下`.md` filterとUTF-16 filename順、filename/name decoupling、LF / CRLF、scalar quoteとblock marker、
 block-first二段階探索を含むblock / flow keywords、optional値、validation、duplicate、個別/root I/O error、
 block keyとitem間の空白行・whitespace-only itemのregex境界、ECMAScript trimのU+FEFF / U+0085差、
-block outer / inner regexのCR / LF / U+2028 / U+2029境界、nil FS、no-cacheとslice・runner pointerのcaller
-ownershipを固定します。blockが成立してitem抽出がemptyになった場合もflowへfallbackしないことを含みます。
+block outer / inner regexのCR / LF / U+2028 / U+2029境界、lone CRで連結したspace / tab indent反復item、
+frontmatter内部のraw `\r\r\n`保持、nil FS、no-cacheとslice・runner pointerのcaller ownershipを固定します。
+blockが成立してitem抽出がemptyになった場合もflowへfallbackしないことを含みます。
 
 root `fs.ErrNotExist`は非nil empty sliceです。その他のroot error、部分entries付きerror、個別file error、
 frontmatter / name / validation / duplicate errorは文脈とcauseを保ち、partial resultを返しません。

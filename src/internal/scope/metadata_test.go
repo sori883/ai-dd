@@ -378,6 +378,20 @@ func TestReadAllMatchesUpstreamBlockLineTerminatorBoundaries(t *testing.T) {
 			want: []string{},
 		},
 		{
+			name: "lone carriage return joins space indented outer items before inner split",
+			frontmatter: "keywords:\n" +
+				"  - first\r  - second\n" +
+				"keywords: [flow]",
+			want: []string{},
+		},
+		{
+			name: "lone carriage return joins tab indented outer items before inner split",
+			frontmatter: "keywords:\n" +
+				"\t- first\r\t- second\n" +
+				"keywords: [flow]",
+			want: []string{},
+		},
+		{
 			name: "lone carriage return before payload falls back to flow",
 			frontmatter: "keywords:\n" +
 				"  - \rpayload\n" +
@@ -388,6 +402,14 @@ func TestReadAllMatchesUpstreamBlockLineTerminatorBoundaries(t *testing.T) {
 			name: "carriage return suffix ends the outer block sequence",
 			frontmatter: "keywords:\n" +
 				"  - first\rsuffix\n" +
+				"  - second\n" +
+				"keywords: [flow]",
+			want: []string{"first"},
+		},
+		{
+			name: "frontmatter preserves double carriage return before line feed",
+			frontmatter: "keywords:\n" +
+				"  - first\r\r\n" +
 				"  - second\n" +
 				"keywords: [flow]",
 			want: []string{"first"},

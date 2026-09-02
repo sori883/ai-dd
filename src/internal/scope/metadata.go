@@ -145,11 +145,23 @@ func booleanPointer(value string) *bool {
 }
 
 func frontmatterBlock(body string) (string, bool) {
-	body = strings.ReplaceAll(body, "\r\n", "\n")
-	if !strings.HasPrefix(body, "---\n") {
+	const (
+		lfOpening   = "---\n"
+		crlfOpening = "---\r\n"
+	)
+
+	var content string
+	switch {
+	case strings.HasPrefix(body, crlfOpening):
+		content = body[len(crlfOpening):]
+	case strings.HasPrefix(body, lfOpening):
+		content = body[len(lfOpening):]
+	default:
 		return "", false
 	}
-	frontmatter, _, ok := strings.Cut(body[len("---\n"):], "\n---")
+
+	frontmatter, _, ok := strings.Cut(content, "\n---")
+	frontmatter = strings.TrimSuffix(frontmatter, "\r")
 	return frontmatter, ok
 }
 
@@ -176,8 +188,8 @@ func listField(frontmatter, key string) []string {
 		if !isBlockListKey(line, prefix) {
 			continue
 		}
-		if blockLines, ok := matchBlockList(lines[index+1:]); ok {
-			return extractBlockListItems(blockLines)
+		if block, ok := matchBlockList(strings.Join(lines[index+1:], "\n")); ok {
+			return extractBlockListItems(block)
 		}
 	}
 	for _, line := range lines {
@@ -196,63 +208,78 @@ func isBlockListKey(line, prefix string) bool {
 	return strings.HasPrefix(line, prefix) && isJavaScriptWhitespaceOnly(line[len(prefix):])
 }
 
-func matchBlockList(lines []string) ([]string, bool) {
+func matchBlockList(input string) (string, bool) {
 	start := 0
-	for start < len(lines) && isJavaScriptWhitespaceOnly(lines[start]) {
-		start++
-	}
-	if start == len(lines) {
-		return nil, false
-	}
-	first, ok := matchBlockListItemLine(lines[start])
-	if !ok {
-		return nil, false
+	for start < len(input) {
+		newline := strings.IndexByte(input[start:], '\n')
+		if newline < 0 || !isJavaScriptWhitespaceOnly(input[start:start+newline]) {
+			break
+		}
+		start += newline + 1
 	}
 
-	matched := []string{first}
-	if len(first) != len(lines[start]) {
-		return matched, true
-	}
-	for _, line := range lines[start+1:] {
-		itemLine, ok := matchBlockListItemLine(line)
+	end := start
+	for {
+		next, ok := matchBlockListItem(input, end)
 		if !ok {
 			break
 		}
-		matched = append(matched, itemLine)
-		if len(itemLine) != len(line) {
-			break
-		}
+		end = next
 	}
-	return matched, true
+	if end == start {
+		return "", false
+	}
+	return input[start:end], true
 }
 
-func matchBlockListItemLine(line string) (string, bool) {
-	index := 0
-	for index < len(line) && isHorizontalListSpace(line[index]) {
+func matchBlockListItem(input string, start int) (int, bool) {
+	index := start
+	for index < len(input) && isHorizontalListSpace(input[index]) {
 		index++
 	}
-	if index == 0 || index >= len(line) || line[index] != '-' {
-		return "", false
+	if index == start || index >= len(input) || input[index] != '-' {
+		return start, false
 	}
-	remainder := line[index+1:]
-	if len(remainder) < 2 || !isHorizontalListSpace(remainder[0]) {
-		return "", false
+	index++
+
+	spaceStart := index
+	for index < len(input) && isHorizontalListSpace(input[index]) {
+		index++
+	}
+	if index == spaceStart {
+		return start, false
 	}
 
-	content := remainder[1:]
-	if terminator := strings.IndexAny(content, "\r\n"); terminator >= 0 {
-		if terminator == 0 {
-			return "", false
+	if index == len(input) || input[index] == '\r' || input[index] == '\n' {
+		if index-spaceStart < 2 {
+			return start, false
 		}
-		end := index + 2 + terminator
-		return line[:end+1], true
+		index--
 	}
-	return line, true
+
+	contentStart := index
+	for index < len(input) && input[index] != '\r' && input[index] != '\n' {
+		index++
+	}
+	if index == contentStart {
+		return start, false
+	}
+	if index < len(input) && input[index] == '\r' {
+		index++
+	}
+	if index < len(input) && input[index] == '\n' {
+		index++
+	}
+	return index, true
 }
 
-func extractBlockListItems(lines []string) []string {
+func extractBlockListItems(block string) []string {
+	lines := strings.Split(block, "\n")
 	items := make([]string, 0, len(lines))
-	for _, line := range lines {
+	for index, line := range lines {
+		if index < len(lines)-1 {
+			line = strings.TrimSuffix(line, "\r")
+		}
 		item, ok := extractBlockListItem(line)
 		if !ok {
 			continue

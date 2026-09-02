@@ -46,7 +46,8 @@ metadataは`name`、`plugin`、`depth`、`description`、`keywords`、`testStrat
 
 ## zero-dependency frontmatter
 
-frontmatterはfile先頭の`---`とLFまたはCRLFで始まり、次のclosing `---`までである。scalarは周囲の
+frontmatterはfile先頭の`---`とLFまたはCRLFで始まり、次の`\r?\n---`をclosing delimiterとする。
+`frontmatterBlock`の`[\s\S]*?` captureは内部の改行を正規化せず、そのまま保持する。scalarは周囲の
 ECMAScript whitespaceを除き、両端のsingle / double quoteを外す。ECMAScript側ではU+FEFFをtrimし、
 U+0085はtrimしない。`>`、`|`、`>-`、`|-`はblock scalar markerなので空値として扱う。
 
@@ -58,7 +59,12 @@ block keyと最初のitemの間にJavaScript whitespaceだけの行があって�
 `(.+?)`はCR / LF / U+2028 / U+2029をmatchしない。U+2028 / U+2029だけのitemやseparator後にpayloadが
 続くitemはblock自体は成立しても抽出されず、後続flowへfallbackしない。payload末尾だけのU+2028 / U+2029
 は末尾`\s*`側で扱われ、payloadを抽出する。lone CRより前にouter payloadがなければblockは成立せず、後続
-flowを探索する。このmatcher成立判定とitem抽出は別の正規表現境界である。
+flowを探索する。outerがpayload後のlone CRをoptional terminatorとして消費し、直後のindent itemも反復
+matchした場合、raw captureはlone CRを保持する。innerの`.split(/\r?\n/)`はそのlone CRを分割しないため、
+space / tab indentの2 itemは1行のinner regexへ渡って抽出失敗し、block結果はemptyになる。通常suffixは
+outer反復が止まるため先行payloadを抽出する。raw `\r\r\n`ではouterのoptional CRが最初のCRだけを
+消費し、次のCRで反復が止まるためcaptureは先頭itemまでとなり、innerも先頭payloadだけを抽出する。この
+matcher成立判定とitem抽出は別の正規表現境界である。
 flow parserはquote内のcommaとclosing bracketをseparatorにせず、closing bracket後は空白または`#` comment
 だけを受理する。unclosed quote/bracketや余分なsuffixはempty listとなる。unknown YAML全般を解釈する
 parserではなく、本家がscope metadataに使う狭いfrontmatter primitiveである。
@@ -70,6 +76,11 @@ Issue #37内で本家`t309`のblock-first二段階探索へ修正した。これ
 final reviewではGoとECMAScriptのtrim集合、およびblock outer / innerのline terminator境界に残るparity bugを
 検出した。本家2.6.123のauthored `listField`をBun 1.3.14で実行してU+0085 / U+FEFF / U+2028 / U+2029 /
 lone CRの結果を照合し、Issue #37内で一致させた。これらも新しい意図的差分ではない。
+post-fix reviewではoptional lone CR直後に反復itemが隣接する場合のraw capture保持が不足するparity bugを
+検出した。space / tab indentと通常suffixを同じBun 1.3.14で追加照合し、outer capture後にCRLF / LFだけで
+inner行を分割する本家構造へ一致させた。追補の直接実行では、`frontmatterBlock`がdelimiterのLF / CRLFを
+認識しつつcapture内部を変換しないことと、raw `\r\r\n` fixtureが先頭itemだけになることを確認した。Go版の
+body全体CRLF正規化を除去して一致させた。いずれも新しい意図的差分ではない。
 
 ## Go版の承認済み差分
 
