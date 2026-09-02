@@ -1,7 +1,7 @@
 # Scope metadata read-only APIの実装計画
 
 - 日付: 2026-09-02
-- 状態: Accepted（Issue #37実装・独立review P1修正／P2 guard・fresh再検証・6構成cross compile完了、再review待ち）
+- 状態: Accepted（Issue #37実装・再review P1解消・fresh再検証・6構成cross compile完了、再々review待ち）
 - GitHub Issue: [#37](https://github.com/sori883/ai-dd/issues/37)
 - base: `a6c19f673c685facc450fb3c0399bf06b36c4542`
 - 作業branch: `codex/scope-metadata-reader`
@@ -50,7 +50,8 @@ func ReadAll(scopesFS fs.FS) ([]Metadata, error)
 - frontmatterはfile先頭`---`、LF / CRLF、同一行scalar、quote除去、block marker空値を扱う。
 - keywordsは本家のindent block listとsingle-line flow listだけを扱う。frontmatter全体で最初のvalid
   block sequenceを優先し、blockがなければ最初のflow sequenceを使う。quoted comma / bracket、
-  terminal comment、malformed emptyも固定する。
+  terminal comment、malformed emptyも固定する。block keyとitem間のJavaScript whitespace行、
+  whitespace-only itemのmatcher / extractor境界も本家regexへ合わせる。
 - nameだけを必須とする。depth / descriptionの空値、plugin / testStrategyの未指定を受理する。
 - plugin `aidlc-` prefix、invalid skeleton、invalid review_capはfileと値を示すerrorにする。
 - duplicate nameはUTF-16 sort順の先後両filenameを示す。
@@ -91,6 +92,9 @@ fixtureは`testing/fstest.MapFS`と最小error injection FSだけを使い、本
   REDからGREENにした。これはparity bug修正であり、新しい意図的差分ではない。
 - P2: `Runner *bool`がrecord間・ReadAll呼出し間で共有されないguardを追加した。現実装は追加時からGREEN
   だったため、RED件数には含めない。
+- 再review P1: block keyと最初のitemの間の空・空白行、dash後が空白だけのitemに本家regexとの差が残って
+  いた。固定head `dd22500`へ回帰testを追加してREDを確認し、matcher成立判定とitem抽出を分離してGREENに
+  した。重複keyの前後でもblock-first順を維持する。これもparity bug修正であり、意図的差分ではない。
 
 ## 所有権と対象外
 
@@ -119,3 +123,5 @@ darwin、linux、windowsのamd64 / arm64へscope test binaryをrepository外にc
 独立review修正後、上記targeted、全体shuffle、race、vet、tidy diff、gofmt、gopls、diff checkを
 fresh実行してすべて成功した。6構成のtest binary cross compileも再実行して成功したが、各target OSでの
 native実行とは扱わない。
+
+再review P1修正後にも同じfresh検証と6構成cross compileを再実行し、すべて成功した。

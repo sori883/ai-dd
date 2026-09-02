@@ -7,7 +7,9 @@ import (
 	"io/fs"
 	"slices"
 	"strings"
+	"unicode"
 	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // ReviewCap limits the effective review class for a scope.
@@ -171,11 +173,11 @@ func listField(frontmatter, key string) []string {
 	lines := strings.Split(frontmatter, "\n")
 	prefix := key + ":"
 	for index, line := range lines {
-		if strings.TrimRight(line, " \t") != prefix {
+		if !isBlockListKey(line, prefix) {
 			continue
 		}
-		if items, ok := blockListItems(lines[index+1:]); ok {
-			return items
+		if blockLines, ok := matchBlockList(lines[index+1:]); ok {
+			return extractBlockListItems(blockLines)
 		}
 	}
 	for _, line := range lines {
@@ -190,28 +192,91 @@ func listField(frontmatter, key string) []string {
 	return []string{}
 }
 
-func blockListItems(lines []string) ([]string, bool) {
-	items := []string{}
-	matched := false
+func isBlockListKey(line, prefix string) bool {
+	return strings.HasPrefix(line, prefix) && isJavaScriptWhitespaceOnly(line[len(prefix):])
+}
+
+func matchBlockList(lines []string) ([]string, bool) {
+	start := 0
+	for start < len(lines) && isJavaScriptWhitespaceOnly(lines[start]) {
+		start++
+	}
+	if start == len(lines) || !isBlockListItemLine(lines[start]) {
+		return nil, false
+	}
+
+	end := start + 1
+	for end < len(lines) && isBlockListItemLine(lines[end]) {
+		end++
+	}
+	return lines[start:end], true
+}
+
+func isBlockListItemLine(line string) bool {
+	index := 0
+	for index < len(line) && isHorizontalListSpace(line[index]) {
+		index++
+	}
+	if index == 0 || index >= len(line) || line[index] != '-' {
+		return false
+	}
+	remainder := line[index+1:]
+	return len(remainder) >= 2 && isHorizontalListSpace(remainder[0])
+}
+
+func extractBlockListItems(lines []string) []string {
+	items := make([]string, 0, len(lines))
 	for _, line := range lines {
-		withoutIndent := strings.TrimLeft(line, " \t")
-		if withoutIndent == line || len(withoutIndent) < 2 || withoutIndent[0] != '-' {
-			break
-		}
-		if withoutIndent[1] != ' ' && withoutIndent[1] != '\t' {
-			break
-		}
-		item := strings.TrimSpace(withoutIndent[2:])
-		if item == "" {
-			break
-		}
-		matched = true
+		item := extractBlockListItem(line)
 		item = trimListQuotes(item)
 		if item != "" {
 			items = append(items, item)
 		}
 	}
-	return items, matched
+	return items
+}
+
+func extractBlockListItem(line string) string {
+	dash := strings.IndexByte(line, '-')
+	remainder := line[dash+1:]
+	start := 0
+	for start+1 < len(remainder) && isHorizontalListSpace(remainder[start]) {
+		start++
+	}
+	item := remainder[start:]
+	end := len(item)
+	for end > 0 {
+		r, size := utf8.DecodeLastRuneInString(item[:end])
+		if !isJavaScriptWhitespace(r) || end == size {
+			break
+		}
+		end -= size
+	}
+	return item[:end]
+}
+
+func isHorizontalListSpace(value byte) bool {
+	return value == ' ' || value == '\t'
+}
+
+func isJavaScriptWhitespaceOnly(value string) bool {
+	for _, r := range value {
+		if !isJavaScriptWhitespace(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func isJavaScriptWhitespace(r rune) bool {
+	switch r {
+	case '\ufeff':
+		return true
+	case '\u0085':
+		return false
+	default:
+		return unicode.IsSpace(r)
+	}
 }
 
 func parseInlineList(raw string) []string {

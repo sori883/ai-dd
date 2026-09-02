@@ -52,12 +52,17 @@ frontmatterはfile先頭の`---`とLFまたはCRLFで始まり、次のclosing `
 
 keywordsは、frontmatter全体から最初のvalid indent `- ` block sequenceを先に探索し、見つからない場合だけ
 最初のsingle-line flow sequenceを使う。先行するflowや空・不正block keyは、後続のvalid blockを抑止しない。
+block keyと最初のitemの間にJavaScript whitespaceだけの行があっても、正規表現の`\s*`が吸収してblockが
+成立する。またdash後に複数のhorizontal whitespaceだけがあるitemもmatcherは成立し、抽出結果は空ではなく
+1文字のwhitespaceになる。このmatcher成立判定とitem抽出は別の正規表現境界である。
 flow parserはquote内のcommaとclosing bracketをseparatorにせず、closing bracket後は空白または`#` comment
 だけを受理する。unclosed quote/bracketや余分なsuffixはempty listとなる。unknown YAML全般を解釈する
 parserではなく、本家がscope metadataに使う狭いfrontmatter primitiveである。
 
 独立reviewで、当初のGo実装が文書順の最初のkeywords keyを即採用していたparity bugを検出した。
 Issue #37内で本家`t309`のblock-first二段階探索へ修正した。これは新しい意図的差分ではない。
+再reviewではblock regexの空白境界に残るparity bugを検出し、空白行を挟むblockとwhitespace-only itemを
+本家2.6.123と一致させた。これも新しい意図的差分ではない。
 
 ## Go版の承認済み差分
 

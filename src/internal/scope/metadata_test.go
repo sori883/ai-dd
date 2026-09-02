@@ -220,6 +220,55 @@ func TestReadAllUsesBlockFirstKeywordSearch(t *testing.T) {
 	}
 }
 
+func TestReadAllMatchesUpstreamBlockKeywordBoundaries(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		frontmatter string
+		want        []string
+	}{
+		{
+			name: "blank line block wins after flow key",
+			frontmatter: "keywords: [before]\n" +
+				"keywords:\n" +
+				"\n" +
+				"  - block",
+			want: []string{"block"},
+		},
+		{
+			name: "whitespace line block wins before flow key",
+			frontmatter: "keywords:\n" +
+				" \t \n" +
+				"  - block\n" +
+				"keywords: [after]",
+			want: []string{"block"},
+		},
+		{
+			name: "whitespace item wins between flow keys",
+			frontmatter: "keywords: [before]\n" +
+				"keywords:\n" +
+				"  -   \n" +
+				"keywords: [after]",
+			want: []string{" "},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			body := "---\nname: fixture\n" + tt.frontmatter + "\n---\n"
+			got, err := ReadAll(fstest.MapFS{"scope.md": {Data: []byte(body)}})
+			if err != nil {
+				t.Fatalf("ReadAll() error = %v", err)
+			}
+			if gotKeywords := got[0].Keywords; !reflect.DeepEqual(gotKeywords, tt.want) {
+				t.Errorf("Keywords = %q, want %q", gotKeywords, tt.want)
+			}
+		})
+	}
+}
+
 func TestReadAllParsesOptionalMetadata(t *testing.T) {
 	t.Parallel()
 
