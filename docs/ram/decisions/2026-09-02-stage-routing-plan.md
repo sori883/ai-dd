@@ -1,7 +1,7 @@
 # Stage graph・scope routing内部APIの実装計画
 
 - 日付: 2026-09-02
-- 状態: Accepted（独立review P1/P2修正完了、再review待ち）
+- 状態: Accepted（実装・独立review完了）
 - GitHub Issue: [#35](https://github.com/sori883/ai-dd/issues/35)
 - base: `e720440`
 - 作業branch: `codex/graph-routing`
@@ -115,3 +115,18 @@ darwin、linux、windowsのamd64/arm64でgraph test binaryをrepository外へcro
 native実行証拠とは区別する。read-only internal APIなので配布CLI E2Eは行わない。固定base/headの
 独立reviewでblocking findingがなく、fresh検証とGitHub checksが成功してからIssue #35に紐づく
 日本語PRを作る。自動mergeしない。
+
+## 実装・検証結果
+
+単独writerが6個のobservable sliceをRED→GREENで実装し、commit `76ce35c`へ固定した。最初の独立reviewで、
+Goのstruct向けJSON decodeが大小文字違いのfield名を受理するP1と、Go string sortがJavaScriptのUTF-16順と
+異なるP2を指摘した。それぞれexact-key decodeとUTF-16 code-unit比較の回帰testをREDとして追加し、
+commit `c89c7cb`で修正した。修正後の固定diffを再reviewし、元のP1/P2解消と追加findingなしを確認した。
+
+TDD実行記録は`/tmp/ai-dd-issue-35-tdd.log`、SHA-256は
+`8d2d6c103f7e63430601581119c0ae6bde61b8dddb12a6729c1afa9b572963e8`である。記録はcommand、exit、
+代表failure、結果を残した構造化要約であり、各RED時点の一時source全体やprocess transcriptは保存していない。
+
+対象package、全package shuffle、race、vet、tidy差分、gofmt、gopls、diff checkはすべてPASSした。
+darwin・linux・windowsのamd64/arm64向けgraph test binaryも最終実装から6構成でcross compileした。
+cross compileは各対象OSでのnative test実行証拠ではない。外部Go moduleは追加していない。
