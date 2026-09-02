@@ -342,6 +342,39 @@ Windowsでsymlink作成権限がない場合は、該当caseだけを理由付�
 このAPIはstageや公開CLIに未接続のため、CLI build・help/version smoke・配布E2Eは
 検出結果やread-only性のnative実行証拠にはなりません。
 
+### Stage graph・scope routing（内部API）
+
+`graph.Load`には`stage-graph.json`と`scope-grid.json`を直下に持つdata directory基準の
+`fs.FS`を渡します。project rootや`.codex` rootをそのまま渡すAPIではありません。
+loaderはread-onlyで、Rootのopen・Close、pathの選択、data更新はcallerが所有します。
+
+対象testは次で実行します。
+
+```sh
+go test -count=1 ./src/internal/graph
+```
+
+testは`testing/fstest.MapFS`のsynthetic fixtureだけを使います。stage fieldと配列順、enabled filtering、
+scope action、partial mapのmissing `SKIP`、未知scope、grid missing・JSON syntax error時の純粋membership
+転置を確認します。さらに、stage/gridの構造、duplicate、execution/action enum、未知stage参照を
+fail-closedにし、disabled stage参照だけはvalidとして公開actionから除外することを固定します。
+本家data一式をtest fixtureへ複製しません。
+
+`Stages`、`ScopeNames`、`Scope.Actions`の返値はcaller側で自由に変更できますが、保存済みSnapshotには
+反映されません。`Scope.Action`はcell欠損を`ActionSkip`として返します。unknown JSON fieldは無視し、
+stage field名は大小文字を含めた完全一致で解釈します。`ScopeNames`はJSON objectの記述順にかかわらず
+本家JavaScript互換のUTF-16 code-unit順です。scope prose metadataは別の
+`.codex/scopes/*.md`から取得する将来consumerの責務です。
+
+gridのread errorとJSON構文errorはfallbackするため、その成功結果だけで「dataが存在する」と
+「読めない」を区別できません。一方、構文上validな構造不正はerrorです。供給`fs.FS`自体のsandbox、
+2 fileを並行更新したときの一貫性、data version migrationはこのAPIでは保証しません。
+
+本家ローカル`2.6.123`との比較範囲と承認済みfail-closed差分は
+[Stage graph・scope routing](architecture.md#stage-graphscope-routing)・
+[差分表](architecture.md#stage-routingの意図的な差分)を参照してください。内部APIだけの変更なので、
+CLI build、help/version smoke、配布E2Eをroutingのnative実行証拠として扱いません。
+
 ### Space作成CLI
 
 既存projectへ新しいspaceを作ります。複数単語の名前は引用してください。
@@ -477,9 +510,9 @@ CIは`CGO_ENABLED=0`で次の6ターゲットのCLIをbuildします。
 - `windows/amd64`
 - `windows/arm64`
 
-ローカルでは次のloopで、CLIとintegrationタグ付きworkspaceテストバイナリを確認できます。
+ローカルでは次のloopで、CLI、integrationタグ付きworkspaceテストバイナリ、graphテストバイナリを確認できます。
 mainはspace作成・一覧・切替とintent一覧・切替のためworkspaceをimportしますが、CLI buildはworkspaceの`_test.go`や
-integrationタグ付きテストをcompileしないため、テストバイナリも別に確認します。
+integrationタグ付きテスト、新しい内部graph packageをcompileしないため、テストバイナリも別に確認します。
 いずれもコンパイルの確認であり、各OSでのテスト実行とは区別します。
 
 ```sh
@@ -493,6 +526,8 @@ for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 wi
     go build -trimpath -o "$build_dir/aidlc-$goos-$goarch$suffix" ./src/cmd/aidlc
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
     go test -c -tags=integration -o "$build_dir/workspace-$goos-$goarch.test$suffix" ./src/internal/workspace
+  CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+    go test -c -o "$build_dir/graph-$goos-$goarch.test$suffix" ./src/internal/graph
 done
 ```
 

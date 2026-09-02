@@ -48,6 +48,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [Intent切替を共有カーソルへ接続する実装計画](decisions/2026-09-01-intent-switch-plan.md) | Accepted（Issue #29、13項目TDD・P2/P3修正後の独立review・32起動の配布E2Eを記録） |
 | 意思決定 | [Intent作成の内部coreとworkspace lockの実装計画](decisions/2026-09-01-intent-create-core-plan.md) | Accepted（Issue #31、13項目TDD＋Go 1.27回帰修正・review・6構成cross compile、PR #32） |
 | 意思決定 | [読み取り専用ワークスペース分析の実装計画](decisions/2026-09-02-workspace-detection-plan.md) | Accepted（Issue #33、7項目TDD・P1修正後の独立review・6構成cross compile） |
+| 意思決定 | [Stage graph・scope routing内部APIの実装計画](decisions/2026-09-02-stage-routing-plan.md) | Accepted（Issue #35、TDD・P1/P2修正後review・6構成cross compile） |
 | 意思決定 | [本家AI-DLCとの差分を自発的に提示する](decisions/2026-08-31-upstream-difference-reporting.md) | Superseded（下記の意図的な差分に限定する方針へ置換） |
 | 意思決定 | [本家との差分提示を意図的な仕様・挙動の変更に限定する](decisions/2026-08-31-intentional-upstream-difference-reporting.md) | Accepted |
 | 意思決定 | [GitHub Issue・PRを日本語の実装記録として運用する](decisions/2026-09-01-japanese-github-pr-workflow.md) | Accepted（Issue #27、マージ済みPR起点・日本語運用・通常の対象外は非記載・自動マージなし） |
@@ -61,4 +62,5 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 調査 | [Intent切替CLIの参照契約](research/2026-09-01-intent-switch-contracts.md) | Current for local v2.6.123 snapshot（対象解決・cursor・session副作用・Go保存境界） |
 | 調査 | [Intent作成coreの参照契約](research/2026-09-01-intent-create-contracts.md) | Current for local v2.6.123 snapshot（UUIDv7・registry・Bun Windows ICU / Go Unicode overlay・部分失敗） |
 | 調査 | [読み取り専用ワークスペース分析の参照契約](research/2026-09-02-workspace-detection-contracts.md) | Current for local v2.6.123 snapshot（root signal・nested depth 3・言語閾値・framework/build・submodule） |
+| 調査 | [Stage graph・scope routingの参照契約](research/2026-09-02-stage-routing-contracts.md) | Current for local v2.6.123 snapshot（runtime転置・scope metadata境界・fail-closed差分） |
 | 調査 | [Intent候補列挙・現在intent解決の参照契約](research/2026-08-31-intent-reading-contracts.md) | Current for local v2.6.123 snapshot |
