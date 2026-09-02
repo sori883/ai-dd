@@ -52,6 +52,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [Scope metadata read-only APIの実装計画](decisions/2026-09-02-scope-metadata-plan.md) | Accepted（Issue #37、7項目RED/GREEN＋block-first・ECMAScript trim・raw改行とinner backtrackingを含むblock regex parity修正・Runner ownership guard・最終review指摘なし・6構成cross compile） |
 | 意思決定 | [初期 aidlc-state.md builderの実装計画](decisions/2026-09-02-initial-state-builder-plan.md) | Accepted（Issue #43、5項目TDD・P1修正後の独立review完了） |
 | 意思決定 | [初期state永続化writerの実装計画](decisions/2026-09-02-initial-state-writer-plan.md) | Accepted（Issue #45、独立review・final完了） |
+| 意思決定 | [4層Memory source readerの実装計画](decisions/2026-09-02-memory-source-reader-plan.md) | Accepted（Issue #47、実装loop・targeted検証完了、独立review待ち） |
 | 意思決定 | [検証頻度をloop・review・finalへ分離する](decisions/2026-09-02-validation-cadence.md) | Accepted（Issue #39、修正中はtargeted、差分安定後に全検証を1回） |
 | 意思決定 | [go_tdd_implementerをLuna / maxで運用する](decisions/2026-09-02-go-tdd-implementer-luna-max.md) | Accepted（Issue #41、実装担当のみLuna / maxへ固定） |
 | 意思決定 | [本家AI-DLCとの差分を自発的に提示する](decisions/2026-08-31-upstream-difference-reporting.md) | Superseded（下記の意図的な差分に限定する方針へ置換） |
@@ -70,4 +71,5 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 調査 | [Stage graph・scope routingの参照契約](research/2026-09-02-stage-routing-contracts.md) | Current for local v2.6.123 snapshot（runtime転置・scope metadata境界・fail-closed差分） |
 | 調査 | [Scope metadata readerの参照契約](research/2026-09-02-scope-metadata-contracts.md) | Current for local v2.6.123 snapshot（frontmatter block-first・ECMAScript whitespace・raw改行とinner backtrackingを含むblock regex境界・validation・3件の意図的差分） |
 | 調査 | [初期 state builderの参照契約](research/2026-09-02-initial-state-builder-contracts.md) | Current for local v2.6.123 snapshot（canonical state・JSON.stringify互換sidecar・routing・Greenfield補正） |
+| 調査 | [4層Memory source readerの参照契約](research/2026-09-02-memory-source-reader-contracts.md) | Current for local v2.6.123 snapshot（4層fixed path・fresh read・UTF-8 fail-closed・Root境界） |
 | 調査 | [Intent候補列挙・現在intent解決の参照契約](research/2026-08-31-intent-reading-contracts.md) | Current for local v2.6.123 snapshot |
