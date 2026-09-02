@@ -1,0 +1,6 @@
+interface:
+  display_name: "OKF Reference"
+  short_description: "Inspect pinned OKF v0.2 guidance and source evidence"
+  default_prompt: "Use $okf-reference to answer this OKF v0.2 question from the local analysis and only the necessary source evidence."
+policy:
+  allow_implicit_invocation: true
