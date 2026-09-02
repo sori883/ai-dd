@@ -76,8 +76,30 @@
 
 この結果を受け、計画とIssue・PRの作成前に初参加者の立場で読み直すcompleteness pass、計画から
 IssueおよびIssueからPRへの重要条件の継承、受け入れ条件と結果の対応付け、検証コマンドまたは対象範囲の
-明確化をskill、reference、templateへ反映した。修正後の再forward-testは未実施であり、その結果を
-確認するまでは最終的な成功とは扱わない。
+明確化をskill、reference、templateへ反映した。
+
+2回目のforward-testでは、次の重要条件が計画からIssue、PRまで引き継がれ、blocking findingは
+なかった。
+
+- project rootの選択順序、fallbackしない条件、ancestor directoryとsymbolic linkの扱い
+- 複数ファイルを同一時点の一まとまりとして読むsnapshot保証がないこと、read-onlyでありlockを
+  取得しないこと
+- 最終検証で実行する正確なcommand
+
+一方、共通規則として改善できるP3相当の不足が残った。Issue・PRの一部でpathに関する専門用語の
+説明が不足し、計画には本文内の根拠を特定できない「検証済みの入力」という文脈依存表現があった。
+また、入力だけでは確定できない観測可能なproject root境界のdetailを推測で補い、未決事項として
+質問しなかった。これを受け、計画skillには文脈依存表現を具体的な事実や名称へ置き換え、公開挙動に
+必要だが根拠のない契約detailを未決事項として扱う規則を追加した。GitHub skillには、計画やIssueで
+説明済みでも各Issue・PRの理解に必要な専門用語を成果物内で再説明する規則を追加した。この修正に
+対する独立reviewとfinal検証の結果はPRへ記録し、本記録では成功を先取りしない。
+
+評価で挙がった他の提案は、次の理由で共通の必須項目にはしない。
+
+- merge権限は`AGENTS.md`とGitHub skillで保護されており、すべてのIssue本文へ重複して記載しない。
+- PRのcommit SHAとすべてのtargeted test名は再現性のために必要な場合だけ記載する。正確な実行command、
+  または対象範囲と保証範囲を曖昧なく記載する現在の契約を維持する。
+- Issue titleの不足は、本文だけを生成させたsample条件に由来し、title生成規則の不足とは扱わない。
 
 ## リスク
 

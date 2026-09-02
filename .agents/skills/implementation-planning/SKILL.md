@@ -24,7 +24,7 @@ Turn a requested change and verified repository context into a plan the user can
    - targeted and final verification commands;
    - dependency impact, risks, rollback, and documentation updates.
 7. Call out every proposed external Go module with its necessity and why the standard library is insufficient.
-8. Before returning the plan, reread it as a first-time participant. Remove unfamiliar terms that are not needed for the decision, explain the role of every necessary unfamiliar term on first use, and confirm that no important safety, compatibility, migration, usage-condition, or approval-boundary information is missing.
+8. Before returning the plan, reread it as a first-time participant. Remove unfamiliar terms that are not needed for the decision, and explain every necessary unfamiliar term on first use. Replace context-dependent phrases that lack an antecedent in the plan, such as `上記`, `先ほど`, `この方針`, or `検証済みの入力`, with the concrete fact or name. Confirm that no important safety, compatibility, migration, usage-condition, or approval-boundary information is missing. If a public observable behavior needs contract details that the evidence does not establish, ask for them as an unresolved decision instead of guessing or claiming that no unresolved decisions remain.
 9. End at an explicit approval gate that states what the approval authorizes, which important boundaries remain fixed, and which unresolved choices still require a later decision. Do not edit files, create Issues, create PRs, or start implementation.
 
 ## Output Contract
