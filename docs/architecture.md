@@ -16,6 +16,9 @@ src/internal/scope (scope Markdown frontmatterのread-only metadata query)
 
 src/internal/memory (4層Memory sourceのread-only acquisition)
 
+src/internal/orchestrator
+  └─ StartIntent: Intent作成から初期workspace/state接続
+
 src/internal/workspace
   ├─ project root resolution
   ├─ active-space and space listing (read-only)
@@ -35,7 +38,8 @@ src/internal/workspace
 - `src/cmd/aidlc`: composition rootです。process引数、stdout、stderr、build情報と作成・一覧・切替callbackを組み立て、`cli.Run`の戻り値を`os.Exit`へ渡します。callbackが呼ばれたときだけcwdと環境変数を読みます。ドメイン判断や出力整形は置きません。
 - `src/internal/cli`: CLIの引数解釈、stdout/stderrの分離、終了コード、help/version、space create/list/switch、bare space、intent list/switchとbare intentの表示契約を所有します。`io.Writer`とcallbackを受け取るため、process全体を起動せずにテストできます。
 - `src/internal/buildinfo`: linkerが差し替える`Version`と`Commit`、およびそのsnapshotを所有します。既定値は`dev`と`unknown`です。
-- `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、read-onlyのworkspace分析、spaceとIntent coreの新規作成、space・intentの共有cursor切替を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。space一覧は`ReadSpaces`、intent一覧は`ReadIntents`を通じてCLIへ接続し、`ReadSelection`・`CreateIntent`・`Detect`は内部APIのままです。書込みは`CreateSpace`・`SwitchSpace`・`SwitchIntent`・`CreateIntent`の明示呼出しだけで行い、接続APIのRoot生存期間も内部で管理します。`Detect`は例外としてcaller所有の既存`*os.Root`を借り、Closeしません。
+- `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、read-onlyのworkspace分析、spaceとIntent coreの新規作成、space・intentの共有cursor切替を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。space一覧は`ReadSpaces`、intent一覧は`ReadIntents`を通じてCLIへ接続し、`ReadSelection`・`CreateIntent`・`Detect`は内部APIのままです。書込みは`CreateSpace`・`SwitchSpace`・`SwitchIntent`・`CreateIntent`の明示呼出しだけで行い、接続APIのRoot生存期間も内部で管理します。initializerを使う`CreateIntentWithInitializer`はlock内のproject/record Rootをcallbackへ貸し出し、callback後にCloseします。`Detect`は例外としてcaller所有の既存`*os.Root`を借り、Closeしません。
+- `src/internal/orchestrator`: callerが解決したStartInputをworkspace、graph、scope、stateへ渡し、`StartIntent`のlock内初期化順序とpartial結果を所有します。DataFS/ScopesFSはcaller-ownedのままCloseせず、Intent作成やRoot lifecycleの低レベル処理はworkspaceへ委譲します。
 - `src/internal/graph`: data directory基準の`fs.FS`からcompiled stage graphとscope gridを読み、enabled stageとrouting actionのimmutable snapshotを返します。filesystem write、project root選択、scope metadata Markdown、state遷移、agent実行は所有しません。
 - `src/internal/scope`: scopes directory基準の`fs.FS`から直下Markdownの狭いfrontmatter metadataを読みます。plugin選択、graph join、state、CLI、write、Root lifecycleは所有しません。
 - `src/internal/memory`: Memory root基準の`fs.FS`から`org.md`、`team.md`、`project.md`、`phases/<phase>.md`を固定順で読む4層source acquisitionと、取得済みsourceからsubstantiveなbundleを作る純粋なfilterを所有します。merge・override・frontmatter parseなどのworkflow判断、workspace path解決、Rootのopen/Closeは所有しません。実filesystemの呼出側は`os.Root.FS()`を渡し、readerはRootをCloseしません。
@@ -544,7 +548,8 @@ multi-file transaction、owner・ACL・特殊mode・hardlink identityの保持�
 `SpaceName`、`Label`、任意の`Scope`・`Repos`を受け取り、既存SpaceのIntent coreを作成する
 内部APIです。結果はUUID、正規化slug、実directory名、record path、Space名を返します。
 scopeとreposの意味検証はcaller責務で、coreはreposの順序を維持し、空ならfieldを省略します。
-公開CLI、session binding、audit、full state、workspace scanはまだ接続しません。
+公開CLI、session binding、auditはまだ接続しません。full stateとworkspace scanを含むIntent開始処理は、
+下記の`orchestrator.StartIntent`がこのcoreのinitializer seamを通じて接続します。
 
 処理はproject identityを共有するWORKSPACE lockを取得してから、次の順で行います。
 
@@ -715,7 +720,8 @@ optional consumeと条件不一致のconsumeは検証対象外です。`requires
 
 `state.BuildInitial`はこのPlanを一度構築し、そのentryから既存のRoutingとcanonicalな初期state本文を
 導出します。返却`state.Initial.Plan`はRoutingと同じStage選択結果を表します。builderは純粋なin-memory
-処理であり、Planの永続化、StartIntent全体、CLI、Stage実行やruntime recomposeは後続接続の責務です。
+処理であり、Planの永続化、CLI、Stage実行やruntime recomposeは後続接続の責務です。Intent作成からこのbuilderと
+writerまでの接続は、`orchestrator.StartIntent`が下記のinitializer seamを通じて担います。
 
 ### Stage Plan builderの意図的な差分
 
@@ -855,6 +861,61 @@ nonregular leafを復旧するforce/repair操作は現時点のinternal writer�
 symlinkの場合はリンク本体を退避し、リンク先は変更しません。自動削除や低レベルwriterのforceは追加しません。
 
 詳細な根拠、TDDの対象、確認範囲は[初期state永続化writerの実装計画](ram/decisions/2026-09-02-initial-state-writer-plan.md)を参照してください。
+
+## Intent開始 orchestration
+
+`orchestrator.StartIntent(ctx, input) (StartedIntent, error)`は、callerが解決したlabel、scope、説明、
+repository、data filesystemを受け取り、Intent作成と初期state構築を一つのworkspace lock内で接続する内部APIです。
+自然文の解析やscopeの自動選択は行いません。`StartInput.DataFS`は`stage-graph.json`と`scope-grid.json`を
+直下に持つcaller-owned `fs.FS`、`StartInput.ScopesFS`はscope Markdownを直下に持つcaller-owned `fs.FS`です。
+orchestratorはこれらをCloseせず、Rootの選択・open・Closeはworkspace coreが所有します。
+
+```go
+type StartInput struct {
+    Root                      workspace.RootInput
+    SpaceName                 string
+    Label                     string
+    Scope                     string
+    Repos                     []string
+    DataFS                    fs.FS
+    ScopesFS                  fs.FS
+    ProjectDescription        string
+    ProjectDescriptionPreview string
+    DepthOverride             string
+    TestStrategyOverride      string
+    ReviewOverride            string
+}
+
+type StartedIntent struct {
+    Intent                 workspace.CreatedIntent
+    Workspace              workspace.ScanResult
+    Initial                state.Initial
+    InitializationComplete bool
+}
+```
+
+workspaceの`CreateIntentWithInitializer`は、registry commitとactive cursor処理を試みた後、lock保持中に
+明示的record Rootを開いてinitializerを呼びます。cursor処理が失敗してもinitializerを呼び、cursor、初期化、
+record/project Root Close、lock releaseの原因を`errors.Join`で保持します。registry commit前はzero result、
+commit後は`StartedIntent.Intent`を保持したままerrorを返すため、partial Intentをrollbackしません。
+
+initializer内の順序は`workspace.Detect`、`graph.Load`、`scope.ReadAll`と入力scopeのcase-sensitive exact選択、
+UTC timestampを一度だけ取得、`state.BuildInitial`、`state.WriteInitial`です。timestampはIntent作成後に取得し、
+同じ値を`BuildInitial`の`StartDate`へ渡します。BuildInitialの返値はwrite前に`StartedIntent.Initial`へ保持するため、
+write失敗時にも構築済みInitialを返せます。`InitializationComplete`は`WriteInitial`成功時だけtrueであり、成功後の
+Root Closeまたはlock release errorがあってもtrueを維持します。
+
+初期stateの全Stage行には`EXECUTE`または`SKIP` suffixを保存します。`Initial.Plan`は同じ初期化で得たin-memory
+snapshotであり、`.aidlc-plan.json`、`.aidlc-stage-plan.json`などのsidecarや永久固定照合には使いません。
+将来のrecomposeは保存済み`aidlc-state.md` suffixを正とし、人間の承認後にcurrentより後ろのpending Stageだけを
+変更する別Issueで実装します。今回の接続はrecompose本体を追加しません。
+
+`Detect`が返すGreenfield補正、submodule情報、off-path producer advisoryは構造化された結果としてInitialや
+StartedIntentへ保持し、producer不在は既存のfail-closed方針に従います。比較対象はこのrepositoryに固定された
+本家AI-DLC `2.6.123`で、今回新しい意図的差分は追加せず、既存のmalformed graph/scope、strict registry、cursor
+通知、stale lock非回収、`os.Root`/nonregular state、producer不在早期拒否の差分だけを引き継ぎます。
+詳細な参照契約と承認済み方針は[StartIntentの参照契約](ram/research/2026-09-03-start-intent-recompose-contracts.md)、
+[実装計画](ram/decisions/2026-09-03-start-intent-plan.md)、[in-flight recompose方針](ram/decisions/2026-09-03-inflight-recompose-policy.md)を参照してください。
 
 ## ビルド情報
 

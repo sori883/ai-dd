@@ -464,7 +464,8 @@ func Build(input Input) (Plan, error)
 ```
 
 `state.BuildInitial`は同じPlanから既存Routingと初期state本文を導出し、`Initial.Plan`にも返します。
-このsliceではPlanをfileへ保存せず、StartIntent、CLI、Stage実行、runtime recomposeへ接続しません。
+このbuilder sliceではPlanをfileへ保存せず、CLI、Stage実行、runtime recomposeへ接続しません。Intent作成から
+builderとwriterまでの接続は、別の`orchestrator.StartIntent`内部APIで行います。
 
 対象testは次で実行します。
 
@@ -532,6 +533,36 @@ unit testは保存順、exact bytes、barrier、各failure point、short write�
 stateのfail-closedを検証します。CIでは`go test -tags=integration -count=1 ./src/internal/state`を専用stepで
 実行します。loopでは全体test、race、vet、lint、cross compile、配布E2Eを実行せず、独立review後に親agentが
 final gateを実施します。
+
+### Intent開始 orchestration（内部API）
+
+`orchestrator.StartIntent`は、callerが解決したscope・説明・repositoryを使い、workspace lock内で
+`CreateIntentWithInitializer`、`workspace.Detect`、`graph.Load`、`scope.ReadAll`、`state.BuildInitial`、
+`state.WriteInitial`を順に接続します。`DataFS`と`ScopesFS`はcaller-ownedの`fs.FS`であり、このAPIはCloseしません。
+初期化の失敗はregistry commit後のpartial Intentをrollbackせず、`StartedIntent.Intent`を保持します。
+`Initial`はwrite前に保持され、`WriteInitial`成功時だけ`InitializationComplete`がtrueになります。
+
+初期stateのStage行には全件`EXECUTE` / `SKIP` suffixが保存されます。`Initial.Plan`はin-memory値で、plan sidecarを作りません。
+将来のrecomposeはstate suffixを正としてpending Stageだけを人間承認後に変更する別Issueです。
+
+```go
+func StartIntent(ctx context.Context, input StartInput) (StartedIntent, error)
+```
+
+loop中の対象検証は次です。
+
+```sh
+go test -count=1 -run '^TestCreateIntentWithInitializer' ./src/internal/workspace
+go test -count=1 ./src/internal/orchestrator
+go test -tags=integration -count=1 ./src/internal/orchestrator
+go test -count=1 -run '^(TestBuildInitial|TestWriteInitial)' ./src/internal/state
+```
+
+各observable behaviorは狭いRED→最小GREEN→green上のrefactorで確認し、変更Go fileへgofmtを適用した後に対象testを再実行します。
+loopでは全package test、race、vet、全体lint、cross compile、配布E2Eを実行しません。commit後のcursor、初期化、Root Close、
+lock releaseの複数errorは`errors.Is`で個別causeを検証し、既存のcommit境界とCreateIntent回帰も対象patternで固定します。
+比較対象とin-flight recomposeの置換方針は[Intent開始 orchestration](architecture.md#intent開始-orchestration)と
+[RAM](ram/decisions/2026-09-03-start-intent-plan.md)を参照してください。
 
 ### Space作成CLI
 

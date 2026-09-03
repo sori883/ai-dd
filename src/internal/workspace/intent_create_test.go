@@ -413,6 +413,210 @@ func TestCreateIntentCallbackRunsBeforeWorkspaceLockRelease(t *testing.T) {
 	}
 }
 
+func TestCreateIntentWithInitializer(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	projectRoot := new(os.Root)
+	intentsRoot := new(os.Root)
+	recordRoot := new(os.Root)
+	lockHeld := false
+	steps := []string{}
+	ops := successfulIntentCreateOps()
+	ops.acquireLock = func(context.Context, string) (workspaceLockReceipt, error) {
+		steps = append(steps, "acquire")
+		lockHeld = true
+		return workspaceLockReceipt{path: "lock", token: "token"}, nil
+	}
+	ops.releaseLock = func(workspaceLockReceipt) error {
+		steps = append(steps, "release")
+		lockHeld = false
+		return nil
+	}
+	ops.openProject = func(path string) (*os.Root, error) {
+		steps = append(steps, "open project "+path)
+		return projectRoot, nil
+	}
+	ops.openChild = func(parent *os.Root, path string) (*os.Root, error) {
+		switch {
+		case parent == projectRoot:
+			steps = append(steps, "open intents "+path)
+			return intentsRoot, nil
+		case parent == intentsRoot:
+			steps = append(steps, "open record "+path)
+			return recordRoot, nil
+		default:
+			t.Fatalf("openChild() received unexpected parent %p and path %q", parent, path)
+			return nil, nil
+		}
+	}
+	ops.readRegistry = func(*os.Root) ([]json.RawMessage, error) {
+		steps = append(steps, "read registry")
+		return []json.RawMessage{}, nil
+	}
+	ops.uuid = func(time.Time) (string, error) {
+		steps = append(steps, "uuid")
+		return "0199-aaaa", nil
+	}
+	ops.resolveDir = func(*os.Root, string) (string, error) {
+		steps = append(steps, "resolve 260901-build-auth")
+		return "260901-build-auth", nil
+	}
+	ops.createRecord = func(*os.Root, string) error {
+		steps = append(steps, "create 260901-build-auth")
+		return nil
+	}
+	ops.writeRegistry = func(*os.Root, []json.RawMessage, intentRegistryEntry) error {
+		steps = append(steps, "write registry")
+		return nil
+	}
+	ops.activeSpace = func(*os.Root) string {
+		steps = append(steps, "read active-space")
+		return "default"
+	}
+	ops.completeActiveSpace = func(*os.Root, string) error {
+		steps = append(steps, "complete active-space")
+		return nil
+	}
+	ops.saveActiveIntent = func(*os.Root, string) error {
+		steps = append(steps, "save active-intent")
+		return nil
+	}
+	ops.closeRoot = func(root *os.Root) error {
+		switch root {
+		case recordRoot:
+			steps = append(steps, "close record")
+		case intentsRoot:
+			steps = append(steps, "close intents")
+		case projectRoot:
+			steps = append(steps, "close project")
+		default:
+			t.Fatalf("closeRoot() received unexpected root %p", root)
+		}
+		return nil
+	}
+	created, err := createIntentWithInitializer(
+		context.Background(),
+		RootInput{ExplicitDir: project},
+		IntentCreateInput{SpaceName: "team", Label: "Build Auth"},
+		ops,
+		func(gotProject, gotRecord *os.Root, got CreatedIntent) error {
+			steps = append(steps, "initialize")
+			if !lockHeld {
+				t.Error("initializer ran after the workspace lock was released")
+			}
+			if gotProject != projectRoot || gotRecord != recordRoot {
+				t.Errorf("initializer roots = (%p, %p), want (%p, %p)", gotProject, gotRecord, projectRoot, recordRoot)
+			}
+			if got.DirName != "260901-build-auth" {
+				t.Errorf("initializer CreatedIntent = %+v, want committed identity", got)
+			}
+			return nil
+		},
+	)
+	if err != nil || created == (CreatedIntent{}) {
+		t.Errorf("createIntentWithInitializer() = (%+v, %v), want committed result", created, err)
+	}
+	wantSteps := []string{
+		"acquire",
+		"open project " + project,
+		"open intents " + filepath.Join("aidlc", "spaces", "team", "intents"),
+		"read registry",
+		"uuid",
+		"resolve 260901-build-auth",
+		"create 260901-build-auth",
+		"write registry",
+		"read active-space",
+		"complete active-space",
+		"save active-intent",
+		"open record 260901-build-auth",
+		"initialize",
+		"close record",
+		"close intents",
+		"close project",
+		"release",
+	}
+	if !slices.Equal(steps, wantSteps) {
+		t.Errorf("steps = %q, want initializer order %q", steps, wantSteps)
+	}
+}
+
+func TestCreateIntentWithInitializerRunsAfterCursorFailure(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	cursorCause := errors.New("active cursor failed")
+	initializerCause := errors.New("initializer failed")
+	closeCause := errors.New("root close failed")
+	releaseCause := errors.New("lock release failed")
+	initialized := false
+	ops := successfulIntentCreateOps()
+	ops.completeActiveSpace = func(*os.Root, string) error {
+		return cursorCause
+	}
+	ops.saveActiveIntent = func(*os.Root, string) error {
+		t.Fatal("saveActiveIntent ran after the first cursor operation failed")
+		return nil
+	}
+	ops.closeRoot = func(*os.Root) error { return closeCause }
+	ops.releaseLock = func(workspaceLockReceipt) error { return releaseCause }
+	created, err := createIntentWithInitializer(
+		context.Background(),
+		RootInput{ExplicitDir: project},
+		IntentCreateInput{SpaceName: "team", Label: "Build Auth"},
+		ops,
+		func(projectRoot, recordRoot *os.Root, got CreatedIntent) error {
+			initialized = true
+			if projectRoot == nil || recordRoot == nil {
+				t.Error("initializer received a nil root")
+			}
+			if got == (CreatedIntent{}) {
+				t.Error("initializer received a zero CreatedIntent")
+			}
+			return initializerCause
+		},
+	)
+	if created == (CreatedIntent{}) || !initialized {
+		t.Errorf("createIntentWithInitializer() = (%+v, %v), want committed result and initializer call", created, err)
+	}
+	for _, cause := range []error{cursorCause, initializerCause, closeCause, releaseCause} {
+		if !errors.Is(err, cause) {
+			t.Errorf("error %v lost cause %v", err, cause)
+		}
+	}
+}
+
+func TestCreateIntentWithInitializerDoesNotRunBeforeRegistryCommit(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	writeCause := errors.New("registry commit failed")
+	initialized := false
+	ops := successfulIntentCreateOps()
+	ops.writeRegistry = func(*os.Root, []json.RawMessage, intentRegistryEntry) error {
+		return writeCause
+	}
+	created, err := createIntentWithInitializer(
+		context.Background(),
+		RootInput{ExplicitDir: project},
+		IntentCreateInput{SpaceName: "team", Label: "Build Auth"},
+		ops,
+		func(*os.Root, *os.Root, CreatedIntent) error {
+			initialized = true
+			return nil
+		},
+	)
+	if created != (CreatedIntent{}) {
+		t.Errorf("pre-commit result = %+v, want zero", created)
+	}
+	if initialized {
+		t.Error("initializer ran before registry commit")
+	}
+	if !errors.Is(err, writeCause) {
+		t.Errorf("createIntentWithInitializer() error = %v, want registry cause", err)
+	}
+}
+
 func TestCreateIntentLockedDoesNotManageWorkspaceLock(t *testing.T) {
 	t.Parallel()
 

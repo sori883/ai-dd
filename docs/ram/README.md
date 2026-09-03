@@ -66,6 +66,8 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [AI-DLC Go実装ロードマップ（概要）](decisions/2026-09-03-aidlc-implementation-roadmap.md) | Accepted（全体順序の粗いメモ） |
 | 意思決定 | [Stage catalog metadataの実装計画](decisions/2026-09-03-stage-catalog-metadata-plan.md) | Accepted（Issue #55、TDD・loop検証・独立review・final gateを記録） |
 | 意思決定 | [Intent開始時Stage Plan builderの実装計画](decisions/2026-09-03-stage-plan-builder-plan.md) | Accepted（Issue #57、ユーザー明示承認済み） |
+| 意思決定 | [StartIntent内部接続の実装計画](decisions/2026-09-03-start-intent-plan.md) | Accepted（Issue #61、ユーザー明示承認済み） |
+| 意思決定 | [in-flight recompose方針](decisions/2026-09-03-inflight-recompose-policy.md) | Accepted（旧ロードマップ／Stage Planの実行中固定方針を置換対象として参照） |
 | 調査 | [既存AI-DLCの配布形式](research/2026-08-29-existing-distribution-format.md) | Current for local v2.6.123 snapshot |
 | 調査 | [共通space読み取りの参照契約](research/2026-08-31-space-reading-contracts.md) | Current for local v2.6.123 snapshot |
 | 調査 | [Space作成の参照契約](research/2026-08-31-space-creation-contracts.md) | Current for local v2.6.123 snapshot（U+0130小文字化の追加調査を含む） |
@@ -82,4 +84,5 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 調査 | [Memory bundle filterの参照契約](research/2026-09-02-memory-bundle-filter-contracts.md) | Current for local v2.6.123 snapshot（substantive判定・ECMAScript trim・comment除去・preamble） |
 | 調査 | [Stage catalog metadataの参照契約](research/2026-09-03-stage-catalog-metadata-contracts.md) | Current for local v2.6.123 snapshot（成果物・consume・依存edge・runtime/compiler境界） |
 | 調査 | [Intent開始時Stage Planの参照契約](research/2026-09-03-stage-plan-contracts.md) | Current for local v2.6.123 snapshot（Plan解決・依存advisory・runtime再読込境界） |
+| 調査 | [StartIntentとin-flight recomposeの参照契約](research/2026-09-03-start-intent-recompose-contracts.md) | Current for local v2.6.123 snapshot（initializer seam・partial Intent・state suffix source・future recompose境界） |
 | 調査 | [Intent候補列挙・現在intent解決の参照契約](research/2026-08-31-intent-reading-contracts.md) | Current for local v2.6.123 snapshot |

@@ -31,6 +31,14 @@ type CreatedIntent struct {
 	SpaceName string
 }
 
+// IntentInitializer performs follow-up initialization while the workspace
+// lock and the project and record roots are still held by CreateIntent.
+type IntentInitializer func(
+	projectRoot *os.Root,
+	recordRoot *os.Root,
+	created CreatedIntent,
+) error
+
 type intentCreateOps struct {
 	acquireLock         func(context.Context, string) (workspaceLockReceipt, error)
 	releaseLock         func(workspaceLockReceipt) error
@@ -79,7 +87,26 @@ func CreateIntent(
 	root RootInput,
 	input IntentCreateInput,
 ) (CreatedIntent, error) {
-	return createIntent(ctx, root, input, systemIntentCreateOps())
+	return createIntentWithInitializer(ctx, root, input, systemIntentCreateOps(), nil)
+}
+
+// CreateIntentWithInitializer creates an intent and invokes initialize after
+// the registry and cursor work has been attempted. The initializer runs while
+// the workspace lock is held and receives explicit project and record roots;
+// both roots remain owned and are closed by this function.
+func CreateIntentWithInitializer(
+	ctx context.Context,
+	root RootInput,
+	input IntentCreateInput,
+	initialize IntentInitializer,
+) (CreatedIntent, error) {
+	return createIntentWithInitializer(
+		ctx,
+		root,
+		input,
+		systemIntentCreateOps(),
+		initialize,
+	)
 }
 
 func systemIntentCreateOps() intentCreateOps {
@@ -158,7 +185,7 @@ func createIntent(
 	input IntentCreateInput,
 	ops intentCreateOps,
 ) (CreatedIntent, error) {
-	return createIntentWithCallback(ctx, root, input, ops, nil)
+	return createIntentWithInitializer(ctx, root, input, ops, nil)
 }
 
 func createIntentWithCallback(
@@ -168,6 +195,22 @@ func createIntentWithCallback(
 	ops intentCreateOps,
 	after func(CreatedIntent) error,
 ) (CreatedIntent, error) {
+	var initialize IntentInitializer
+	if after != nil {
+		initialize = func(_ *os.Root, _ *os.Root, created CreatedIntent) error {
+			return after(created)
+		}
+	}
+	return createIntentWithInitializer(ctx, root, input, ops, initialize)
+}
+
+func createIntentWithInitializer(
+	ctx context.Context,
+	root RootInput,
+	input IntentCreateInput,
+	ops intentCreateOps,
+	initialize IntentInitializer,
+) (CreatedIntent, error) {
 	if ctxErr := context.Cause(ctx); ctxErr != nil {
 		return CreatedIntent{}, ctxErr
 	}
@@ -176,14 +219,11 @@ func createIntentWithCallback(
 		return CreatedIntent{}, err
 	}
 	return withIntentCreateLock(ctx, prepared.projectPath, ops, func() (CreatedIntent, bool, error) {
-		created, committed, err := createIntentLocked(prepared, ops.lockedOperations())
-		if err != nil || after == nil {
-			return created, committed, err
-		}
-		if err := after(created); err != nil {
-			return created, committed, err
-		}
-		return created, committed, nil
+		return createIntentLockedWithInitializer(
+			prepared,
+			ops.lockedOperations(),
+			initialize,
+		)
 	})
 }
 
@@ -234,6 +274,14 @@ func withIntentCreateLock(
 func createIntentLocked(
 	prepared preparedIntentCreate,
 	ops intentCreateLockedOps,
+) (created CreatedIntent, committed bool, err error) {
+	return createIntentLockedWithInitializer(prepared, ops, nil)
+}
+
+func createIntentLockedWithInitializer(
+	prepared preparedIntentCreate,
+	ops intentCreateLockedOps,
+	initialize IntentInitializer,
 ) (created CreatedIntent, committed bool, err error) {
 	projectRoot, err := ops.openProject(prepared.projectPath)
 	if err != nil {
@@ -307,12 +355,74 @@ func createIntentLocked(
 	}
 	sharedSpaceName := ops.activeSpace(projectRoot)
 	if err := ops.completeActiveSpace(projectRoot, sharedSpaceName); err != nil {
-		return created, committed, err
+		if initialize == nil {
+			return created, committed, err
+		}
+		return initializeIntentAfterCursor(
+			created,
+			projectRoot,
+			intentsRoot,
+			dirName,
+			err,
+			ops,
+			initialize,
+		)
 	}
 	if err := ops.saveActiveIntent(intentsRoot, dirName); err != nil {
-		return created, committed, err
+		if initialize == nil {
+			return created, committed, err
+		}
+		return initializeIntentAfterCursor(
+			created,
+			projectRoot,
+			intentsRoot,
+			dirName,
+			err,
+			ops,
+			initialize,
+		)
 	}
-	return created, committed, nil
+	if initialize == nil {
+		return created, committed, nil
+	}
+	return initializeIntentAfterCursor(
+		created,
+		projectRoot,
+		intentsRoot,
+		dirName,
+		nil,
+		ops,
+		initialize,
+	)
+}
+
+func initializeIntentAfterCursor(
+	created CreatedIntent,
+	projectRoot *os.Root,
+	intentsRoot *os.Root,
+	dirName string,
+	cursorErr error,
+	ops intentCreateLockedOps,
+	initialize IntentInitializer,
+) (result CreatedIntent, committed bool, err error) {
+	recordRoot, err := ops.openChild(intentsRoot, dirName)
+	if err != nil {
+		return created, true, errors.Join(
+			cursorErr,
+			fmt.Errorf("open intent record root %q: %w", dirName, err),
+		)
+	}
+	defer func() {
+		if closeErr := ops.closeRoot(recordRoot); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close intent record root %q: %w", dirName, closeErr))
+		}
+	}()
+
+	initializeErr := initialize(projectRoot, recordRoot, created)
+	if initializeErr != nil {
+		initializeErr = fmt.Errorf("initialize intent %q: %w", dirName, initializeErr)
+	}
+	return created, true, errors.Join(cursorErr, initializeErr)
 }
 
 func uuidV7(now time.Time, random io.Reader) (string, error) {
