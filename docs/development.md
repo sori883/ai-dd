@@ -766,6 +766,40 @@ go test -tags=integration -count=1 -run '^Test(ReadDocumentIntegration|OpenGateI
 固定snapshotの確認範囲、受入条件、未対応phase境界、実装記録は[承認ゲート遷移と人間応答監査記録の接続計画](ram/decisions/2026-09-04-approval-gate-receipt-plan.md)を参照してください。
 独立review後の全package test、race、vet、cross buildなどのfinal gateは親agentが差分安定後に一度だけ実行します。
 
+### 承認から次Stage・workflow完了（内部API）
+
+`orchestrator.ApproveGate`は、自身でrecord lockを取得し、identity-bound Rootからstateとauditをfresh readして、通常Stageの
+承認を次Stage開始またはworkflow完了へ接続します。`HUMAN_TURN`は生成せず、choice、timestamp、監査record、次Stageをcallerの
+権限として扱いません。`validateApprovalGateDecision`のfresh receipt検証、完了条件、保存suffix、graph順序、scope、能力、
+revision backstopを承認auditより前に通過させます。Initialization／Construction、summary（`if-present`含む）、pipeline、reviewer、
+sensor、per-unit、CodeKB、workspace要求はこのwalking skeletonの対象外です。
+
+保存は一つのlock内で二段階です。第一段階で`[?]`を`[x]`へ変更し、`Completed`を`[x]`件数から再集計して、
+`GATE_APPROVED`、`STAGE_COMPLETED`を先にappendして第一stateを保存します。その後stateをfresh readし、保存済み`EXECUTE`／`SKIP`
+suffixとgraph順序から次の未完Stageを導出します。次StageがあればstateのCurrent Stage／In Progress／Next Stage／Lifecycle Phase／
+Active Agent／Next Actionとmarkerを更新し、同phaseは`STAGE_STARTED`、phase境界は`PHASE_COMPLETED`→`PHASE_VERIFIED`→
+`PHASE_STARTED`→`STAGE_STARTED`を順にappendします。次StageがなければStatusを`Completed`、In Progress／Next Stageを`none`、
+Next Actionを`Workflow complete`、最終phaseを`Verified`にして終端イベントをappendします。
+
+未記録revisionの補完はせず、成果物の変更がbackstopで検出された場合や、同秒別shardの順序に判定が依存する場合はunsupportedで停止します。
+backstopの同時刻順列挙は最大256件で、上限超過もfail-closedです。既存artifact presenceとaudit照合は`artifact.Filename`を共有し、
+`traceability`やtest-resultsのfilename例外を二重定義しません。第一state保存後の失敗はaudit／stateをrollbackせず、
+`ApproveResult.ApprovalSaved`と`FinalTransitionComplete`で部分成功を表します。
+
+loopでは次の対象だけを実行します。
+
+```sh
+go test -count=1 -run '^TestDeriveNextStage' ./src/internal/orchestrator
+go test -count=1 -run '^TestRevisionBackstop' ./src/internal/orchestrator
+go test -tags=integration -count=1 -run '^TestApproveGateIntegration' ./src/internal/orchestrator
+go test -count=1 -run '^(TestTransitionFieldAccessorsReadCanonicalSections|TestPatchNextActionAllowsInternalSpacesAndRejectsUnsafeValues)$' ./src/internal/state
+```
+
+変更Go fileはgofmt後に同じtargeted testを再実行します。全package test、race、vet、cross build、配布E2Eは、独立review後に
+親agentがfinal gateで一度だけ実施します。受入条件、実装記録、固定AI-DLC `2.6.123`の確認範囲は
+[承認から次Stage・workflow完了までの接続計画](ram/decisions/2026-09-04-approve-advance-plan.md)と
+[report・approval・state遷移契約](ram/research/2026-09-03-thin-lifecycle-transition-contracts.md)に記録しています。
+
 ### Intent開始 orchestration（内部API）
 
 `orchestrator.StartIntent`は、callerが解決したscope・説明・repositoryを使い、workspace lock内で

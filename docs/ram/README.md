@@ -78,7 +78,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [既存state atomic update writerの実装計画](decisions/2026-09-03-state-update-writer-plan.md) | Accepted（薄いライフサイクルマイルストーン内） |
 | 意思決定 | [最小audit ledgerとrecord lockの実装計画](decisions/2026-09-03-audit-record-lock-plan.md) | Accepted（薄いライフサイクルマイルストーン内） |
 | 意思決定 | [承認ゲート遷移と人間応答監査記録の接続計画](decisions/2026-09-04-approval-gate-receipt-plan.md) | Accepted（Issue #79、薄いライフサイクルPR5、reader所有の承認根拠・ECMAScript trim回帰修正を記録） |
-| 意思決定 | [承認から次Stage・workflow完了までの接続計画](decisions/2026-09-04-approve-advance-plan.md) | Accepted（Issue #81、薄いライフサイクルPR6、二段階audit-first保存） |
+| 意思決定 | [承認から次Stage・workflow完了までの接続計画](decisions/2026-09-04-approve-advance-plan.md) | Accepted（Issue #81、薄いライフサイクルPR6、二段階audit-first保存・実装記録） |
 | 調査 | [既存AI-DLCの配布形式](research/2026-08-29-existing-distribution-format.md) | Current for local v2.6.123 snapshot |
 | 調査 | [共通space読み取りの参照契約](research/2026-08-31-space-reading-contracts.md) | Current for local v2.6.123 snapshot |
 | 調査 | [Space作成の参照契約](research/2026-08-31-space-creation-contracts.md) | Current for local v2.6.123 snapshot（U+0130小文字化の追加調査を含む） |
@@ -99,5 +99,5 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 調査 | [保存済み state readerの参照契約](research/2026-09-03-state-reader-contracts.md) | Current for local v2.6.123 snapshot（canonical state・strict parse・Root境界・意図的差分） |
 | 調査 | [Current directive resolverの参照契約](research/2026-09-03-current-directive-contracts.md) | Current for local v2.6.123 snapshot（Branch 10・terminal 2形・suffix authority・意図的差分） |
 | 調査 | [Stage completion artifact presenceの参照契約](research/2026-09-03-stage-artifact-presence-contracts.md) | Current for local v2.6.123 snapshot（通常Stage any-of存在、filename例外、段階的境界） |
-| 調査 | [薄いライフサイクルのreport・approval・state遷移契約](research/2026-09-03-thin-lifecycle-transition-contracts.md) | Current for local v2.6.123 snapshot（guard順、marker、audit-first、state advance） |
+| 調査 | [薄いライフサイクルのreport・approval・state遷移契約](research/2026-09-03-thin-lifecycle-transition-contracts.md) | Current for local v2.6.123 snapshot（guard順、marker、audit-first、state advance、PR6接続確認） |
 | 調査 | [Intent候補列挙・現在intent解決の参照契約](research/2026-08-31-intent-reading-contracts.md) | Current for local v2.6.123 snapshot |

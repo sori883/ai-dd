@@ -34,6 +34,12 @@ const (
 	CanonicalFieldLastUpdated CanonicalField = "Last Updated"
 	// CanonicalFieldRevisionCount identifies the runtime revision count field.
 	CanonicalFieldRevisionCount CanonicalField = "Revision Count"
+	// CanonicalFieldActiveAgent identifies the current lead agent field.
+	CanonicalFieldActiveAgent CanonicalField = "Active Agent"
+	// CanonicalFieldLastCompletedStage identifies the resume-point stage field.
+	CanonicalFieldLastCompletedStage CanonicalField = "Last Completed Stage"
+	// CanonicalFieldNextAction identifies the resume-point action field.
+	CanonicalFieldNextAction CanonicalField = "Next Action"
 )
 
 // FieldPatch replaces one typed canonical field value after checking its
@@ -142,6 +148,7 @@ const (
 	fieldValueCount
 	fieldValueLifecyclePhase
 	fieldValueWorkflowStatus
+	fieldValueNextAction
 )
 
 type canonicalFieldDefinition struct {
@@ -170,6 +177,12 @@ func canonicalFieldDefinitionFor(field CanonicalField) (canonicalFieldDefinition
 		return canonicalFieldDefinition{section: "Current Status", label: "Last Updated", kind: fieldValueScalar}, true
 	case CanonicalFieldRevisionCount:
 		return canonicalFieldDefinition{section: "Runtime State", label: "Revision Count", kind: fieldValueCount}, true
+	case CanonicalFieldActiveAgent:
+		return canonicalFieldDefinition{section: "Project Information", label: "Active Agent", kind: fieldValueScalar}, true
+	case CanonicalFieldLastCompletedStage:
+		return canonicalFieldDefinition{section: "Session Resume Point", label: "Last Completed Stage", kind: fieldValueStage}, true
+	case CanonicalFieldNextAction:
+		return canonicalFieldDefinition{section: "Session Resume Point", label: "Next Action", kind: fieldValueNextAction}, true
 	default:
 		return canonicalFieldDefinition{}, false
 	}
@@ -220,6 +233,10 @@ func validateFieldValue(kind fieldValueKind, value string) error {
 	case fieldValueWorkflowStatus:
 		if _, ok := parseWorkflowStatus(value); !ok {
 			return invalidPatch("invalid workflow status %q", value)
+		}
+	case fieldValueNextAction:
+		if !validCanonicalSingleLine(value) || strings.TrimSpace(value) != value {
+			return invalidPatch("next action must be nonempty, valid utf-8, and a single line without surrounding whitespace")
 		}
 	default:
 		return invalidPatch("unknown field value kind %d", kind)

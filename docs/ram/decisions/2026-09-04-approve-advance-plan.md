@@ -85,6 +85,7 @@ canonical field読取りaccessorは必要最小限とし既存Parse受理範囲�
 - src/internal/orchestrator/approve.go、advance.go（必要時）、revision_backstop.goと対応unit/integration tests
 - gate.go/decision.go private helperの最小共有
 - src/internal/state/document.go、patch.goと対応tests
+- src/internal/artifact/presence.goの既存filename変換を共有する最小変更（例外の重複定義を防ぐ）
 - docs/architecture.md、docs/development.md、本計画、transition-contract調査RAM、RAM索引
 
 既存public CLI、DataFS/ScopesFSのproduction選択、trusted human取得元、workspace registry updaterは変更しない。
@@ -124,3 +125,31 @@ aidlc-lib.ts:16569（field）,21852–21903（next）、t232-phase-progress-flip
 保持する保存suffix authorityとstrict canonical境界は既承認。新しい恒久的な意図的差分は採用しない。
 production接続、回復、registry同期を決める場合は別承認gate。失敗時に残る中間state/auditは自動修復しない。
 
+## 実装記録（PR6）
+
+Issue #81の実装は本計画の所有範囲に限定した。`state`へActive Agent／Last Completed Stage／Next Actionのcanonical accessorと
+patch allowlistを追加し、Next Actionは内部空白を許容する安全な単行値として扱った。U+2028／U+2029も行区切りとして拒否し、
+既存のParse受理範囲とunknown bytes保持を変更していない。artifact presenceとrevision backstopのfilename変換は
+`artifact.Filename`へ共有し、既存のfilename例外を二重定義しないようにした。
+
+`deriveNextStage`は保存済み`EXECUTE`／`SKIP` suffixとgraph順序、既知scope、state rowの整合性を検証し、stored Next Stageやcaller
+指定の次Stageをauthorityにしない。`revisionBackstopRequired`はfresh `audit.ReadEvents`の結果だけを入力に、organic gate／restart／
+recovered／reject／artifact filename／Windows separator／same-second cross-shardを判定する。候補順列挙は256件を上限とし、上限超過と
+候補間の判定相違をunsupportedへ倒す。
+
+`ApproveGate`は一回の`recordlock.With`内で、fresh receipt・exact choice・completion・capability・backstopを検証した後、第一auditと
+第一stateを保存する。第一stateを読み直して次Stageまたは終端を導出し、第二auditと第二stateを保存する。audit/stateの各失敗点、
+partial result、再承認拒否、unknown bytes／Revision Count保持、同record競合、lock内再読取、phase境界・終端のevent順を
+実Root integration testで確認した。HUMAN_TURNはmintせず、Guardは結果へ公開していない。
+
+代表的なloop RED／GREENは次のとおりである。
+
+| slice | RED evidence | GREEN evidence |
+| --- | --- | --- |
+| state追加fieldの単行境界 | U+2028／U+2029をNext Actionへ渡すtestが旧validatorで`error = nil`となった | `validCanonicalSingleLine`へ区切り文字拒否を追加後、`TestPatchNextActionAllowsInternalSpacesAndRejectsUnsafeValues`成功 |
+| routing／backstop | 新規helper／API追加直後は対象識別子未定義のcompile REDを観測 | `TestDeriveNextStage`、`TestRevisionBackstop`、order上限test成功 |
+| approve transaction | 新規`ApproveGate` integration testは実装前に未定義APIのcompile REDを観測 | `TestApproveGateIntegration`全件、gofmt後にintegration GREEN |
+
+変更後のloop確認は、state accessor／patch、routing、backstop、Approve integrationのtargeted testだけを実行した。full test、race、
+vet、cross build、Issue／PR／commit操作はこの実装担当では行っていない。audit-first後の非対称durability、productionのtrusted receipt
+取得元、registry status同期、fsync／電源断耐性は計画どおり残余riskである。

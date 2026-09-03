@@ -38,7 +38,7 @@ func HasRequiredOutput(recordFS fs.FS, stage graph.Stage) (bool, error) {
 	}
 
 	for _, artifact := range stage.Produces {
-		filename := artifactFilename(artifact)
+		filename := Filename(artifact)
 		candidate := path.Join(stage.Phase, stage.Slug, filename)
 		info, err := fs.Stat(recordFS, candidate)
 		if err != nil {
@@ -71,7 +71,10 @@ func validateStageMetadata(stage graph.Stage) error {
 	return nil
 }
 
-func artifactFilename(name string) string {
+// Filename returns the canonical file name for one declared artifact. The
+// mapping is shared by presence checks and audit evidence matching so a
+// filename exception cannot drift between the two readers.
+func Filename(name string) string {
 	switch name {
 	case "traceability":
 		return "traceability.json"
@@ -81,3 +84,5 @@ func artifactFilename(name string) string {
 		return name + ".md"
 	}
 }
+
+func artifactFilename(name string) string { return Filename(name) }
