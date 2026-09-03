@@ -44,7 +44,7 @@ gate/Approveのfresh監査読取りをbinding helperへ置換してはならな�
 報告種別はawaiting-approval/rejected/revised/approvedの4種類。自由文やbooleanから種類を推測しない。
 それぞれOpenGate/RejectGate/ReviseGate/ApproveGateへ一度だけ委譲する。操作は下位transactionがlockを所有するので、
 Reportに外側wrapper lockを置かない。approved後にさらにadvance/completeを呼ばない。
-報告対象slugを必須にし、空/未知kind、空slug、他Stageの古い報告を拒否。
+報告対象slugとCurrent stageを必須にし、両者が同じcanonical slugであることを確認する。空/未知kind、空slug、zero Current、他Stageの古い報告を拒否。
 approvedはexact choice、rejectedはRequest Changes+feedbackを保持する。承認の根拠は下位のfresh ledgerで確認。
 gate未開始[-]を黙って開いて承認、settled Stage再報告によるrecovery、Initialization nongated completion、
 CLIのdone/complete alias parserは追加しない。
@@ -100,7 +100,7 @@ production供給元・公開CLI・registry同期・回復・新依存は追加�
 loopで1 behaviorずつRED/GREEN:
 1. binding helperとNext freshread/nonmutation
 2. 4種類、エラー/unsupported、metadata ownership（Directive回帰を含む）
-3. Reportの単一委譲、必須kind/slug、古い報告とchoice/feedback
+3. Reportの単一委譲、必須kind/slug/Current、古い報告とchoice/feedback
 4. 部分結果伝播と中間state非回復
 5. StartIntentから終端の実FS E2E、reject/revise/再利用拒否/SKIP/phase/byte保持
 6. 同じE2EをCIへ接続
@@ -138,6 +138,7 @@ directive結果を保存suffixから分類し、`Directive.Stage`とstate conten
 委譲し、下位transactionのpartial result／errorを保持した。StartIntent起点のintegration testでは、成果物、fresh receipt、
 reject/revise、SKIP、phase境界、終端、unknown bytes、registry未同期、無関係record、terminal後のaudit／graph／artifact欠落を一周確認した。
 
-受入対象のGo変更は標準ライブラリのみで、公開CLI、registry同期、production dispatcher、state/audit形式の拡張は行っていない。CIの
+受入対象のGo変更は標準ライブラリのみで、公開CLI、registry同期、production dispatcher、state/audit形式の拡張は行っていない。Reportは
+Current stageを省略できず、Slugとの完全一致を委譲前に検証する。CIの
 quality jobにはaudit／recordlock／orchestrator integrationをrace・shuffle付きで追加した。loopでの対象確認結果は実装担当の完了報告に
 記録し、全体test・race・vet・cross build・GitHub checksは親agentのfinal gateへ委譲する。

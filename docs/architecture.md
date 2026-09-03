@@ -1066,10 +1066,10 @@ registry、cursorを変更せず、返却stateとdirectiveのnested metadataをc
 エラー時はzero resultを返し、未完Initialization／Construction、未対応capability、stateとcatalogの不整合を完了へ読み替えません。
 終端の判定にはaudit本文、graph、artifactの存在を要求しませんが、root bindingは常に確認します。
 
-`orchestrator.Report`は`awaiting-approval`、`rejected`、`revised`、`approved`の4種を明示的に受け、対応する
-`OpenGate`、`RejectGate`、`ReviseGate`、`ApproveGate`へ一度だけ委譲します。Report自身はlockを取得せず、approved後に別advanceを呼ばず、
-下位操作のpartial resultとerrorを保持して返します。choice、fresh HUMAN_TURN、artifact、state/audit bindingの権限判断は既存gate transactionへ
-委譲し、Reportは自由文やbooleanから種別を推測しません。
+`orchestrator.Report`は`awaiting-approval`、`rejected`、`revised`、`approved`の4種を明示的に受け、必須のCurrent stageとSlugが
+同じcanonical slugであることを確認してから、対応する`OpenGate`、`RejectGate`、`ReviseGate`、`ApproveGate`へ一度だけ委譲します。
+Report自身はlockを取得せず、approved後に別advanceを呼ばず、下位操作のpartial resultとerrorを保持して返します。choice、fresh HUMAN_TURN、
+artifact、state/audit bindingの権限判断は既存gate transactionへ委譲し、Reportは自由文やbooleanから種別を推測しません。
 
 integration tag付きの`lifecycle_integration_test.go`は`StartIntent`が実filesystemへ作ったrecordを起点に、成果物、gate、fresh human receipt、
 reject/revise、保存suffix優先のSKIP、phase境界、終端Nextまでを一周します。fixture以外は既存内部APIを通し、unknown state bytes、registryの

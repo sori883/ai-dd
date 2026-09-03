@@ -808,9 +808,9 @@ bindingを確認してdirectiveを分類します。保存済みstateのsuffix�
 cursorを変更せず、terminal判定ではaudit本文、graph、artifactを要求しません。未対応phase/capability、currentの不整合、lock releaseを含む
 エラーは成功扱いにせず、エラー時のresultはzeroです。`Directive.Stage()`とNextのContentはnested sliceを含めて独立copyです。
 
-`Report`のkindは`awaiting-approval`、`rejected`、`revised`、`approved`の4種に限定し、必須slugを検証した後、対応する既存gateを
-一度だけ委譲します。Reportに外側lockを置かず、approved後のadvanceも行いません。下位のgate／Approve transactionがfresh audit、exact choice、
-artifact、bindingを検証し、partial resultとerrorはReportから失われません。
+`Report`のkindは`awaiting-approval`、`rejected`、`revised`、`approved`の4種に限定し、必須のCurrent stageとSlugが同じcanonical slugで
+あることを検証した後、対応する既存gateを一度だけ委譲します。Reportに外側lockを置かず、approved後のadvanceも行いません。下位のgate／
+Approve transactionがfresh audit、exact choice、artifact、bindingを検証し、partial resultとerrorはReportから失われません。
 
 StartIntentから終端までの実filesystem確認はintegration tag付きtestで実行します。fixtureが配置するartifactと`HUMAN_TURN`以外は既存APIを
 使用し、reject/revise、旧receipt再利用拒否、SKIP、phase境界、unknown state bytes、registry status未同期、無関係record、terminal後の

@@ -26,8 +26,9 @@ const (
 )
 
 // ReportInput identifies the stage result and the identity-bound roots used by
-// the delegated gate operation. Slug is required even when Current contains a
-// stage, so an old report cannot silently target a different stage.
+// the delegated gate operation. Slug and Current.Slug are both required and
+// must match, so an old or incomplete report cannot silently target a
+// different stage.
 type ReportInput struct {
 	Identity    recordlock.Identity
 	ProjectRoot *os.Root
@@ -121,8 +122,8 @@ func validateReportInput(ctx context.Context, input ReportInput) error {
 	if !validReportSlug(input.Slug) {
 		return fmt.Errorf("report: stage slug is required and must be a single canonical token: %w", ErrInvalidReport)
 	}
-	if input.Current.Slug != "" && input.Current.Slug != input.Slug {
-		return fmt.Errorf("report: requested slug %q differs from current stage %q: %w", input.Slug, input.Current.Slug, ErrInvalidReport)
+	if input.Current.Slug == "" || input.Current.Slug != input.Slug {
+		return fmt.Errorf("report: requested slug %q must exactly match non-empty current stage %q: %w", input.Slug, input.Current.Slug, ErrInvalidReport)
 	}
 	switch input.Kind {
 	case ReportKindAwaitingApproval, ReportKindRejected, ReportKindRevised, ReportKindApproved:

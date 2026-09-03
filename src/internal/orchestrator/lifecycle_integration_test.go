@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -194,6 +195,105 @@ func TestReportIntegrationOpensAndApprovesStartIntentGate(t *testing.T) {
 	}
 	if result.Approval.State.WorkflowStatus() != state.WorkflowStatusCompleted {
 		t.Fatalf("Report(approved) status = %q, want Completed", result.Approval.State.WorkflowStatus())
+	}
+}
+
+func TestReportIntegrationRejectsForeignSlugWithoutCurrent(t *testing.T) {
+	tests := []struct {
+		name string
+		kind ReportKind
+	}{
+		{name: "awaiting approval", kind: ReportKindAwaitingApproval},
+		{name: "rejected", kind: ReportKindRejected},
+		{name: "revised", kind: ReportKindRevised},
+		{name: "approved", kind: ReportKindApproved},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newLifecycleIntegrationFixture(t)
+			stage := lifecycleStage(t, fixture.catalog, "ideation-first")
+			prepareForeignReportFixture(t, fixture, stage, test.kind)
+			stateBefore, err := fixture.recordRoot.ReadFile("aidlc-state.md")
+			if err != nil {
+				t.Fatal(err)
+			}
+			auditBefore := lifecycleAuditSnapshot(t, fixture)
+
+			choice, feedback := "", ""
+			if test.kind == ReportKindRejected {
+				choice, feedback = "Request Changes", "Please revise this stage"
+			}
+			if test.kind == ReportKindApproved {
+				choice = "Approve"
+			}
+			input := lifecycleReportInputWithChoice(fixture, stage, test.kind, choice, feedback)
+			input.Current = graph.Stage{}
+			input.Slug = "foreign-stage"
+			result, err := Report(context.Background(), input)
+			if !errors.Is(err, ErrInvalidReport) {
+				t.Fatalf("Report(%s) = (%+v, %v), want ErrInvalidReport", test.kind, result, err)
+			}
+			stateAfter, err := fixture.recordRoot.ReadFile("aidlc-state.md")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(stateAfter) != string(stateBefore) {
+				t.Fatalf("Report(%s) changed state for foreign slug", test.kind)
+			}
+			if auditAfter := lifecycleAuditSnapshot(t, fixture); !reflect.DeepEqual(auditAfter, auditBefore) {
+				t.Fatalf("Report(%s) changed audit for foreign slug: before=%#v after=%#v", test.kind, auditBefore, auditAfter)
+			}
+		})
+	}
+}
+
+func TestReportIntegrationRejectsCanonicalForeignCurrentWithoutMutation(t *testing.T) {
+	tests := []struct {
+		name string
+		kind ReportKind
+	}{
+		{name: "awaiting approval", kind: ReportKindAwaitingApproval},
+		{name: "rejected", kind: ReportKindRejected},
+		{name: "revised", kind: ReportKindRevised},
+		{name: "approved", kind: ReportKindApproved},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newLifecycleIntegrationFixture(t)
+			stage := lifecycleStage(t, fixture.catalog, "ideation-first")
+			prepareForeignReportFixture(t, fixture, stage, test.kind)
+			stateBefore, err := fixture.recordRoot.ReadFile("aidlc-state.md")
+			if err != nil {
+				t.Fatal(err)
+			}
+			auditBefore := lifecycleAuditSnapshot(t, fixture)
+			foreignStage := lifecycleStage(t, fixture.catalog, "ideation-second")
+
+			choice, feedback := "", ""
+			if test.kind == ReportKindRejected {
+				choice, feedback = "Request Changes", "Please revise this stage"
+			}
+			if test.kind == ReportKindApproved {
+				choice = "Approve"
+			}
+			input := lifecycleReportInputWithChoice(fixture, foreignStage, test.kind, choice, feedback)
+			result, err := Report(context.Background(), input)
+			if !errors.Is(err, ErrInvalidGate) {
+				t.Fatalf("Report(%s) = (%+v, %v), want ErrInvalidGate", test.kind, result, err)
+			}
+			stateAfter, err := fixture.recordRoot.ReadFile("aidlc-state.md")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(stateAfter) != string(stateBefore) {
+				t.Fatalf("Report(%s) changed state for canonical foreign current", test.kind)
+			}
+			if auditAfter := lifecycleAuditSnapshot(t, fixture); !reflect.DeepEqual(auditAfter, auditBefore) {
+				t.Fatalf("Report(%s) changed audit for canonical foreign current: before=%#v after=%#v", test.kind, auditBefore, auditAfter)
+			}
+		})
 	}
 }
 
@@ -567,6 +667,59 @@ func lifecycleReportInputWithChoice(fixture lifecycleIntegrationFixture, stage g
 		Kind: kind, Slug: stage.Slug, Current: stage, Catalog: fixture.catalog,
 		Choice: choice, Feedback: feedback,
 	}
+}
+
+func prepareForeignReportFixture(t *testing.T, fixture lifecycleIntegrationFixture, stage graph.Stage, kind ReportKind) {
+	t.Helper()
+	artifactPath := filepath.Join(fixture.recordDir, stage.Phase, stage.Slug, artifact.Filename(stage.Produces[0]))
+	if err := os.MkdirAll(filepath.Dir(artifactPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(artifactPath, []byte("foreign report evidence"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	switch kind {
+	case ReportKindAwaitingApproval:
+		return
+	case ReportKindRejected:
+		appendLifecycleHumanTurn(t, fixture.identity, fixture.projectRoot, fixture.recordRoot)
+	case ReportKindRevised:
+		appendLifecycleHumanTurn(t, fixture.identity, fixture.projectRoot, fixture.recordRoot)
+		if _, err := Report(context.Background(), lifecycleReportInputWithChoice(fixture, stage, ReportKindRejected, "Request Changes", "Please revise this stage")); err != nil {
+			t.Fatalf("prepare rejected state: %v", err)
+		}
+	case ReportKindApproved:
+		if _, err := Report(context.Background(), lifecycleReportInput(fixture, stage, ReportKindAwaitingApproval)); err != nil {
+			t.Fatalf("prepare awaiting state: %v", err)
+		}
+		appendLifecycleHumanTurn(t, fixture.identity, fixture.projectRoot, fixture.recordRoot)
+	default:
+		t.Fatalf("unsupported fixture report kind %q", kind)
+	}
+}
+
+func lifecycleAuditSnapshot(t *testing.T, fixture lifecycleIntegrationFixture) map[string][]byte {
+	t.Helper()
+	auditDir := filepath.Join(fixture.recordDir, "audit")
+	entries, err := os.ReadDir(auditDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := make(map[string][]byte, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			t.Fatalf("audit snapshot found directory %q", entry.Name())
+		}
+		content, err := os.ReadFile(filepath.Join(auditDir, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		snapshot[entry.Name()] = content
+	}
+	return snapshot
 }
 
 func lifecycleStage(t *testing.T, catalog graph.Snapshot, slug string) graph.Stage {
