@@ -1,21 +1,21 @@
 ---
 name: go-tdd
-description: "Implement approved Go changes through observable Red-Green-Refactor slices and fresh verification evidence. Use only when an approved plan and GitHub Issue exist; stop before adding unapproved dependencies or expanding scope."
+description: "Implement authorized Go changes through observable Red-Green-Refactor slices and fresh verification evidence. Use only when a directly approved or roadmap- or milestone-authorized plan and GitHub Issue exist; stop before unapproved dependencies or scope expansion."
 ---
 
 # Go TDD
 
-Implement one approved Go change as the sole writer. Always load `$golang-how-to` and `$golang-testing`, then load any task-specific Go skills routed by `$golang-how-to`.
+Implement one authorized Go change as the sole writer. Always load `$golang-how-to` and `$golang-testing`, then load any task-specific Go skills routed by `$golang-how-to`.
 
 ## Preconditions
 
 Before editing, verify that the parent supplied:
 
-- an explicitly approved plan;
+- a self-contained plan with either direct user approval or a named approved roadmap／milestone that fully contains it;
 - a GitHub Issue identifying the work;
 - acceptance criteria and the owned files or packages.
 
-If any precondition is missing, or an external Go module or tool is required without explicit approval, stop and return every missing gate in one response. Do not install `gotests`, `testify`, `goleak`, `golangci-lint`, or another tool merely because a referenced skill mentions it.
+If any precondition is missing, the plan's authorization boundary is ambiguous, or an external Go module or tool is required without explicit approval, stop and return every missing gate in one response. Do not install `gotests`, `testify`, `goleak`, `golangci-lint`, or another tool merely because a referenced skill mentions it.
 
 ## Verification Mode
 
@@ -62,6 +62,6 @@ to `loop`; do not reuse the old result.
 
 ## Boundaries
 
-- Do not expand beyond the approved plan or edit unrelated user changes.
+- Do not expand beyond the authorized plan or edit unrelated user changes.
 - Do not use additional writer agents or delegate nested implementation work.
 - Leave independent review, commits, Issue updates, and PR operations to the parent unless they are explicitly delegated.

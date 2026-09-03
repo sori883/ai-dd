@@ -443,7 +443,7 @@ go test -count=1 ./src/internal/state
 ```
 
 これらはTDDのRED/GREEN、gofmt後のtargeted確認に使います。loopでは全package test、race、vet、lint、
-cross compile、配布E2Eを実行しません。独立review後に差分が安定した場合だけ、親agentが承認済み計画の
+cross compile、配布E2Eを実行しません。独立review後に差分が安定した場合だけ、親agentが実装許可のある計画の
 final gateを一度実施します。根拠と確認範囲は[初期 state builderの参照契約](ram/research/2026-09-02-initial-state-builder-contracts.md)、
 計画と実施記録は[初期 state builderの実装計画](ram/decisions/2026-09-02-initial-state-builder-plan.md)を参照してください。
 
@@ -812,8 +812,13 @@ repository外の承認済みlocal sandboxへ実行物を配置して確認する
 
 ## 変更手順
 
-1. GitHub Issueと承認済み計画でscopeを固定します。
+1. GitHub Issue、詳細計画、直接承認または包括承認枠による実装許可でscopeを固定します。
 2. observable behaviorを表す失敗testを追加してREDを確認します。
 3. 最小実装でGREENにし、testがgreenの間だけrefactorします。
 4. 上記のローカル検証を実行します。
-5. Issueへ紐づくPRを作成します。自動mergeは行いません。
+5. Issueへ紐づくPRを作成します。独立review、final検証、対象workflowのGitHub checksが成功したら、
+   manual mergeの指定がない限り自律的にmergeし、default branchへの反映とIssue Closeを確認します。
+
+包括承認枠は、複数の小さなIssue・PRを含むroadmapまたはmilestoneへの実装許可です。各PRの粒度、
+TDD、独立review、final検証は変えず、個別計画ごとの承認待ちだけを省きます。適用条件と人間へ確認する
+条件は[カスタムエージェント運用](agent-workflow.md#実装許可と包括承認枠)を参照してください。

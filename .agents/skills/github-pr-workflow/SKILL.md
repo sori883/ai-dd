@@ -1,6 +1,6 @@
 ---
 name: github-pr-workflow
-description: "GitHub IssueやPull Requestを日本語で作成・更新・参照し、マージ済みPRを起点に現在の実装状況を確認する。Issue作成、PR作成、PR状態確認、実装済み機能の調査に使う。コード実装や自動マージには使わない。"
+description: "GitHub IssueやPull Requestを日本語で作成・更新・参照・マージし、マージ済みPRを起点に現在の実装状況を確認する。Issue作成、PR作成、PR状態確認、自律マージ、実装済み機能の調査に使う。コード実装には使わない。"
 ---
 
 # GitHub Issue・PR運用
@@ -22,6 +22,8 @@ GitHub上の変更記録を、後から実装状況を判断できる日本語�
   [PR作成](references/pr-creation.md)を読む。
 - PRの状態、変更内容、または現在実装されている機能を確認するときだけ
   [PR参照](references/pr-inspection.md)を読む。
+- PRを自律的にmergeするときだけ
+  [PRマージ](references/pr-merge.md)を読む。
 
 複数の操作を依頼された場合は該当する文書だけを順に読み、無関係な文書は読み込まない。
 
@@ -49,7 +51,9 @@ GitHub上の変更記録を、後から実装状況を判断できる日本語�
 - IssueやPRを作る前に既存の同一対象を検索し、再実行時は重複作成せず既存項目を確認する。
 - Issueの分類ラベルは[Issue作成](references/issue-creation.md)に定めるリポジトリ規則で決める。
   それ以外のラベル、担当者、milestone、reviewerを推測して設定しない。
-- 自動マージを設定しない。mergeはユーザーが明示的に依頼した場合だけ行う。
+- 直接承認または包括承認枠による実装許可があり、ユーザーがmanual mergeを指定していない場合は、
+  [PRマージ](references/pr-merge.md)の品質gateを満たしたPRを自律的にmergeできる。
+- check未開始、pending、failure、cancelを成功扱いせず、repositoryの保護規則やcheckを迂回しない。
 - mergeと作業完了を確認するまでIssueをcloseしない。自動closeされなかった場合も、条件を
   確認してからcloseする。
 - GitHub CLI、認証、remote、または必要な権限が使えない場合は、作成済みと装わず、
