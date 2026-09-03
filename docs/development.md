@@ -618,6 +618,29 @@ go test -count=1 -run '^TestDirective' ./src/internal/orchestrator
 go test -count=1 ./src/internal/orchestrator
 ```
 
+### Stage completion artifact presence（内部API）
+
+`artifact.HasRequiredOutput(recordFS fs.FS, stage graph.Stage) (bool, error)`は、非per-unit・非CodeKBの通常Stageに
+宣言されたrequired `Produces` の少なくとも1件が、Intent record rootから見たcanonical pathのregular fileとして
+存在するかをread-onlyに判定します。`Produces` が空ならnil FSでもtrueです。非空の場合は `Phase`、`Slug`、
+各artifact名を `^[a-z][a-z0-9-]*$` として先に検証し、`ErrInvalidMetadata` またはnil FSの
+`ErrInvalidFilesystem` を `errors.Is` で判定できるerrorとして返します。
+
+通常のpathは `<phase>/<stage>/<artifact>.md` です。`traceability` は `traceability.json`、
+`build-test-results` と `load-test-results` は `test-results.md` になります。各候補を `fs.Stat` だけで調べ、
+regular fileが1件でもあれば成功、欠損・個別Stat error・directoryやFIFOなどのnon-regularだけならfalseです。
+OptionalProduces、内容読取り、state/audit/approval/lock/clock、per-unit・CodeKBの特殊配置はこのAPIでは扱いません。
+
+loopでは次を実行します。変更Go fileへgofmtを適用した後、最後のcommandをfreshに再実行します。
+
+```sh
+go test -count=1 -run '^TestHasRequiredOutput' ./src/internal/artifact
+go test -count=1 ./src/internal/artifact
+```
+
+固定AI-DLC `2.6.123`の参照範囲と段階的境界は[参照契約](ram/research/2026-09-03-stage-artifact-presence-contracts.md)、
+実装許可・TDD slice・残余riskは[実装計画](ram/decisions/2026-09-03-stage-artifact-presence-plan.md)を参照してください。
+
 ### Intent開始 orchestration（内部API）
 
 `orchestrator.StartIntent`は、callerが解決したscope・説明・repositoryを使い、workspace lock内で

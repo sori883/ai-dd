@@ -18,6 +18,8 @@ src/internal/state (aidlc-state.mdのtyped read/write)
 
 src/internal/memory (4層Memory sourceのread-only acquisition)
 
+src/internal/artifact (通常Stageのrequired output presence query)
+
 src/internal/orchestrator
   ├─ ResolveDirective: stateとenabled graphから現在のdirectiveを解決
   └─ StartIntent: Intent作成から初期workspace/state接続
@@ -47,6 +49,7 @@ src/internal/workspace
 - `src/internal/scope`: scopes directory基準の`fs.FS`から直下Markdownの狭いfrontmatter metadataを読みます。plugin選択、graph join、state、CLI、write、Root lifecycleは所有しません。
 - `src/internal/state`: 初期stateの構築・永続化と、保存済み`aidlc-state.md`のread-only typed snapshot化を所有します。`Read`はcaller-ownedのrecord `*os.Root`をCloseせず固定leafだけを読み、`Parse`はState Version 8のsection・field・phase・Stage rowを検証します。graph join、state mutation、audit、CLI、Stage実行は所有しません。
 - `src/internal/memory`: Memory root基準の`fs.FS`から`org.md`、`team.md`、`project.md`、`phases/<phase>.md`を固定順で読む4層source acquisitionと、取得済みsourceからsubstantiveなbundleを作る純粋なfilterを所有します。merge・override・frontmatter parseなどのworkflow判断、workspace path解決、Rootのopen/Closeは所有しません。実filesystemの呼出側は`os.Root.FS()`を渡し、readerはRootをCloseしません。
+- `src/internal/artifact`: Intent record root基準の`fs.FS`から、通常Stageのrequired `Produces` に対応するcanonical pathを`fs.Stat`だけで確認するread-only queryを所有します。空`Produces`のvacuous success、regular fileのany-of判定、固定filename例外、metadata/FS input errorを扱います。per-unit・CodeKB配置、workspace source、state/audit/approval/lock/clock、内容読取り、Root lifecycleは所有しません。
 
 `internal`配下はmodule外からimportできません。今後の機能も、CLIから直接filesystemやnetworkへ到達させず、責務ごとのpackageをcomposition rootで接続します。
 
@@ -921,6 +924,25 @@ state suffixをscope gridへfallbackせずauthorityとすること、read-time�
 固定本家AI-DLC `2.6.123`からの承認済みの意図的差分です。本家との確認範囲、2つのterminal形、suffix authority、差分の利用者影響は
 [参照契約](ram/research/2026-09-03-current-directive-contracts.md)、計画と受け入れ条件は
 [実装計画](ram/decisions/2026-09-03-current-directive-resolver-plan.md)を参照してください。
+
+## Stage completion artifact presence（内部API）
+
+`artifact.HasRequiredOutput(recordFS fs.FS, stage graph.Stage) (bool, error)`は、非per-unit・非CodeKBの
+通常Stageについて、宣言済みrequired `Produces` の少なくとも1件がIntent record内の通常fileとして存在するかを
+read-onlyに判定します。`Produces` が空ならfilesystemを参照せずtrueを返します。非空の場合は `Phase`、`Slug`、
+各artifact名を `^[a-z][a-z0-9-]*$` で先に検証し、不正metadataを `ErrInvalidMetadata`、nil FSを
+`ErrInvalidFilesystem` として `errors.Is` 可能なerrorにします。
+
+候補pathはrecord FS rootから `path.Join(stage.Phase, stage.Slug, filename)` で決めます。通常は
+`<artifact>.md`、`traceability` は `traceability.json`、`build-test-results` と `load-test-results` は
+`test-results.md` です。各候補を `fs.Stat` し、regular fileが1件でもあればtrue、欠損・個別Stat error・directoryや
+FIFOなどのnon-regularだけならfalseを返します。内容は読まず、`OptionalProduces`、per-unit・CodeKBの特殊配置、
+`produces_kinds`、`workspace_requires`、全required instance検査はこのAPIの責務ではありません。
+
+この存在判定はstate更新、audit、approval、lock、clock、CLI、Stage本文実行を行わず、適切なrecord-root FSと
+対象Stageの選択はcallerが所有します。固定AI-DLC `2.6.123`の確認範囲、filename語彙、未確認事項は
+[Stage completion artifact presenceの参照契約](ram/research/2026-09-03-stage-artifact-presence-contracts.md)、
+実装許可とTDD・検証手順は[実装計画](ram/decisions/2026-09-03-stage-artifact-presence-plan.md)を参照してください。
 
 ## Intent開始 orchestration
 

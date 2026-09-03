@@ -71,6 +71,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [in-flight recompose方針](decisions/2026-09-03-inflight-recompose-policy.md) | Accepted（旧ロードマップ／Stage Planの実行中固定方針を置換対象として参照） |
 | 意思決定 | [保存済み aidlc-state.md readerの実装計画](decisions/2026-09-03-state-reader-plan.md) | Accepted（Issue #63、ユーザー明示承認済み） |
 | 意思決定 | [Current directive resolverの実装計画](decisions/2026-09-03-current-directive-resolver-plan.md) | Accepted（Issue #65、ユーザー明示承認済み） |
+| 意思決定 | [Stage completion artifact presenceの実装計画](decisions/2026-09-03-stage-artifact-presence-plan.md) | Accepted（Issue #69、ロードマップ包括承認内） |
 | 調査 | [既存AI-DLCの配布形式](research/2026-08-29-existing-distribution-format.md) | Current for local v2.6.123 snapshot |
 | 調査 | [共通space読み取りの参照契約](research/2026-08-31-space-reading-contracts.md) | Current for local v2.6.123 snapshot |
 | 調査 | [Space作成の参照契約](research/2026-08-31-space-creation-contracts.md) | Current for local v2.6.123 snapshot（U+0130小文字化の追加調査を含む） |
@@ -90,4 +91,5 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 調査 | [StartIntentとin-flight recomposeの参照契約](research/2026-09-03-start-intent-recompose-contracts.md) | Current for local v2.6.123 snapshot（initializer seam・partial Intent・state suffix source・future recompose境界） |
 | 調査 | [保存済み state readerの参照契約](research/2026-09-03-state-reader-contracts.md) | Current for local v2.6.123 snapshot（canonical state・strict parse・Root境界・意図的差分） |
 | 調査 | [Current directive resolverの参照契約](research/2026-09-03-current-directive-contracts.md) | Current for local v2.6.123 snapshot（Branch 10・terminal 2形・suffix authority・意図的差分） |
+| 調査 | [Stage completion artifact presenceの参照契約](research/2026-09-03-stage-artifact-presence-contracts.md) | Current for local v2.6.123 snapshot（通常Stage any-of存在、filename例外、段階的境界） |
 | 調査 | [Intent候補列挙・現在intent解決の参照契約](research/2026-08-31-intent-reading-contracts.md) | Current for local v2.6.123 snapshot |
