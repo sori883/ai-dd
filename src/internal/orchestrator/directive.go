@@ -71,9 +71,10 @@ func resolveRunningDirective(current state.State, catalog graph.Snapshot) (Direc
 
 	stages := current.Stages()
 	var (
-		currentStage state.StageProgress
-		foundCurrent bool
-		liveCount    int
+		currentStage   state.StageProgress
+		foundCurrent   bool
+		liveCount      int
+		otherLiveCount int
 	)
 	for _, stage := range stages {
 		switch stage.CheckboxState {
@@ -81,6 +82,9 @@ func resolveRunningDirective(current state.State, catalog graph.Snapshot) (Direc
 			state.CheckboxStateAwaitingApproval,
 			state.CheckboxStateRevising:
 			liveCount++
+			if stage.Slug != currentSlug {
+				otherLiveCount++
+			}
 		}
 		if stage.Slug == currentSlug {
 			if foundCurrent {
@@ -92,6 +96,13 @@ func resolveRunningDirective(current state.State, catalog graph.Snapshot) (Direc
 	}
 	if !foundCurrent {
 		return directiveError(ErrInvalidState, "running state current stage is absent")
+	}
+
+	if currentStage.PlanAction != state.PlanActionExecute {
+		return directiveError(ErrInvalidState, "running current stage is not marked execute")
+	}
+	if otherLiveCount != 0 {
+		return directiveError(ErrInvalidState, "running state has another live stage")
 	}
 
 	switch currentStage.CheckboxState {
@@ -107,9 +118,6 @@ func resolveRunningDirective(current state.State, catalog graph.Snapshot) (Direc
 		}
 	default:
 		return directiveError(ErrInvalidState, "running current stage has an unknown checkbox state")
-	}
-	if currentStage.PlanAction != state.PlanActionExecute {
-		return directiveError(ErrInvalidState, "running current stage is not marked execute")
 	}
 	if liveCount != 1 {
 		return directiveError(ErrInvalidState, "running state does not have one live stage")

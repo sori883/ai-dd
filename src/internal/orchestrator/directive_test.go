@@ -112,6 +112,129 @@ func TestResolveDirectiveReportsUnsupportedCurrentState(t *testing.T) {
 	}
 }
 
+func TestResolveDirectiveRejectsUnsupportedCurrentCombinations(t *testing.T) {
+	t.Parallel()
+
+	markers := []string{"[ ]", "[?]", "[R]"}
+	for _, marker := range markers {
+		marker := marker
+		t.Run(marker+" with another live marker", func(t *testing.T) {
+			t.Parallel()
+
+			currentRow := "- " + marker + " intent-capture — EXECUTE"
+			content := strings.Replace(
+				directiveRunningState,
+				"- [-] intent-capture — EXECUTE",
+				currentRow+"\n- [-] another-stage — EXECUTE",
+				1,
+			)
+			parsed := parseDirectiveState(t, content)
+			snapshot := loadDirectiveGraph(t, directiveStage("intent-capture", "2.1", "ideation"))
+			got, err := ResolveDirective(parsed, snapshot)
+			expectDirectiveError(t, got, err, ErrInvalidState)
+		})
+
+		t.Run(marker+" with skip action", func(t *testing.T) {
+			t.Parallel()
+
+			content := strings.Replace(
+				directiveRunningState,
+				"- [-] intent-capture — EXECUTE",
+				"- "+marker+" intent-capture — SKIP",
+				1,
+			)
+			parsed := parseDirectiveState(t, content)
+			snapshot := loadDirectiveGraph(t, directiveStage("intent-capture", "2.1", "ideation"))
+			got, err := ResolveDirective(parsed, snapshot)
+			expectDirectiveError(t, got, err, ErrInvalidState)
+		})
+	}
+}
+
+func TestResolveDirectiveRejectsZeroState(t *testing.T) {
+	t.Parallel()
+
+	got, err := ResolveDirective(state.State{}, graph.Snapshot{})
+	expectDirectiveError(t, got, err, ErrInvalidState)
+}
+
+func TestResolveDirectiveMapsCanonicalGraphPhases(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		graphPhase string
+		statePhase string
+	}{
+		{name: "initialization", graphPhase: "initialization", statePhase: "INITIALIZATION"},
+		{name: "ideation", graphPhase: "ideation", statePhase: "IDEATION"},
+		{name: "inception", graphPhase: "inception", statePhase: "INCEPTION"},
+		{name: "construction", graphPhase: "construction", statePhase: "CONSTRUCTION"},
+		{name: "operation", graphPhase: "operation", statePhase: "OPERATION"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			content := strings.Replace(directiveRunningState, "**Lifecycle Phase**: IDEATION", "**Lifecycle Phase**: "+tt.statePhase, 1)
+			parsed := parseDirectiveState(t, content)
+			snapshot := loadDirectiveGraph(t, directiveStage("intent-capture", "2.1", tt.graphPhase))
+			got, err := ResolveDirective(parsed, snapshot)
+			if err != nil {
+				t.Fatalf("ResolveDirective() error = %v", err)
+			}
+			if got.Kind() != DirectiveKindRunStage {
+				t.Fatalf("Directive.Kind() = %q, want %q", got.Kind(), DirectiveKindRunStage)
+			}
+			stage, ok := got.Stage()
+			if !ok || stage.Phase != tt.graphPhase {
+				t.Fatalf("Directive.Stage() = %#v, want phase %q", stage, tt.graphPhase)
+			}
+		})
+	}
+}
+
+func TestResolveDirectiveCompletedActionMatrix(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{
+			name:    "execute skipped",
+			content: strings.Replace(directiveCompletedState, "- [x] intent-capture — EXECUTE", "- [S] intent-capture — EXECUTE", 1),
+		},
+		{
+			name:    "skip pending",
+			content: strings.Replace(directiveCompletedState, "- [S] future-stage — SKIP", "- [ ] future-stage — SKIP", 1),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			parsed := parseDirectiveState(t, tt.content)
+			snapshot := loadDirectiveGraph(
+				t,
+				directiveStage("workspace-scaffold", "1.1", "initialization"),
+				directiveStage("intent-capture", "2.1", "ideation"),
+				directiveStage("future-stage", "2.2", "ideation"),
+			)
+			got, err := ResolveDirective(parsed, snapshot)
+			if err != nil {
+				t.Fatalf("ResolveDirective() error = %v", err)
+			}
+			if got.Kind() != DirectiveKindWorkflowComplete {
+				t.Fatalf("Directive.Kind() = %q, want %q", got.Kind(), DirectiveKindWorkflowComplete)
+			}
+			if _, ok := got.Stage(); ok {
+				t.Fatal("Directive.Stage() reports a stage for workflow completion")
+			}
+		})
+	}
+}
+
 func TestResolveDirectiveRejectsStateCatalogMismatch(t *testing.T) {
 	t.Parallel()
 
