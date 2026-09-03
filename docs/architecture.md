@@ -19,6 +19,7 @@ src/internal/state (aidlc-state.mdのtyped read/write)
 src/internal/memory (4層Memory sourceのread-only acquisition)
 
 src/internal/orchestrator
+  ├─ ResolveDirective: stateとenabled graphから現在のdirectiveを解決
   └─ StartIntent: Intent作成から初期workspace/state接続
 
 src/internal/workspace
@@ -41,7 +42,7 @@ src/internal/workspace
 - `src/internal/cli`: CLIの引数解釈、stdout/stderrの分離、終了コード、help/version、space create/list/switch、bare space、intent list/switchとbare intentの表示契約を所有します。`io.Writer`とcallbackを受け取るため、process全体を起動せずにテストできます。
 - `src/internal/buildinfo`: linkerが差し替える`Version`と`Commit`、およびそのsnapshotを所有します。既定値は`dev`と`unknown`です。
 - `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、read-onlyのworkspace分析、spaceとIntent coreの新規作成、space・intentの共有cursor切替を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。space一覧は`ReadSpaces`、intent一覧は`ReadIntents`を通じてCLIへ接続し、`ReadSelection`・`CreateIntent`・`Detect`は内部APIのままです。書込みは`CreateSpace`・`SwitchSpace`・`SwitchIntent`・`CreateIntent`の明示呼出しだけで行い、接続APIのRoot生存期間も内部で管理します。initializerを使う`CreateIntentWithInitializer`はlock内のproject/record Rootをcallbackへ貸し出し、callback後にCloseします。`Detect`は例外としてcaller所有の既存`*os.Root`を借り、Closeしません。
-- `src/internal/orchestrator`: callerが解決したStartInputをworkspace、graph、scope、stateへ渡し、`StartIntent`のlock内初期化順序とpartial結果を所有します。DataFS/ScopesFSはcaller-ownedのままCloseせず、Intent作成やRoot lifecycleの低レベル処理はworkspaceへ委譲します。
+- `src/internal/orchestrator`: `ResolveDirective`でtyped stateとenabled graphをread-onlyにjoinし、callerが解決したStartInputをworkspace、graph、scope、stateへ渡します。`StartIntent`のlock内初期化順序とpartial結果も所有します。DataFS/ScopesFSはcaller-ownedのままCloseせず、Intent作成やRoot lifecycleの低レベル処理はworkspaceへ委譲します。
 - `src/internal/graph`: data directory基準の`fs.FS`からcompiled stage graphとscope gridを読み、enabled stageとrouting actionのimmutable snapshotを返します。filesystem write、project root選択、scope metadata Markdown、state遷移、agent実行は所有しません。
 - `src/internal/scope`: scopes directory基準の`fs.FS`から直下Markdownの狭いfrontmatter metadataを読みます。plugin選択、graph join、state、CLI、write、Root lifecycleは所有しません。
 - `src/internal/state`: 初期stateの構築・永続化と、保存済み`aidlc-state.md`のread-only typed snapshot化を所有します。`Read`はcaller-ownedのrecord `*os.Root`をCloseせず固定leafだけを読み、`Parse`はState Version 8のsection・field・phase・Stage rowを検証します。graph join、state mutation、audit、CLI、Stage実行は所有しません。
@@ -897,6 +898,29 @@ pending Stageだけを変更する別Issueの責務です。
 限定とmalformed拒否、duplicate slug拒否、regular leaf barrier、invalid UTF-8/CR拒否は、誤ったroutingへ進めない
 ためにIssue #63で明示承認された意図的差分です。固定snapshotの確認範囲と差分表は[参照契約](ram/research/2026-09-03-state-reader-contracts.md)、
 計画・loop証拠は[実装計画](ram/decisions/2026-09-03-state-reader-plan.md)を参照してください。
+
+## Current directive resolver（内部API）
+
+`orchestrator.ResolveDirective(current state.State, catalog graph.Snapshot) (Directive, error)`は、保存済みstateと
+enabledなStage catalogを受け取り、後続処理が扱う現在の指示を1件だけ返します。filesystemを再読込せず、state更新、audit、
+lock、clock、scope lookup、Stage実行も行いません。
+
+`DirectiveKindRunStage`（`"run-stage"`）では、stateのCurrent Stage rowが唯一の`[-] EXECUTE`で、ほかに`[-]`、`[?]`、
+`[R]`のlive markerがなく、enabled graphに同じslugが存在することを確認します。graph phaseは
+`initialization`、`ideation`、`inception`、`construction`、`operation`のcanonical lowercaseだけを受け入れ、stateの
+uppercase Lifecycle Phaseと一致させます。返却Stageにはlead/support agent、phase、artifact metadataなどのgraph metadataを
+含め、`Stage()`はnested sliceをdeep copyして返します。`Next Stage`、Summary、scope grid、Stage Planの再計算はrouting根拠にしません。
+
+`DirectiveKindWorkflowComplete`（`"workflow-complete"`）は、`Next Stage`とSummaryの`In Progress`がともに`none`で、live
+markerがなく、`EXECUTE` rowが`[x]`/`[S]`、`SKIP` rowが`[ ]`/`[S]`の場合に返します。Current Stageは`none`、またはstate内の
+settled row（`[x]`/`[S]`）の2形を許可します。このterminal判定はcatalogを必要としません。current `[ ]`/`[?]`/`[R]`は
+`ErrUnsupportedState`、stateの不整合は`ErrInvalidState`、graph slug/phase不一致は`ErrStateCatalogMismatch`です。sentinelは
+`errors.Is`で判定でき、error時はzero Directiveです。
+
+state suffixをscope gridへfallbackせずauthorityとすること、read-timeのsettled rowだけでcatalog不要のterminalを返すことは、
+固定本家AI-DLC `2.6.123`からの承認済みの意図的差分です。本家との確認範囲、2つのterminal形、suffix authority、差分の利用者影響は
+[参照契約](ram/research/2026-09-03-current-directive-contracts.md)、計画と受け入れ条件は
+[実装計画](ram/decisions/2026-09-03-current-directive-resolver-plan.md)を参照してください。
 
 ## Intent開始 orchestration
 

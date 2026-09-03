@@ -592,6 +592,32 @@ finalではloopのtargeted testに加え、計画に該当する全package test�
 再度loopのtargeted testとgofmtへ戻ってからfinalをやり直します。配布E2Eは、このinternal APIがCLIへ接続されていない間は
 state readerの検証対象にしません。
 
+### Current directive resolver（内部API）
+
+`orchestrator.ResolveDirective(current state.State, catalog graph.Snapshot) (Directive, error)`は、保存済みstateとenabledな
+graph Stageをread-onlyに結合し、後続処理へ1件のdirectiveを返します。`run-stage`は唯一のcurrent `[-] EXECUTE`、ほかに
+live markerがないこと、enabled graph slugの存在、graph phaseのcanonical lowercaseとstate Lifecycle Phaseの一致を要求します。
+`Next Stage`、Summary、scope grid、Stage Planの再計算はrouting根拠にしません。
+
+`workflow-complete`は、`Next Stage`とSummaryの`In Progress`が`none`で、live markerがなく、`EXECUTE` rowが`[x]`/`[S]`、
+`SKIP` rowが`[ ]`/`[S]`のときに返します。Current Stageは`none`、またはstate内のsettled `[x]`/`[S]`という2形を許可し、terminal
+判定ではgraph catalogを参照しません。current `[ ]`/`[?]`/`[R]`は`ErrUnsupportedState`、stateの不整合は`ErrInvalidState`、
+graph slug/phase不一致は`ErrStateCatalogMismatch`です。sentinelは`errors.Is`で判定でき、error時はzero Directiveです。
+`Stage()`はlead/support agent、phase、成果物・consume・依存などのgraph metadataを返しますが、nested sliceはdeep copyされます。
+
+resolverはfilesystem、clock、global cache、scope lookup、write、lock、auditを扱いません。state suffixをscope gridへfallbackしない
+こと、read-timeのsettled rowだけでcatalog不要のterminalを返すことは、固定本家AI-DLC `2.6.123`からの承認済み意図的差分です。
+確認範囲と理由は[参照契約](ram/research/2026-09-03-current-directive-contracts.md)、計画は
+[実装計画](ram/decisions/2026-09-03-current-directive-resolver-plan.md)を参照してください。
+
+loopのtargeted testは次の3件です。変更したGo fileへ`gofmt`を適用してから、同じcommandを再実行します。
+
+```sh
+go test -count=1 -run '^TestResolveDirective' ./src/internal/orchestrator
+go test -count=1 -run '^TestDirective' ./src/internal/orchestrator
+go test -count=1 ./src/internal/orchestrator
+```
+
 ### Intent開始 orchestration（内部API）
 
 `orchestrator.StartIntent`は、callerが解決したscope・説明・repositoryを使い、workspace lock内で
