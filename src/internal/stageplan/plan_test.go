@@ -57,12 +57,31 @@ func TestBuildPreservesOrderedStageEntriesAndMetadata(t *testing.T) {
 		t.Fatal("Entries() reasons must explain each routing decision")
 	}
 
-	wantStage := entries[1].Stage
-	if !reflect.DeepEqual(wantStage.Produces, []string{"later-artifact"}) ||
-		!reflect.DeepEqual(wantStage.OptionalProduces, []string{"optional-artifact"}) ||
-		!reflect.DeepEqual(wantStage.Consumes, []graph.Consume{{Artifact: "first-artifact", Required: true}}) ||
-		!reflect.DeepEqual(wantStage.RequiresStages, []string{"first"}) {
-		t.Fatalf("entry metadata = %#v, want complete graph metadata", wantStage)
+	gotStage := entries[1].Stage
+	wantStage := graph.Stage{
+		Slug:             "later",
+		Number:           "1.2",
+		Name:             "later name",
+		Phase:            "ideation",
+		Execution:        "ALWAYS",
+		LeadAgent:        "aidlc-product-agent",
+		SupportAgents:    []string{},
+		Mode:             "inline",
+		Scopes:           nil,
+		Enabled:          true,
+		Produces:         []string{"later-artifact"},
+		OptionalProduces: []string{"optional-artifact"},
+		Consumes:         []graph.Consume{{Artifact: "first-artifact", Required: true}},
+		RequiresStages:   []string{"first"},
+	}
+	if !reflect.DeepEqual(gotStage, wantStage) {
+		t.Fatalf("entry metadata = %#v, want %#v", gotStage, wantStage)
+	}
+
+	entries[1].Stage.RequiresStages[0] = "mutated"
+	again := got.Entries()
+	if again[1].Stage.RequiresStages[0] != "first" {
+		t.Fatalf("RequiresStages changed after returned metadata mutation: %#v", again[1].Stage.RequiresStages)
 	}
 	if got.Scope() != "classic" || got.ProjectType() != "Brownfield" {
 		t.Fatalf("plan identity = (%q, %q), want (classic, Brownfield)", got.Scope(), got.ProjectType())
@@ -291,6 +310,64 @@ func TestBuildUsesOptionalProducersAndSkipsInactiveConsumes(t *testing.T) {
 	}
 	if advisories := got.Advisories(); len(advisories) != 0 {
 		t.Fatalf("Advisories() = %#v, want none for optional or inactive consumes", advisories)
+	}
+}
+
+func TestBuildIgnoresMissingProducerForSkippedConsumer(t *testing.T) {
+	t.Parallel()
+
+	snapshot := loadTestSnapshot(t, []map[string]any{
+		stageFixture("consumer", "1.1", map[string]any{
+			"consumes": []map[string]any{{
+				"artifact": "missing-artifact",
+				"required": true,
+			}},
+		}),
+	}, map[string]any{
+		"classic": map[string]any{"stages": map[string]any{
+			"consumer": "SKIP",
+		}},
+	})
+
+	got, err := Build(Input{Graph: snapshot, Scope: "classic", ProjectType: "Brownfield"})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want skipped consumer to bypass artifact validation", err)
+	}
+	if len(got.Advisories()) != 0 {
+		t.Fatalf("Advisories() = %#v, want none for skipped consumer", got.Advisories())
+	}
+}
+
+func TestBuildSuppressesAdvisoryWhenAnyArtifactProducerExecutes(t *testing.T) {
+	t.Parallel()
+
+	snapshot := loadTestSnapshot(t, []map[string]any{
+		stageFixture("skipped-producer", "1.1", map[string]any{
+			"produces": []string{"artifact"},
+		}),
+		stageFixture("executed-producer", "1.2", map[string]any{
+			"produces": []string{"artifact"},
+		}),
+		stageFixture("consumer", "1.3", map[string]any{
+			"consumes": []map[string]any{{
+				"artifact": "artifact",
+				"required": true,
+			}},
+		}),
+	}, map[string]any{
+		"classic": map[string]any{"stages": map[string]any{
+			"skipped-producer":  "SKIP",
+			"executed-producer": "EXECUTE",
+			"consumer":          "EXECUTE",
+		}},
+	})
+
+	got, err := Build(Input{Graph: snapshot, Scope: "classic", ProjectType: "Brownfield"})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want executing producer to satisfy artifact dependency", err)
+	}
+	if len(got.Advisories()) != 0 {
+		t.Fatalf("Advisories() = %#v, want none when one producer executes", got.Advisories())
 	}
 }
 

@@ -274,6 +274,35 @@ func TestBuildInitialReturnsTheStagePlanUsedForRouting(t *testing.T) {
 	}
 }
 
+func TestBuildInitialWrapsStagePlanErrorOnce(t *testing.T) {
+	t.Parallel()
+
+	consumer := stageFixture("consumer", "1.1", "ideation")
+	consumer["consumes"] = []map[string]any{{
+		"artifact": "missing-artifact",
+		"required": true,
+	}}
+	snapshot := loadTestSnapshot(t, []map[string]any{consumer}, map[string]any{
+		"classic": map[string]any{"stages": map[string]any{
+			"consumer": "EXECUTE",
+		}},
+	})
+
+	_, err := BuildInitial(Input{
+		Graph:         snapshot,
+		Scope:         "classic",
+		ScopeMetadata: scope.Metadata{Name: "classic", Depth: "Standard"},
+		Workspace:     WorkspaceInfo{ProjectType: "Brownfield"},
+	})
+	if err == nil {
+		t.Fatal("BuildInitial() error = nil, want required artifact producer error")
+	}
+	want := `build initial state: build stage plan: stage "consumer" requires artifact "missing-artifact" but no enabled producer exists`
+	if err.Error() != want {
+		t.Fatalf("BuildInitial() error = %q, want %q", err, want)
+	}
+}
+
 func TestBuildInitialGreenfieldAdjustsReverseEngineering(t *testing.T) {
 	t.Parallel()
 

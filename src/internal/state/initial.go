@@ -141,7 +141,7 @@ func BuildInitial(input Input) (Initial, error) {
 		ProjectType: input.Workspace.ProjectType,
 	})
 	if err != nil {
-		return Initial{}, fmt.Errorf("build initial state: build stage plan: %w", err)
+		return Initial{}, fmt.Errorf("build initial state: %w", err)
 	}
 
 	entries := plan.Entries()
