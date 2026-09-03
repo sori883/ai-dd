@@ -141,6 +141,34 @@ func lockPathForTemp(id Identity, tempDir string) string {
 	return filepath.Join(tempDir, lockRootName, hex.EncodeToString(digest[:]))
 }
 
+// lockRootLocation returns the trusted temporary-directory Root and the
+// descriptor-relative path for one generated lock pathname. Keeping this
+// derivation narrow prevents a caller or a test seam from turning the Root
+// open into an arbitrary pathname traversal.
+func lockRootLocation(path string) (base, relative string, err error) {
+	clean := filepath.Clean(path)
+	if !filepath.IsAbs(clean) || clean != path {
+		return "", "", fmt.Errorf("recordlock: lock path %q is not canonical: %w", path, ErrInvalidIdentity)
+	}
+	hashName := filepath.Base(clean)
+	lockDir := filepath.Dir(clean)
+	if filepath.Base(lockDir) != lockRootName || len(hashName) != sha256.Size*2 {
+		return "", "", fmt.Errorf("recordlock: lock path %q has unexpected layout: %w", path, ErrInvalidIdentity)
+	}
+	if _, decodeErr := hex.DecodeString(hashName); decodeErr != nil {
+		return "", "", fmt.Errorf("recordlock: lock path %q has invalid generation: %w", path, ErrInvalidIdentity)
+	}
+	base = filepath.Dir(lockDir)
+	if base == "" || base == "." {
+		return "", "", fmt.Errorf("recordlock: lock path %q has no trusted base: %w", path, ErrInvalidIdentity)
+	}
+	relative, err = filepath.Rel(base, clean)
+	if err != nil || relative != filepath.Join(lockRootName, hashName) || filepath.IsAbs(relative) {
+		return "", "", fmt.Errorf("recordlock: lock path %q has unexpected relative layout: %w", path, ErrInvalidIdentity)
+	}
+	return base, relative, nil
+}
+
 func ownerMarkerName(token string) string {
 	return lockOwnerPrefix + token + lockOwnerSuffix
 }
@@ -219,9 +247,9 @@ func systemLockOps() lockOps {
 		mkdir:      os.Mkdir,
 		openFile:   os.OpenFile,
 		openRead:   os.Open,
-		openRoot:   os.OpenRoot,
+		openRoot:   openLockRoot,
 		rootLstat:  (*os.Root).Lstat,
-		rootOpen:   (*os.Root).Open,
+		rootOpen:   openLockOwner,
 		rootRemove: (*os.Root).Remove,
 		rootClose:  (*os.Root).Close,
 		write:      (*os.File).Write,
@@ -258,9 +286,14 @@ type Guard struct {
 }
 
 type guardState struct {
-	mu          sync.Mutex
-	identity    Identity
-	path        string
+	mu       sync.Mutex
+	identity Identity
+	path     string
+	// lockRoot pins the directory generation acquired by this Guard. Release
+	// must use this descriptor-relative root instead of reopening state.path,
+	// which could have been replaced by a blocking or unrelated filesystem
+	// object after its pathname inspection.
+	lockRoot    *os.Root
 	token       string
 	held        bool
 	releasing   bool
@@ -418,7 +451,7 @@ func acquireWithOps(ctx context.Context, identity Identity, settings lockSetting
 	panic("recordlock: unreachable retry loop")
 }
 
-func initializeGuard(identity Identity, path string, ops lockOps) (*Guard, error) {
+func initializeGuard(identity Identity, path string, ops lockOps) (guard *Guard, err error) {
 	token, err := randomToken(ops.random)
 	if err != nil {
 		return nil, errors.Join(
@@ -426,6 +459,36 @@ func initializeGuard(identity Identity, path string, ops lockOps) (*Guard, error
 			removeOwnedLock(path, "", ops),
 		)
 	}
+	openRoot := ops.openRoot
+	if openRoot == nil {
+		openRoot = openLockRoot
+	}
+	lockRoot, err := openRoot(path)
+	if err != nil {
+		return nil, errors.Join(
+			fmt.Errorf("recordlock: open lock root %q: %w", path, err),
+			removeOwnedLock(path, token, ops),
+		)
+	}
+	if lockRoot == nil {
+		return nil, errors.Join(
+			fmt.Errorf("recordlock: open lock root %q returned nil root: %w", path, ErrOwnerMismatch),
+			removeOwnedLock(path, token, ops),
+		)
+	}
+	rootClose := ops.rootClose
+	if rootClose == nil {
+		rootClose = (*os.Root).Close
+	}
+	keepRoot := false
+	defer func() {
+		if keepRoot {
+			return
+		}
+		if closeErr := rootClose(lockRoot); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("recordlock: close lock root %q: %w", path, closeErr))
+		}
+	}()
 	startedAt := ops.now().UTC()
 	owner := lockOwner{
 		Token:       token,
@@ -436,9 +499,10 @@ func initializeGuard(identity Identity, path string, ops lockOps) (*Guard, error
 	if err := writeOwner(filepath.Join(path, ownerMarkerName(token)), owner, ops); err != nil {
 		return nil, errors.Join(err, removeOwnedLock(path, token, ops))
 	}
-	return &Guard{state: &guardState{
+	guard = &Guard{state: &guardState{
 		identity: identity,
 		path:     path,
+		lockRoot: lockRoot,
 		token:    token,
 		held:     true,
 		leaseTokens: func() chan struct{} {
@@ -447,7 +511,9 @@ func initializeGuard(identity Identity, path string, ops lockOps) (*Guard, error
 			return available
 		}(),
 		ops: ops,
-	}}, nil
+	}}
+	keepRoot = true
+	return guard, nil
 }
 
 func randomToken(random io.Reader) (string, error) {
@@ -525,9 +591,36 @@ func (g *Guard) Release() (err error) {
 		return ErrNotHeld
 	}
 	state.releasing = true
+	lockRoot := state.lockRoot
 	state.mu.Unlock()
 	<-state.leaseTokens
 	defer func() { state.leaseTokens <- struct{}{} }()
+
+	rootClose := state.ops.rootClose
+	if rootClose == nil {
+		rootClose = (*os.Root).Close
+	}
+	defer func() {
+		if lockRoot == nil {
+			return
+		}
+		state.mu.Lock()
+		held := state.held
+		state.mu.Unlock()
+		// A retryable failure leaves the pinned acquisition root open for the
+		// next Release attempt.
+		if held {
+			return
+		}
+		if closeErr := rootClose(lockRoot); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("recordlock: close lock root %q: %w", state.path, closeErr))
+		}
+		state.mu.Lock()
+		if state.lockRoot == lockRoot {
+			state.lockRoot = nil
+		}
+		state.mu.Unlock()
+	}()
 
 	lockInfo, err := state.ops.lstat(state.path)
 	if err != nil {
@@ -539,29 +632,9 @@ func (g *Guard) Release() (err error) {
 	if lockInfo == nil || lockInfo.Mode()&fs.ModeSymlink != 0 || !lockInfo.IsDir() {
 		return finishReleaseError(state, fmt.Errorf("recordlock: lock path changed at %q: %w", state.path, ErrOwnerMismatch))
 	}
-	openRoot := state.ops.openRoot
-	if openRoot == nil {
-		openRoot = os.OpenRoot
-	}
-	lockRoot, err := openRoot(state.path)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return finishReleaseError(state, fmt.Errorf("recordlock: lock disappeared at %q: %w", state.path, ErrOwnerMismatch))
-		}
-		return finishReleaseError(state, fmt.Errorf("recordlock: open lock root %q: %w", state.path, err))
-	}
 	if lockRoot == nil {
-		return finishReleaseError(state, fmt.Errorf("recordlock: open lock root %q returned nil root: %w", state.path, ErrOwnerMismatch))
+		return finishReleaseError(state, fmt.Errorf("recordlock: pinned lock root %q is unavailable: %w", state.path, ErrOwnerMismatch))
 	}
-	rootClose := state.ops.rootClose
-	if rootClose == nil {
-		rootClose = (*os.Root).Close
-	}
-	defer func() {
-		if closeErr := rootClose(lockRoot); closeErr != nil {
-			err = errors.Join(err, fmt.Errorf("recordlock: close lock root %q: %w", state.path, closeErr))
-		}
-	}()
 	openedLockInfo, err := lockRoot.Stat(".")
 	if err != nil {
 		return finishReleaseError(state, fmt.Errorf("recordlock: stat lock root %q: %w", state.path, err))
@@ -701,7 +774,7 @@ func readOwnerProofAtRoot(root *os.Root, ownerName, ownerPath string, ops lockOp
 	}
 	rootOpen := ops.rootOpen
 	if rootOpen == nil {
-		rootOpen = (*os.Root).Open
+		rootOpen = openLockOwner
 	}
 	before, err := rootLstat(root, ownerName)
 	if err != nil {

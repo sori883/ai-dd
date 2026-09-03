@@ -168,6 +168,30 @@ func TestAcquirePersistsOwnerAndReleaseRemovesOwnLock(t *testing.T) {
 	}
 }
 
+func TestReleaseUsesPinnedLockRootWithoutPathReopen(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	lockTemp := t.TempDir()
+	identity, err := NewIdentity(project, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := systemLockOps()
+	ops.tempDir = func() string { return lockTemp }
+	guard, err := acquireWithOps(context.Background(), identity, lockSettings{maxRetries: 0}, ops)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	openRootCalled := errors.New("release must not reopen lock root by pathname")
+	ops.openRoot = func(string) (*os.Root, error) { return nil, openRootCalled }
+	guard.state.ops = ops
+	if err := guard.Release(); err != nil {
+		t.Fatalf("Release() = %v, want pinned-root release", err)
+	}
+}
+
 func TestAcquireWritesOwnerWithShortSuccessfulWritesUntilComplete(t *testing.T) {
 	t.Parallel()
 
