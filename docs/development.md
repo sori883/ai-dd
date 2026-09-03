@@ -594,6 +594,28 @@ finalではloopのtargeted testに加え、計画に該当する全package test�
 再度loopのtargeted testとgofmtへ戻ってからfinalをやり直します。配布E2Eは、このinternal APIがCLIへ接続されていない間は
 state readerの検証対象にしません。
 
+### aidlc-state.md transition patcher（内部API）
+
+`state.Patch(content []byte, request PatchRequest) ([]byte, error)`は、検証済みraw `aidlc-state.md`に対して
+`CanonicalField`、`PhaseProgressPatch`、`StageMarkerPatch`で指定した型付き対象だけを局所置換します。fieldは
+固定allowlist、phase／status／count／markerは既存のcanonical enum・値として検証します。任意のMarkdown labelや
+newline・Unicode whitespace・control characterを含むscalarは受け付けません。
+
+patch前後を`state.Parse`へ渡し、malformed、missing、duplicate、canonical section外のdecoy、同一targetの重複、
+expected mismatchをfail-closedします。失敗時はpartial resultを返さず、入力sliceを変更しません。成功時もunknown section・
+field・comment、未変更空白、BOM、LF／CRLF、終端改行、Stage suffixをbyte単位で保持します。markerの業務上の遷移許可、
+filesystem I/O、state保存、audit、lock、clock、完了・承認判断はこのpure APIの責務ではありません。
+
+loopではstate patcherのテストだけを実行し、Go fileを`gofmt`後に同じ対象testを再実行します。
+
+```sh
+go test -count=1 -run '^TestPatch' ./src/internal/state
+```
+
+marker4例、canonical field／phase status、exact-byte preservation、malformed／ambiguity／zero patch、input ownership、
+patch後のParseを確認します。固定AI-DLC `2.6.123`の根拠、受入条件、TDD slice、残余riskは[byte-preserving state transition patcherの実装計画](ram/decisions/2026-09-03-state-transition-patcher-plan.md)、
+typed stateのfield／phase／Stage形式は[state readerの参照契約](ram/research/2026-09-03-state-reader-contracts.md)を参照してください。
+
 ### Current directive resolver（内部API）
 
 `orchestrator.ResolveDirective(current state.State, catalog graph.Snapshot) (Directive, error)`は、保存済みstateとenabledな

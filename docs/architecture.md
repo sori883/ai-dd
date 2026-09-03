@@ -904,6 +904,24 @@ pending Stageだけを変更する別Issueの責務です。
 ためにIssue #63で明示承認された意図的差分です。固定snapshotの確認範囲と差分表は[参照契約](ram/research/2026-09-03-state-reader-contracts.md)、
 計画・loop証拠は[実装計画](ram/decisions/2026-09-03-state-reader-plan.md)を参照してください。
 
+## aidlc-state.md transition patcher（内部API）
+
+`state.Patch(content []byte, request PatchRequest) ([]byte, error)`は、検証済みraw `aidlc-state.md`の
+lifecycle-ownedなcanonical field、phase status、Stage checkbox markerだけを型付き指定で置換します。入力と
+出力を`state.Parse`で検証し、malformed input、missing／duplicate／decoy、同一targetの重複、expected mismatch、
+不正なscalarを拒否します。失敗時はpartial bytesを返さず、入力sliceも変更しません。
+
+`CanonicalField`は`Total Stages`、`Completed`、`In Progress`、`Lifecycle Phase`、`Current Stage`、`Next Stage`、
+`Status`、`Last Updated`だけを許可します。Count、stage slug、phase、workflow statusは各既存enum／canonical値として
+検証し、改行・Unicode whitespace・control characterによるMarkdown構造注入を拒否します。`PhaseProgressPatch`は
+5つのcanonical phaseと`Pending`／`Active`／`Verified`／`Skipped`だけを対象にし、`StageMarkerPatch`はslug、期待する
+現在marker、6種類のreplacement markerを受け取ります。marker遷移の業務上の許可判断はこの低水準patcherの責務ではありません。
+
+置換は対象valueまたはmarkerのbyte範囲だけに限定し、unknown section／field、comment、未変更空白、BOM、LF／CRLF、
+終端改行、Stage suffixをそのまま保持します。filesystem I/O、state保存、audit、lock、clock、完了可否・承認判断は
+行いません。この境界の固定方針、TDD slice、残余riskは[byte-preserving state transition patcherの実装計画](ram/decisions/2026-09-03-state-transition-patcher-plan.md)、
+stateのtyped field契約は[保存済みstate readerの参照契約](ram/research/2026-09-03-state-reader-contracts.md)を参照してください。
+
 ## Current directive resolver（内部API）
 
 `orchestrator.ResolveDirective(current state.State, catalog graph.Snapshot) (Directive, error)`は、保存済みstateと
