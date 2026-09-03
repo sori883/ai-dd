@@ -22,6 +22,7 @@ src/internal/artifact (通常Stageのrequired output presence query)
 
 src/internal/orchestrator
   ├─ ResolveDirective: stateとenabled graphから現在のdirectiveを解決
+  ├─ EvaluateStageCompletion: Stageの完了条件をread-onlyに判定
   └─ StartIntent: Intent作成から初期workspace/state接続
 
 src/internal/workspace
@@ -44,7 +45,7 @@ src/internal/workspace
 - `src/internal/cli`: CLIの引数解釈、stdout/stderrの分離、終了コード、help/version、space create/list/switch、bare space、intent list/switchとbare intentの表示契約を所有します。`io.Writer`とcallbackを受け取るため、process全体を起動せずにテストできます。
 - `src/internal/buildinfo`: linkerが差し替える`Version`と`Commit`、およびそのsnapshotを所有します。既定値は`dev`と`unknown`です。
 - `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、read-onlyのworkspace分析、spaceとIntent coreの新規作成、space・intentの共有cursor切替を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。space一覧は`ReadSpaces`、intent一覧は`ReadIntents`を通じてCLIへ接続し、`ReadSelection`・`CreateIntent`・`Detect`は内部APIのままです。書込みは`CreateSpace`・`SwitchSpace`・`SwitchIntent`・`CreateIntent`の明示呼出しだけで行い、接続APIのRoot生存期間も内部で管理します。initializerを使う`CreateIntentWithInitializer`はlock内のproject/record Rootをcallbackへ貸し出し、callback後にCloseします。`Detect`は例外としてcaller所有の既存`*os.Root`を借り、Closeしません。
-- `src/internal/orchestrator`: `ResolveDirective`でtyped stateとenabled graphをread-onlyにjoinし、callerが解決したStartInputをworkspace、graph、scope、stateへ渡します。`StartIntent`のlock内初期化順序とpartial結果も所有します。DataFS/ScopesFSはcaller-ownedのままCloseせず、Intent作成やRoot lifecycleの低レベル処理はworkspaceへ委譲します。
+- `src/internal/orchestrator`: `ResolveDirective`でtyped stateとenabled graphをread-onlyにjoinし、`EvaluateStageCompletion`でcallerが渡すStage metadataと証拠をread-onlyに判定します。callerが解決したStartInputはworkspace、graph、scope、stateへ渡します。`StartIntent`のlock内初期化順序とpartial結果も所有します。DataFS/ScopesFSはcaller-ownedのままCloseせず、Intent作成やRoot lifecycleの低レベル処理はworkspaceへ委譲します。
 - `src/internal/graph`: data directory基準の`fs.FS`からcompiled stage graphとscope gridを読み、enabled stageとrouting actionのimmutable snapshotを返します。filesystem write、project root選択、scope metadata Markdown、state遷移、agent実行は所有しません。
 - `src/internal/scope`: scopes directory基準の`fs.FS`から直下Markdownの狭いfrontmatter metadataを読みます。plugin選択、graph join、state、CLI、write、Root lifecycleは所有しません。
 - `src/internal/state`: 初期stateの構築・永続化と、保存済み`aidlc-state.md`のread-only typed snapshot化を所有します。`Read`はcaller-ownedのrecord `*os.Root`をCloseせず固定leafだけを読み、`Parse`はState Version 8のsection・field・phase・Stage rowを検証します。graph join、state mutation、audit、CLI、Stage実行は所有しません。
@@ -656,8 +657,9 @@ authored implementation、canonical Codex dist、配置済みCodexの対象`aidl
 公開snapshotから除外します。`Stage`はslug、number、name、phase、execution、lead agent、
 support agents、mode、fallback用scopesを保持します。さらに、Stageが生成する必須成果物
 `produces`、条件付き成果物`optional_produces`、入力成果物の`consumes`、依存・表示順序の
-`requires_stage`をcompiled metadataとして保持します。`Consume`は`artifact`、`required`、
-任意の`conditional_on`（`brownfield`または`greenfield`）を値として持ちます。
+`requires_stage`をcompiled metadataとして保持します。完了判定に必要な`for_each`、
+`workspace_requires`、`reviewer`、`summary_confirmation`、`sensors`、`produces_kinds`も保持します。
+`Consume`は`artifact`、`required`、任意の`conditional_on`（`brownfield`または`greenfield`）を値として持ちます。
 
 `produces`、`consumes`、`requires_stage`はJSON上の必須配列です。欠損・`null`・型不正はLoad
 errorとし、空配列は有効です。`optional_produces`は欠損を許容し、存在する場合は配列として
@@ -943,6 +945,21 @@ FIFOなどのnon-regularだけならfalseを返します。内容は読まず、
 対象Stageの選択はcallerが所有します。固定AI-DLC `2.6.123`の確認範囲、filename語彙、未確認事項は
 [Stage completion artifact presenceの参照契約](ram/research/2026-09-03-stage-artifact-presence-contracts.md)、
 実装許可とTDD・検証手順は[実装計画](ram/decisions/2026-09-03-stage-artifact-presence-plan.md)を参照してください。
+
+## Stage completion decision（内部API）
+
+`orchestrator.EvaluateStageCompletion(input CompletionInput) CompletionDecision`は、callerが選択した現在Stage、
+enabled graphのsnapshot、Intent record root基準のread-only FS、caller-ownedの完了証拠を受け取り、完了可能かを判定します。
+filesystem、state、audit、clock、lockを変更せず、結果のzero valueはreadyを意味しません。判定は必ず
+artifact → summary → pipeline → review → sensor → blockingの順で、最初の未充足条件を`Blocker`と`Reason`へ返します。
+
+通常Stageのartifact確認は`artifact.HasRequiredOutput`へ委譲します。`for_each`または既知のper-unit stage、
+CodeKB stage（固定2.6.123では`reverse-engineering`）、per-kind artifact applicabilityは特殊配置未対応としてfail-closedです。
+`workspace_requires`、summary/pipeline/review/sensorの証拠不足も理由付きで拒否します。現在Stageとgraph metadataが一致しない、
+またはzero inputの場合も成功扱いにしません。receipt、dispatcher、sensor実行、state/audit更新は後続の責務です。
+
+固定AI-DLC `2.6.123`の確認範囲と段階的境界は[Stage完了可否の参照契約](ram/research/2026-09-03-thin-lifecycle-transition-contracts.md)、
+実装許可と受入条件は[Stage完了可否の実装計画](ram/decisions/2026-09-03-stage-completion-decision-plan.md)を参照してください。
 
 ## Intent開始 orchestration
 

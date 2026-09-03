@@ -34,20 +34,26 @@ type Consume struct {
 
 // Stage is the routing metadata required by the AI-DLC runtime.
 type Stage struct {
-	Slug             string
-	Number           string
-	Name             string
-	Phase            string
-	Execution        string
-	LeadAgent        string
-	SupportAgents    []string
-	Mode             string
-	Scopes           []string
-	Enabled          bool
-	Produces         []string
-	OptionalProduces []string
-	Consumes         []Consume
-	RequiresStages   []string
+	Slug                string
+	Number              string
+	Name                string
+	Phase               string
+	Execution           string
+	LeadAgent           string
+	SupportAgents       []string
+	Mode                string
+	Scopes              []string
+	Enabled             bool
+	ForEach             string
+	WorkspaceRequires   bool
+	Reviewer            string
+	SummaryConfirmation string
+	Sensors             []string
+	ProducesKinds       map[string][]string
+	Produces            []string
+	OptionalProduces    []string
+	Consumes            []Consume
+	RequiresStages      []string
 }
 
 // Scope contains the routing actions for one scope.
@@ -105,20 +111,26 @@ func Load(dataFS fs.FS) (Snapshot, error) {
 			continue
 		}
 		stages = append(stages, Stage{
-			Slug:             raw.Slug,
-			Number:           raw.Number,
-			Name:             raw.Name,
-			Phase:            raw.Phase,
-			Execution:        raw.Execution,
-			LeadAgent:        raw.LeadAgent,
-			SupportAgents:    raw.SupportAgents,
-			Mode:             raw.Mode,
-			Scopes:           raw.Scopes,
-			Enabled:          true,
-			Produces:         raw.Produces,
-			OptionalProduces: raw.OptionalProduces,
-			Consumes:         consumeValues(raw.Consumes),
-			RequiresStages:   raw.RequiresStages,
+			Slug:                raw.Slug,
+			Number:              raw.Number,
+			Name:                raw.Name,
+			Phase:               raw.Phase,
+			Execution:           raw.Execution,
+			LeadAgent:           raw.LeadAgent,
+			SupportAgents:       raw.SupportAgents,
+			Mode:                raw.Mode,
+			Scopes:              raw.Scopes,
+			Enabled:             true,
+			ForEach:             raw.ForEach,
+			WorkspaceRequires:   raw.WorkspaceRequires,
+			Reviewer:            raw.Reviewer,
+			SummaryConfirmation: raw.SummaryConfirmation,
+			Sensors:             raw.Sensors,
+			ProducesKinds:       cloneStringArrayMap(raw.ProducesKinds),
+			Produces:            raw.Produces,
+			OptionalProduces:    raw.OptionalProduces,
+			Consumes:            consumeValues(raw.Consumes),
+			RequiresStages:      raw.RequiresStages,
 		})
 		enabledSlugs[raw.Slug] = struct{}{}
 	}
@@ -149,24 +161,32 @@ func Load(dataFS fs.FS) (Snapshot, error) {
 }
 
 type stageDocument struct {
-	Slug                    string   `json:"slug"`
-	Number                  string   `json:"number"`
-	Name                    string   `json:"name"`
-	Phase                   string   `json:"phase"`
-	Execution               string   `json:"execution"`
-	LeadAgent               string   `json:"lead_agent"`
-	SupportAgents           []string `json:"support_agents"`
-	Mode                    string   `json:"mode"`
-	Scopes                  []string `json:"scopes"`
-	Enabled                 *bool    `json:"enabled"`
-	Produces                []string
-	ProducesPresent         bool
-	OptionalProduces        []string
-	OptionalProducesPresent bool
-	Consumes                []consumeDocument
-	ConsumesPresent         bool
-	RequiresStages          []string
-	RequiresStagesPresent   bool
+	Slug                       string   `json:"slug"`
+	Number                     string   `json:"number"`
+	Name                       string   `json:"name"`
+	Phase                      string   `json:"phase"`
+	Execution                  string   `json:"execution"`
+	LeadAgent                  string   `json:"lead_agent"`
+	SupportAgents              []string `json:"support_agents"`
+	Mode                       string   `json:"mode"`
+	Scopes                     []string `json:"scopes"`
+	Enabled                    *bool    `json:"enabled"`
+	ForEach                    string
+	WorkspaceRequires          bool
+	Reviewer                   string
+	ReviewerPresent            bool
+	SummaryConfirmation        string
+	SummaryConfirmationPresent bool
+	Sensors                    []string
+	ProducesKinds              map[string][]string
+	Produces                   []string
+	ProducesPresent            bool
+	OptionalProduces           []string
+	OptionalProducesPresent    bool
+	Consumes                   []consumeDocument
+	ConsumesPresent            bool
+	RequiresStages             []string
+	RequiresStagesPresent      bool
 }
 
 type consumeDocument struct {
@@ -230,6 +250,54 @@ func decodeStageDocument(data []byte) (stageDocument, error) {
 			return stageDocument{}, fmt.Errorf("field %q: %w", field.name, err)
 		}
 	}
+	if raw, exists := fields["for_each"]; exists {
+		if isJSONNull(raw) {
+			return stageDocument{}, errors.New(`field "for_each" must be a string`)
+		}
+		if err := json.Unmarshal(raw, &stage.ForEach); err != nil {
+			return stageDocument{}, fmt.Errorf("field %q: %w", "for_each", err)
+		}
+	}
+	if raw, exists := fields["workspace_requires"]; exists {
+		if isJSONNull(raw) {
+			return stageDocument{}, errors.New(`field "workspace_requires" must be a boolean`)
+		}
+		if err := json.Unmarshal(raw, &stage.WorkspaceRequires); err != nil {
+			return stageDocument{}, fmt.Errorf("field %q: %w", "workspace_requires", err)
+		}
+	}
+	if raw, exists := fields["reviewer"]; exists {
+		stage.ReviewerPresent = true
+		if isJSONNull(raw) {
+			return stageDocument{}, errors.New(`field "reviewer" must be a string`)
+		}
+		if err := json.Unmarshal(raw, &stage.Reviewer); err != nil {
+			return stageDocument{}, fmt.Errorf("field %q: %w", "reviewer", err)
+		}
+	}
+	if raw, exists := fields["summary_confirmation"]; exists {
+		stage.SummaryConfirmationPresent = true
+		if isJSONNull(raw) {
+			return stageDocument{}, errors.New(`field "summary_confirmation" must be a string`)
+		}
+		if err := json.Unmarshal(raw, &stage.SummaryConfirmation); err != nil {
+			return stageDocument{}, fmt.Errorf("field %q: %w", "summary_confirmation", err)
+		}
+	}
+	if raw, exists := fields["sensors"]; exists {
+		var err error
+		stage.Sensors, err = decodeStringArray(raw)
+		if err != nil {
+			return stageDocument{}, fmt.Errorf("field %q: %w", "sensors", err)
+		}
+	}
+	if raw, exists := fields["produces_kinds"]; exists {
+		var err error
+		stage.ProducesKinds, err = decodeStringArrayMap(raw)
+		if err != nil {
+			return stageDocument{}, fmt.Errorf("field %q: %w", "produces_kinds", err)
+		}
+	}
 	if raw, exists := fields["produces"]; exists {
 		stage.ProducesPresent = true
 		var err error
@@ -285,6 +353,30 @@ func decodeStringArray(data json.RawMessage) ([]string, error) {
 		if err := json.Unmarshal(rawValue, &values[index]); err != nil {
 			return nil, fmt.Errorf("item %d must be a string: %w", index, err)
 		}
+	}
+	return values, nil
+}
+
+func decodeStringArrayMap(data json.RawMessage) (map[string][]string, error) {
+	if isJSONNull(data) {
+		return nil, errors.New("must be an object")
+	}
+
+	var rawValues map[string]json.RawMessage
+	if err := json.Unmarshal(data, &rawValues); err != nil {
+		return nil, err
+	}
+	if rawValues == nil {
+		return nil, errors.New("must be an object")
+	}
+
+	values := make(map[string][]string, len(rawValues))
+	for name, rawValue := range rawValues {
+		decoded, err := decodeStringArray(rawValue)
+		if err != nil {
+			return nil, fmt.Errorf("entry %q: %w", name, err)
+		}
+		values[name] = decoded
 	}
 	return values, nil
 }
@@ -412,6 +504,15 @@ func validateStageDocuments(stages []stageDocument) error {
 		if stage.Execution != "ALWAYS" && stage.Execution != "CONDITIONAL" {
 			return fmt.Errorf("stage %d: execution %q is invalid", index, stage.Execution)
 		}
+		if !validStageModes[stage.Mode] {
+			return fmt.Errorf("stage %d: mode %q is invalid", index, stage.Mode)
+		}
+		if stage.ReviewerPresent && stage.Reviewer == "" {
+			return fmt.Errorf("stage %d: reviewer must be non-empty when declared", index)
+		}
+		if stage.SummaryConfirmationPresent && stage.SummaryConfirmation != "required" && stage.SummaryConfirmation != "if-present" {
+			return fmt.Errorf("stage %d: summary_confirmation %q is invalid", index, stage.SummaryConfirmation)
+		}
 		if _, exists := slugs[stage.Slug]; exists {
 			return fmt.Errorf("stage %d: duplicate slug %q", index, stage.Slug)
 		}
@@ -450,6 +551,14 @@ func validateStageDocuments(stages []stageDocument) error {
 		}
 	}
 	return nil
+}
+
+var validStageModes = map[string]bool{
+	"inline":     true,
+	"subagent":   true,
+	"pipeline":   true,
+	"mob":        true,
+	"agent-team": true,
 }
 
 func findStageDocument(stages []stageDocument, slug string) (stageDocument, bool) {
@@ -583,6 +692,8 @@ func (s Snapshot) Stages() []Stage {
 	for index, stage := range s.stages {
 		stage.SupportAgents = slices.Clone(stage.SupportAgents)
 		stage.Scopes = slices.Clone(stage.Scopes)
+		stage.Sensors = slices.Clone(stage.Sensors)
+		stage.ProducesKinds = cloneStringArrayMap(stage.ProducesKinds)
 		stage.Produces = slices.Clone(stage.Produces)
 		stage.OptionalProduces = slices.Clone(stage.OptionalProduces)
 		stage.Consumes = slices.Clone(stage.Consumes)
@@ -590,6 +701,17 @@ func (s Snapshot) Stages() []Stage {
 		stages[index] = stage
 	}
 	return stages
+}
+
+func cloneStringArrayMap(values map[string][]string) map[string][]string {
+	if values == nil {
+		return nil
+	}
+	clone := make(map[string][]string, len(values))
+	for name, entries := range values {
+		clone[name] = slices.Clone(entries)
+	}
+	return clone
 }
 
 // ScopeNames returns the available scope names.

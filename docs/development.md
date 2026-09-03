@@ -365,6 +365,8 @@ fail-closedにし、disabled stage参照だけはvalidとして公開actionか�
 stage field名は大小文字を含めた完全一致で解釈します。`ScopeNames`はJSON objectの記述順にかかわらず
 本家JavaScript互換のUTF-16 code-unit順です。scope prose metadataは別の
 `.codex/scopes/*.md`から取得する将来consumerの責務です。
+完了判定で参照する`for_each`、`workspace_requires`、`reviewer`、`summary_confirmation`、`sensors`、
+`produces_kinds`もStage metadataとして保持し、型不正とsummary policyの未知値はLoad errorにします。
 
 gridのread errorとJSON構文errorはfallbackするため、その成功結果だけで「dataが存在する」と
 「読めない」を区別できません。一方、構文上validな構造不正はerrorです。供給`fs.FS`自体のsandbox、
@@ -640,6 +642,26 @@ go test -count=1 ./src/internal/artifact
 
 固定AI-DLC `2.6.123`の参照範囲と段階的境界は[参照契約](ram/research/2026-09-03-stage-artifact-presence-contracts.md)、
 実装許可・TDD slice・残余riskは[実装計画](ram/decisions/2026-09-03-stage-artifact-presence-plan.md)を参照してください。
+
+### Stage完了可否のread-only判定（内部API）
+
+`orchestrator.EvaluateStageCompletion(input CompletionInput) CompletionDecision`は、現在Stageとgraph Stageの整合、
+record FS、callerが取得した完了証拠を使って、Stageを完了へ進められるかを読み取り専用で判定します。判定順は
+artifact → summary → pipeline → review → sensor → blockingで固定し、最初の不足を`CompletionDecision.Blocker`と
+`Reason`へ返します。`CompletionDecision`のzero valueは成功ではありません。
+
+通常Stageのrequired artifactは`artifact.HasRequiredOutput`へ委譲します。per-unit、CodeKB、per-kind applicability、
+`workspace_requires`、不足しているsummary/pipeline/review/sensor証拠はfail-closedです。receipt、dispatcher、sensor実行、
+state/audit/clock/lockの変更はこのAPIに含めず、caller-owned FSと入力sliceも変更しません。
+
+loopではgraphとorchestratorの対象テストだけを実行します。
+
+```sh
+go test -count=1 -run '^(TestLoad|TestEvaluateStageCompletion)' ./src/internal/graph ./src/internal/orchestrator
+```
+
+固定AI-DLC `2.6.123`の参照範囲は[参照契約](ram/research/2026-09-03-thin-lifecycle-transition-contracts.md)、
+実装許可・受入条件・残余riskは[実装計画](ram/decisions/2026-09-03-stage-completion-decision-plan.md)を参照してください。
 
 ### Intent開始 orchestration（内部API）
 

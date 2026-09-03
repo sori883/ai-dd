@@ -130,6 +130,99 @@ func TestLoadPreservesStageArtifactMetadata(t *testing.T) {
 	}
 }
 
+func TestLoadPreservesStageCompletionMetadata(t *testing.T) {
+	t.Parallel()
+
+	stage := stageFixture("completion", "1.1")
+	stage["for_each"] = "unit-of-work"
+	stage["workspace_requires"] = true
+	stage["reviewer"] = "reviewer-agent"
+	stage["summary_confirmation"] = "required"
+	stage["sensors"] = []string{"required-sections", "blocking-check"}
+	stage["produces"] = []string{"artifact"}
+	stage["produces_kinds"] = map[string]any{"artifact": []string{"service", "ui"}}
+
+	snapshot, err := Load(fixtureFS(t, []any{stage}, map[string]any{}))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	got := snapshot.Stages()[0]
+	if got.ForEach != "unit-of-work" {
+		t.Errorf("Stage.ForEach = %q, want unit-of-work", got.ForEach)
+	}
+	if !got.WorkspaceRequires {
+		t.Error("Stage.WorkspaceRequires = false, want true")
+	}
+	if got.Reviewer != "reviewer-agent" {
+		t.Errorf("Stage.Reviewer = %q, want reviewer-agent", got.Reviewer)
+	}
+	if got.SummaryConfirmation != "required" {
+		t.Errorf("Stage.SummaryConfirmation = %q, want required", got.SummaryConfirmation)
+	}
+	if got.Sensors == nil || !reflect.DeepEqual(got.Sensors, []string{"required-sections", "blocking-check"}) {
+		t.Errorf("Stage.Sensors = %#v, want required-sections and blocking-check", got.Sensors)
+	}
+	if got.ProducesKinds == nil || !reflect.DeepEqual(got.ProducesKinds, map[string][]string{"artifact": {"service", "ui"}}) {
+		t.Errorf("Stage.ProducesKinds = %#v, want artifact applicability", got.ProducesKinds)
+	}
+}
+
+func TestLoadRejectsInvalidStageCompletionMetadata(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		field string
+		value any
+	}{
+		{name: "for_each", field: "for_each", value: true},
+		{name: "workspace_requires", field: "workspace_requires", value: "true"},
+		{name: "reviewer", field: "reviewer", value: false},
+		{name: "summary_confirmation", field: "summary_confirmation", value: "sometimes"},
+		{name: "sensors", field: "sensors", value: "blocking-check"},
+		{name: "produces_kinds", field: "produces_kinds", value: "artifact"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			stage := stageFixture("completion", "1.1")
+			stage[tt.field] = tt.value
+			if _, err := Load(fixtureFS(t, []any{stage}, map[string]any{})); err == nil {
+				t.Fatalf("Load() error = nil for invalid %s", tt.field)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsUnsupportedStageMode(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range []string{"sequential", "unknown"} {
+		mode := mode
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+
+			stage := stageFixture("stage", "1.1")
+			stage["mode"] = mode
+			if _, err := Load(fixtureFS(t, []any{stage}, map[string]any{})); err == nil {
+				t.Fatalf("Load() error = nil for unsupported mode %q", mode)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsEmptyReviewerWhenDeclared(t *testing.T) {
+	t.Parallel()
+
+	stage := stageFixture("stage", "1.1")
+	stage["reviewer"] = ""
+	if _, err := Load(fixtureFS(t, []any{stage}, map[string]any{})); err == nil {
+		t.Fatal("Load() error = nil for declared empty reviewer")
+	}
+}
+
 func TestLoadValidatesStageConsumes(t *testing.T) {
 	t.Parallel()
 
@@ -833,6 +926,10 @@ func TestSnapshotReturnsDefensiveCopies(t *testing.T) {
 	stage["scopes"] = []string{"classic"}
 	stage["produces"] = []string{"intent-statement"}
 	stage["optional_produces"] = []string{"questions"}
+	stage["sensors"] = []string{"required-sections"}
+	stage["produces_kinds"] = map[string]any{
+		"intent-statement": []string{"service"},
+	}
 	stage["consumes"] = []map[string]any{{"artifact": "project-description", "required": true}}
 	stage["requires_stage"] = []string{"dependency"}
 	dependency := stageFixture("dependency", "1.1")
@@ -850,6 +947,9 @@ func TestSnapshotReturnsDefensiveCopies(t *testing.T) {
 	stages[0].Slug = "changed"
 	stages[0].SupportAgents[0] = "changed"
 	stages[0].Scopes[0] = "changed"
+	stages[0].Sensors[0] = "changed"
+	stages[0].ProducesKinds["intent-statement"][0] = "changed"
+	stages[0].ProducesKinds["new-artifact"] = []string{"changed"}
 	stages[0].Produces[0] = "changed"
 	stages[0].OptionalProduces[0] = "changed"
 	stages[0].Consumes[0].Artifact = "changed"
@@ -865,6 +965,8 @@ func TestSnapshotReturnsDefensiveCopies(t *testing.T) {
 		Mode:             "inline",
 		Scopes:           []string{"classic"},
 		Enabled:          true,
+		Sensors:          []string{"required-sections"},
+		ProducesKinds:    map[string][]string{"intent-statement": {"service"}},
 		Produces:         []string{"intent-statement"},
 		OptionalProduces: []string{"questions"},
 		Consumes:         []Consume{{Artifact: "project-description", Required: true}},
