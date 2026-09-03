@@ -871,6 +871,32 @@ symlinkの場合はリンク本体を退避し、リンク先は変更しませ�
 
 詳細な根拠、TDDの対象、確認範囲は[初期state永続化writerの実装計画](ram/decisions/2026-09-02-initial-state-writer-plan.md)を参照してください。
 
+## 既存state atomic update writer（内部API）
+
+`state.WriteState(recordRoot *os.Root, replacement []byte) error`は、既存の
+`aidlc-state.md`だけを検証済みbytesへ置換します。replacementはfilesystemへ触れる前に
+`state.Parse`で検証し、malformed stateは拒否します。対象は必ず存在するregular fileでなければならず、
+`Lstat`後に非truncateの`O_WRONLY` open/closeをwrite barrierとして実行します。missing、directory、
+symlink、FIFO等のnonregular target、read-only targetはfail-closedし、既存bytesを変更しません。
+
+barrier成功後、同じRoot内のsibling temporaryを`O_WRONLY|O_CREATE|O_EXCL`で有限回試行し、取得したfileへ
+replacementの全bytesを書き、closeしてから`Root.Rename`します。short write、write/close/rename failureでは
+renameを行わず、writer自身が取得したtemporaryだけをcleanupします。cleanup failureは主原因と
+`errors.Join`し、衝突した他writerのtemporaryは削除しません。成功時はreplacementのexact bytesだけが
+targetに現れ、caller-owned Rootはcloseしません。
+
+このAPIは初期化用`WriteInitial`のsidecar順序・契約を変更せず、audit、lock、state再読込、業務上の遷移認可を
+担当しません。close後の同一directory renameを可視性境界とし、`fsync`、電源断耐性、複数fileのtransaction、
+lost-update防止は保証しません。固定AI-DLC `2.6.123`の既存atomic write機械に準拠し、実装記録と残余riskは
+[既存state atomic update writerの実装計画](ram/decisions/2026-09-03-state-update-writer-plan.md)を参照してください。
+
+対象testは次で実行します。
+
+```sh
+go test -count=1 -run '^(TestWriteState|TestWriteInitial)' ./src/internal/state
+go test -tags=integration -count=1 -run '^(TestWriteState|TestWriteInitial)' ./src/internal/state
+```
+
 ## 保存済み aidlc-state.md reader/parser（内部API）
 
 `state.Read(recordRoot *os.Root) (State, error)`は、callerが選択して開いたIntent record rootの固定leaf
