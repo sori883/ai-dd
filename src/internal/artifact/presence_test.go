@@ -123,6 +123,37 @@ func TestHasRequiredOutputUsesAnyRequiredArtifact(t *testing.T) {
 	}
 }
 
+func TestHasRequiredOutputContinuesAfterStatError(t *testing.T) {
+	t.Parallel()
+
+	fsys := &scriptedStatFS{
+		files: fstest.MapFS{
+			"ideation/requirements/second-artifact.md": {Data: []byte("content")},
+		},
+		errors: map[string]error{
+			"ideation/requirements/first-artifact.md": fs.ErrPermission,
+		},
+	}
+
+	got, err := artifact.HasRequiredOutput(fsys, graph.Stage{
+		Phase:    "ideation",
+		Slug:     "requirements",
+		Produces: []string{"first-artifact", "second-artifact"},
+	})
+	if err != nil {
+		t.Fatalf("HasRequiredOutput() error = %v, want nil", err)
+	}
+	if !got {
+		t.Error("HasRequiredOutput() = false, want true")
+	}
+	if !slices.Equal(fsys.stats, []string{
+		"ideation/requirements/first-artifact.md",
+		"ideation/requirements/second-artifact.md",
+	}) {
+		t.Errorf("Stat paths = %q, want both required artifacts in order", fsys.stats)
+	}
+}
+
 func TestHasRequiredOutputArtifactFilenameExceptions(t *testing.T) {
 	t.Parallel()
 
@@ -230,6 +261,25 @@ func TestHasRequiredOutputRejectsInvalidMetadataBeforeFilesystem(t *testing.T) {
 	}
 }
 
+func TestHasRequiredOutputInvalidMetadataTakesPriorityOverNilFilesystem(t *testing.T) {
+	t.Parallel()
+
+	got, err := artifact.HasRequiredOutput(nil, graph.Stage{
+		Phase:    "Ideation",
+		Slug:     "requirements",
+		Produces: []string{"artifact"},
+	})
+	if got {
+		t.Error("HasRequiredOutput() = true, want false")
+	}
+	if !errors.Is(err, artifact.ErrInvalidMetadata) {
+		t.Errorf("HasRequiredOutput() error = %v, want ErrInvalidMetadata", err)
+	}
+	if errors.Is(err, artifact.ErrInvalidFilesystem) {
+		t.Errorf("HasRequiredOutput() error = %v, unexpectedly matches ErrInvalidFilesystem", err)
+	}
+}
+
 func TestHasRequiredOutputRejectsNilFilesystem(t *testing.T) {
 	t.Parallel()
 
@@ -288,6 +338,24 @@ type statOnlyFS struct {
 	files fstest.MapFS
 	stats []string
 	opens int
+}
+
+type scriptedStatFS struct {
+	files  fstest.MapFS
+	errors map[string]error
+	stats  []string
+}
+
+func (f *scriptedStatFS) Open(string) (fs.File, error) {
+	return nil, errors.New("unexpected open")
+}
+
+func (f *scriptedStatFS) Stat(name string) (fs.FileInfo, error) {
+	f.stats = append(f.stats, name)
+	if err, ok := f.errors[name]; ok {
+		return nil, err
+	}
+	return fs.Stat(f.files, name)
 }
 
 func (f *statOnlyFS) Open(string) (fs.File, error) {

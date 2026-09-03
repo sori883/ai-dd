@@ -21,8 +21,10 @@ var (
 
 var artifactNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
-// HasRequiredOutput reports whether at least one required artifact for stage
-// exists as a regular file beneath the stage's record directory.
+// HasRequiredOutput reports whether at least one required artifact for a
+// caller-classified ordinary stage exists as a regular file beneath the
+// stage's record directory. The caller must exclude per-unit and CodeKB
+// stages; this function does not resolve their special artifact placement.
 func HasRequiredOutput(recordFS fs.FS, stage graph.Stage) (bool, error) {
 	if len(stage.Produces) == 0 {
 		return true, nil
