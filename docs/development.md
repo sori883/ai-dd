@@ -745,8 +745,9 @@ state/auditを変更しません。`RejectGate`は新しいtrusted `HUMAN_TURN`�
 `audit.ReadEvents`は当該recordの全`.md` shardを読み、canonical UTC秒Timestamp、shard内block位置、duplicate/malformed authority、
 timestamp逆行、Root/directory/leaf identityを検証します。最新resolutionより新しい`HUMAN_TURN`だけをfreshとし、同秒の別shardは
 順序を推定せずfail-closedにします。canonical headerと空末尾以外の不完全event、nonregular leaf、FIFO差替えは許可へ変換しません。
-`HUMAN_TURN`はこのgateや自由なchoice文字列から生成せず、approval validatorはRevision Countをstateから読み、exact choiceと自己帰属
-tripwireをprivate helperで検証します。
+`HUMAN_TURN`はこのgateや自由なchoice文字列から生成しません。`validateApprovalGateDecision`はraw recordを受け取らず、保持中の
+identity-bound GuardとRootから`audit.ReadEvents`をfresh readしてreceiptを検証し、Revision Countをstateから読み、exact choiceと
+自己帰属tripwireをprivate helperで検証します。
 
 このwalking skeletonのgate対象は未対応能力を持たない通常Stageに限ります。summary confirmation（`if-present`を含む）、pipeline、
 reviewer、sensor、agent-team、per-unit、CodeKB、workspace sourceを要求するStage、Initialization、Constructionは常にunsupportedです。

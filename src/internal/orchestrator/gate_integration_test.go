@@ -494,26 +494,82 @@ func TestApprovalValidationIntegrationNeedsNewReceiptAfterRevision(t *testing.T)
 	if _, err := OpenGate(context.Background(), input); err != nil {
 		t.Fatalf("OpenGate() error = %v", err)
 	}
+	oldContent, err := fixture.recordRoot.ReadFile("aidlc-state.md")
+	if err != nil {
+		t.Fatal(err)
+	}
 	gateIntegrationAppendHumanTurn(t, fixture)
+	freshSnapshot := gateIntegrationReadRecords(t, fixture)
+	if !audit.HumanTurnFresh(freshSnapshot) {
+		t.Fatalf("pre-revision audit snapshot = %#v, want fresh HUMAN_TURN", freshSnapshot)
+	}
 	if _, err := RejectGate(context.Background(), input); err != nil {
 		t.Fatalf("RejectGate() error = %v", err)
 	}
 	if _, err := ReviseGate(context.Background(), input); err != nil {
 		t.Fatalf("ReviseGate() error = %v", err)
 	}
+	progress := state.StageProgress{CheckboxState: state.CheckboxStateAwaitingApproval, CheckboxMarker: "[?]"}
+	err = recordlock.With(context.Background(), fixture.identity, func(guard *recordlock.Guard) error {
+		if _, err := validateApprovalGateDecision(context.Background(), fixture.identity, guard, fixture.projectRoot, fixture.recordRoot, oldContent, progress, "Approve"); !errors.Is(err, ErrStaleHumanTurn) {
+			return fmt.Errorf("approval with old state snapshot error = %v, want ErrStaleHumanTurn", err)
+		}
+		if err := audit.Append(context.Background(), guard, fixture.projectRoot, fixture.recordRoot, []audit.Event{{
+			Event:  "HUMAN_TURN",
+			Fields: map[string]string{"Prompt": "approval"},
+		}}); err != nil {
+			return fmt.Errorf("append HUMAN_TURN: %w", err)
+		}
+		if _, err := validateApprovalGateDecision(context.Background(), fixture.identity, guard, fixture.projectRoot, fixture.recordRoot, oldContent, progress, "Approve"); err != nil {
+			return fmt.Errorf("approval with fresh ledger error = %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestApprovalValidationIntegrationRejectsEmptyLedger(t *testing.T) {
+	fixture := newGateIntegrationFixture(t)
 	content, err := fixture.recordRoot.ReadFile("aidlc-state.md")
 	if err != nil {
 		t.Fatal(err)
 	}
-	records := gateIntegrationReadRecords(t, fixture)
 	progress := state.StageProgress{CheckboxState: state.CheckboxStateAwaitingApproval, CheckboxMarker: "[?]"}
-	if _, err := validateApprovalGateDecision(content, progress, records, "Approve"); !errors.Is(err, ErrStaleHumanTurn) {
-		t.Fatalf("approval with old receipt error = %v, want ErrStaleHumanTurn", err)
+	err = recordlock.With(context.Background(), fixture.identity, func(guard *recordlock.Guard) error {
+		_, err := validateApprovalGateDecision(context.Background(), fixture.identity, guard, fixture.projectRoot, fixture.recordRoot, content, progress, "Approve")
+		if !errors.Is(err, ErrStaleHumanTurn) {
+			return fmt.Errorf("approval with empty ledger error = %v, want ErrStaleHumanTurn", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	gateIntegrationAppendHumanTurn(t, fixture)
-	records = gateIntegrationReadRecords(t, fixture)
-	if _, err := validateApprovalGateDecision(content, progress, records, "Approve"); err != nil {
-		t.Fatalf("approval with new receipt error = %v, want nil", err)
+}
+
+func TestApprovalValidationIntegrationRejectsUnboundRootOrGuard(t *testing.T) {
+	fixture := newGateIntegrationFixture(t)
+	other := newGateIntegrationFixture(t)
+	content, err := fixture.recordRoot.ReadFile("aidlc-state.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	progress := state.StageProgress{CheckboxState: state.CheckboxStateAwaitingApproval, CheckboxMarker: "[?]"}
+	err = recordlock.With(context.Background(), fixture.identity, func(guard *recordlock.Guard) error {
+		_, err := validateApprovalGateDecision(context.Background(), other.identity, guard, other.projectRoot, other.recordRoot, content, progress, "Approve")
+		if !errors.Is(err, audit.ErrGuardIdentity) {
+			return fmt.Errorf("approval with mismatched Guard error = %v, want audit.ErrGuardIdentity", err)
+		}
+		_, err = validateApprovalGateDecision(context.Background(), fixture.identity, guard, fixture.projectRoot, other.recordRoot, content, progress, "Approve")
+		if !errors.Is(err, audit.ErrInvalidRoot) {
+			return fmt.Errorf("approval with mismatched record root error = %v, want audit.ErrInvalidRoot", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

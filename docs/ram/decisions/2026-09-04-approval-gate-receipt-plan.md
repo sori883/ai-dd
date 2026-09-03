@@ -145,7 +145,9 @@ nonblocking descriptor、path・descriptor identityの読取前後検証で差�
 
 `audit.ReadEvents`と`HumanTurnFresh`はcanonical authority、全resolution種別、shard内順序、同秒別shard、truncated
 tail、timestamp逆行を扱う。`OpenGate`、`RejectGate`、`ReviseGate`は自身でlockを取得し、audit先行のstate遷移を
-実装した。`HUMAN_TURN`はmintせず、approval choiceとreceiptの検証はPR6から再利用できるprivate helperに分離した。
+実装した。`HUMAN_TURN`はmintせず、`validateApprovalGateDecision`はraw recordを受け取らず、呼出しが保持する
+identity-bound RootとGuardを使って`audit.ReadEvents`をfresh readし、approval choiceとreceiptを検証するprivate helperとして
+PR6から再利用できるよう分離した。
 InitializationとConstructionはSkeleton Stanceの記録値にかかわらずunsupportedである。
 
 観測したTDD結果は、reader／freshness、decision vector、gateのtransition／failure／overflow／再差戻し／古いreceipt、
@@ -164,3 +166,10 @@ go test -tags=integration -count=1 -run '^TestReadEventsIntegration' ./src/inter
 go test -tags=integration -count=1 -run '^Test(ReadIntegration|ReadDocumentIntegration)' ./src/internal/state
 go test -tags=integration -count=1 -run '^Test(OpenGateIntegration|RejectGateIntegration|ReviseGateIntegration|ApprovalValidationIntegration)' ./src/internal/orchestrator
 ```
+
+独立reviewのP1として、生の`[]audit.AuditRecord`をapproval helperへ渡すとreaderの検証を経ずに
+fresh receiptを構築できることを確認した。helper自身が保持中Guardとbound Rootsから履歴を再読取りする形へ修正し、
+gateのprivate dependency seamからもaudit reader差替えを除いた。旧署名呼出しのcompile RED後、実ledgerで
+空履歴、異なるGuard/Root、差戻し後の古いsnapshot拒否、新HUMAN_TURN後の成功をGREENで確認した。
+さらに計画内のECMAScript trim契約に合わせ、U+FEFFを除去しU+0085を除去しない選択肢・feedback境界を
+回帰RED→GREENで修正した。自己帰属検出の語彙や承認範囲は変更していない。

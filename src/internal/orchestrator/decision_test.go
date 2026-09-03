@@ -3,10 +3,6 @@ package orchestrator
 import (
 	"errors"
 	"testing"
-	"time"
-
-	"github.com/sori883/ai-dd/src/internal/audit"
-	"github.com/sori883/ai-dd/src/internal/state"
 )
 
 func TestValidateApprovalChoiceHonorsRevisionBoundary(t *testing.T) {
@@ -81,26 +77,37 @@ func TestDecisionValidationUsesWholeCancellationVocabulary(t *testing.T) {
 	}
 }
 
-func TestApprovalReceiptRequiresFreshHumanTurnAtAwaitingGate(t *testing.T) {
+func TestDecisionValidationUsesECMAScriptTrimBoundaries(t *testing.T) {
 	t.Parallel()
 
-	stamp := time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC)
-	fresh := []audit.AuditRecord{
-		{Event: "GATE_APPROVED", Timestamp: stamp, Shard: "audit/a.md", Position: 0},
-		{Event: "HUMAN_TURN", Timestamp: stamp, Shard: "audit/a.md", Position: 1},
+	if err := validateApprovalChoice("\ufeffApprove\ufeff", 0); err != nil {
+		t.Fatalf("Approve with BOM trim error = %v, want nil", err)
 	}
-	progress := state.StageProgress{CheckboxState: state.CheckboxStateAwaitingApproval, CheckboxMarker: "[?]"}
-	content := stringsForDecisionState(t)
-	if _, err := validateApprovalGateDecision(content, progress, fresh, "Approve"); err != nil {
-		t.Fatalf("validateApprovalGateDecision(fresh) error = %v", err)
+	if err := validateApprovalChoice("\u0085Approve\u0085", 0); !errors.Is(err, ErrInvalidDecision) {
+		t.Fatalf("Approve with U+0085 error = %v, want ErrInvalidDecision", err)
+	}
+	if err := validateApprovalChoice("\ufeffAccept as-is\ufeff", 3); err != nil {
+		t.Fatalf("Accept as-is with BOM trim error = %v, want nil", err)
+	}
+	if err := validateApprovalChoice("\u0085Accept as-is\u0085", 3); !errors.Is(err, ErrInvalidDecision) {
+		t.Fatalf("Accept as-is with U+0085 error = %v, want ErrInvalidDecision", err)
 	}
 
-	stale := []audit.AuditRecord{
-		{Event: "HUMAN_TURN", Timestamp: stamp, Shard: "audit/a.md", Position: 0},
-		{Event: "GATE_APPROVED", Timestamp: stamp, Shard: "audit/a.md", Position: 1},
+	choice, feedback, err := validateRejectionDecision("\ufeffRequest Changes\ufeff", "\ufeffNeeds revision\ufeff")
+	if err != nil {
+		t.Fatalf("Request Changes with BOM trim error = %v, want nil", err)
 	}
-	if _, err := validateApprovalGateDecision(content, progress, stale, "Approve"); !errors.Is(err, ErrStaleHumanTurn) {
-		t.Fatalf("validateApprovalGateDecision(stale) error = %v, want ErrStaleHumanTurn", err)
+	if choice != "Request Changes" || feedback != "Needs revision" {
+		t.Fatalf("BOM-trimmed rejection = (%q, %q), want (Request Changes, Needs revision)", choice, feedback)
+	}
+	if _, _, err := validateRejectionDecision("\u0085Request Changes\u0085", "Needs revision"); !errors.Is(err, ErrInvalidDecision) {
+		t.Fatalf("Request Changes with U+0085 error = %v, want ErrInvalidDecision", err)
+	}
+	if isNonAnswer("\ufeffCancelled\ufeff") != true {
+		t.Fatal("isNonAnswer(BOM-wrapped Cancelled) = false, want true")
+	}
+	if isNonAnswer("\u0085Cancelled\u0085") {
+		t.Fatal("isNonAnswer(U+0085-wrapped Cancelled) = true, want false")
 	}
 }
 

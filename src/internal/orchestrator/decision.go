@@ -1,14 +1,17 @@
 package orchestrator
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/sori883/ai-dd/src/internal/audit"
+	"github.com/sori883/ai-dd/src/internal/recordlock"
 	"github.com/sori883/ai-dd/src/internal/state"
 )
 
@@ -40,7 +43,7 @@ var (
 // validateApprovalChoice validates the exact choices offered at an approval
 // gate. Accept as-is is available only after three recorded revisions.
 func validateApprovalChoice(choice string, revisionCount int) error {
-	choice = strings.TrimSpace(choice)
+	choice = trimECMAScriptWhitespace(choice)
 	if revisionCount < 0 {
 		return fmt.Errorf("approval revision count %d is negative: %w", revisionCount, ErrInvalidDecision)
 	}
@@ -69,7 +72,7 @@ func validateApprovalDecision(content []byte, choice string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read approval revision count: %w", err)
 	}
-	choice = strings.TrimSpace(choice)
+	choice = trimECMAScriptWhitespace(choice)
 	if marker := selfAttributedDecisionMarker(choice, decisionKindApproval); marker != nil {
 		return "", fmt.Errorf("approval choice %q is self-attributed (%s): %w", marker.phrase, marker.category, ErrSelfAttributedDecision)
 	}
@@ -81,19 +84,24 @@ func validateApprovalDecision(content []byte, choice string) (string, error) {
 
 // validateApprovalGateDecision composes the state-backed choice validator
 // with the reader-backed receipt boundary used by the later approval
-// transaction. The receipt is supplied as already-read, validated records;
-// no caller boolean or timestamp is accepted as authority.
-func validateApprovalGateDecision(content []byte, progress state.StageProgress, records []audit.AuditRecord, choice string) (string, error) {
+// transaction. The receipt is freshly read from the identity-bound roots while
+// the caller holds the matching Guard; no caller record, boolean, or timestamp
+// is accepted as authority.
+func validateApprovalGateDecision(ctx context.Context, identity recordlock.Identity, guard *recordlock.Guard, projectRoot, recordRoot *os.Root, content []byte, progress state.StageProgress, choice string) (string, error) {
 	if progress.CheckboxState != state.CheckboxStateAwaitingApproval || progress.CheckboxMarker != string(state.StageMarkerAwaitingApproval) {
 		return "", fmt.Errorf("approval requires an awaiting-approval marker: %w", ErrInvalidDecision)
 	}
-	if err := validateApprovalReceipt(records); err != nil {
+	if err := validateApprovalReceipt(ctx, identity, guard, projectRoot, recordRoot); err != nil {
 		return "", err
 	}
 	return validateApprovalDecision(content, choice)
 }
 
-func validateApprovalReceipt(records []audit.AuditRecord) error {
+func validateApprovalReceipt(ctx context.Context, identity recordlock.Identity, guard *recordlock.Guard, projectRoot, recordRoot *os.Root) error {
+	records, err := audit.ReadEvents(ctx, identity, guard, projectRoot, recordRoot)
+	if err != nil {
+		return fmt.Errorf("read approval audit: %w", err)
+	}
 	if !audit.HumanTurnFresh(records) {
 		return fmt.Errorf("approval has no fresh HUMAN_TURN receipt: %w", ErrStaleHumanTurn)
 	}
@@ -101,8 +109,8 @@ func validateApprovalReceipt(records []audit.AuditRecord) error {
 }
 
 func validateRejectionDecision(choice, feedback string) (string, string, error) {
-	choice = strings.TrimSpace(choice)
-	feedback = strings.TrimSpace(feedback)
+	choice = trimECMAScriptWhitespace(choice)
+	feedback = trimECMAScriptWhitespace(feedback)
 	if marker := selfAttributedDecisionMarker(feedback, decisionKindRejection); marker != nil {
 		return "", "", fmt.Errorf("rejection feedback is self-attributed (%s): %w", marker.phrase, ErrSelfAttributedDecision)
 	}
@@ -118,14 +126,14 @@ func validateRejectionDecision(choice, feedback string) (string, string, error) 
 // isNonAnswer recognizes only complete cancellation/dismissal/timeout
 // phrases. Substantive prose containing one of these words remains an answer.
 func isNonAnswer(text string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(text))
+	normalized := strings.ToLower(trimECMAScriptWhitespace(text))
 	if normalized == "" {
 		return true
 	}
 	if len(normalized) > 0 {
 		last := normalized[len(normalized)-1]
 		if last == '.' || last == '!' || last == '?' {
-			normalized = strings.TrimSpace(normalized[:len(normalized)-1])
+			normalized = trimECMAScriptWhitespace(normalized[:len(normalized)-1])
 		}
 	}
 	switch normalized {
@@ -138,6 +146,24 @@ func isNonAnswer(text string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// trimECMAScriptWhitespace matches the fixed JavaScript trim boundary used by
+// the repository's readers. In particular, ECMAScript trims BOM but does not
+// classify U+0085 (NEXT LINE) as whitespace.
+func trimECMAScriptWhitespace(value string) string {
+	return strings.TrimFunc(value, isECMAScriptWhitespace)
+}
+
+func isECMAScriptWhitespace(value rune) bool {
+	switch value {
+	case '\ufeff':
+		return true
+	case '\u0085':
+		return false
+	default:
+		return unicode.IsSpace(value)
 	}
 }
 

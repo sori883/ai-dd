@@ -1025,8 +1025,9 @@ state・graph・auditのidentity bindingを確認します。`OpenGate`は完了
 
 audit readerはcanonical UTC秒Timestamp、shard内位置、全resolution種別を検証します。最新resolutionより後の`HUMAN_TURN`だけを
 承認receiptとして扱い、同秒の別shardは順序不明として拒否します。canonical headerと空末尾以外の不完全event、duplicate field、
-timestamp逆行、nonregular/FIFO/identity差替えはfail-closedです。callerのchoice、boolean、timestampから`HUMAN_TURN`をmintせず、
-approvalのexact choice・revision boundary・自己帰属tripwireはprivate validatorで分離します。
+timestamp逆行、nonregular/FIFO/identity差替えはfail-closedです。callerのchoice、boolean、timestampから`HUMAN_TURN`をmintしません。
+`validateApprovalGateDecision`はraw recordを受け取らず、保持中のidentity-bound GuardとRootから`audit.ReadEvents`をfresh readして
+receiptを検証し、approvalのexact choice・revision boundary・自己帰属tripwireをprivate validatorで分離します。
 
 このwalking skeletonではsummary confirmation（`if-present`を含む）、pipeline、reviewer、sensor、agent-team、per-unit、CodeKB、
 workspace sourceを要求するStage、Initialization、Constructionをgate対象にしません。ConstructionはSkeleton Stanceの記録値にかかわらず

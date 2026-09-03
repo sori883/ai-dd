@@ -57,7 +57,6 @@ type GateResult struct {
 // entry points always use systemGateOps; no filesystem dependency or Guard is
 // exposed as part of the gate API.
 type gateOps struct {
-	readEvents   func(context.Context, recordlock.Identity, *recordlock.Guard, *os.Root, *os.Root) ([]audit.AuditRecord, error)
 	readDocument func(*os.Root) (state.Document, error)
 	appendAudit  func(context.Context, *recordlock.Guard, *os.Root, *os.Root, []audit.Event) error
 	writeState   func(*os.Root, []byte) error
@@ -66,7 +65,6 @@ type gateOps struct {
 
 func systemGateOps() gateOps {
 	return gateOps{
-		readEvents:   audit.ReadEvents,
 		readDocument: state.ReadDocument,
 		appendAudit:  audit.Append,
 		writeState:   state.WriteState,
@@ -75,9 +73,6 @@ func systemGateOps() gateOps {
 }
 
 func mergeGateOps(base, override gateOps) gateOps {
-	if override.readEvents != nil {
-		base.readEvents = override.readEvents
-	}
 	if override.readDocument != nil {
 		base.readDocument = override.readDocument
 	}
@@ -109,14 +104,14 @@ func openGateWithOps(ctx context.Context, input GateInput, injected gateOps) (re
 	err = recordlock.With(ctx, input.Identity, func(guard *recordlock.Guard) error {
 		// ReadEvents performs the identity/root binding checks while this
 		// transaction owns the lock. It deliberately does not acquire a lease.
-		if _, err := ops.readEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot); err != nil {
+		if _, err := audit.ReadEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot); err != nil {
 			return fmt.Errorf("open gate: validate audit binding: %w", err)
 		}
 		document, err := ops.readDocument(input.RecordRoot)
 		if err != nil {
 			return fmt.Errorf("open gate: read state: %w", err)
 		}
-		if _, err := ops.readEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot); err != nil {
+		if _, err := audit.ReadEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot); err != nil {
 			return fmt.Errorf("open gate: revalidate audit binding after state read: %w", err)
 		}
 		stage, progress, err := resolveGateState(document.State, input)
@@ -215,7 +210,7 @@ func rejectGateWithOps(ctx context.Context, input GateInput, injected gateOps) (
 	}
 	_ = choice
 	err = recordlock.With(ctx, input.Identity, func(guard *recordlock.Guard) error {
-		records, err := ops.readEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot)
+		records, err := audit.ReadEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot)
 		if err != nil {
 			return fmt.Errorf("reject gate: read audit: %w", err)
 		}
@@ -223,7 +218,7 @@ func rejectGateWithOps(ctx context.Context, input GateInput, injected gateOps) (
 		if err != nil {
 			return fmt.Errorf("reject gate: read state: %w", err)
 		}
-		records, err = ops.readEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot)
+		records, err = audit.ReadEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot)
 		if err != nil {
 			return fmt.Errorf("reject gate: revalidate audit binding after state read: %w", err)
 		}
@@ -327,14 +322,14 @@ func reviseGateWithOps(ctx context.Context, input GateInput, injected gateOps) (
 		return GateResult{}, err
 	}
 	err = recordlock.With(ctx, input.Identity, func(guard *recordlock.Guard) error {
-		if _, err := ops.readEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot); err != nil {
+		if _, err := audit.ReadEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot); err != nil {
 			return fmt.Errorf("revise gate: validate audit binding: %w", err)
 		}
 		document, err := ops.readDocument(input.RecordRoot)
 		if err != nil {
 			return fmt.Errorf("revise gate: read state: %w", err)
 		}
-		if _, err := ops.readEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot); err != nil {
+		if _, err := audit.ReadEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot); err != nil {
 			return fmt.Errorf("revise gate: revalidate audit binding after state read: %w", err)
 		}
 		stage, progress, err := resolveGateState(document.State, input)
