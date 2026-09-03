@@ -27,6 +27,7 @@ src/internal/audit (held Guard下のper-clone append-only audit ledger)
 src/internal/orchestrator
   ├─ ResolveDirective: stateとenabled graphから現在のdirectiveを解決
   ├─ EvaluateStageCompletion: Stageの完了条件をread-onlyに判定
+  ├─ OpenGate / RejectGate / ReviseGate: approval gateの監査付き遷移
   └─ StartIntent: Intent作成から初期workspace/state接続
 
 src/internal/workspace
@@ -49,16 +50,16 @@ src/internal/workspace
 - `src/internal/cli`: CLIの引数解釈、stdout/stderrの分離、終了コード、help/version、space create/list/switch、bare space、intent list/switchとbare intentの表示契約を所有します。`io.Writer`とcallbackを受け取るため、process全体を起動せずにテストできます。
 - `src/internal/buildinfo`: linkerが差し替える`Version`と`Commit`、およびそのsnapshotを所有します。既定値は`dev`と`unknown`です。
 - `src/internal/workspace`: project rootの選択・path正規化、space・intentの読み取りとその接続、read-onlyのworkspace分析、spaceとIntent coreの新規作成、space・intentの共有cursor切替を所有します。root解決は受け取った候補だけで決定し、環境変数や現在directoryを直接参照しません。space一覧は`ReadSpaces`、intent一覧は`ReadIntents`を通じてCLIへ接続し、`ReadSelection`・`CreateIntent`・`Detect`は内部APIのままです。書込みは`CreateSpace`・`SwitchSpace`・`SwitchIntent`・`CreateIntent`の明示呼出しだけで行い、接続APIのRoot生存期間も内部で管理します。initializerを使う`CreateIntentWithInitializer`はlock内のproject/record Rootをcallbackへ貸し出し、callback後にCloseします。`Detect`は例外としてcaller所有の既存`*os.Root`を借り、Closeしません。
-- `src/internal/orchestrator`: `ResolveDirective`でtyped stateとenabled graphをread-onlyにjoinし、`EvaluateStageCompletion`でcallerが渡すStage metadataと証拠をread-onlyに判定します。callerが解決したStartInputはworkspace、graph、scope、stateへ渡します。`StartIntent`のlock内初期化順序とpartial結果も所有します。DataFS/ScopesFSはcaller-ownedのままCloseせず、Intent作成やRoot lifecycleの低レベル処理はworkspaceへ委譲します。
+- `src/internal/orchestrator`: `ResolveDirective`でtyped stateとenabled graphをread-onlyにjoinし、`EvaluateStageCompletion`でcallerが渡すStage metadataと証拠をread-onlyに判定します。`OpenGate`、`RejectGate`、`ReviseGate`は自身でrecord lockを取得し、state・graph・auditのbindingを再検証したうえで、audit先行のgate遷移を行います。callerが解決したStartInputはworkspace、graph、scope、stateへ渡します。`StartIntent`のlock内初期化順序とpartial結果も所有します。DataFS/ScopesFSはcaller-ownedのままCloseせず、Intent作成やRoot lifecycleの低レベル処理はworkspaceへ委譲します。
 - `src/internal/graph`: data directory基準の`fs.FS`からcompiled stage graphとscope gridを読み、enabled stageとrouting actionのimmutable snapshotを返します。filesystem write、project root選択、scope metadata Markdown、state遷移、agent実行は所有しません。
 - `src/internal/scope`: scopes directory基準の`fs.FS`から直下Markdownの狭いfrontmatter metadataを読みます。plugin選択、graph join、state、CLI、write、Root lifecycleは所有しません。
-- `src/internal/state`: 初期stateの構築・永続化と、保存済み`aidlc-state.md`のread-only typed snapshot化を所有します。`Read`はcaller-ownedのrecord `*os.Root`をCloseせず固定leafだけを読み、`Parse`はState Version 8のsection・field・phase・Stage rowを検証します。graph join、state mutation、audit、CLI、Stage実行は所有しません。
+- `src/internal/state`: 初期stateの構築・永続化と、保存済み`aidlc-state.md`のread-only typed snapshot化を所有します。`ReadDocument`と`Read`はcaller-ownedのrecord `*os.Root`をCloseせず、固定leafをnonblocking descriptorで読み、path・descriptor identityを読取前後に確認します。`Parse`はState Version 8のsection・field・phase・Stage rowを検証します。graph join、state mutation、audit、CLI、Stage実行は所有しません。
 - `src/internal/memory`: Memory root基準の`fs.FS`から`org.md`、`team.md`、`project.md`、`phases/<phase>.md`を固定順で読む4層source acquisitionと、取得済みsourceからsubstantiveなbundleを作る純粋なfilterを所有します。merge・override・frontmatter parseなどのworkflow判断、workspace path解決、Rootのopen/Closeは所有しません。実filesystemの呼出側は`os.Root.FS()`を渡し、readerはRootをCloseしません。
 - `src/internal/artifact`: Intent record root基準の`fs.FS`から、通常Stageのrequired `Produces` に対応するcanonical pathを`fs.Stat`だけで確認するread-only queryを所有します。空`Produces`のvacuous success、regular fileのany-of判定、固定filename例外、metadata/FS input errorを扱います。per-unit・CodeKB配置、workspace source、state/audit/approval/lock/clock、内容読取り、Root lifecycleは所有しません。
 
 - `src/internal/recordlock`: canonical project path・space・intentからrecord identityを作り、system temp配下のhashed lock directoryを`mkdir`で有限回取得します。owner token/PID/start時刻を保存し、token一致時だけ自身のlockをreleaseします。`Guard`はidentityとheld状態を束縛し、nested処理へ明示的に渡します。context cancel、owner mismatch、callback/release errorのjoin、panic後のreleaseを扱います。stale ownerの自動reap、workflow判断、Root lifecycleは所有しません。
 
-- `src/internal/audit`: caller-owned project/record `*os.Root`とheld・identity一致`recordlock.Guard`を受け、固定allowlist eventをper-clone `audit/<normalized-host>-<clone-id>.md`へappendします。clone IDのexclusive初回生成、canonical Markdown block、field検証、改行escape、header bootstrap、全byte/no-progress検出を所有します。public CLI、human authorityのmint、state mutation、shard merge/read model、RootのCloseは所有しません。
+- `src/internal/audit`: caller-owned project/record `*os.Root`とheld・identity一致`recordlock.Guard`を受け、固定allowlist eventをper-clone `audit/<normalized-host>-<clone-id>.md`へappendします。`ReadEvents`は同じrecordの各shardをnonblocking descriptorとidentity検証付きで読み、canonical authorityとworkflow-global freshnessを返します。clone IDのexclusive初回生成、canonical Markdown block、field検証、改行escape、header bootstrap、全byte/no-progress検出を所有します。public CLI、human authorityのmint、state mutation、RootのCloseは所有しません。
 
 `internal`配下はmodule外からimportできません。今後の機能も、CLIから直接filesystemやnetworkへ到達させず、責務ごとのpackageをcomposition rootで接続します。
 
@@ -907,11 +908,12 @@ go test -tags=integration -count=1 -run '^(TestWriteState|TestWriteInitial)' ./s
 
 ## 保存済み aidlc-state.md reader/parser（内部API）
 
-`state.Read(recordRoot *os.Root) (State, error)`は、callerが選択して開いたIntent record rootの固定leaf
-`aidlc-state.md`をread-onlyで読みます。ReadはrootをCloseせず、`Lstat`でregular fileだけを許可してから同じ
-Rootで全量readし、`state.Parse(content []byte) (State, error)`へ渡します。nil root、missing、permission、
-directory、symlink、FIFO、deviceなどの異常はerrorとして返し、error時はzero Stateです。error chainにはI/O
-原因を保持し、state bytes、mode、mtimeを変更しません。通常readに伴うatimeの不変までは保証しません。
+`state.ReadDocument(recordRoot *os.Root) (Document, error)`は、callerが選択して開いたIntent record rootの固定leaf
+`aidlc-state.md`をread-onlyで読み、validated `State`と元bytesを一緒に返します。`state.Read`はこのsnapshotのtyped Stateだけを
+返します。readerはrootをCloseせず、`Lstat`でregular fileだけを許可し、nonblocking descriptorを開いてpath・descriptor identityを
+読取前後に確認してから`state.Parse(content []byte) (State, error)`へ渡します。nil root、missing、permission、directory、symlink、
+FIFO、deviceなどの異常はerrorとして返し、error時はzero State/Documentです。error chainにはI/O原因を保持し、state bytes、mode、mtimeを
+変更しません。通常readに伴うatimeの不変までは保証しません。
 
 `Parse`は、State Version 8のcanonical Markdownをsection単位で検証します。先頭headerと
 `Project Information`、`Execution Plan Summary`、`Phase Progress`、`Stage Progress`、`Current Status`を
@@ -946,7 +948,7 @@ lifecycle-ownedなcanonical field、phase status、Stage checkbox markerだけ�
 不正なscalarを拒否します。失敗時はpartial bytesを返さず、入力sliceも変更しません。
 
 `CanonicalField`は`Total Stages`、`Completed`、`In Progress`、`Lifecycle Phase`、`Current Stage`、`Next Stage`、
-`Status`、`Last Updated`だけを許可します。Count、stage slug、phase、workflow statusは各既存enum／canonical値として
+`Status`、`Last Updated`、`Revision Count`だけを許可します。Count、stage slug、phase、workflow statusは各既存enum／canonical値として
 検証し、改行・Unicode whitespace・control characterによるMarkdown構造注入を拒否します。`PhaseProgressPatch`は
 5つのcanonical phaseと`Pending`／`Active`／`Verified`／`Skipped`だけを対象にし、`StageMarkerPatch`はslug、期待する
 現在marker、6種類のreplacement markerを受け取ります。marker遷移の業務上の許可判断はこの低水準patcherの責務ではありません。
@@ -1012,6 +1014,25 @@ CodeKB stage（固定2.6.123では`reverse-engineering`）、per-kind artifact a
 
 固定AI-DLC `2.6.123`の確認範囲と段階的境界は[Stage完了可否の参照契約](ram/research/2026-09-03-thin-lifecycle-transition-contracts.md)、
 実装許可と受入条件は[Stage完了可否の実装計画](ram/decisions/2026-09-03-stage-completion-decision-plan.md)を参照してください。
+
+## 承認ゲートと人間応答（内部API）
+
+`orchestrator.OpenGate`、`RejectGate`、`ReviseGate`は、callerから`recordlock.Guard`を受け取らず、自身でrecord単位のlockを取得して
+state・graph・auditのidentity bindingを確認します。`OpenGate`は完了条件を満たす通常Stageの`[-]`を`[?]`へ変更し、
+`STAGE_AWAITING_APPROVAL`をauditへ先に追記します。既に`[?]`なら同じ完了条件とbindingを再検証し、stateとauditを変更しません。
+`RejectGate`はfreshな`HUMAN_TURN`を要求して`[-]`または`[?]`を`[R]`へ変更し、`Revision Count`を増やした後に
+`GATE_REJECTED`、`STAGE_REVISING`をその順で追記します。`ReviseGate`は`[R]`を再び`[?]`へ変更します。
+
+audit readerはcanonical UTC秒Timestamp、shard内位置、全resolution種別を検証します。最新resolutionより後の`HUMAN_TURN`だけを
+承認receiptとして扱い、同秒の別shardは順序不明として拒否します。canonical headerと空末尾以外の不完全event、duplicate field、
+timestamp逆行、nonregular/FIFO/identity差替えはfail-closedです。callerのchoice、boolean、timestampから`HUMAN_TURN`をmintしません。
+`validateApprovalGateDecision`はraw recordを受け取らず、保持中のidentity-bound GuardとRootから`audit.ReadEvents`をfresh readして
+receiptを検証し、approvalのexact choice・revision boundary・自己帰属tripwireをprivate validatorで分離します。
+
+このwalking skeletonではsummary confirmation（`if-present`を含む）、pipeline、reviewer、sensor、agent-team、per-unit、CodeKB、
+workspace sourceを要求するStage、Initialization、Constructionをgate対象にしません。ConstructionはSkeleton Stanceの記録値にかかわらず
+unsupportedであり、未実装のgate軸をexecution軸から推測して通過させません。audit追記成功後のstate保存失敗ではauditが残り得る
+非対称durabilityを維持し、rollbackや自動再承認は行いません。固定snapshotとの比較範囲、受入条件、loop証拠は[承認ゲート遷移と人間応答監査記録の接続計画](ram/decisions/2026-09-04-approval-gate-receipt-plan.md)を参照してください。
 
 ## Intent開始 orchestration
 

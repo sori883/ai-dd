@@ -32,6 +32,8 @@ const (
 	CanonicalFieldStatus CanonicalField = "Status"
 	// CanonicalFieldLastUpdated identifies the last-updated field.
 	CanonicalFieldLastUpdated CanonicalField = "Last Updated"
+	// CanonicalFieldRevisionCount identifies the runtime revision count field.
+	CanonicalFieldRevisionCount CanonicalField = "Revision Count"
 )
 
 // FieldPatch replaces one typed canonical field value after checking its
@@ -166,6 +168,8 @@ func canonicalFieldDefinitionFor(field CanonicalField) (canonicalFieldDefinition
 		return canonicalFieldDefinition{section: "Current Status", label: "Status", kind: fieldValueWorkflowStatus}, true
 	case CanonicalFieldLastUpdated:
 		return canonicalFieldDefinition{section: "Current Status", label: "Last Updated", kind: fieldValueScalar}, true
+	case CanonicalFieldRevisionCount:
+		return canonicalFieldDefinition{section: "Runtime State", label: "Revision Count", kind: fieldValueCount}, true
 	default:
 		return canonicalFieldDefinition{}, false
 	}
