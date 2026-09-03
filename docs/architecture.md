@@ -14,6 +14,8 @@ src/internal/graph (stage graph・scope routingのread-only query)
 
 src/internal/scope (scope Markdown frontmatterのread-only metadata query)
 
+src/internal/state (aidlc-state.mdのtyped read/write)
+
 src/internal/memory (4層Memory sourceのread-only acquisition)
 
 src/internal/orchestrator
@@ -42,6 +44,7 @@ src/internal/workspace
 - `src/internal/orchestrator`: callerが解決したStartInputをworkspace、graph、scope、stateへ渡し、`StartIntent`のlock内初期化順序とpartial結果を所有します。DataFS/ScopesFSはcaller-ownedのままCloseせず、Intent作成やRoot lifecycleの低レベル処理はworkspaceへ委譲します。
 - `src/internal/graph`: data directory基準の`fs.FS`からcompiled stage graphとscope gridを読み、enabled stageとrouting actionのimmutable snapshotを返します。filesystem write、project root選択、scope metadata Markdown、state遷移、agent実行は所有しません。
 - `src/internal/scope`: scopes directory基準の`fs.FS`から直下Markdownの狭いfrontmatter metadataを読みます。plugin選択、graph join、state、CLI、write、Root lifecycleは所有しません。
+- `src/internal/state`: 初期stateの構築・永続化と、保存済み`aidlc-state.md`のread-only typed snapshot化を所有します。`Read`はcaller-ownedのrecord `*os.Root`をCloseせず固定leafだけを読み、`Parse`はState Version 8のsection・field・phase・Stage rowを検証します。graph join、state mutation、audit、CLI、Stage実行は所有しません。
 - `src/internal/memory`: Memory root基準の`fs.FS`から`org.md`、`team.md`、`project.md`、`phases/<phase>.md`を固定順で読む4層source acquisitionと、取得済みsourceからsubstantiveなbundleを作る純粋なfilterを所有します。merge・override・frontmatter parseなどのworkflow判断、workspace path解決、Rootのopen/Closeは所有しません。実filesystemの呼出側は`os.Root.FS()`を渡し、readerはRootをCloseしません。
 
 `internal`配下はmodule外からimportできません。今後の機能も、CLIから直接filesystemやnetworkへ到達させず、責務ごとのpackageをcomposition rootで接続します。
@@ -862,6 +865,38 @@ symlinkの場合はリンク本体を退避し、リンク先は変更しませ�
 
 詳細な根拠、TDDの対象、確認範囲は[初期state永続化writerの実装計画](ram/decisions/2026-09-02-initial-state-writer-plan.md)を参照してください。
 
+## 保存済み aidlc-state.md reader/parser（内部API）
+
+`state.Read(recordRoot *os.Root) (State, error)`は、callerが選択して開いたIntent record rootの固定leaf
+`aidlc-state.md`をread-onlyで読みます。ReadはrootをCloseせず、`Lstat`でregular fileだけを許可してから同じ
+Rootで全量readし、`state.Parse(content []byte) (State, error)`へ渡します。nil root、missing、permission、
+directory、symlink、FIFO、deviceなどの異常はerrorとして返し、error時はzero Stateです。error chainにはI/O
+原因を保持し、filesystemの内容、mode、timestampを変更しません。
+
+`Parse`は、State Version 8のcanonical Markdownをsection単位で検証します。先頭headerと
+`Project Information`、`Execution Plan Summary`、`Phase Progress`、`Stage Progress`、`Current Status`を
+要求し、必須fieldの重複・欠落・empty、unknown enum、非canonical整数、invalid UTF-8、不正CR、malformed
+Stage rowを`fs.ErrInvalid`として拒否します。先頭BOM最大1個、LF・CRLFの混在、末尾改行なし、64 KiBを超える
+未知追加sectionを扱えます。section順とfield順は固定せず、未知追加section・fieldは無視します。
+
+typed `State`のfieldは非公開です。value accessorからVersion、Scope、ProjectType、WorkflowStatus、
+LifecyclePhase、CurrentStage、NextStage、Summary、canonical 5件のPhaseProgress、document順のStagesを
+取得できます。StageProgressはSlug、CheckboxMarker、markerから導いたCheckboxState、trim済みraw Suffix、
+suffixの先頭tokenから導いたPlanActionを保持します。checkbox状態とPlanActionは直交するため、`[S] stage —
+EXECUTE`も有効です。slice accessorはdefensive copyを返し、Parseは入力byteを保持しません。
+
+このreaderは低水準の構造・値境界であり、graph membership、canonical slug grammar、`Completed <= Total`、
+`[x]`件数、Current Stageとmarkerの一致、state更新・audit・CLI・Stage実行は検証・実行しません。保存済み
+`aidlc-state.md`の各Stage suffix `EXECUTE` / `SKIP`がPlanのrouting authorityであり、`Initial.Plan`やcompiled
+graphをreaderが再計算した結果で上書きしません。将来のin-flight recomposeは、人間の承認後にcurrentより後ろの
+pending Stageだけを変更する別Issueの責務です。
+
+本家AI-DLC `2.6.123`の`getField`、`parseCheckboxes`、`parseStateStageSuffixes`はdocument全体を投影し、
+重複・malformed・symlink・encodingをこの境界で拒否しません。Goのsection-scoped unique field、Stage section
+限定とmalformed拒否、duplicate slug拒否、regular leaf barrier、invalid UTF-8/CR拒否は、誤ったroutingへ進めない
+ためにIssue #63で明示承認された意図的差分です。固定snapshotの確認範囲と差分表は[参照契約](ram/research/2026-09-03-state-reader-contracts.md)、
+計画・loop証拠は[実装計画](ram/decisions/2026-09-03-state-reader-plan.md)を参照してください。
+
 ## Intent開始 orchestration
 
 `orchestrator.StartIntent(ctx, input) (StartedIntent, error)`は、callerが解決したlabel、scope、説明、
@@ -927,7 +962,7 @@ advisoryは`state.BuildInitial`が生成する`StartedIntent.Initial.Plan`へ構
 - stage遷移の実行、agent dispatch、stage definition・scope metadataの編集
 - 設定ファイルとshell completion
 - ancestor探索、project自体の自動作成、既存spaceの自動修復
-- Intent作成の公開CLI・full handler、space・intentの削除、registry/state本文の解釈
+- Intent作成の公開CLI・full handler、space・intentの削除、stateの遷移・更新・semantic validation
 - `ReadSelection`・intent読み取りの公開CLI/status接続、space/intent明示override、session binding
 - Cobra、Viper、GoReleaserなどの外部依存
 - release、署名、公証、installer
