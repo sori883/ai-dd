@@ -20,6 +20,33 @@ go mod tidy -diff
 git diff --check
 ```
 
+### record lock と audit ledger
+
+同じAI-DLC recordを複数processが更新する場合は、`recordlock.NewIdentity`で
+canonical project path・space・intentを束ね、`recordlock.Acquire`が返すheld `Guard`を
+ネストした処理へ明示的に渡します。同じidentityのlockを暗黙に再取得せず、callbackの
+`Guard`を使い終えたらreleaseします。`audit.Append`はこのGuardのidentityとproject
+Rootが一致している場合だけ、record Rootの
+`audit/<normalized-host>-<clone-id>.md`へ固定allowlist eventをappendします。
+
+auditはheader、UTC RFC3339 timestamp、event heading、検証済みfieldをcanonical blockとして
+保存し、fieldの全line terminatorをliteral `\\n`へescapeします。batchは先に全件検証・render
+し、失敗時にauditやstateを変更しません。per-unit/CodeKB、public CLIからの`HUMAN_TURN`等の
+authority mint、state mutation、stale lockの自動reapはこの境界に含めず、未知・不正な入力は
+fail-closedです。project/record Rootはcaller所有であり、ledgerはCloseしません。
+
+この実装の承認済み範囲、固定AI-DLC 2.6.123 snapshotとの境界、残余リスクは
+[最小audit ledgerとrecord lockの実装計画](ram/decisions/2026-09-03-audit-record-lock-plan.md)
+と[report・approval・state遷移契約](ram/research/2026-09-03-thin-lifecycle-transition-contracts.md)
+に記録しています。対象確認は次のtargeted testだけを使います。
+
+```sh
+go test -count=1 -run '^(TestNewIdentity|TestIdentity|TestAcquire|TestRelease|TestWith)' ./src/internal/recordlock
+go test -count=1 -run '^(TestAppend|TestShardName|TestParseCloneID)' ./src/internal/audit
+go test -tags=integration -count=1 -run '^TestRecordLockIntegration' ./src/internal/recordlock
+go test -tags=integration -count=1 -run '^TestAuditIntegration' ./src/internal/audit
+```
+
 coverageを確認する場合は、repository外の一時fileへ出力します。
 
 ```sh
