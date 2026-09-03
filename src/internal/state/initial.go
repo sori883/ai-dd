@@ -9,6 +9,7 @@ import (
 
 	"github.com/sori883/ai-dd/src/internal/graph"
 	"github.com/sori883/ai-dd/src/internal/scope"
+	"github.com/sori883/ai-dd/src/internal/stageplan"
 )
 
 const (
@@ -94,6 +95,7 @@ type Initial struct {
 	StateContent           string
 	ProjectDescriptionJSON string
 	Routing                Routing
+	Plan                   stageplan.Plan
 }
 
 // BuildInitial builds the initial aidlc-state.md and project-description.json
@@ -113,7 +115,6 @@ func BuildInitial(input Input) (Initial, error) {
 			input.Scope,
 		)
 	}
-
 	effectiveDepth, err := resolveTier(
 		input.DepthOverride,
 		input.ScopeMetadata.Depth,
@@ -134,14 +135,25 @@ func BuildInitial(input Input) (Initial, error) {
 	if err != nil {
 		return Initial{}, err
 	}
+	plan, err := stageplan.Build(stageplan.Input{
+		Graph:       input.Graph,
+		Scope:       input.Scope,
+		ProjectType: input.Workspace.ProjectType,
+	})
+	if err != nil {
+		return Initial{}, fmt.Errorf("build initial state: build stage plan: %w", err)
+	}
 
-	stages := input.Graph.Stages()
+	entries := plan.Entries()
+	stages := make([]graph.Stage, len(entries))
 	rawActions := make(map[string]graph.Action, len(stages))
 	adjustedActions := make(map[string]graph.Action, len(stages))
-	for _, stage := range stages {
+	for index, entry := range entries {
+		stage := entry.Stage
+		stages[index] = stage
 		action := rawScope.Action(stage.Slug)
 		rawActions[stage.Slug] = action
-		adjustedActions[stage.Slug] = action
+		adjustedActions[stage.Slug] = entry.Action
 	}
 
 	routing := Routing{
@@ -152,8 +164,15 @@ func BuildInitial(input Input) (Initial, error) {
 		ExecuteStages:         make([]StageRoute, 0, len(stages)),
 		SkipStages:            make([]StageRoute, 0, len(stages)),
 	}
-	for _, stage := range stages {
-		route := StageRoute{Slug: stage.Slug, Number: stage.Number, Action: adjustedActions[stage.Slug]}
+	for _, entry := range entries {
+		if entry.Reason == "greenfield" {
+			continue
+		}
+		route := StageRoute{
+			Slug:   entry.Stage.Slug,
+			Number: entry.Stage.Number,
+			Action: entry.Action,
+		}
 		if route.Action == graph.ActionExecute {
 			routing.ExecuteStages = append(routing.ExecuteStages, route)
 			continue
@@ -161,37 +180,21 @@ func BuildInitial(input Input) (Initial, error) {
 		routing.SkipStages = append(routing.SkipStages, route)
 	}
 
-	if strings.EqualFold(input.Workspace.ProjectType, "greenfield") &&
-		adjustedActions["reverse-engineering"] == graph.ActionExecute {
-		adjustedActions["reverse-engineering"] = graph.ActionSkip
-		adjusted := false
-		for index, route := range routing.ExecuteStages {
-			if route.Slug != "reverse-engineering" {
-				continue
-			}
-			routing.ExecuteStages = append(
-				routing.ExecuteStages[:index],
-				routing.ExecuteStages[index+1:]...,
-			)
-			break
-		}
-		for _, stage := range stages {
-			if stage.Slug != "reverse-engineering" {
+	if plan.ReverseEngineeringSkippedGreenfield() {
+		for _, entry := range entries {
+			if entry.Reason != "greenfield" {
 				continue
 			}
 			routing.SkipStages = append(routing.SkipStages, StageRoute{
-				Slug:   "reverse-engineering",
-				Number: stage.Number,
-				Action: graph.ActionSkip,
-				Reason: "greenfield",
+				Slug:   entry.Stage.Slug,
+				Number: entry.Stage.Number,
+				Action: entry.Action,
+				Reason: entry.Reason,
 			})
-			adjusted = true
 			break
 		}
-		if adjusted {
-			routing.ReverseEngineeringSkippedGreenfield = true
-		}
-		if adjusted && isIncrementalScope(input.Scope) {
+		routing.ReverseEngineeringSkippedGreenfield = true
+		if isIncrementalScope(input.Scope) {
 			routing.IncrementalGreenfieldWarning = true
 		}
 	}
@@ -228,6 +231,7 @@ func BuildInitial(input Input) (Initial, error) {
 		StateContent:           stateContent,
 		ProjectDescriptionJSON: string(descriptionJSON),
 		Routing:                routing,
+		Plan:                   plan,
 	}, nil
 }
 

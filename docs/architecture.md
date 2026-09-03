@@ -694,6 +694,46 @@ Codex dataだけを静的に確認した範囲であり、最新upstream全体�
 [Stage routingの実装計画](ram/decisions/2026-09-02-stage-routing-plan.md)、検証手順は
 [Stage graph・scope routing](development.md#stage-graphscope-routing内部api)を参照してください。
 
+## Intent開始時のStage Plan builder
+
+`stageplan.Build(input Input) (Plan, error)`は、Intent（1つの開発目的）の開始時に、現在の
+`graph.Snapshot`、scope名、workspaceのproject typeからStage構成を一度だけ決定します。`Plan`は
+Stage番号順の全entryを保持し、各entryに開始時点の完全な`graph.Stage` metadata、実効action
+（`EXECUTE`または`SKIP`）、判断理由を含めます。`Plan`のentry、execute/skip一覧、advisoryはすべて
+deep copyで返されるため、呼出し側が返却値を変更しても確定済みPlanは変わりません。
+
+scopeにaction cellがないStageは`SKIP`です。Greenfieldではscopeが`EXECUTE`を指定した
+`reverse-engineering`も`SKIP`へ補正し、Brownfieldではscopeのactionをそのまま使います。未知scopeと
+`Greenfield` / `Brownfield`以外のproject typeは、部分Planを返さずerrorにします。
+
+実効`EXECUTE` Stageのうち、project type条件に一致する`required: true`のconsumeだけを検証します。
+producerはenabled catalogの`produces`と`optional_produces`の和から探します。producerが1つもない
+必須成果物はerror、producerはあるが全て`SKIP`ならStageを自動追加せず、consumer Stage、artifact名、
+producer slugを含むstructured advisoryを返します。1つでも`EXECUTE`ならadvisoryは出しません。
+optional consumeと条件不一致のconsumeは検証対象外です。`requires_stage`はentryへmetadataとして
+凍結しますが、SKIP Stageを実行closureへ追加せず、SKIP参照だけを理由にPlanを失敗させません。
+
+`state.BuildInitial`はこのPlanを一度構築し、そのentryから既存のRoutingとcanonicalな初期state本文を
+導出します。返却`state.Initial.Plan`はRoutingと同じStage選択結果を表します。builderは純粋なin-memory
+処理であり、Planの永続化、StartIntent全体、CLI、Stage実行やruntime recomposeは後続接続の責務です。
+
+### Stage Plan builderの意図的な差分
+
+比較対象は、このリポジトリに固定された本家AI-DLC `2.6.123`の
+`aidlc-graph.ts`、`aidlc-utility.ts`、`aidlc-orchestrate.ts`と関連integration testです。確認範囲と
+設計判断は[Stage Planの参照契約](ram/research/2026-09-03-stage-plan-contracts.md)と
+[実装計画](ram/decisions/2026-09-03-stage-plan-builder-plan.md)に記録しています。これは最新upstream
+全体との一致を主張するものではありません。
+
+| 本家の挙動 | 採用する挙動 | 変更理由 | 利用者・互換性への影響 |
+| --- | --- | --- | --- |
+| Intent作成経路では`validateScope`を直接呼ばず、producer不在の必須成果物を作成前に確定しない | Plan builderがproducer不在をerror、全producerがSKIPならadvisoryとしてIntent開始前に判定する | 実行不能なcatalogをfail-closedで検出しつつ、標準scopeにあるoff-path依存は許容する | 壊れたcatalogは早期に拒否される。producerがscope外だけの正常な構成はStage追加なしで警告になる |
+| runtimeはprocessごとに現在のcompiled graphを読み直し、`.aidlc-plan.json`を実行時のsourceにしない | Intent開始時の完全な`graph.Stage` metadataをPlanへsnapshotし、再構成APIを設けない | Intent実行中のcatalog/plugin変更で構成が変わらないようにする | 既存Planへ後からcatalog変更は反映されず、永続化・実行時接続は後続consumerがPlanを参照する |
+| 一部経路では未知project typeでも条件付きconsumeの比較結果として処理が進み得る | `Greenfield` / `Brownfield`以外を入力errorにする | 条件付き依存の暗黙無視を防ぐ | 未知値を渡すcallerは正しいproject typeを指定する必要がある |
+
+off-path producerをadvisoryに留めることと、`requires_stage`を実行closureにしないことは、本家の
+scope検証・Stage定義契約に合わせたものであり、意図的な差分ではありません。
+
 ## Scope metadata reader
 
 `scope.ReadAll(scopesFS fs.FS) ([]Metadata, error)`は、scopes directoryへroot化済みのread-only FSから
@@ -746,7 +786,8 @@ filesystemへ触れずに初期stateの内容を作ります。`state`はworkspa
 
 `Input.ProjectDescription`はsidecarへ保存するraw文字列、`Input.ProjectDescriptionPreview`はcallerが
 解決済みの安全なsingle-line表示値です。builderはraw値をstate本文へ再利用しません。返却される
-`Initial`は`StateContent`、`ProjectDescriptionJSON`、構造化`Routing`を持ち、sidecar内容は標準
+`Initial`は`StateContent`、`ProjectDescriptionJSON`、構造化`Routing`、Intent開始時に確定した
+`stageplan.Plan`を持ち、sidecar内容は標準
 `encoding/json`でJSON構文を生成した後、本家`JSON.stringify`がescapeしない`<`、`>`、`&`、
 U+2028、U+2029の過剰escapeだけを安全に戻して末尾LFを付けます。raw値が空なら本家と同じ
 `[Project description]`を使います。execute/skipの`StageRoute` sliceはgraphや相互の結果と共有しません。

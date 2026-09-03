@@ -447,6 +447,39 @@ cross compile、配布E2Eを実行しません。独立review後に差分が安�
 final gateを一度実施します。根拠と確認範囲は[初期 state builderの参照契約](ram/research/2026-09-02-initial-state-builder-contracts.md)、
 計画と実施記録は[初期 state builderの実装計画](ram/decisions/2026-09-02-initial-state-builder-plan.md)を参照してください。
 
+### Intent開始時のStage Plan builder（内部API）
+
+`stageplan.Build`は、Intent開始時点のenabled Stage catalogとscope actionから、Stage番号順の全entryを
+持つin-memory `Plan`を構築します。entryは完全な`graph.Stage` metadata、実効`EXECUTE` / `SKIP`、
+判断理由を含みます。Planのaccessorはdeep copyを返すため、返却されたStage metadata、execute/skip一覧、
+advisoryをcallerが変更してもPlan内部は変化しません。Planは再構成・変更APIを持ちません。
+
+Greenfieldの`reverse-engineering`補正、scope cell欠損のSKIP、requiredかつproject type条件に一致する
+consumeのproducer検証をBuild時に確定します。`produces`と`optional_produces`の両方をproducerとして扱い、
+producer不在はerror、producerが全てSKIPならStageを追加せずconsumer/artifact/producer slug付きadvisoryを
+返します。optional consume、条件不一致、`requires_stage`だけのSKIP参照はPlanを失敗させません。
+
+```go
+func Build(input Input) (Plan, error)
+```
+
+`state.BuildInitial`は同じPlanから既存Routingと初期state本文を導出し、`Initial.Plan`にも返します。
+このsliceではPlanをfileへ保存せず、StartIntent、CLI、Stage実行、runtime recomposeへ接続しません。
+
+対象testは次で実行します。
+
+```sh
+go test -count=1 ./src/internal/stageplan
+go test -count=1 ./src/internal/state
+```
+
+loopでは各RED/GREEN後に該当testだけを実行し、gofmt適用後に上記対象package testを再確認します。全package
+test、race、vet、lint、cross compile、配布E2Eは、独立review後に親agentがfinal gateで一度だけ実行します。
+本家AI-DLC `2.6.123`との意図的な差分（真のorphanのfail-closed、完全metadata snapshot、未知project type
+のerror）と、差分ではない`off-path advisory` / `requires_stage`非closureは
+[Stage Planの参照契約](ram/research/2026-09-03-stage-plan-contracts.md)と
+[実装計画](ram/decisions/2026-09-03-stage-plan-builder-plan.md)を参照してください。
+
 ### 初期state永続化writer（内部API）
 
 `state.WriteInitial`は、callerが開いたrecord `*os.Root`に対して、builderが返した

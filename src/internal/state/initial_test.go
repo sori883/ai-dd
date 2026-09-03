@@ -227,6 +227,53 @@ func TestBuildInitialRoutingAndOwnership(t *testing.T) {
 	}
 }
 
+func TestBuildInitialReturnsTheStagePlanUsedForRouting(t *testing.T) {
+	t.Parallel()
+
+	snapshot := loadTestSnapshot(t, []map[string]any{
+		stageFixture("workspace-scaffold", "0.1", "initialization"),
+		stageFixture("state-init", "0.3", "initialization"),
+		stageFixture("intent-capture", "1.1", "ideation"),
+		stageFixture("reverse-engineering", "2.1", "inception"),
+	}, map[string]any{
+		"classic": map[string]any{"stages": map[string]any{
+			"workspace-scaffold": "EXECUTE",
+			"state-init":         "EXECUTE",
+			"intent-capture":     "EXECUTE",
+		}},
+	})
+
+	got, err := BuildInitial(Input{
+		Graph:                     snapshot,
+		Scope:                     "classic",
+		ScopeMetadata:             scope.Metadata{Name: "classic", Depth: "Standard"},
+		Workspace:                 WorkspaceInfo{ProjectType: "Brownfield"},
+		ProjectRoot:               "/project",
+		ProjectDescription:        "raw",
+		ProjectDescriptionPreview: "preview",
+		StartDate:                 "2026-09-02T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("BuildInitial() error = %v", err)
+	}
+
+	entries := got.Plan.Entries()
+	if len(entries) != 4 {
+		t.Fatalf("Plan.Entries() length = %d, want 4", len(entries))
+	}
+	if entries[2].Action != graph.ActionExecute {
+		t.Fatalf("Plan intent-capture action = %q, want EXECUTE", entries[2].Action)
+	}
+	if entries[3].Action != graph.ActionSkip {
+		t.Fatalf("Plan reverse-engineering action = %q, want SKIP", entries[3].Action)
+	}
+	if got.Routing.FirstStage != entries[2].Stage.Slug ||
+		got.Routing.ExecuteStages[0].Slug != entries[0].Stage.Slug ||
+		got.Routing.SkipStages[0].Slug != entries[3].Stage.Slug {
+		t.Fatalf("Routing and Plan disagree: routing=%#v plan=%#v", got.Routing, entries)
+	}
+}
+
 func TestBuildInitialGreenfieldAdjustsReverseEngineering(t *testing.T) {
 	t.Parallel()
 
@@ -325,6 +372,44 @@ func TestBuildInitialNextUsesRawScopeAfterGreenfieldAdjustment(t *testing.T) {
 	}
 	if strings.Contains(got.StateContent, "- [ ] reverse-engineering — EXECUTE") {
 		t.Error("greenfield-adjusted reverse-engineering remained EXECUTE in state content")
+	}
+}
+
+func TestBuildInitialKeepsGreenfieldSkipAtEndOfRouting(t *testing.T) {
+	t.Parallel()
+
+	snapshot := loadTestSnapshot(t, []map[string]any{
+		stageFixture("workspace-scaffold", "0.1", "initialization"),
+		stageFixture("state-init", "0.3", "initialization"),
+		stageFixture("intent-capture", "1.1", "ideation"),
+		stageFixture("market-research", "1.2", "ideation"),
+		stageFixture("reverse-engineering", "2.1", "inception"),
+	}, map[string]any{
+		"bugfix": map[string]any{"stages": map[string]any{
+			"workspace-scaffold":  "EXECUTE",
+			"state-init":          "EXECUTE",
+			"intent-capture":      "EXECUTE",
+			"market-research":     "SKIP",
+			"reverse-engineering": "EXECUTE",
+		}},
+	})
+
+	got, err := BuildInitial(Input{
+		Graph:                     snapshot,
+		Scope:                     "bugfix",
+		ScopeMetadata:             scope.Metadata{Name: "bugfix", Depth: "Minimal"},
+		Workspace:                 WorkspaceInfo{ProjectType: "Greenfield"},
+		ProjectRoot:               "/project",
+		ProjectDescription:        "raw",
+		ProjectDescriptionPreview: "preview",
+		StartDate:                 "2026-09-02T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("BuildInitial() error = %v", err)
+	}
+	wantLine := "- **Stages to Skip**: 1.2 (market-research), 2.1 (reverse-engineering — greenfield)"
+	if !strings.Contains(got.StateContent, wantLine) {
+		t.Fatalf("StateContent does not contain %q", wantLine)
 	}
 }
 
