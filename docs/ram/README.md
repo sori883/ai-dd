@@ -74,6 +74,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [Stage completion artifact presenceの実装計画](decisions/2026-09-03-stage-artifact-presence-plan.md) | Accepted（Issue #69、ロードマップ包括承認内） |
 | 意思決定 | [薄いライフサイクルを内部APIで完走するマイルストーン](decisions/2026-09-03-thin-lifecycle-milestone.md) | Accepted（ユーザーが残り7 PRの内部walking skeletonを明示承認） |
 | 意思決定 | [Stage完了可否のread-only判定計画](decisions/2026-09-03-stage-completion-decision-plan.md) | Accepted（Issue #71、薄いライフサイクルマイルストーン内） |
+| 意思決定 | [byte-preserving state transition patcherの実装計画](decisions/2026-09-03-state-transition-patcher-plan.md) | Accepted（薄いライフサイクルマイルストーン内） |
 | 調査 | [既存AI-DLCの配布形式](research/2026-08-29-existing-distribution-format.md) | Current for local v2.6.123 snapshot |
 | 調査 | [共通space読み取りの参照契約](research/2026-08-31-space-reading-contracts.md) | Current for local v2.6.123 snapshot |
 | 調査 | [Space作成の参照契約](research/2026-08-31-space-creation-contracts.md) | Current for local v2.6.123 snapshot（U+0130小文字化の追加調査を含む） |
