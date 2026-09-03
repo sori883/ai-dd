@@ -83,6 +83,9 @@ header、必須section、section内必須fieldは一意に要求し、section順
 低水準readerの責務にしない。Stage suffixの先頭action wordだけをword boundary付きで`EXECUTE`または`SKIP`として解釈し、
 後続の説明はSuffixへ保持する。checkbox stateとPlanActionは直交するため、`[S] stage-slug — EXECUTE`を受理する。
 
+separator候補を含むStage rowは、dash位置・suffix開始位置・slug妥当性を一度の前向き走査で記録し、候補を右から評価する。
+size上限は設けないが、候補探索で同じslug prefixやsuffix全体を繰り返し走査しないため、1 rowのCPU時間は入力長に対して線形とする。
+
 返却sliceはcallerが変更できる独立コピーとし、error時はpartial Stateを返さずzero Stateにする。保存済み
 `aidlc-state.md`の`EXECUTE` / `SKIP` suffixは、先頭action wordをword boundaryで判定し、`EXECUTE: reason`・
 `SKIP: reason`のような説明もraw suffixへ保持する。`EXECUTEfoo`・`SKIP_foo`などword継続は拒否する。suffixは

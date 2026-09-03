@@ -6,9 +6,18 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sori883/ai-dd/src/internal/scope"
 )
+
+var stateReaderRequiredSections = [...]string{
+	"Project Information",
+	"Execution Plan Summary",
+	"Phase Progress",
+	"Stage Progress",
+	"Current Status",
+}
 
 func TestParseCanonicalState(t *testing.T) {
 	t.Parallel()
@@ -394,7 +403,7 @@ func TestParseSectionScopedFieldsAndValues(t *testing.T) {
 func TestParseRequiredSectionsMayBeReorderedButMustBeUnique(t *testing.T) {
 	t.Parallel()
 
-	for _, section := range requiredSections {
+	for _, section := range stateReaderRequiredSections {
 		section := section
 		t.Run("missing "+section, func(t *testing.T) {
 			t.Parallel()
@@ -410,7 +419,7 @@ func TestParseRequiredSectionsMayBeReorderedButMustBeUnique(t *testing.T) {
 
 		t.Run("duplicate "+section, func(t *testing.T) {
 			t.Parallel()
-			content := canonicalStateContent() + "\n## " + section + "\n"
+			content := duplicateCanonicalSectionBefore(canonicalStateContent(), section)
 			got, err := Parse([]byte(content))
 			if !errors.Is(err, fs.ErrInvalid) {
 				t.Fatalf("Parse() error = %v, want fs.ErrInvalid", err)
@@ -590,6 +599,31 @@ func TestParseStageProgressStrictness(t *testing.T) {
 	}
 }
 
+func TestParseLargeMalformedStageRowScalesLinearly(t *testing.T) {
+	t.Parallel()
+
+	const (
+		emDashCount = 50_000
+		maxDuration = 750 * time.Millisecond
+	)
+	const canonicalRow = "- [S] deployment-pipeline — EXECUTE"
+	malformedRow := "- [ ] " + strings.Repeat("a—", emDashCount) + "INVALID" + strings.Repeat(" ", emDashCount)
+	content := strings.Replace(canonicalStateContent(), canonicalRow, malformedRow, 1)
+
+	started := time.Now()
+	got, err := Parse([]byte(content))
+	elapsed := time.Since(started)
+	if !errors.Is(err, fs.ErrInvalid) {
+		t.Fatalf("Parse() error = %v, want fs.ErrInvalid", err)
+	}
+	if got.Version() != 0 || len(got.Stages()) != 0 {
+		t.Fatalf("Parse() returned partial state %#v", got)
+	}
+	if elapsed > maxDuration {
+		t.Fatalf("Parse() took %v for %d em dash candidates, want <= %v", elapsed, emDashCount, maxDuration)
+	}
+}
+
 func TestParseStageSuffixWithColonExplanation(t *testing.T) {
 	t.Parallel()
 
@@ -715,6 +749,35 @@ func removeCanonicalSection(content, section string) string {
 	}
 	lines = append(lines[:start], lines[end:]...)
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func duplicateCanonicalSectionBefore(content, section string) string {
+	lines := strings.Split(strings.TrimSuffix(content, "\n"), "\n")
+	start := -1
+	end := len(lines)
+	for index, line := range lines {
+		if line != "## "+section {
+			continue
+		}
+		start = index
+		for next := index + 1; next < len(lines); next++ {
+			if strings.HasPrefix(lines[next], "## ") {
+				end = next
+				break
+			}
+		}
+		break
+	}
+	if start < 0 {
+		return content
+	}
+	block := append([]string(nil), lines[start:end]...)
+	duplicated := make([]string, 0, len(lines)+len(block)+1)
+	duplicated = append(duplicated, lines[:start]...)
+	duplicated = append(duplicated, block...)
+	duplicated = append(duplicated, "")
+	duplicated = append(duplicated, lines[start:]...)
+	return strings.Join(duplicated, "\n") + "\n"
 }
 
 func reorderCanonicalSections(content string, order []string) string {

@@ -197,6 +197,41 @@ ok   github.com/sori883/ai-dd/src/internal/state
 `go test -tags=integration -count=1 -run '^TestRead' ./src/internal/state`、およびmetadata判定の`-count=10`を実行し、すべて
 成功した。通常readに伴うatimeは保証せず、snapshotではdirectory entries、state bytes、mode、mtimeだけを比較する。
 
+### 再review finding修正のloop証拠
+
+再reviewでは、EM DASH候補探索の計算量、required sectionテストのfixture独立性、`Read` godocのmetadata契約が確認対象になった。
+大量の不正Stage rowを公開`Parse`へ渡す回帰testを先に追加し、旧実装で次のREDを確認した。
+
+```text
+go test -timeout=3s -count=1 -run '^TestParseLargeMalformedStageRowScalesLinearly$' ./src/internal/state
+panic: test timed out after 3s
+...
+github.com/sori883/ai-dd/src/internal/state.containsWhitespace
+FAIL
+```
+
+test inputは50,000個のEM DASH候補、action不正なsuffix、同数の末尾空白を含む。最小修正では、末尾trim位置を一度だけ求め、
+前向き走査中に各dash位置、suffix開始位置、dash以前のslug妥当性を記録する。候補は最後から評価するが、suffixのtrimは共通の
+終端と各候補直後の空白runを使い、可変長suffixやslug prefixを候補ごとに再走査しない。このため前向き走査、末尾走査、逆順の
+定数長action判定、最終slug trimの合計は入力長に対して線形である。
+
+```text
+go test -timeout=3s -count=1 -run '^TestParseLargeMalformedStageRowScalesLinearly$' ./src/internal/state
+ok   github.com/sori883/ai-dd/src/internal/state
+```
+
+required section testはproductionの`requiredSections`を参照せず、5件のliteral一覧をtest側に保持するよう修正した。duplicate
+fixtureは有効なsection blockを元sectionより前に複製し、duplicate guardを一時的に外すと5件すべてが`Parse() error = <nil>`に
+なって失敗することを確認した。guardを復元した後、次のtestはGREENである。
+
+```text
+go test -count=1 -run '^TestParseRequiredSectionsMayBeReorderedButMustBeUnique$' ./src/internal/state
+ok   github.com/sori883/ai-dd/src/internal/state
+```
+
+`Read`のgodocはstate bytes・mode・mtimeを変更せず、通常readによるatimeは保証しないと明記し、既存のarchitecture、development、
+参照契約と一致させた。変更後も対象Go fileをgofmtし、parser/accessor/Rootのtargeted testと`git diff --check`を再実行する。
+
 ## 対象境界と残余risk
 
 このIssueではstateの更新・advance・recompose本体、graphとのjoin、summary/checkboxの意味検証、audit、CLI、

@@ -35,7 +35,9 @@ var phaseDefinitions = [...]struct {
 }
 
 // Read reads and parses the fixed aidlc-state.md leaf beneath recordRoot.
-// The caller owns recordRoot; Read never closes it or mutates its filesystem.
+// The caller owns recordRoot; Read never closes it. Read leaves the state
+// bytes, mode, and mtime unchanged, but does not guarantee that an ordinary
+// read leaves atime unchanged.
 func Read(recordRoot *os.Root) (State, error) {
 	if recordRoot == nil {
 		return State{}, fmt.Errorf("read state: record root is nil: %w", fs.ErrInvalid)
@@ -380,7 +382,8 @@ func parseStageRow(line string) (StageProgress, error) {
 		return StageProgress{}, invalidState("stage row must separate marker and slug with horizontal whitespace")
 	}
 	rest = strings.TrimLeftFunc(rest, isHorizontalWhitespace)
-	if !strings.Contains(rest, emDash) {
+	candidates, suffixEnd := collectStageRowCandidates(rest)
+	if len(candidates) == 0 {
 		return StageProgress{}, invalidState("stage row is missing em dash separator")
 	}
 
@@ -388,26 +391,23 @@ func parseStageRow(line string) (StageProgress, error) {
 		validSlug   bool
 		validSuffix bool
 	)
-	for dashIndex := strings.LastIndex(rest, emDash); dashIndex >= 0; {
-		slug := strings.TrimFunc(rest[:dashIndex], isHorizontalWhitespace)
-		previousDash := strings.LastIndex(rest[:dashIndex], emDash)
-		if slug == "" || containsWhitespace(slug) {
-			dashIndex = previousDash
+	for index := len(candidates) - 1; index >= 0; index-- {
+		candidate := candidates[index]
+		if !candidate.slugValid {
 			continue
 		}
 		validSlug = true
 
-		suffix := strings.TrimSpace(rest[dashIndex+len(emDash):])
-		if suffix == "" {
-			dashIndex = previousDash
+		if candidate.suffixStart >= suffixEnd {
 			continue
 		}
 		validSuffix = true
+		suffix := rest[candidate.suffixStart:suffixEnd]
 		planAction, ok := parsePlanActionPrefix(suffix)
 		if !ok {
-			dashIndex = previousDash
 			continue
 		}
+		slug := strings.TrimFunc(rest[:candidate.dashIndex], isHorizontalWhitespace)
 		return StageProgress{
 			Slug:           slug,
 			CheckboxMarker: marker,
@@ -462,6 +462,73 @@ func parsePlanActionPrefix(value string) (PlanAction, bool) {
 	return PlanActionUnknown, false
 }
 
+type stageRowCandidate struct {
+	dashIndex   int
+	suffixStart int
+	slugValid   bool
+}
+
+func collectStageRowCandidates(rest string) ([]stageRowCandidate, int) {
+	suffixEnd := len(rest)
+	for suffixEnd > 0 {
+		value, size := utf8.DecodeLastRuneInString(rest[:suffixEnd])
+		if !unicode.IsSpace(value) {
+			break
+		}
+		suffixEnd -= size
+	}
+
+	candidates := make([]stageRowCandidate, 0)
+	var (
+		slugHasContent      bool
+		slugInvalid         bool
+		pendingHorizontalWS bool
+	)
+	for index := 0; index < len(rest); {
+		value, size := utf8.DecodeRuneInString(rest[index:])
+		if value == '—' {
+			suffixStart := index + size
+			for suffixStart < len(rest) {
+				suffixValue, suffixSize := utf8.DecodeRuneInString(rest[suffixStart:])
+				if !unicode.IsSpace(suffixValue) {
+					break
+				}
+				suffixStart += suffixSize
+			}
+			candidates = append(candidates, stageRowCandidate{
+				dashIndex:   index,
+				suffixStart: suffixStart,
+				slugValid:   slugHasContent && !slugInvalid,
+			})
+
+			if pendingHorizontalWS && slugHasContent {
+				slugInvalid = true
+			}
+			pendingHorizontalWS = false
+			slugHasContent = true
+			index += size
+			continue
+		}
+		if unicode.IsSpace(value) {
+			if !isHorizontalWhitespace(value) {
+				slugInvalid = true
+			}
+			if slugHasContent {
+				pendingHorizontalWS = true
+			}
+			index += size
+			continue
+		}
+		if pendingHorizontalWS && slugHasContent {
+			slugInvalid = true
+		}
+		pendingHorizontalWS = false
+		slugHasContent = true
+		index += size
+	}
+	return candidates, suffixEnd
+}
+
 func isASCIIWordContinuation(value byte) bool {
 	return value >= 'A' && value <= 'Z' ||
 		value >= 'a' && value <= 'z' ||
@@ -471,13 +538,4 @@ func isASCIIWordContinuation(value byte) bool {
 
 func isHorizontalWhitespace(value rune) bool {
 	return value == ' ' || value == '\t' || unicode.Is(unicode.Zs, value)
-}
-
-func containsWhitespace(value string) bool {
-	for _, char := range value {
-		if unicode.IsSpace(char) {
-			return true
-		}
-	}
-	return false
 }

@@ -561,6 +561,13 @@ raw suffix（`EXECUTE:` / `SKIP:`の説明を含む）、graph/cross-validation�
 word継続は拒否します。`bufio.Scanner`の64 KiB制限を持たない入力もこの範囲に含みます。
 
 ```sh
+go test -timeout=3s -count=1 -run '^TestParseLargeMalformedStageRowScalesLinearly$' ./src/internal/state
+```
+
+大量のEM DASHと末尾空白を含む不正なStage rowを`Parse`へ渡し、候補探索が入力長に対して線形時間で終わることを確認します。
+`-timeout=3s`は、実装が誤って二乗時間になるとテスト自体を早く停止するための上限です。
+
+```sh
 go test -count=1 -run '^TestState' ./src/internal/state
 ```
 
