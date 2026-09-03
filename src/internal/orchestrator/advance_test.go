@@ -123,7 +123,7 @@ func parseAdvanceStateWithTotal(t *testing.T, rows, current, storedNext string, 
 
 func loadAdvanceCatalog(t *testing.T) graph.Snapshot {
 	t.Helper()
-	return loadGraphForAdvance(t, `[ 
+	return loadGraphForAdvance(t, `[
   {"slug":"first","number":"1.1","name":"First","phase":"ideation","execution":"ALWAYS","lead_agent":"agent-one","support_agents":[],"mode":"inline","scopes":["classic"],"produces":[],"consumes":[],"requires_stage":[]},
   {"slug":"skipped-by-state","number":"1.2","name":"Skipped","phase":"ideation","execution":"ALWAYS","lead_agent":"agent-two","support_agents":[],"mode":"inline","scopes":["classic"],"produces":[],"consumes":[],"requires_stage":[]},
   {"slug":"second","number":"1.3","name":"Second","phase":"ideation","execution":"ALWAYS","lead_agent":"agent-three","support_agents":[],"mode":"inline","scopes":["classic"],"produces":[],"consumes":[],"requires_stage":[]},
