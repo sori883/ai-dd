@@ -1,0 +1,355 @@
+package recordlock
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestNewIdentityValidatesAndCanonicalizesProjectPath(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "project-link")
+	if err := os.Symlink(project, alias); err != nil {
+		t.Skipf("symlink is unavailable: %v", err)
+	}
+
+	canonical, err := NewIdentity(alias, "default", "build")
+	if err != nil {
+		t.Fatalf("NewIdentity() error = %v", err)
+	}
+	lexical, err := NewIdentity(project, "default", "build")
+	if err != nil {
+		t.Fatalf("NewIdentity(canonical) error = %v", err)
+	}
+	if canonical != lexical {
+		t.Errorf("symlink and target identities differ: %q != %q", canonical, lexical)
+	}
+
+	tests := []struct {
+		name    string
+		project string
+		space   string
+		intent  string
+		wantErr bool
+	}{
+		{name: "missing project", project: filepath.Join(project, "missing"), space: "default", intent: "build", wantErr: false},
+		{name: "empty project", project: "", space: "default", intent: "build", wantErr: true},
+		{name: "empty space", project: project, space: "", intent: "build", wantErr: true},
+		{name: "space separator", project: project, space: "a/b", intent: "build", wantErr: true},
+		{name: "empty intent", project: project, space: "default", intent: "", wantErr: true},
+		{name: "intent separator", project: project, space: "default", intent: "a\\b", wantErr: true},
+		{name: "control", project: project, space: "default", intent: "build\nnow", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewIdentity(tt.project, tt.space, tt.intent)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("NewIdentity() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr && !errors.Is(err, ErrInvalidIdentity) {
+				t.Errorf("NewIdentity() error = %v, want ErrInvalidIdentity", err)
+			}
+		})
+	}
+}
+
+func TestIdentityLockPathSeparatesSpaceAndIntent(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	first, err := NewIdentity(project, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondSpace, err := NewIdentity(project, "release", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondIntent, err := NewIdentity(project, "default", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.lockPath() == secondSpace.lockPath() {
+		t.Error("different spaces share a lock path")
+	}
+	if first.lockPath() == secondIntent.lockPath() {
+		t.Error("different intents share a lock path")
+	}
+}
+
+func TestAcquirePersistsOwnerAndReleaseRemovesOwnLock(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	lockTemp := t.TempDir()
+	identity, err := NewIdentity(project, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := systemLockOps()
+	ops.tempDir = func() string { return lockTemp }
+	lockedAt := time.Date(2026, time.September, 3, 1, 2, 3, 456_000_000, time.UTC)
+	ops.now = func() time.Time { return lockedAt }
+	ops.pid = func() int { return 4242 }
+	ops.random = bytes.NewReader(bytes.Repeat([]byte{0xab}, lockTokenByteCount))
+
+	guard, err := acquireWithOps(context.Background(), identity, lockSettings{maxRetries: 0}, ops)
+	if err != nil {
+		t.Fatalf("acquireWithOps() error = %v", err)
+	}
+	lockPath := lockPathForTemp(identity, lockTemp)
+	t.Cleanup(func() { _ = os.RemoveAll(lockPath) })
+	data, err := os.ReadFile(filepath.Join(lockPath, lockOwnerName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var owner lockOwner
+	if err := json.Unmarshal(data, &owner); err != nil {
+		t.Fatal(err)
+	}
+	if owner.Token != fmt.Sprintf("%x", bytes.Repeat([]byte{0xab}, lockTokenByteCount)) {
+		t.Errorf("owner token = %q, want deterministic token", owner.Token)
+	}
+	if owner.PID != 4242 || owner.StartedAt != lockedAt.Format(time.RFC3339Nano) {
+		t.Errorf("owner = %+v, want pid/start %d/%q", owner, 4242, lockedAt.Format(time.RFC3339Nano))
+	}
+	if got := guard.Identity(); got != identity {
+		t.Errorf("guard identity = %v, want %v", got, identity)
+	}
+	if !guard.Held() {
+		t.Error("new guard is not held")
+	}
+	if err := guard.Release(); err != nil {
+		t.Fatalf("Release() error = %v", err)
+	}
+	if guard.Held() {
+		t.Error("released guard still reports held")
+	}
+	if _, err := os.Lstat(lockPath); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("lock path after release = %v, want not exist", err)
+	}
+	if err := guard.Release(); !errors.Is(err, ErrNotHeld) {
+		t.Errorf("second Release() error = %v, want ErrNotHeld", err)
+	}
+}
+
+func TestAcquireWritesOwnerWithShortSuccessfulWritesUntilComplete(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	lockTemp := t.TempDir()
+	identity, err := NewIdentity(project, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := systemLockOps()
+	ops.tempDir = func() string { return lockTemp }
+	actualWrite := ops.write
+	writeCalls := 0
+	ops.write = func(file *os.File, data []byte) (int, error) {
+		writeCalls++
+		if len(data) > 1 {
+			return actualWrite(file, data[:1])
+		}
+		return actualWrite(file, data)
+	}
+	guard, err := acquireWithOps(context.Background(), identity, lockSettings{maxRetries: 0}, ops)
+	if err != nil {
+		t.Fatalf("acquireWithOps() error = %v", err)
+	}
+	if writeCalls < 2 {
+		t.Errorf("owner write calls = %d, want short-write loop", writeCalls)
+	}
+	if err := guard.Release(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAcquireRetriesOnlyOnExistingLockAndObservesContext(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	lockTemp := t.TempDir()
+	identity, err := NewIdentity(project, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := systemLockOps()
+	ops.tempDir = func() string { return lockTemp }
+	lockPath := lockPathForTemp(identity, lockTemp)
+	attempts := 0
+	waits := 0
+	actualMkdir := ops.mkdir
+	ops.mkdir = func(path string, mode fs.FileMode) error {
+		if path == lockPath {
+			attempts++
+			if attempts < 3 {
+				return fs.ErrExist
+			}
+		}
+		return actualMkdir(path, mode)
+	}
+	ops.wait = func(context.Context, time.Duration) error {
+		waits++
+		return nil
+	}
+	guard, err := acquireWithOps(context.Background(), identity, lockSettings{maxRetries: 4}, ops)
+	if err != nil {
+		t.Fatalf("contended acquire error = %v", err)
+	}
+	if attempts != 3 || waits != 2 {
+		t.Errorf("attempts/waits = %d/%d, want 3/2", attempts, waits)
+	}
+	if err := guard.Release(); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cause := errors.New("stop waiting")
+	cancel(cause)
+	accessed := false
+	ops.mkdirAll = func(string, fs.FileMode) error {
+		accessed = true
+		return nil
+	}
+	if guard, err := acquireWithOps(ctx, identity, lockSettings{maxRetries: 4}, ops); guard != nil || !errors.Is(err, cause) {
+		t.Errorf("canceled acquire = (%v, %v), want context cause", guard, err)
+	}
+	if accessed {
+		t.Error("canceled acquire touched filesystem")
+	}
+}
+
+func TestReleaseRefusesChangedOwner(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	lockTemp := t.TempDir()
+	identity, err := NewIdentity(project, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := systemLockOps()
+	ops.tempDir = func() string { return lockTemp }
+	guard, err := acquireWithOps(context.Background(), identity, lockSettings{maxRetries: 0}, ops)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockPath := lockPathForTemp(identity, lockTemp)
+	t.Cleanup(func() { _ = os.RemoveAll(lockPath) })
+	ownerPath := filepath.Join(lockPath, lockOwnerName)
+	data, err := os.ReadFile(ownerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var owner lockOwner
+	if err := json.Unmarshal(data, &owner); err != nil {
+		t.Fatal(err)
+	}
+	owner.Token = "different-owner"
+	data, err = json.Marshal(owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ownerPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := guard.Release(); !errors.Is(err, ErrOwnerMismatch) {
+		t.Errorf("Release() error = %v, want owner mismatch", err)
+	}
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Errorf("mismatched lock was removed: %v", err)
+	}
+}
+
+func TestWithJoinsCallbackAndReleaseErrors(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	lockTemp := t.TempDir()
+	identity, err := NewIdentity(project, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := systemLockOps()
+	ops.tempDir = func() string { return lockTemp }
+	removeCause := errors.New("remove failed")
+	lockPath := lockPathForTemp(identity, lockTemp)
+	actualRemove := ops.remove
+	ops.remove = func(path string) error {
+		if path == lockPath {
+			return removeCause
+		}
+		return actualRemove(path)
+	}
+	callbackCause := errors.New("callback failed")
+	err = withLockOps(context.Background(), identity, func(*Guard) error {
+		return callbackCause
+	}, lockSettings{maxRetries: 0}, ops)
+	if !errors.Is(err, callbackCause) || !errors.Is(err, removeCause) {
+		t.Errorf("With() error = %v, want joined callback/release causes", err)
+	}
+	_ = os.RemoveAll(lockPath)
+}
+
+func TestWithReleasesBeforeRepanicsing(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	lockTemp := t.TempDir()
+	identity, err := NewIdentity(project, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := systemLockOps()
+	ops.tempDir = func() string { return lockTemp }
+	lockPath := lockPathForTemp(identity, lockTemp)
+	panicValue := "panic from callback"
+	func() {
+		defer func() {
+			if recovered := recover(); recovered != panicValue {
+				t.Errorf("panic value = %v, want %q", recovered, panicValue)
+			}
+		}()
+		_ = withLockOps(context.Background(), identity, func(*Guard) error {
+			panic(panicValue)
+		}, lockSettings{maxRetries: 0}, ops)
+	}()
+	if _, err := os.Lstat(lockPath); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("lock path after panic = %v, want not exist", err)
+	}
+}
+
+func TestAcquireDoesNotImplicitlyReenterHeldIdentity(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	lockTemp := t.TempDir()
+	identity, err := NewIdentity(project, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := systemLockOps()
+	ops.tempDir = func() string { return lockTemp }
+	first, err := acquireWithOps(context.Background(), identity, lockSettings{maxRetries: 0}, ops)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = first.Release() })
+	second, err := acquireWithOps(context.Background(), identity, lockSettings{maxRetries: 0}, ops)
+	if second != nil || !errors.Is(err, fs.ErrExist) {
+		t.Errorf("nested acquire = (%v, %v), want bounded existing-lock refusal", second, err)
+	}
+	if !first.Held() {
+		t.Error("first guard lost ownership after nested acquire refusal")
+	}
+}

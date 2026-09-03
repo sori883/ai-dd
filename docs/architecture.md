@@ -20,6 +20,10 @@ src/internal/memory (4層Memory sourceのread-only acquisition)
 
 src/internal/artifact (通常Stageのrequired output presence query)
 
+src/internal/recordlock (record単位のcross-process lockとidentity-bound Guard)
+
+src/internal/audit (held Guard下のper-clone append-only audit ledger)
+
 src/internal/orchestrator
   ├─ ResolveDirective: stateとenabled graphから現在のdirectiveを解決
   ├─ EvaluateStageCompletion: Stageの完了条件をread-onlyに判定
@@ -51,6 +55,10 @@ src/internal/workspace
 - `src/internal/state`: 初期stateの構築・永続化と、保存済み`aidlc-state.md`のread-only typed snapshot化を所有します。`Read`はcaller-ownedのrecord `*os.Root`をCloseせず固定leafだけを読み、`Parse`はState Version 8のsection・field・phase・Stage rowを検証します。graph join、state mutation、audit、CLI、Stage実行は所有しません。
 - `src/internal/memory`: Memory root基準の`fs.FS`から`org.md`、`team.md`、`project.md`、`phases/<phase>.md`を固定順で読む4層source acquisitionと、取得済みsourceからsubstantiveなbundleを作る純粋なfilterを所有します。merge・override・frontmatter parseなどのworkflow判断、workspace path解決、Rootのopen/Closeは所有しません。実filesystemの呼出側は`os.Root.FS()`を渡し、readerはRootをCloseしません。
 - `src/internal/artifact`: Intent record root基準の`fs.FS`から、通常Stageのrequired `Produces` に対応するcanonical pathを`fs.Stat`だけで確認するread-only queryを所有します。空`Produces`のvacuous success、regular fileのany-of判定、固定filename例外、metadata/FS input errorを扱います。per-unit・CodeKB配置、workspace source、state/audit/approval/lock/clock、内容読取り、Root lifecycleは所有しません。
+
+- `src/internal/recordlock`: canonical project path・space・intentからrecord identityを作り、system temp配下のhashed lock directoryを`mkdir`で有限回取得します。owner token/PID/start時刻を保存し、token一致時だけ自身のlockをreleaseします。`Guard`はidentityとheld状態を束縛し、nested処理へ明示的に渡します。context cancel、owner mismatch、callback/release errorのjoin、panic後のreleaseを扱います。stale ownerの自動reap、workflow判断、Root lifecycleは所有しません。
+
+- `src/internal/audit`: caller-owned project/record `*os.Root`とheld・identity一致`recordlock.Guard`を受け、固定allowlist eventをper-clone `audit/<normalized-host>-<clone-id>.md`へappendします。clone IDのexclusive初回生成、canonical Markdown block、field検証、改行escape、header bootstrap、全byte/no-progress検出を所有します。public CLI、human authorityのmint、state mutation、shard merge/read model、RootのCloseは所有しません。
 
 `internal`配下はmodule外からimportできません。今後の機能も、CLIから直接filesystemやnetworkへ到達させず、責務ごとのpackageをcomposition rootで接続します。
 
