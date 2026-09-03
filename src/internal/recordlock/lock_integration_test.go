@@ -23,10 +23,18 @@ func TestRecordLockIntegrationSerializesSameIdentityAcrossProcesses(t *testing.T
 	secondAcquired := filepath.Join(t.TempDir(), "second-acquired")
 	firstRelease := filepath.Join(t.TempDir(), "first-release")
 	secondRelease := filepath.Join(t.TempDir(), "second-release")
+	firstReady := filepath.Join(t.TempDir(), "first-ready")
+	secondReady := filepath.Join(t.TempDir(), "second-ready")
+	firstStart := filepath.Join(t.TempDir(), "first-start")
 
-	first := startRecordLockHelper(t, project, firstAcquired, firstRelease)
+	first := startRecordLockHelperWithHandshake(t, project, "build", firstAcquired, firstRelease, firstReady, firstStart)
+	waitForPath(t, firstReady)
+	if err := os.WriteFile(firstStart, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	waitForPath(t, firstAcquired)
-	second := startRecordLockHelper(t, project, secondAcquired, secondRelease)
+	second := startRecordLockHelperWithHandshake(t, project, "build", secondAcquired, secondRelease, secondReady, "")
+	waitForPath(t, secondReady)
 	assertPathAbsent(t, secondAcquired, 150*time.Millisecond)
 	if err := os.WriteFile(firstRelease, nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -77,6 +85,10 @@ func startRecordLockHelper(t *testing.T, project, acquired, release string) *rec
 }
 
 func startRecordLockHelperWithIntent(t *testing.T, project, intent, acquired, release string) *recordLockProcess {
+	return startRecordLockHelperWithHandshake(t, project, intent, acquired, release, "", "")
+}
+
+func startRecordLockHelperWithHandshake(t *testing.T, project, intent, acquired, release, ready, start string) *recordLockProcess {
 	t.Helper()
 	command := os.Args[0]
 	cmd := exec.Command(command, "-test.run", "^TestRecordLockIntegrationSerializesSameIdentityAcrossProcesses$", "-test.v")
@@ -86,6 +98,8 @@ func startRecordLockHelperWithIntent(t *testing.T, project, intent, acquired, re
 		"AIDLC_RECORDLOCK_INTENT="+intent,
 		"AIDLC_RECORDLOCK_ACQUIRED="+acquired,
 		"AIDLC_RECORDLOCK_RELEASE="+release,
+		"AIDLC_RECORDLOCK_READY="+ready,
+		"AIDLC_RECORDLOCK_START="+start,
 	)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -107,6 +121,14 @@ func runRecordLockHelper(t *testing.T) {
 	identity, err := NewIdentity(project, "default", intent)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if ready := os.Getenv("AIDLC_RECORDLOCK_READY"); ready != "" {
+		if err := os.WriteFile(ready, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if start := os.Getenv("AIDLC_RECORDLOCK_START"); start != "" {
+		waitForPath(t, start)
 	}
 	guard, err := Acquire(context.Background(), identity)
 	if err != nil {

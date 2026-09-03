@@ -86,6 +86,32 @@ func TestIdentityLockPathSeparatesSpaceAndIntent(t *testing.T) {
 	}
 }
 
+func TestIdentityWindowsNormalizationUsesFixedUnicode15Vectors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "AİB", want: "ai\u0307b"},
+		{input: "ΟΣ", want: "ος"},
+		{input: "ΟΣΑ", want: "οσα"},
+		{input: "AΣ\u0301", want: "aς\u0301"},
+		{input: "AΣ\u0301B", want: "aσ\u0301b"},
+		{input: "AΣ\U0001171eB", want: "aσ\U0001171eb"},
+		{input: "AΣ\uA7F1B", want: "aς\uA7F1b"},
+		{input: "AᲉB", want: "aᲉb"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+			if got := normalizeIdentityPathForPlatform(tt.input, "windows"); got != tt.want {
+				t.Errorf("Windows identity normalization = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAcquirePersistsOwnerAndReleaseRemovesOwnLock(t *testing.T) {
 	t.Parallel()
 
@@ -108,7 +134,7 @@ func TestAcquirePersistsOwnerAndReleaseRemovesOwnLock(t *testing.T) {
 	}
 	lockPath := lockPathForTemp(identity, lockTemp)
 	t.Cleanup(func() { _ = os.RemoveAll(lockPath) })
-	data, err := os.ReadFile(filepath.Join(lockPath, lockOwnerName))
+	data, err := os.ReadFile(filepath.Join(lockPath, ownerMarkerName(guard.state.token)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +272,7 @@ func TestReleaseRefusesChangedOwner(t *testing.T) {
 	}
 	lockPath := lockPathForTemp(identity, lockTemp)
 	t.Cleanup(func() { _ = os.RemoveAll(lockPath) })
-	ownerPath := filepath.Join(lockPath, lockOwnerName)
+	ownerPath := filepath.Join(lockPath, ownerMarkerName(guard.state.token))
 	data, err := os.ReadFile(ownerPath)
 	if err != nil {
 		t.Fatal(err)
@@ -268,6 +294,112 @@ func TestReleaseRefusesChangedOwner(t *testing.T) {
 	}
 	if _, err := os.Stat(lockPath); err != nil {
 		t.Errorf("mismatched lock was removed: %v", err)
+	}
+}
+
+func TestReleaseDoesNotDeleteOwnerAfterLockPathReplacement(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	lockTemp := t.TempDir()
+	identity, err := NewIdentity(project, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := systemLockOps()
+	ops.tempDir = func() string { return lockTemp }
+	guard, err := acquireWithOps(context.Background(), identity, lockSettings{maxRetries: 0}, ops)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockPath := lockPathForTemp(identity, lockTemp)
+	t.Cleanup(func() { _ = os.RemoveAll(lockPath) })
+	t.Cleanup(func() { _ = os.RemoveAll(lockPath + ".replaced") })
+	actualRead := ops.readFile
+	ops.readFile = func(name string) ([]byte, error) {
+		data, err := actualRead(name)
+		if err != nil {
+			return nil, err
+		}
+		if name != filepath.Join(lockPath, ownerMarkerName(guard.state.token)) {
+			return data, nil
+		}
+		if err := os.Rename(lockPath, lockPath+".replaced"); err != nil {
+			return nil, err
+		}
+		if err := os.Mkdir(lockPath, 0o700); err != nil {
+			return nil, err
+		}
+		other := lockOwner{Token: "other-owner", PID: 777, StartedAt: "other"}
+		otherBytes, err := json.Marshal(other)
+		if err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(filepath.Join(lockPath, ownerMarkerName(other.Token)), otherBytes, 0o600); err != nil {
+			return nil, err
+		}
+		return data, nil
+	}
+	guard.state.ops = ops
+	if err := guard.Release(); !errors.Is(err, ErrOwnerMismatch) {
+		t.Errorf("Release() error = %v, want ErrOwnerMismatch", err)
+	}
+	data, err := os.ReadFile(filepath.Join(lockPath, ownerMarkerName("other-owner")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var owner lockOwner
+	if err := json.Unmarshal(data, &owner); err != nil {
+		t.Fatal(err)
+	}
+	if owner.Token != "other-owner" {
+		t.Errorf("replacement owner token = %q, want other-owner", owner.Token)
+	}
+}
+
+func TestReleaseDoesNotRemoveReplacementAfterOwnerCheck(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	lockTemp := t.TempDir()
+	identity, err := NewIdentity(project, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := systemLockOps()
+	ops.tempDir = func() string { return lockTemp }
+	guard, err := acquireWithOps(context.Background(), identity, lockSettings{maxRetries: 0}, ops)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockPath := lockPathForTemp(identity, lockTemp)
+	t.Cleanup(func() { _ = os.RemoveAll(lockPath) })
+	t.Cleanup(func() { _ = os.RemoveAll(lockPath + ".replaced") })
+	ownerPath := filepath.Join(lockPath, ownerMarkerName(guard.state.token))
+	actualRemove := ops.remove
+	ops.remove = func(name string) error {
+		if name != ownerPath {
+			return actualRemove(name)
+		}
+		if err := os.Rename(lockPath, lockPath+".replaced"); err != nil {
+			return err
+		}
+		if err := os.Mkdir(lockPath, 0o700); err != nil {
+			return err
+		}
+		other := lockOwner{Token: "other-owner", PID: 778, StartedAt: "other"}
+		data, err := json.Marshal(other)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(lockPath, ownerMarkerName(other.Token)), data, 0o600)
+	}
+	guard.state.ops = ops
+	if err := guard.Release(); !errors.Is(err, ErrOwnerMismatch) {
+		t.Errorf("Release() error = %v, want ErrOwnerMismatch", err)
+	}
+	if _, err := os.Stat(filepath.Join(lockPath, ownerMarkerName("other-owner"))); err != nil {
+		t.Fatalf("replacement owner was removed: %v", err)
 	}
 }
 
@@ -351,5 +483,51 @@ func TestAcquireDoesNotImplicitlyReenterHeldIdentity(t *testing.T) {
 	}
 	if !first.Held() {
 		t.Error("first guard lost ownership after nested acquire refusal")
+	}
+}
+
+func TestGuardLeaseSerializesCopiesAndReleaseWaits(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	lockTemp := t.TempDir()
+	identity, err := NewIdentity(project, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := systemLockOps()
+	ops.tempDir = func() string { return lockTemp }
+	guard, err := acquireWithOps(context.Background(), identity, lockSettings{maxRetries: 0}, ops)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = guard.Release() })
+
+	lease, err := guard.AcquireLease(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	blockedCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if second, err := guard.AcquireLease(blockedCtx); second != nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("second lease = (%v, %v), want context deadline while first lease is held", second, err)
+	}
+	released := make(chan error, 1)
+	go func() { released <- guard.Release() }()
+	select {
+	case err := <-released:
+		t.Fatalf("Release() completed while lease was held: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	if err := lease.Release(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-released:
+		if err != nil {
+			t.Fatalf("Release() after lease = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Release() did not finish after lease release")
 	}
 }

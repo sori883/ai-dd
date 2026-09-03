@@ -17,15 +17,17 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
 	"unicode"
+
+	"github.com/sori883/ai-dd/src/internal/pathnorm"
 )
 
 const (
 	lockRootName       = "aidlc-record-lock"
-	lockOwnerName      = "owner.json"
+	lockOwnerPrefix    = "owner-"
+	lockOwnerSuffix    = ".json"
 	lockMaxRetries     = 100
 	lockRetryInterval  = 10 * time.Millisecond
 	lockTokenByteCount = 16
@@ -77,10 +79,12 @@ func NewIdentity(projectPath, space, intent string) (Identity, error) {
 			canonical = filepath.Clean(resolvedAbsolute)
 		}
 	}
-	if runtime.GOOS == "windows" {
-		canonical = strings.ToLower(canonical)
-	}
+	canonical = pathnorm.NormalizeForPlatform(canonical, runtime.GOOS)
 	return Identity{projectPath: canonical, space: space, intent: intent}, nil
+}
+
+func normalizeIdentityPathForPlatform(canonical, platform string) string {
+	return pathnorm.NormalizeForPlatform(canonical, platform)
 }
 
 // ProjectRoot returns the canonical project path used by this identity.
@@ -137,6 +141,10 @@ func lockPathForTemp(id Identity, tempDir string) string {
 	return filepath.Join(tempDir, lockRootName, hex.EncodeToString(digest[:]))
 }
 
+func ownerMarkerName(token string) string {
+	return lockOwnerPrefix + token + lockOwnerSuffix
+}
+
 func validateComponent(value, label string) error {
 	if !componentIsValid(value) {
 		return fmt.Errorf("recordlock: %s %q: %w", label, value, ErrInvalidIdentity)
@@ -186,8 +194,10 @@ type lockOps struct {
 	mkdirAll func(string, fs.FileMode) error
 	mkdir    func(string, fs.FileMode) error
 	openFile func(string, int, fs.FileMode) (*os.File, error)
+	openRead func(string) (*os.File, error)
 	write    func(*os.File, []byte) (int, error)
 	close    func(*os.File) error
+	lstat    func(string) (fs.FileInfo, error)
 	readFile func(string) ([]byte, error)
 	remove   func(string) error
 	now      func() time.Time
@@ -202,8 +212,10 @@ func systemLockOps() lockOps {
 		mkdirAll: os.MkdirAll,
 		mkdir:    os.Mkdir,
 		openFile: os.OpenFile,
+		openRead: os.Open,
 		write:    (*os.File).Write,
 		close:    (*os.File).Close,
+		lstat:    os.Lstat,
 		readFile: os.ReadFile,
 		remove:   os.Remove,
 		now:      time.Now,
@@ -235,12 +247,95 @@ type Guard struct {
 }
 
 type guardState struct {
-	mu       sync.Mutex
-	identity Identity
-	path     string
-	token    string
-	held     bool
-	ops      lockOps
+	mu          sync.Mutex
+	identity    Identity
+	path        string
+	token       string
+	held        bool
+	releasing   bool
+	leaseTokens chan struct{}
+	ops         lockOps
+}
+
+// Lease reserves the Guard's process-local critical section for one nested
+// operation.  A lease is identity-bound through its Guard and must be
+// released by the operation that acquired it.
+type Lease struct {
+	state    *guardState
+	released bool
+}
+
+// AcquireLease enters the Guard's process-local critical section.  Copies of
+// the same Guard share this reservation, so concurrent nested operations are
+// serialized and a release waits for the active operation to finish.
+func (g *Guard) AcquireLease(ctx context.Context) (*Lease, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("recordlock: lease: nil context: %w", fs.ErrInvalid)
+	}
+	if g == nil || g.state == nil {
+		return nil, ErrNotHeld
+	}
+	if err := context.Cause(ctx); err != nil {
+		return nil, fmt.Errorf("recordlock: lease: %w", err)
+	}
+	state := g.state
+	state.mu.Lock()
+	if !state.held || state.releasing {
+		state.mu.Unlock()
+		return nil, ErrNotHeld
+	}
+	state.mu.Unlock()
+
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("recordlock: lease: %w", context.Cause(ctx))
+	case <-state.leaseTokens:
+	}
+	if err := context.Cause(ctx); err != nil {
+		state.leaseTokens <- struct{}{}
+		return nil, fmt.Errorf("recordlock: lease: %w", err)
+	}
+	state.mu.Lock()
+	valid := state.held && !state.releasing
+	state.mu.Unlock()
+	if !valid {
+		state.leaseTokens <- struct{}{}
+		return nil, ErrNotHeld
+	}
+	return &Lease{state: state}, nil
+}
+
+// Release leaves the critical section.  It is idempotent only through the
+// returned error: a second release is rejected so ownership bugs are visible.
+func (l *Lease) Release() error {
+	if l == nil || l.state == nil {
+		return ErrNotHeld
+	}
+	l.state.mu.Lock()
+	if l.released {
+		l.state.mu.Unlock()
+		return ErrNotHeld
+	}
+	l.released = true
+	l.state.mu.Unlock()
+	l.state.leaseTokens <- struct{}{}
+	return nil
+}
+
+// WithLease runs fn inside the Guard's process-local critical section and
+// releases the lease even when fn returns an error.
+func (g *Guard) WithLease(ctx context.Context, fn func() error) (err error) {
+	if fn == nil {
+		return ErrInvalidCallback
+	}
+	lease, err := g.AcquireLease(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = errors.Join(err, lease.Release())
+	}()
+	return fn()
 }
 
 // Identity returns the record identity associated with the Guard.  The zero
@@ -342,7 +437,7 @@ func initializeGuard(identity Identity, path string, ops lockOps) (*Guard, error
 		StartedAt:   startedAt.Format(time.RFC3339Nano),
 		StartedAtMS: startedAt.UnixMilli(),
 	}
-	if err := writeOwner(filepath.Join(path, lockOwnerName), owner, ops); err != nil {
+	if err := writeOwner(filepath.Join(path, ownerMarkerName(token)), owner, ops); err != nil {
 		return nil, errors.Join(err, removeOwnedLock(path, token, ops))
 	}
 	return &Guard{state: &guardState{
@@ -350,7 +445,12 @@ func initializeGuard(identity Identity, path string, ops lockOps) (*Guard, error
 		path:     path,
 		token:    token,
 		held:     true,
-		ops:      ops,
+		leaseTokens: func() chan struct{} {
+			available := make(chan struct{}, 1)
+			available <- struct{}{}
+			return available
+		}(),
+		ops: ops,
 	}}, nil
 }
 
@@ -406,7 +506,7 @@ func writeLockBytes(file *os.File, data []byte, write func(*os.File, []byte) (in
 
 func removeOwnedLock(path, token string, ops lockOps) (err error) {
 	if token != "" {
-		if removeErr := ops.remove(filepath.Join(path, lockOwnerName)); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
+		if removeErr := ops.remove(filepath.Join(path, ownerMarkerName(token))); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
 			err = errors.Join(err, fmt.Errorf("recordlock: remove owner %q: %w", path, removeErr))
 		}
 	}
@@ -422,37 +522,166 @@ func (g *Guard) Release() error {
 	if g == nil || g.state == nil {
 		return ErrNotHeld
 	}
-	g.state.mu.Lock()
-	defer g.state.mu.Unlock()
-	if !g.state.held {
+	state := g.state
+	state.mu.Lock()
+	if !state.held || state.releasing {
+		state.mu.Unlock()
 		return ErrNotHeld
 	}
-	ownerPath := filepath.Join(g.state.path, lockOwnerName)
-	data, err := g.state.ops.readFile(ownerPath)
+	state.releasing = true
+	state.mu.Unlock()
+	<-state.leaseTokens
+	defer func() { state.leaseTokens <- struct{}{} }()
+
+	lockInfo, err := state.ops.lstat(state.path)
 	if err != nil {
-		return fmt.Errorf("recordlock: read owner %q: %w", ownerPath, err)
+		resetReleasing(state)
+		if errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("recordlock: lock disappeared at %q: %w", state.path, ErrOwnerMismatch)
+		}
+		return fmt.Errorf("recordlock: inspect lock %q: %w", state.path, err)
+	}
+	if lockInfo == nil || lockInfo.Mode()&fs.ModeSymlink != 0 || !lockInfo.IsDir() {
+		resetReleasing(state)
+		return fmt.Errorf("recordlock: lock path changed at %q: %w", state.path, ErrOwnerMismatch)
+	}
+	ownerPath := filepath.Join(state.path, ownerMarkerName(state.token))
+	owner, ownerInfo, err := readOwnerProof(ownerPath, state.ops)
+	if err != nil {
+		resetReleasing(state)
+		return err
+	}
+	if owner.Token != state.token {
+		resetReleasing(state)
+		return fmt.Errorf("recordlock: owner changed at %q: %w", state.path, ErrOwnerMismatch)
+	}
+	if err := verifyOwnerPath(ownerPath, ownerInfo, state.ops); err != nil {
+		resetReleasing(state)
+		return err
+	}
+	if err := state.ops.remove(ownerPath); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			resetReleasing(state)
+			return fmt.Errorf("recordlock: remove owner %q: %w", ownerPath, ErrOwnerMismatch)
+		}
+		resetReleasing(state)
+		return fmt.Errorf("recordlock: remove owner %q: %w", ownerPath, err)
+	}
+	if err := verifyLockPath(state.path, lockInfo, state.ops); err != nil {
+		markUnheld(state)
+		return err
+	}
+	removeErr := state.ops.remove(state.path)
+	// Once the owner marker is gone, this generation cannot be safely retried;
+	// callers receive the removal failure while the Guard becomes unheld.
+	markUnheld(state)
+	if removeErr != nil {
+		return fmt.Errorf("recordlock: remove lock %q: %w", state.path, removeErr)
+	}
+	return nil
+}
+
+func resetReleasing(state *guardState) {
+	state.mu.Lock()
+	state.releasing = false
+	state.mu.Unlock()
+}
+
+func markUnheld(state *guardState) {
+	state.mu.Lock()
+	state.held = false
+	state.releasing = false
+	state.mu.Unlock()
+}
+
+func readOwnerProof(ownerPath string, ops lockOps) (lockOwner, fs.FileInfo, error) {
+	before, err := ops.lstat(ownerPath)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return lockOwner{}, nil, fmt.Errorf("recordlock: owner disappeared at %q: %w", ownerPath, ErrOwnerMismatch)
+		}
+		return lockOwner{}, nil, fmt.Errorf("recordlock: inspect owner %q: %w", ownerPath, err)
+	}
+	if before == nil || before.Mode()&fs.ModeSymlink != 0 || !before.Mode().IsRegular() {
+		return lockOwner{}, nil, fmt.Errorf("recordlock: owner path changed at %q: %w", ownerPath, ErrOwnerMismatch)
+	}
+	// Keep the existing read seam in the proof path.  Besides preserving
+	// deterministic tests, the immediate identity check catches a replacement
+	// that occurred while reading the pathname.
+	if _, err := ops.readFile(ownerPath); err != nil {
+		return lockOwner{}, nil, fmt.Errorf("recordlock: read owner %q: %w", ownerPath, err)
+	}
+	afterRead, err := ops.lstat(ownerPath)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return lockOwner{}, nil, fmt.Errorf("recordlock: owner disappeared at %q: %w", ownerPath, ErrOwnerMismatch)
+		}
+		return lockOwner{}, nil, fmt.Errorf("recordlock: verify owner %q: %w", ownerPath, err)
+	}
+	if !sameFileInfo(before, afterRead) || afterRead.Mode()&fs.ModeSymlink != 0 || !afterRead.Mode().IsRegular() {
+		return lockOwner{}, nil, fmt.Errorf("recordlock: owner path changed at %q: %w", ownerPath, ErrOwnerMismatch)
+	}
+	ownerFile, err := ops.openRead(ownerPath)
+	if err != nil {
+		return lockOwner{}, nil, fmt.Errorf("recordlock: open owner %q: %w", ownerPath, err)
+	}
+	if ownerFile == nil {
+		return lockOwner{}, nil, fmt.Errorf("recordlock: open owner %q returned nil file: %w", ownerPath, ErrOwnerMismatch)
+	}
+	ownerInfo, err := ownerFile.Stat()
+	if err != nil {
+		_ = ops.close(ownerFile)
+		return lockOwner{}, nil, fmt.Errorf("recordlock: stat owner %q: %w", ownerPath, err)
+	}
+	if ownerInfo == nil || !ownerInfo.Mode().IsRegular() || !sameFileInfo(afterRead, ownerInfo) {
+		_ = ops.close(ownerFile)
+		return lockOwner{}, nil, fmt.Errorf("recordlock: owner descriptor changed at %q: %w", ownerPath, ErrOwnerMismatch)
+	}
+	data, readErr := io.ReadAll(ownerFile)
+	closeErr := ops.close(ownerFile)
+	if readErr != nil {
+		return lockOwner{}, nil, fmt.Errorf("recordlock: read owner descriptor %q: %w", ownerPath, readErr)
+	}
+	if closeErr != nil {
+		return lockOwner{}, nil, fmt.Errorf("recordlock: close owner %q: %w", ownerPath, closeErr)
 	}
 	var owner lockOwner
 	if err := json.Unmarshal(data, &owner); err != nil || owner.Token == "" {
-		return fmt.Errorf("recordlock: decode owner %q: %w", ownerPath, ErrOwnerMismatch)
+		return lockOwner{}, nil, fmt.Errorf("recordlock: decode owner %q: %w", ownerPath, ErrOwnerMismatch)
 	}
-	if owner.Token != g.state.token {
-		return fmt.Errorf("recordlock: owner changed at %q: %w", g.state.path, ErrOwnerMismatch)
-	}
-	if err := g.state.ops.remove(ownerPath); err != nil {
+	return owner, ownerInfo, nil
+}
+
+func verifyOwnerPath(ownerPath string, expected fs.FileInfo, ops lockOps) error {
+	current, err := ops.lstat(ownerPath)
+	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("recordlock: remove owner %q: %w", ownerPath, ErrOwnerMismatch)
+			return fmt.Errorf("recordlock: owner disappeared at %q: %w", ownerPath, ErrOwnerMismatch)
 		}
-		return fmt.Errorf("recordlock: remove owner %q: %w", ownerPath, err)
+		return fmt.Errorf("recordlock: verify owner %q: %w", ownerPath, err)
 	}
-	removeErr := g.state.ops.remove(g.state.path)
-	// Once the owner marker is gone, this generation cannot be safely retried;
-	// callers receive the removal failure while the Guard becomes unheld.
-	g.state.held = false
-	if removeErr != nil {
-		return fmt.Errorf("recordlock: remove lock %q: %w", g.state.path, removeErr)
+	if current == nil || current.Mode()&fs.ModeSymlink != 0 || !current.Mode().IsRegular() || !sameFileInfo(current, expected) {
+		return fmt.Errorf("recordlock: owner path changed at %q: %w", ownerPath, ErrOwnerMismatch)
 	}
 	return nil
+}
+
+func verifyLockPath(lockPath string, expected fs.FileInfo, ops lockOps) error {
+	current, err := ops.lstat(lockPath)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("recordlock: lock disappeared at %q: %w", lockPath, ErrOwnerMismatch)
+		}
+		return fmt.Errorf("recordlock: verify lock %q: %w", lockPath, err)
+	}
+	if current == nil || current.Mode()&fs.ModeSymlink != 0 || !current.IsDir() || !sameFileInfo(current, expected) {
+		return fmt.Errorf("recordlock: lock path changed at %q: %w", lockPath, ErrOwnerMismatch)
+	}
+	return nil
+}
+
+func sameFileInfo(first, second fs.FileInfo) bool {
+	return first != nil && second != nil && os.SameFile(first, second)
 }
 
 // With acquires one record lock, invokes fn with its identity-bound Guard, and

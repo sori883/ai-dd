@@ -12,10 +12,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/sori883/ai-dd/src/internal/pathnorm"
 	"github.com/sori883/ai-dd/src/internal/recordlock"
 )
 
@@ -42,7 +44,8 @@ var (
 // Event is one canonical audit block. Event is the preferred event type field;
 // EventType is accepted as a descriptive alias for callers that use the JSON
 // vocabulary from the fixed AI-DLC snapshot. Supplying both requires equality.
-// A zero Timestamp is replaced with the append clock in UTC.
+// Timestamp is retained for source compatibility but is never authoritative;
+// Append always obtains its timestamp from the ledger's private clock seam.
 type Event struct {
 	Event     string
 	EventType string
@@ -112,16 +115,16 @@ func renderEvents(events []Event, now func() time.Time) ([]renderedEvent, error)
 	if len(events) == 0 {
 		return nil, ErrInvalidBatch
 	}
+	if now == nil {
+		return nil, fmt.Errorf("audit: append clock is required: %w", ErrInvalidBatch)
+	}
 	rendered := make([]renderedEvent, len(events))
 	for index, event := range events {
 		eventType, err := validateEvent(event)
 		if err != nil {
 			return nil, err
 		}
-		at := event.Timestamp
-		if at.IsZero() {
-			at = now()
-		}
+		at := now()
 		at = at.UTC()
 		rendered[index] = renderedEvent{
 			eventType: eventType,
@@ -149,15 +152,10 @@ func renderBlock(eventType string, timestamp time.Time, fields map[string]string
 	return builder.String()
 }
 
-// formatTimestamp mirrors the fixed AI-DLC snapshot's Date.toISOString()
-// precision: UTC with milliseconds, omitting the fractional part when it is
-// exactly zero while retaining the RFC3339 Z suffix.
+// formatTimestamp emits authority timestamps at UTC-second precision.  The
+// caller-supplied Event.Timestamp is intentionally not part of this path.
 func formatTimestamp(timestamp time.Time) string {
-	value := timestamp.UTC().Truncate(time.Millisecond).Format("2006-01-02T15:04:05.000Z")
-	if strings.HasSuffix(value, ".000Z") {
-		return strings.TrimSuffix(value, ".000Z") + "Z"
-	}
-	return value
+	return timestamp.UTC().Truncate(time.Second).Format(time.RFC3339)
 }
 
 func escapeLineTerminators(value string) string {
@@ -171,19 +169,21 @@ func escapeLineTerminators(value string) string {
 }
 
 type ledgerOps struct {
-	projectLstat  func(string) (fs.FileInfo, error)
-	projectMkdir  func(string, fs.FileMode) error
-	projectOpen   func(string, int, fs.FileMode) (*os.File, error)
-	projectRead   func(string) ([]byte, error)
-	projectRemove func(string) error
-	recordLstat   func(string) (fs.FileInfo, error)
-	recordMkdir   func(string, fs.FileMode) error
-	recordOpen    func(string, int, fs.FileMode) (*os.File, error)
-	write         func(*os.File, []byte) (int, error)
-	close         func(*os.File) error
-	hostname      func() (string, error)
-	random        io.Reader
-	wait          func(context.Context, time.Duration) error
+	projectLstat      func(string) (fs.FileInfo, error)
+	projectMkdir      func(string, fs.FileMode) error
+	projectOpen       func(string, int, fs.FileMode) (*os.File, error)
+	projectRead       func(string) ([]byte, error)
+	projectRemove     func(string) error
+	recordLstat       func(string) (fs.FileInfo, error)
+	recordMkdir       func(string, fs.FileMode) error
+	recordOpen        func(string, int, fs.FileMode) (*os.File, error)
+	write             func(*os.File, []byte) (int, error)
+	close             func(*os.File) error
+	hostname          func() (string, error)
+	random            io.Reader
+	wait              func(context.Context, time.Duration) error
+	now               func() time.Time
+	beforeCloneCreate func(context.Context) error
 }
 
 func systemLedgerOps(projectRoot, recordRoot *os.Root) ledgerOps {
@@ -201,6 +201,7 @@ func systemLedgerOps(projectRoot, recordRoot *os.Root) ledgerOps {
 		hostname:      os.Hostname,
 		random:        rand.Reader,
 		wait:          waitForCloneID,
+		now:           time.Now,
 	}
 }
 
@@ -231,16 +232,6 @@ func appendForIdentityWithOps(ctx context.Context, expected recordlock.Identity,
 	if err := context.Cause(ctx); err != nil {
 		return fmt.Errorf("audit: append: %w", err)
 	}
-	var now = time.Now
-	if injected != nil {
-		// A seam may override the clock through the rendered events helper in
-		// tests by setting a deterministic Event.Timestamp. The production
-		// path always uses UTC time.Now for zero timestamps.
-	}
-	rendered, err := renderEvents(events, now)
-	if err != nil {
-		return err
-	}
 	if projectRoot == nil || recordRoot == nil {
 		return fmt.Errorf("audit: project and record roots are required: %w", ErrInvalidRoot)
 	}
@@ -250,26 +241,54 @@ func appendForIdentityWithOps(ctx context.Context, expected recordlock.Identity,
 	if guard.Identity() != expected {
 		return fmt.Errorf("audit: guard identity differs from requested record: %w", ErrGuardIdentity)
 	}
-	if !sameProjectRoot(projectRoot.Name(), expected.ProjectRoot()) {
-		return fmt.Errorf("audit: project root does not match guard identity: %w", ErrGuardIdentity)
-	}
 	ops := systemLedgerOps(projectRoot, recordRoot)
 	if injected != nil {
 		ops = mergeLedgerOps(ops, *injected)
 	}
-	cloneID, err := ensureCloneID(ctx, ops)
+	rendered, err := renderEvents(events, ops.now)
 	if err != nil {
 		return err
 	}
-	host, err := ops.hostname()
+	return guard.WithLease(ctx, func() error {
+		if !sameProjectRoot(projectRoot.Name(), expected.ProjectRoot()) {
+			return fmt.Errorf("audit: project root does not match guard identity: %w", ErrGuardIdentity)
+		}
+		if err := bindRecordRoot(expected, projectRoot, recordRoot); err != nil {
+			return err
+		}
+		cloneID, err := ensureCloneID(ctx, ops)
+		if err != nil {
+			return err
+		}
+		host, err := ops.hostname()
+		if err != nil {
+			return fmt.Errorf("audit: resolve host: %w", err)
+		}
+		shard := path.Join(auditDirectory, shardName(host, cloneID))
+		if err := ensureAuditDirectory(ops); err != nil {
+			return err
+		}
+		return appendRendered(shard, rendered, ops)
+	})
+}
+
+func bindRecordRoot(identity recordlock.Identity, projectRoot, recordRoot *os.Root) error {
+	expectedPath := path.Join(cloneIDDirectory, "spaces", identity.Space(), "intents", identity.Intent())
+	expectedInfo, err := projectRoot.Lstat(expectedPath)
 	if err != nil {
-		return fmt.Errorf("audit: resolve host: %w", err)
+		return fmt.Errorf("audit: inspect expected record root %q: %w", expectedPath, err)
 	}
-	shard := path.Join(auditDirectory, shardName(host, cloneID))
-	if err := ensureAuditDirectory(ops); err != nil {
-		return err
+	if expectedInfo == nil || expectedInfo.Mode()&fs.ModeSymlink != 0 || !expectedInfo.IsDir() {
+		return fmt.Errorf("audit: expected record root %q must be a directory: %w", expectedPath, ErrInvalidRoot)
 	}
-	return appendRendered(shard, rendered, ops)
+	actualInfo, err := recordRoot.Stat(".")
+	if err != nil {
+		return fmt.Errorf("audit: inspect supplied record root: %w", err)
+	}
+	if actualInfo == nil || !actualInfo.IsDir() || !os.SameFile(expectedInfo, actualInfo) {
+		return fmt.Errorf("audit: supplied record root is not expected intent %q: %w", expectedPath, ErrInvalidRoot)
+	}
+	return nil
 }
 
 func mergeLedgerOps(base, override ledgerOps) ledgerOps {
@@ -312,6 +331,12 @@ func mergeLedgerOps(base, override ledgerOps) ledgerOps {
 	if override.wait != nil {
 		base.wait = override.wait
 	}
+	if override.now != nil {
+		base.now = override.now
+	}
+	if override.beforeCloneCreate != nil {
+		base.beforeCloneCreate = override.beforeCloneCreate
+	}
 	return base
 }
 
@@ -335,6 +360,8 @@ func sameProjectRoot(got, want string) bool {
 	if wantReal, realErr := filepath.EvalSymlinks(wantAbs); realErr == nil {
 		wantAbs = filepath.Clean(wantReal)
 	}
+	gotAbs = pathnorm.NormalizeForPlatform(gotAbs, runtime.GOOS)
+	wantAbs = pathnorm.NormalizeForPlatform(wantAbs, runtime.GOOS)
 	return gotAbs == wantAbs
 }
 
@@ -375,6 +402,11 @@ func ensureCloneID(ctx context.Context, ops ledgerOps) (string, error) {
 		cloneID, err := randomCloneID(ops.random)
 		if err != nil {
 			return "", err
+		}
+		if ops.beforeCloneCreate != nil {
+			if err := ops.beforeCloneCreate(ctx); err != nil {
+				return "", fmt.Errorf("audit: wait before clone id creation: %w", err)
+			}
 		}
 		file, openErr := ops.projectOpen(cloneIDPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if openErr == nil {
@@ -501,6 +533,30 @@ func ensureAuditDirectory(ops ledgerOps) error {
 }
 
 func appendRendered(shard string, rendered []renderedEvent, ops ledgerOps) (err error) {
+	parentPath := path.Dir(shard)
+	parentInfo, parentLstatErr := ops.recordLstat(parentPath)
+	if parentLstatErr != nil {
+		return fmt.Errorf("audit: inspect audit parent %q: %w", parentPath, parentLstatErr)
+	}
+	if parentInfo == nil || parentInfo.Mode()&fs.ModeSymlink != 0 || !parentInfo.IsDir() {
+		return fmt.Errorf("audit: audit parent %q must be a directory: %w", parentPath, ErrInvalidRoot)
+	}
+	parent, err := ops.recordOpen(parentPath, os.O_RDONLY, 0)
+	if err != nil {
+		return fmt.Errorf("audit: open audit parent %q: %w", parentPath, err)
+	}
+	if parent == nil {
+		return fmt.Errorf("audit: open audit parent %q returned nil file: %w", parentPath, ErrInvalidRoot)
+	}
+	defer func() {
+		if closeErr := ops.close(parent); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("audit: close audit parent %q: %w", parentPath, closeErr))
+		}
+	}()
+	if err := verifyDirectoryBinding(parentPath, parent, ops, parentInfo); err != nil {
+		return err
+	}
+
 	info, lstatErr := ops.recordLstat(shard)
 	if lstatErr != nil && !errors.Is(lstatErr, fs.ErrNotExist) {
 		return fmt.Errorf("audit: inspect shard %q: %w", shard, lstatErr)
@@ -508,8 +564,15 @@ func appendRendered(shard string, rendered []renderedEvent, ops ledgerOps) (err 
 	if lstatErr == nil && (info == nil || info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular()) {
 		return fmt.Errorf("audit: shard %q must be a regular non-symlink file: %w", shard, ErrInvalidRoot)
 	}
-	file, err := ops.recordOpen(shard, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o666)
+	flags := os.O_RDWR | os.O_APPEND | os.O_CREATE
+	if errors.Is(lstatErr, fs.ErrNotExist) {
+		flags |= os.O_EXCL
+	}
+	file, err := ops.recordOpen(shard, flags, 0o666)
 	if err != nil {
+		if flags&os.O_EXCL != 0 && errors.Is(err, fs.ErrExist) {
+			return fmt.Errorf("audit: shard %q was created during validation: %w", shard, ErrInvalidRoot)
+		}
 		return fmt.Errorf("audit: open shard %q: %w", shard, err)
 	}
 	if file == nil {
@@ -520,19 +583,9 @@ func appendRendered(shard string, rendered []renderedEvent, ops ledgerOps) (err 
 			err = errors.Join(err, fmt.Errorf("audit: close shard %q: %w", shard, closeErr))
 		}
 	}()
-	opened, err := file.Stat()
+	opened, err := verifyShardBinding(shard, parentPath, file, parent, info, parentInfo, ops)
 	if err != nil {
-		return fmt.Errorf("audit: stat shard %q: %w", shard, err)
-	}
-	if !opened.Mode().IsRegular() {
-		return fmt.Errorf("audit: shard %q must be regular: %w", shard, ErrInvalidRoot)
-	}
-	pathInfo, err := ops.recordLstat(shard)
-	if err != nil {
-		return fmt.Errorf("audit: verify shard %q: %w", shard, err)
-	}
-	if pathInfo == nil || pathInfo.Mode()&fs.ModeSymlink != 0 || !pathInfo.Mode().IsRegular() {
-		return fmt.Errorf("audit: shard %q became non-regular: %w", shard, ErrInvalidRoot)
+		return err
 	}
 	var payload strings.Builder
 	if opened.Size() == 0 {
@@ -541,10 +594,55 @@ func appendRendered(shard string, rendered []renderedEvent, ops ledgerOps) (err 
 	for _, event := range rendered {
 		payload.Write(event.block)
 	}
+	if _, err := verifyShardBinding(shard, parentPath, file, parent, info, parentInfo, ops); err != nil {
+		return err
+	}
 	if err := writeAll(file, []byte(payload.String()), ops.write); err != nil {
 		return fmt.Errorf("audit: write shard %q: %w", shard, err)
 	}
+	if _, err := verifyShardBinding(shard, parentPath, file, parent, info, parentInfo, ops); err != nil {
+		return err
+	}
 	return nil
+}
+
+func verifyDirectoryBinding(parentPath string, parent *os.File, ops ledgerOps, expected fs.FileInfo) error {
+	opened, err := parent.Stat()
+	if err != nil {
+		return fmt.Errorf("audit: stat audit parent %q: %w", parentPath, err)
+	}
+	if opened == nil || !opened.IsDir() {
+		return fmt.Errorf("audit: audit parent %q descriptor is not a directory: %w", parentPath, ErrInvalidRoot)
+	}
+	pathInfo, err := ops.recordLstat(parentPath)
+	if err != nil {
+		return fmt.Errorf("audit: verify audit parent %q: %w", parentPath, err)
+	}
+	if pathInfo == nil || pathInfo.Mode()&fs.ModeSymlink != 0 || !pathInfo.IsDir() || !os.SameFile(pathInfo, opened) || (expected != nil && !os.SameFile(pathInfo, expected)) {
+		return fmt.Errorf("audit: audit parent %q changed identity: %w", parentPath, ErrInvalidRoot)
+	}
+	return nil
+}
+
+func verifyShardBinding(shard, parentPath string, file, parent *os.File, expected, expectedParent fs.FileInfo, ops ledgerOps) (fs.FileInfo, error) {
+	if err := verifyDirectoryBinding(parentPath, parent, ops, expectedParent); err != nil {
+		return nil, err
+	}
+	opened, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("audit: stat shard %q: %w", shard, err)
+	}
+	if opened == nil || !opened.Mode().IsRegular() {
+		return nil, fmt.Errorf("audit: shard %q descriptor is not regular: %w", shard, ErrInvalidRoot)
+	}
+	pathInfo, err := ops.recordLstat(shard)
+	if err != nil {
+		return nil, fmt.Errorf("audit: verify shard %q: %w", shard, err)
+	}
+	if pathInfo == nil || pathInfo.Mode()&fs.ModeSymlink != 0 || !pathInfo.Mode().IsRegular() || !os.SameFile(pathInfo, opened) || (expected != nil && !os.SameFile(pathInfo, expected)) {
+		return nil, fmt.Errorf("audit: shard %q changed identity: %w", shard, ErrInvalidRoot)
+	}
+	return opened, nil
 }
 
 func writeAndClose(file *os.File, data []byte, what string, write func(*os.File, []byte) (int, error), close func(*os.File) error) (err error) {

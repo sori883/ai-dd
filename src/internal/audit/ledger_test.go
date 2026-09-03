@@ -18,20 +18,20 @@ func TestAppendCreatesCanonicalShardAndEscapesLineTerminators(t *testing.T) {
 	t.Parallel()
 
 	projectDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(projectDir, "aidlc"), 0o700); err != nil {
-		t.Fatal(err)
-	}
 	const cloneID = "abcdef123456"
-	if err := os.WriteFile(filepath.Join(projectDir, "aidlc", cloneIDFile), []byte(cloneID+"\n"), 0o600); err != nil {
+	intentPath := filepath.Join(projectDir, cloneIDDirectory, "spaces", "default", "intents", "build")
+	if err := os.MkdirAll(intentPath, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	recordDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectDir, cloneIDDirectory, cloneIDFile), []byte(cloneID+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	projectRoot, err := os.OpenRoot(projectDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = projectRoot.Close() })
-	recordRoot, err := os.OpenRoot(recordDir)
+	recordRoot, err := projectRoot.OpenRoot(filepath.Join(cloneIDDirectory, "spaces", "default", "intents", "build"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,13 +48,15 @@ func TestAppendCreatesCanonicalShardAndEscapesLineTerminators(t *testing.T) {
 	timestamp := time.Date(2026, time.September, 3, 4, 5, 6, 0, time.UTC)
 	events := []Event{{
 		Event:     "STAGE_STARTED",
-		Timestamp: timestamp,
+		Timestamp: time.Date(2099, time.January, 2, 3, 4, 5, 999_999_999, time.UTC),
 		Fields: map[string]string{
 			"Message": "first\r\nsecond\nthird\u2028fourth\u2029",
 			"Stage":   "build",
 		},
 	}}
-	if err := Append(context.Background(), guard, projectRoot, recordRoot, events); err != nil {
+	ops := systemLedgerOps(projectRoot, recordRoot)
+	ops.now = func() time.Time { return timestamp.Add(987_654_321 * time.Nanosecond) }
+	if err := appendForIdentityWithOps(context.Background(), identity, guard, projectRoot, recordRoot, events, &ops); err != nil {
 		t.Fatalf("Append() error = %v", err)
 	}
 	shardPath := filepath.Join("audit", shardNameForHost(cloneID))
@@ -84,16 +86,16 @@ func TestAppendPrevalidatesBatchBeforeFilesystemMutation(t *testing.T) {
 	t.Parallel()
 
 	projectDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(projectDir, "aidlc"), 0o700); err != nil {
+	recordDir := filepath.Join(projectDir, cloneIDDirectory, "spaces", "default", "intents", "build")
+	if err := os.MkdirAll(recordDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	recordDir := t.TempDir()
 	projectRoot, err := os.OpenRoot(projectDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = projectRoot.Close() })
-	recordRoot, err := os.OpenRoot(recordDir)
+	recordRoot, err := projectRoot.OpenRoot(filepath.Join(cloneIDDirectory, "spaces", "default", "intents", "build"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,16 +125,16 @@ func TestAppendRequiresHeldMatchingGuard(t *testing.T) {
 	t.Parallel()
 
 	projectDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(projectDir, "aidlc"), 0o700); err != nil {
+	recordDir := filepath.Join(projectDir, cloneIDDirectory, "spaces", "default", "intents", "build")
+	if err := os.MkdirAll(recordDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	recordDir := t.TempDir()
 	projectRoot, err := os.OpenRoot(projectDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = projectRoot.Close() })
-	recordRoot, err := os.OpenRoot(recordDir)
+	recordRoot, err := projectRoot.OpenRoot(filepath.Join(cloneIDDirectory, "spaces", "default", "intents", "build"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +201,7 @@ func TestValidateEventAllowlistAndFieldBoundary(t *testing.T) {
 	}
 }
 
-func TestFormatTimestampUsesUTCAndFixedMilliseconds(t *testing.T) {
+func TestFormatTimestampUsesUTCAndFixedSeconds(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -215,7 +217,7 @@ func TestFormatTimestampUsesUTCAndFixedMilliseconds(t *testing.T) {
 		{
 			name: "truncate nanoseconds",
 			when: time.Date(2026, 9, 3, 4, 5, 6, 789_999_999, time.FixedZone("JST", 9*60*60)),
-			want: "2026-09-02T19:05:06.789Z",
+			want: "2026-09-02T19:05:06Z",
 		},
 	}
 	for _, tt := range tests {
@@ -231,13 +233,16 @@ func TestAppendGeneratesAndConvergesOnTwelveHexCloneID(t *testing.T) {
 	t.Parallel()
 
 	projectDir := t.TempDir()
-	recordDir := t.TempDir()
+	recordDir := filepath.Join(projectDir, cloneIDDirectory, "spaces", "default", "intents", "build")
+	if err := os.MkdirAll(recordDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	projectRoot, err := os.OpenRoot(projectDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = projectRoot.Close() })
-	recordRoot, err := os.OpenRoot(recordDir)
+	recordRoot, err := projectRoot.OpenRoot(filepath.Join(cloneIDDirectory, "spaces", "default", "intents", "build"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +318,7 @@ func TestAppendRejectsSymlinkAndNonRegularAuditTargets(t *testing.T) {
 		{
 			name: "clone id symlink",
 			setup: func(projectDir, recordDir string) error {
-				if err := os.Mkdir(filepath.Join(projectDir, cloneIDDirectory), 0o700); err != nil {
+				if err := os.MkdirAll(filepath.Join(projectDir, cloneIDDirectory), 0o700); err != nil {
 					return err
 				}
 				if err := os.WriteFile(filepath.Join(projectDir, "target"), []byte("abcdef123456\n"), 0o600); err != nil {
@@ -325,7 +330,7 @@ func TestAppendRejectsSymlinkAndNonRegularAuditTargets(t *testing.T) {
 		{
 			name: "audit directory file",
 			setup: func(projectDir, recordDir string) error {
-				if err := os.Mkdir(filepath.Join(projectDir, cloneIDDirectory), 0o700); err != nil {
+				if err := os.MkdirAll(filepath.Join(projectDir, cloneIDDirectory), 0o700); err != nil {
 					return err
 				}
 				if err := os.WriteFile(filepath.Join(projectDir, cloneIDDirectory, cloneIDFile), []byte("abcdef123456\n"), 0o600); err != nil {
@@ -337,7 +342,7 @@ func TestAppendRejectsSymlinkAndNonRegularAuditTargets(t *testing.T) {
 		{
 			name: "audit directory symlink",
 			setup: func(projectDir, recordDir string) error {
-				if err := os.Mkdir(filepath.Join(projectDir, cloneIDDirectory), 0o700); err != nil {
+				if err := os.MkdirAll(filepath.Join(projectDir, cloneIDDirectory), 0o700); err != nil {
 					return err
 				}
 				if err := os.WriteFile(filepath.Join(projectDir, cloneIDDirectory, cloneIDFile), []byte("abcdef123456\n"), 0o600); err != nil {
@@ -353,7 +358,7 @@ func TestAppendRejectsSymlinkAndNonRegularAuditTargets(t *testing.T) {
 		{
 			name: "shard symlink",
 			setup: func(projectDir, recordDir string) error {
-				if err := os.Mkdir(filepath.Join(projectDir, cloneIDDirectory), 0o700); err != nil {
+				if err := os.MkdirAll(filepath.Join(projectDir, cloneIDDirectory), 0o700); err != nil {
 					return err
 				}
 				if err := os.WriteFile(filepath.Join(projectDir, cloneIDDirectory, cloneIDFile), []byte("abcdef123456\n"), 0o600); err != nil {
@@ -375,7 +380,10 @@ func TestAppendRejectsSymlinkAndNonRegularAuditTargets(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			projectDir := t.TempDir()
-			recordDir := t.TempDir()
+			recordDir := filepath.Join(projectDir, cloneIDDirectory, "spaces", "default", "intents", "build")
+			if err := os.MkdirAll(recordDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
 			if err := tc.setup(projectDir, recordDir); err != nil {
 				if strings.Contains(tc.name, "symlink") && errors.Is(err, fs.ErrPermission) {
 					t.Skipf("symlink unavailable: %v", err)
@@ -387,7 +395,7 @@ func TestAppendRejectsSymlinkAndNonRegularAuditTargets(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = projectRoot.Close() })
-			recordRoot, err := os.OpenRoot(recordDir)
+			recordRoot, err := projectRoot.OpenRoot(filepath.Join(cloneIDDirectory, "spaces", "default", "intents", "build"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -454,19 +462,22 @@ func TestAppendReportsOpenWriteShortAndCloseFailures(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			projectDir := t.TempDir()
-			if err := os.Mkdir(filepath.Join(projectDir, cloneIDDirectory), 0o700); err != nil {
+			if err := os.MkdirAll(filepath.Join(projectDir, cloneIDDirectory), 0o700); err != nil {
 				t.Fatal(err)
 			}
 			if err := os.WriteFile(filepath.Join(projectDir, cloneIDDirectory, cloneIDFile), []byte("abcdef123456\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			recordDir := t.TempDir()
+			recordDir := filepath.Join(projectDir, cloneIDDirectory, "spaces", "default", "intents", "build")
+			if err := os.MkdirAll(recordDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
 			projectRoot, err := os.OpenRoot(projectDir)
 			if err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = projectRoot.Close() })
-			recordRoot, err := os.OpenRoot(recordDir)
+			recordRoot, err := projectRoot.OpenRoot(filepath.Join(cloneIDDirectory, "spaces", "default", "intents", "build"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -493,4 +504,326 @@ func TestAppendReportsOpenWriteShortAndCloseFailures(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAppendRejectsRecordRootsOutsideExpectedIntent(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	intentDir := filepath.Join(projectDir, cloneIDDirectory, "spaces", "default", "intents", "build")
+	if err := os.MkdirAll(intentDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, cloneIDDirectory, cloneIDFile), []byte("abcdef123456\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	siblingDir := filepath.Join(projectDir, cloneIDDirectory, "spaces", "default", "intents", "other")
+	if err := os.MkdirAll(siblingDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	projectRoot, err := os.OpenRoot(projectDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = projectRoot.Close() })
+	identity, err := recordlock.NewIdentity(projectDir, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err := recordlock.Acquire(context.Background(), identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = guard.Release() })
+
+	externalDir := t.TempDir()
+	externalRoot, err := os.OpenRoot(externalDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = externalRoot.Close() })
+	cases := []struct {
+		name string
+		root *os.Root
+	}{
+		{
+			name: "sibling intent",
+			root: mustOpenRoot(t, projectRoot, filepath.Join(cloneIDDirectory, "spaces", "default", "intents", "other")),
+		},
+		{name: "external root", root: externalRoot},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := Append(context.Background(), guard, projectRoot, tc.root, []Event{{Event: "STAGE_STARTED"}}); !errors.Is(err, ErrInvalidRoot) {
+				t.Errorf("Append() error = %v, want ErrInvalidRoot", err)
+			}
+			if _, statErr := tc.root.Lstat(auditDirectory); !errors.Is(statErr, fs.ErrNotExist) {
+				t.Errorf("rejected record root was mutated: %v", statErr)
+			}
+		})
+	}
+}
+
+func TestRenderEventsUsesPrivateClockAndSecondPrecision(t *testing.T) {
+	t.Parallel()
+
+	clock := time.Date(2026, 9, 3, 4, 5, 6, 987_654_321, time.FixedZone("JST", 9*60*60))
+	callerTimestamp := time.Date(2099, 1, 2, 3, 4, 5, 999_999_999, time.UTC)
+	rendered, err := renderEvents([]Event{{
+		Event:     "STAGE_STARTED",
+		Timestamp: callerTimestamp,
+	}}, func() time.Time { return clock })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(rendered[0].block), "\n## Stage Start\n**Timestamp**: 2026-09-02T19:05:06Z\n**Event**: STAGE_STARTED\n\n---\n"; got != want {
+		t.Errorf("rendered event = %q, want %q", got, want)
+	}
+}
+
+func TestAppendRejectsShardAndParentReplacementAroundWrite(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		replace func(t *testing.T, recordDir, shardPath string) error
+	}{
+		{
+			name: "shard",
+			replace: func(t *testing.T, recordDir, shardPath string) error {
+				if err := os.Rename(shardPath, shardPath+".opened"); err != nil {
+					return err
+				}
+				return os.WriteFile(shardPath, []byte("replacement\n"), 0o600)
+			},
+		},
+		{
+			name: "parent",
+			replace: func(t *testing.T, recordDir, shardPath string) error {
+				parent := filepath.Dir(shardPath)
+				if err := os.Rename(parent, parent+".opened"); err != nil {
+					return err
+				}
+				return os.Mkdir(parent, 0o700)
+			},
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			projectDir := t.TempDir()
+			recordDir := filepath.Join(projectDir, cloneIDDirectory, "spaces", "default", "intents", "build")
+			if err := os.MkdirAll(recordDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(projectDir, cloneIDDirectory, cloneIDFile), []byte("abcdef123456\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			projectRoot, err := os.OpenRoot(projectDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = projectRoot.Close() })
+			recordRoot, err := projectRoot.OpenRoot(filepath.Join(cloneIDDirectory, "spaces", "default", "intents", "build"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = recordRoot.Close() })
+			identity, err := recordlock.NewIdentity(projectDir, "default", "build")
+			if err != nil {
+				t.Fatal(err)
+			}
+			guard, err := recordlock.Acquire(context.Background(), identity)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = guard.Release() })
+			shardPath := filepath.Join(recordDir, auditDirectory, shardName("host", "abcdef123456"))
+			ops := systemLedgerOps(projectRoot, recordRoot)
+			ops.hostname = func() (string, error) { return "host", nil }
+			ops.now = func() time.Time { return time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC) }
+			actualWrite := ops.write
+			replaced := false
+			ops.write = func(file *os.File, data []byte) (int, error) {
+				if !replaced {
+					replaced = true
+					if err := tc.replace(t, recordDir, shardPath); err != nil {
+						return 0, err
+					}
+				}
+				return actualWrite(file, data)
+			}
+			err = appendForIdentityWithOps(context.Background(), identity, guard, projectRoot, recordRoot, []Event{{Event: "STAGE_STARTED"}}, &ops)
+			if !errors.Is(err, ErrInvalidRoot) {
+				t.Errorf("append error = %v, want ErrInvalidRoot", err)
+			}
+			if tc.name == "shard" {
+				data, readErr := os.ReadFile(shardPath)
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				if string(data) != "replacement\n" {
+					t.Errorf("replacement shard = %q, want attacker bytes preserved", data)
+				}
+			}
+		})
+	}
+}
+
+func TestAppendLeaseSerializesCopiesAndReleaseWaitsForFilesystemWork(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	recordDir := filepath.Join(projectDir, cloneIDDirectory, "spaces", "default", "intents", "build")
+	if err := os.MkdirAll(recordDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, cloneIDDirectory, cloneIDFile), []byte("abcdef123456\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	projectRoot, err := os.OpenRoot(projectDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = projectRoot.Close() })
+	recordRoot, err := projectRoot.OpenRoot(filepath.Join(cloneIDDirectory, "spaces", "default", "intents", "build"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = recordRoot.Close() })
+	identity, err := recordlock.NewIdentity(projectDir, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err := recordlock.Acquire(context.Background(), identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = guard.Release() })
+	ops := systemLedgerOps(projectRoot, recordRoot)
+	ops.hostname = func() (string, error) { return "host", nil }
+	ops.now = func() time.Time { return time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC) }
+	actualWrite := ops.write
+	writeStarted := make(chan struct{})
+	allowWrite := make(chan struct{})
+	ops.write = func(file *os.File, data []byte) (int, error) {
+		select {
+		case <-writeStarted:
+		default:
+			close(writeStarted)
+		}
+		<-allowWrite
+		return actualWrite(file, data)
+	}
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- appendForIdentityWithOps(context.Background(), identity, guard, projectRoot, recordRoot, []Event{{Event: "STAGE_STARTED"}}, &ops)
+	}()
+	select {
+	case <-writeStarted:
+	case <-time.After(time.Second):
+		t.Fatal("append did not reach the filesystem write")
+	}
+	blockedCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if secondErr := appendForIdentityWithOps(blockedCtx, identity, guard, projectRoot, recordRoot, []Event{{Event: "STAGE_COMPLETED"}}, &ops); !errors.Is(secondErr, context.DeadlineExceeded) {
+		t.Errorf("concurrent append error = %v, want context deadline", secondErr)
+	}
+	releaseDone := make(chan error, 1)
+	go func() { releaseDone <- guard.Release() }()
+	select {
+	case err := <-releaseDone:
+		t.Fatalf("Release() completed during append: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(allowWrite)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first append error = %v", err)
+	}
+	select {
+	case err := <-releaseDone:
+		if err != nil {
+			t.Fatalf("Release() after append = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Release() did not finish after append")
+	}
+}
+
+func TestAppendRejectsReplacementBeforeDescriptorOpen(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	recordDir := filepath.Join(projectDir, cloneIDDirectory, "spaces", "default", "intents", "build")
+	if err := os.MkdirAll(filepath.Join(recordDir, auditDirectory), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, cloneIDDirectory, cloneIDFile), []byte("abcdef123456\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	shard := shardName("host", "abcdef123456")
+	shardPath := filepath.Join(recordDir, auditDirectory, shard)
+	if err := os.WriteFile(shardPath, []byte("original\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	projectRoot, err := os.OpenRoot(projectDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = projectRoot.Close() })
+	recordRoot, err := projectRoot.OpenRoot(filepath.Join(cloneIDDirectory, "spaces", "default", "intents", "build"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = recordRoot.Close() })
+	identity, err := recordlock.NewIdentity(projectDir, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err := recordlock.Acquire(context.Background(), identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = guard.Release() })
+	actualLstat := recordRoot.Lstat
+	swapped := false
+	ops := systemLedgerOps(projectRoot, recordRoot)
+	ops.hostname = func() (string, error) { return "host", nil }
+	ops.now = func() time.Time { return time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC) }
+	ops.recordLstat = func(name string) (fs.FileInfo, error) {
+		info, err := actualLstat(name)
+		if name != filepath.Join(auditDirectory, shard) || swapped || err != nil {
+			return info, err
+		}
+		swapped = true
+		if err := os.Rename(shardPath, shardPath+".original"); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(shardPath, []byte("replacement\n"), 0o600); err != nil {
+			return nil, err
+		}
+		return info, nil
+	}
+	err = appendForIdentityWithOps(context.Background(), identity, guard, projectRoot, recordRoot, []Event{{Event: "STAGE_STARTED"}}, &ops)
+	if !errors.Is(err, ErrInvalidRoot) {
+		t.Errorf("append error = %v, want ErrInvalidRoot", err)
+	}
+	data, err := os.ReadFile(shardPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "replacement\n" {
+		t.Errorf("replacement shard = %q, want preserved replacement bytes", data)
+	}
+}
+
+func mustOpenRoot(t *testing.T, parent *os.Root, name string) *os.Root {
+	t.Helper()
+	root, err := parent.OpenRoot(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
+	return root
 }
