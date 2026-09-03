@@ -547,10 +547,29 @@ func TestCreateIntentWithInitializerRunsAfterCursorFailure(t *testing.T) {
 	project := t.TempDir()
 	cursorCause := errors.New("active cursor failed")
 	initializerCause := errors.New("initializer failed")
-	closeCause := errors.New("root close failed")
+	recordCloseCause := errors.New("intent record root close failed")
+	intentsCloseCause := errors.New("intents root close failed")
+	projectCloseCause := errors.New("project root close failed")
 	releaseCause := errors.New("lock release failed")
 	initialized := false
 	ops := successfulIntentCreateOps()
+	var projectRoot, intentsRoot, recordRoot *os.Root
+	ops.openProject = func(string) (*os.Root, error) {
+		projectRoot = new(os.Root)
+		return projectRoot, nil
+	}
+	ops.openChild = func(parent *os.Root, _ string) (*os.Root, error) {
+		switch parent {
+		case projectRoot:
+			intentsRoot = new(os.Root)
+			return intentsRoot, nil
+		case intentsRoot:
+			recordRoot = new(os.Root)
+			return recordRoot, nil
+		default:
+			return nil, fmt.Errorf("unexpected root %p", parent)
+		}
+	}
 	ops.completeActiveSpace = func(*os.Root, string) error {
 		return cursorCause
 	}
@@ -558,7 +577,18 @@ func TestCreateIntentWithInitializerRunsAfterCursorFailure(t *testing.T) {
 		t.Fatal("saveActiveIntent ran after the first cursor operation failed")
 		return nil
 	}
-	ops.closeRoot = func(*os.Root) error { return closeCause }
+	ops.closeRoot = func(root *os.Root) error {
+		switch root {
+		case recordRoot:
+			return recordCloseCause
+		case intentsRoot:
+			return intentsCloseCause
+		case projectRoot:
+			return projectCloseCause
+		default:
+			return fmt.Errorf("unexpected root close %p", root)
+		}
+	}
 	ops.releaseLock = func(workspaceLockReceipt) error { return releaseCause }
 	created, err := createIntentWithInitializer(
 		context.Background(),
@@ -579,7 +609,10 @@ func TestCreateIntentWithInitializerRunsAfterCursorFailure(t *testing.T) {
 	if created == (CreatedIntent{}) || !initialized {
 		t.Errorf("createIntentWithInitializer() = (%+v, %v), want committed result and initializer call", created, err)
 	}
-	for _, cause := range []error{cursorCause, initializerCause, closeCause, releaseCause} {
+	if !errors.Is(err, recordCloseCause) {
+		t.Errorf("error %v lost record Root close cause %v", err, recordCloseCause)
+	}
+	for _, cause := range []error{cursorCause, initializerCause, intentsCloseCause, projectCloseCause, releaseCause} {
 		if !errors.Is(err, cause) {
 			t.Errorf("error %v lost cause %v", err, cause)
 		}

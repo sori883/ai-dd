@@ -910,8 +910,9 @@ snapshotであり、`.aidlc-plan.json`、`.aidlc-stage-plan.json`などのsideca
 将来のrecomposeは保存済み`aidlc-state.md` suffixを正とし、人間の承認後にcurrentより後ろのpending Stageだけを
 変更する別Issueで実装します。今回の接続はrecompose本体を追加しません。
 
-`Detect`が返すGreenfield補正、submodule情報、off-path producer advisoryは構造化された結果としてInitialや
-StartedIntentへ保持し、producer不在は既存のfail-closed方針に従います。比較対象はこのrepositoryに固定された
+`workspace.Detect`が返すsubmodule情報は`StartedIntent.Workspace`へ保持します。Greenfield補正とoff-path producer
+advisoryは`state.BuildInitial`が生成する`StartedIntent.Initial.Plan`へ構造化して保持し、両者をworkspace分析の
+結果と混同しません。producer不在は既存のfail-closed方針に従います。比較対象はこのrepositoryに固定された
 本家AI-DLC `2.6.123`で、今回新しい意図的差分は追加せず、既存のmalformed graph/scope、strict registry、cursor
 通知、stale lock非回収、`os.Root`/nonregular state、producer不在早期拒否の差分だけを引き継ぎます。
 詳細な参照契約と承認済み方針は[StartIntentの参照契約](ram/research/2026-09-03-start-intent-recompose-contracts.md)、
