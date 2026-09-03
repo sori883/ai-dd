@@ -14,7 +14,7 @@ AI-DLCの全体を一度に作り込まず、Intent開始から完了までの�
 
 1. Intent開始を完成させる
    - Stage catalog metadata
-   - IntentごとのStage Plan
+   - IntentごとのStage Plan（Issue #57でbuilderを追加）
    - `StartIntent`への接続
 2. 薄い全life-cycleを接続する
    - 現在Stage、directive、成果物確認、承認、state advance、次Stage、完了
