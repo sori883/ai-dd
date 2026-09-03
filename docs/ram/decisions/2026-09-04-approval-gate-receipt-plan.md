@@ -136,3 +136,31 @@ darwin/linux/windows × amd64/arm64のCLI buildと対象integration test binary 
 `aidlc-orchestrate.ts:2723`（gate軸）、`tests/unit/t261-audit-authority-floor.test.ts`を参照した。既承認のstrict state/suffix authorityを維持し、
 新しい意図的差分は採用しない。production receipt sourceは未決であり、公開接続前に確認する。
 canonical内部範囲を越える互換性やauthorityの選択が必要になれば停止する。
+
+## 実装記録（PR5）
+
+実装はこの計画とIssue #79の範囲に限定した。`state.ReadDocument`はvalidated `State`と元bytesを返し、
+`RevisionCount`／`LastUpdated` accessorと`Revision Count` patch allowlistを追加した。state leafとaudit shardは
+nonblocking descriptor、path・descriptor identityの読取前後検証で差替えとFIFOをfail-closedにする。
+
+`audit.ReadEvents`と`HumanTurnFresh`はcanonical authority、全resolution種別、shard内順序、同秒別shard、truncated
+tail、timestamp逆行を扱う。`OpenGate`、`RejectGate`、`ReviseGate`は自身でlockを取得し、audit先行のstate遷移を
+実装した。`HUMAN_TURN`はmintせず、approval choiceとreceiptの検証はPR6から再利用できるprivate helperに分離した。
+InitializationとConstructionはSkeleton Stanceの記録値にかかわらずunsupportedである。
+
+観測したTDD結果は、reader／freshness、decision vector、gateのtransition／failure／overflow／再差戻し／古いreceipt、
+state ownership／accessor／patch、実RootのFIFO、audit先行保存失敗、同一record lock競合を対象とするtargeted RED→GREENとした。
+loopでは全test、race、vet、cross build、Issue／PR操作を行っていない。外部Go module/tool、公開CLI、recordlockの
+再入化は追加していない。audit保存後のstate保存失敗でauditが残り得る非対称durabilityと、productionのtrusted
+receipt取得元が未接続であることは計画どおりの残余riskである。
+
+loop最終確認（すべて終了コード0、`gofmt -l`と`git diff --check`は出力なし）:
+
+```text
+go test -count=1 -run '^(TestParseAuditShard|TestHumanTurnFresh)' ./src/internal/audit
+go test -count=1 -run '^(TestRevisionCount|TestLastUpdated|TestPatchRevisionCount)' ./src/internal/state
+go test -count=1 -run '^(TestValidateApproval|TestDecision|TestGate)' ./src/internal/orchestrator
+go test -tags=integration -count=1 -run '^TestReadEventsIntegration' ./src/internal/audit
+go test -tags=integration -count=1 -run '^Test(ReadIntegration|ReadDocumentIntegration)' ./src/internal/state
+go test -tags=integration -count=1 -run '^Test(OpenGateIntegration|RejectGateIntegration|ReviseGateIntegration|ApprovalValidationIntegration)' ./src/internal/orchestrator
+```

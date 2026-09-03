@@ -585,11 +585,12 @@ go test -tags=integration -count=1 -run '^(TestWriteState|TestWriteInitial)' ./s
 
 ### 保存済み aidlc-state.md reader/parser（内部API）
 
-`state.Read(recordRoot *os.Root) (State, error)`は、callerが開いたIntent record rootの固定leaf
-`aidlc-state.md`をread-onlyで読みます。`state.Parse(content []byte) (State, error)`は、そのbytesをState Version 8の
-typed snapshotへ変換します。ReadはrootをCloseせず、regular file以外のleafを拒否します。Parseはsection、必須field、
-phase、Stage row、UTF-8と改行を検証し、error時はzero Stateを返します。graph join、state更新、audit、CLI、Stage実行は
-このAPIの責務ではありません。
+`state.ReadDocument(recordRoot *os.Root) (Document, error)`は、callerが開いたIntent record rootの固定leaf
+`aidlc-state.md`をread-onlyで読み、validated `State`と元bytesを返します。`state.Read`はtyped Stateだけを返します。readerは
+rootをCloseせず、regular fileだけを確認した後にnonblocking descriptorを開き、path・descriptor identityを読取前後で確認します。
+`state.Parse(content []byte) (State, error)`は、そのbytesをState Version 8のtyped snapshotへ変換します。Parseはsection、必須field、
+phase、Stage row、UTF-8と改行を検証し、error時はzero Stateを返します。graph join、state更新、audit、CLI、Stage実行はこのAPIの
+責務ではありません。
 
 loopでは、各observable behaviorについて失敗testを先に追加してREDを確認し、最小実装でGREENにします。greenの間だけ
 refactorし、変更したGo fileへ`gofmt`を適用した後に影響するtargeted testを再実行します。以下のcommandは対象を
@@ -626,7 +627,7 @@ Stateのvalue accessorとslice defensive copy、入力byte ownershipを確認し
 go test -tags=integration -count=1 -run '^TestRead' ./src/internal/state
 ```
 
-実`os.Root`でregular fileの成功、missing、nil root、directory、symlink、invalid contentを確認します。成功・失敗の
+実`os.Root`でregular fileの成功、missing、nil root、directory、symlink、FIFO、invalid contentを確認します。成功・失敗の
 どちらでもRootがcaller側で継続利用でき、directory entries、state bytes、mode、mtimeが変更されないことを確認します。
 通常readに伴うatimeの不変までは検証・保証しません。Windowsでsymlink作成権限がない場合は該当caseだけ理由付きで
 skipします。
@@ -645,7 +646,7 @@ state readerの検証対象にしません。
 
 `state.Patch(content []byte, request PatchRequest) ([]byte, error)`は、検証済みraw `aidlc-state.md`に対して
 `CanonicalField`、`PhaseProgressPatch`、`StageMarkerPatch`で指定した型付き対象だけを局所置換します。fieldは
-固定allowlist、phase／status／count／markerは既存のcanonical enum・値として検証します。任意のMarkdown labelや
+固定allowlist（`Revision Count`を含む）、phase／status／count／markerは既存のcanonical enum・値として検証します。任意のMarkdown labelや
 newline・Unicode whitespace・control characterを含むscalarは受け付けません。
 
 patch前後を`state.Parse`へ渡し、malformed、missing、duplicate、canonical section外のdecoy、同一targetの重複、
@@ -731,6 +732,38 @@ go test -count=1 -run '^(TestLoad|TestEvaluateStageCompletion)' ./src/internal/g
 
 固定AI-DLC `2.6.123`の参照範囲は[参照契約](ram/research/2026-09-03-thin-lifecycle-transition-contracts.md)、
 実装許可・受入条件・残余riskは[実装計画](ram/decisions/2026-09-03-stage-completion-decision-plan.md)を参照してください。
+
+### 承認ゲートと人間応答の接続（内部API）
+
+`OpenGate`、`RejectGate`、`ReviseGate`は、`recordlock.With`で自分のrecord lockを取得してから、同じrecordのRoot、graph、state、
+auditを再読取します。callerからGuardを受け取らず、auditの`Append`を外側のleaseで囲みません。`OpenGate`は完了条件を満たす
+通常Stageの`[-]`を`[?]`へ進め、`STAGE_AWAITING_APPROVAL`を先に追記します。既に`[?]`なら完了条件とbindingを再検証するだけで、
+state/auditを変更しません。`RejectGate`は新しいtrusted `HUMAN_TURN`がある場合だけ、`[-]`または`[?]`を`[R]`へ進め、Revision Countを
+増やし、`GATE_REJECTED`→`STAGE_REVISING`の順に追記します。`[R]`の再差戻し、receipt不在、壊れたRevision Countは拒否し、receiptを消費しません。
+`ReviseGate`は`[R]`を`[?]`へ戻し、後続approvalには新しいreceiptを要求します。
+
+`audit.ReadEvents`は当該recordの全`.md` shardを読み、canonical UTC秒Timestamp、shard内block位置、duplicate/malformed authority、
+timestamp逆行、Root/directory/leaf identityを検証します。最新resolutionより新しい`HUMAN_TURN`だけをfreshとし、同秒の別shardは
+順序を推定せずfail-closedにします。canonical headerと空末尾以外の不完全event、nonregular leaf、FIFO差替えは許可へ変換しません。
+`HUMAN_TURN`はこのgateや自由なchoice文字列から生成せず、approval validatorはRevision Countをstateから読み、exact choiceと自己帰属
+tripwireをprivate helperで検証します。
+
+このwalking skeletonのgate対象は未対応能力を持たない通常Stageに限ります。summary confirmation（`if-present`を含む）、pipeline、
+reviewer、sensor、agent-team、per-unit、CodeKB、workspace sourceを要求するStage、Initialization、Constructionは常にunsupportedです。
+ConstructionのSkeleton Stance記録だけから実装済みのgate軸を推測しません。audit追記後のstate保存失敗ではauditが残り得るため、
+自動rollbackや再承認は行いません。
+
+loopでは次のtargeted testを、各sliceのRED→GREENとgofmtの後に実行します。
+
+```sh
+go test -count=1 -run '^(TestParseAuditShard|TestHumanTurnFresh)' ./src/internal/audit
+go test -count=1 -run '^(TestValidateApproval|TestDecision|TestGate)' ./src/internal/orchestrator
+go test -count=1 -run '^(TestRevisionCount|TestLastUpdated|TestPatchRevisionCount)' ./src/internal/state
+go test -tags=integration -count=1 -run '^Test(ReadDocumentIntegration|OpenGateIntegration|RejectGateIntegration|ReviseGateIntegration|ApprovalValidationIntegration)' ./src/internal/state ./src/internal/orchestrator
+```
+
+固定snapshotの確認範囲、受入条件、未対応phase境界、実装記録は[承認ゲート遷移と人間応答監査記録の接続計画](ram/decisions/2026-09-04-approval-gate-receipt-plan.md)を参照してください。
+独立review後の全package test、race、vet、cross buildなどのfinal gateは親agentが差分安定後に一度だけ実行します。
 
 ### Intent開始 orchestration（内部API）
 

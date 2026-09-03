@@ -1,7 +1,9 @@
 package state
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"strings"
@@ -33,7 +35,7 @@ func ReadDocument(recordRoot *os.Root) (Document, error) {
 		return Document{}, fmt.Errorf("read state: %q is not a regular file: %w", stateFile, fs.ErrInvalid)
 	}
 
-	content, err := recordRoot.ReadFile(stateFile)
+	content, err := readStateLeaf(recordRoot, info)
 	if err != nil {
 		return Document{}, fmt.Errorf("read state: read %q: %w", stateFile, err)
 	}
@@ -42,6 +44,58 @@ func ReadDocument(recordRoot *os.Root) (Document, error) {
 		return Document{}, fmt.Errorf("read state: parse %q: %w", stateFile, err)
 	}
 	return Document{State: parsed, Content: content}, nil
+}
+
+// readStateLeaf reads only the descriptor whose identity was observed by the
+// caller's Root.  The initial Lstat alone is not sufficient: another actor
+// could replace a regular state leaf with a FIFO or a different file between
+// inspection and open.  The platform helper uses O_NONBLOCK where FIFOs are
+// possible, and the descriptor/path checks make every such replacement fail
+// closed without waiting on the replacement.
+func readStateLeaf(recordRoot *os.Root, pathInfo fs.FileInfo) (content []byte, err error) {
+	file, err := openStateLeaf(recordRoot, stateFile)
+	if err != nil {
+		return nil, err
+	}
+	if file == nil {
+		return nil, fmt.Errorf("open state returned nil file: %w", fs.ErrInvalid)
+	}
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close state: %w", closeErr))
+		}
+	}()
+
+	opened, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat opened state: %w", err)
+	}
+	if !regularStateIdentity(pathInfo, opened) {
+		return nil, fmt.Errorf("state leaf changed identity before read: %w", fs.ErrInvalid)
+	}
+
+	content, err = io.ReadAll(file)
+	if err != nil {
+		return nil, fmt.Errorf("read opened state: %w", err)
+	}
+
+	final, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat opened state after read: %w", err)
+	}
+	current, err := recordRoot.Lstat(stateFile)
+	if err != nil {
+		return nil, fmt.Errorf("inspect state after read: %w", err)
+	}
+	if !regularStateIdentity(pathInfo, final) || !regularStateIdentity(pathInfo, current) {
+		return nil, fmt.Errorf("state leaf changed identity during read: %w", fs.ErrInvalid)
+	}
+	return content, nil
+}
+
+func regularStateIdentity(expected, actual fs.FileInfo) bool {
+	return expected != nil && actual != nil && expected.Mode().IsRegular() &&
+		actual.Mode().IsRegular() && os.SameFile(expected, actual)
 }
 
 // RevisionCount returns the unique canonical Revision Count in Runtime State.
