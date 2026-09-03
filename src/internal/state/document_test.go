@@ -140,6 +140,37 @@ func TestLastUpdatedRequiresUniqueCanonicalCurrentStatusField(t *testing.T) {
 	}
 }
 
+func TestTransitionFieldAccessorsReadCanonicalSections(t *testing.T) {
+	t.Parallel()
+
+	content := canonicalStateContent() + "\n## Session Resume Point\n" +
+		"- **Last Completed Stage**: state-init\n" +
+		"- **Next Action**: Execute intent-capture\n"
+
+	tests := []struct {
+		name string
+		read func([]byte) (string, error)
+		want string
+	}{
+		{name: "active agent", read: ActiveAgent, want: "aidlc-product-agent"},
+		{name: "last completed stage", read: LastCompletedStage, want: "state-init"},
+		{name: "next action", read: NextAction, want: "Execute intent-capture"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := tt.read([]byte(content))
+			if err != nil {
+				t.Fatalf("accessor() error = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("accessor() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestPatchRevisionCountPreservesUnknownBytes(t *testing.T) {
 	t.Parallel()
 

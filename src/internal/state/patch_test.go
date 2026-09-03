@@ -613,3 +613,50 @@ func TestPatchRejectsPhaseProgressAmbiguity(t *testing.T) {
 		})
 	}
 }
+
+func TestPatchNextActionAllowsInternalSpacesAndRejectsUnsafeValues(t *testing.T) {
+	t.Parallel()
+
+	input := canonicalStateContent() + "\n## Session Resume Point\n" +
+		"- **Last Completed Stage**: state-init\n" +
+		"- **Next Action**: Execute intent-capture\n"
+
+	tests := []struct {
+		name        string
+		replacement string
+		wantErr     bool
+	}{
+		{name: "internal spaces are accepted", replacement: "Execute the next stage"},
+		{name: "newline is rejected", replacement: "Execute next\nstage", wantErr: true},
+		{name: "line separator is rejected", replacement: "Execute next\u2028stage", wantErr: true},
+		{name: "paragraph separator is rejected", replacement: "Execute next\u2029stage", wantErr: true},
+		{name: "control character is rejected", replacement: "Execute next\x00stage", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := Patch([]byte(input), PatchRequest{Fields: []FieldPatch{{
+				Field:       CanonicalFieldNextAction,
+				Expected:    "Execute intent-capture",
+				Replacement: tt.replacement,
+			}}})
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("Patch() error = nil, want invalid patch")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Patch() error = %v", err)
+			}
+			gotAction, err := NextAction(got)
+			if err != nil {
+				t.Fatalf("NextAction(Patch()) error = %v", err)
+			}
+			if gotAction != tt.replacement {
+				t.Fatalf("NextAction(Patch()) = %q, want %q", gotAction, tt.replacement)
+			}
+		})
+	}
+}

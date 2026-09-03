@@ -51,3 +51,24 @@ Goの`state.State`は未知sectionや未知field、Active Agent、Last Updated�
 - `docs/実装_aidlc-workflows/tests/unit/t115.test.ts:746`
 - `docs/実装_aidlc-workflows/tests/unit/t125.test.ts:20-90`
 - `docs/実装_aidlc-workflows/tests/unit/t232-phase-progress-flip.test.ts:12`
+
+## PR6接続時の確認記録（2026-09-04）
+
+Issue #81の実装では、上記の順序を一つのrecord lock内の二段階transactionとして接続した。第一段階は
+`GATE_APPROVED`、`STAGE_COMPLETED`をauditへ先に追記してからstateを保存し、保存済みstateを同じlock内で読み直して
+次Stageまたは終端を導出する。第二段階もauditを先に追記してstateを保存する。第一state保存後の失敗はrollback・再承認を
+行わず、承認済み中間stateと最終遷移未完了をresultで区別する。
+
+保存済みStage suffixとgraph順序をrouting authorityとして維持し、scope gridやcallerのNext Stageで補完しない。未知scope／row、
+前方pending、複数live、未対応phase・capabilityは終端と推測せずfail-closedにする。承認receiptは保持中のidentity-bound Guardと
+Rootからfreshにauditを読み直して判定し、`HUMAN_TURN`はこのAPIから生成しない。
+
+未記録revision backstopは補完経路を実装せず、対象artifactの宣言filename（`traceability`、build/load test-resultsの例外を含む）を
+既存presence判定と共有するcanonical helperで照合する。同秒別shardの順序候補が判定を左右する場合は、候補列挙を256件までに
+制限し、上限超過または候補間の判定相違をunsupportedとして承認audit前に停止する。これは新しいauthorityや順序規則を導入せず、
+固定snapshotの不確実性を安全側へ倒す実装詳細である。
+
+この接続で編集した責務は、内部orchestratorのapprove／advance／revision backstop、stateのcanonical accessor／patch allowlist、
+artifact filename共有、および対応するunit／integration testと文書に限定した。公開CLI、registry同期、recordlockの再入化、外部Go
+module／toolは追加していない。audit/stateを跨ぐtransactionの電源断耐性、productionのtrusted receipt取得元、registry status同期は
+引き続き後続境界であり、このPRの完了条件には含めない。

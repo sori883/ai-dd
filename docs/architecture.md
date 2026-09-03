@@ -948,7 +948,8 @@ lifecycle-ownedなcanonical field、phase status、Stage checkbox markerだけ�
 不正なscalarを拒否します。失敗時はpartial bytesを返さず、入力sliceも変更しません。
 
 `CanonicalField`は`Total Stages`、`Completed`、`In Progress`、`Lifecycle Phase`、`Current Stage`、`Next Stage`、
-`Status`、`Last Updated`、`Revision Count`だけを許可します。Count、stage slug、phase、workflow statusは各既存enum／canonical値として
+`Status`、`Last Updated`、`Revision Count`、`Active Agent`、`Last Completed Stage`、`Next Action`だけを許可します。
+`Next Action`は内部空白を持つ安全な単行値として検証します。Count、stage slug、phase、workflow statusは各既存enum／canonical値として
 検証し、改行・Unicode whitespace・control characterによるMarkdown構造注入を拒否します。`PhaseProgressPatch`は
 5つのcanonical phaseと`Pending`／`Active`／`Verified`／`Skipped`だけを対象にし、`StageMarkerPatch`はslug、期待する
 現在marker、6種類のreplacement markerを受け取ります。marker遷移の業務上の許可判断はこの低水準patcherの責務ではありません。
@@ -1033,6 +1034,28 @@ receiptを検証し、approvalのexact choice・revision boundary・自己帰属
 workspace sourceを要求するStage、Initialization、Constructionをgate対象にしません。ConstructionはSkeleton Stanceの記録値にかかわらず
 unsupportedであり、未実装のgate軸をexecution軸から推測して通過させません。audit追記成功後のstate保存失敗ではauditが残り得る
 非対称durabilityを維持し、rollbackや自動再承認は行いません。固定snapshotとの比較範囲、受入条件、loop証拠は[承認ゲート遷移と人間応答監査記録の接続計画](ram/decisions/2026-09-04-approval-gate-receipt-plan.md)を参照してください。
+
+## 承認から次Stage・workflow完了（内部API）
+
+`orchestrator.ApproveGate(ctx, ApproveInput) (ApproveResult, error)`は、freshな人間応答と完了条件を確認した
+通常Stageの承認を、次のStage開始またはworkflow完了まで接続します。入力にはidentity-boundなproject／record Root、現在Stage、
+graph snapshot、choiceを含めますが、次Stage、監査列、時刻、Guardをcallerから権限として受け取りません。API自身が
+`recordlock.With`を一度だけ取得し、保持中のGuardを返さず、`audit.Append`内部のleaseを外側から再取得しません。
+
+transactionは同じlock内で二段階に保存します。第一段階はstateとauditをfresh readし、保存済みStage suffix・graph・scope・
+completion・receipt・backstopを検証してから、currentを`[x]`へ、`Completed`を実際の完了件数へ更新し、
+`GATE_APPROVED`→`STAGE_COMPLETED`をauditへ先に追記して第一stateを保存します。第一state保存後はstateを読み直し、保存済みsuffixと
+graph順序から次の未完`EXECUTE`を導出します。次Stageがあれば`[-]`、Current Stage、In Progress、Next Stage、Lifecycle Phase、
+Active Agent、Next Actionを更新し、同phaseなら`STAGE_STARTED`、phase境界なら`PHASE_COMPLETED`→`PHASE_VERIFIED`→
+`PHASE_STARTED`→`STAGE_STARTED`を追記します。後続StageがなければStatus、phase、終端項目を更新し、終端3イベントを追記します。
+
+次Stage選択で保存済みsuffix、row、scope、live marker、capabilityに不整合があれば、終端や完了を推測せずfail-closedにします。
+未記録revision backstopは補完せず、対象artifactのfilename例外を共有canonical helperで照合します。同秒別shardの順序が判定を
+左右する場合、候補順を最大256件まで検査し、上限超過または判定相違をunsupportedとして承認前に停止します。
+第一state保存後のaudit／state失敗では`ApproveResult`に承認済み中間stateを保持し、最終遷移未完了と区別します。rollback、再承認、
+registry status同期、公開CLI接続はこの内部APIの責務ではありません。詳細な受入条件、固定snapshotの参照範囲、残余riskは
+[承認から次Stage・workflow完了までの接続計画](ram/decisions/2026-09-04-approve-advance-plan.md)と
+[report・approval・state遷移契約](ram/research/2026-09-03-thin-lifecycle-transition-contracts.md)を参照してください。
 
 ## Intent開始 orchestration
 

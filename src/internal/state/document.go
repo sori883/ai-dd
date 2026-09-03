@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Document is one validated state snapshot together with the original file
@@ -138,11 +140,107 @@ func LastUpdated(content []byte) (string, error) {
 	return value, nil
 }
 
+// ActiveAgent returns the unique canonical Active Agent field in Project
+// Information. The field is optional to Parse for compatibility with older
+// state documents; callers that route a transition must handle a missing
+// field explicitly through this accessor.
+func ActiveAgent(content []byte) (string, error) {
+	if _, err := Parse(content); err != nil {
+		return "", fmt.Errorf("read active agent: %w", err)
+	}
+	lines, err := canonicalSectionLines(content, "Project Information")
+	if err != nil {
+		return "", fmt.Errorf("read active agent: %w", err)
+	}
+	value, err := requiredStringField(lines, "Active Agent")
+	if err != nil {
+		return "", fmt.Errorf("read active agent: %w", err)
+	}
+	return value, nil
+}
+
+// LastCompletedStage returns the unique canonical Last Completed Stage field
+// in Session Resume Point. The stage slug is checked independently of the
+// parser so routing never treats arbitrary text as a completed stage.
+func LastCompletedStage(content []byte) (string, error) {
+	if _, err := Parse(content); err != nil {
+		return "", fmt.Errorf("read last completed stage: %w", err)
+	}
+	lines, err := canonicalSectionLines(content, "Session Resume Point")
+	if err != nil {
+		return "", fmt.Errorf("read last completed stage: %w", err)
+	}
+	value, err := requiredStringField(lines, "Last Completed Stage")
+	if err != nil {
+		return "", fmt.Errorf("read last completed stage: %w", err)
+	}
+	if value != "none" && !validCanonicalStage(value) {
+		return "", invalidState("invalid Last Completed Stage %q", value)
+	}
+	return value, nil
+}
+
+// NextAction returns the unique canonical Next Action field in Session
+// Resume Point. Unlike a slug/scalar field, this value permits internal
+// spaces, but remains a safe nonempty single line.
+func NextAction(content []byte) (string, error) {
+	if _, err := Parse(content); err != nil {
+		return "", fmt.Errorf("read next action: %w", err)
+	}
+	lines, err := canonicalSectionLines(content, "Session Resume Point")
+	if err != nil {
+		return "", fmt.Errorf("read next action: %w", err)
+	}
+	value, err := requiredStringField(lines, "Next Action")
+	if err != nil {
+		return "", fmt.Errorf("read next action: %w", err)
+	}
+	if !validCanonicalSingleLine(value) {
+		return "", invalidState("invalid Next Action %q", value)
+	}
+	return value, nil
+}
+
 // RevisionCount returns the document's canonical revision count.
 func (d Document) RevisionCount() (int, error) { return RevisionCount(d.Content) }
 
 // LastUpdated returns the document's canonical last-updated value.
 func (d Document) LastUpdated() (string, error) { return LastUpdated(d.Content) }
+
+// ActiveAgent returns the document's canonical active agent.
+func (d Document) ActiveAgent() (string, error) { return ActiveAgent(d.Content) }
+
+// LastCompletedStage returns the document's canonical completed stage.
+func (d Document) LastCompletedStage() (string, error) {
+	return LastCompletedStage(d.Content)
+}
+
+// NextAction returns the document's canonical next action.
+func (d Document) NextAction() (string, error) { return NextAction(d.Content) }
+
+func validCanonicalStage(value string) bool {
+	if value == "" || !utf8.ValidString(value) {
+		return false
+	}
+	for _, character := range value {
+		if unicode.IsSpace(character) || unicode.IsControl(character) {
+			return false
+		}
+	}
+	return true
+}
+
+func validCanonicalSingleLine(value string) bool {
+	if value == "" || !utf8.ValidString(value) {
+		return false
+	}
+	for _, character := range value {
+		if character == '\r' || character == '\n' || character == '\u2028' || character == '\u2029' || unicode.IsControl(character) {
+			return false
+		}
+	}
+	return true
+}
 
 func canonicalSectionLines(content []byte, target string) ([]string, error) {
 	if len(content) >= 3 && content[0] == 0xef && content[1] == 0xbb && content[2] == 0xbf {
