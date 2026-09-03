@@ -118,6 +118,19 @@ func ReadEvents(ctx context.Context, identity recordlock.Identity, guard *record
 	return records, nil
 }
 
+// ValidateRecordBinding validates only the identity, Guard, and supplied root
+// bindings. It does not inspect or parse the audit ledger and never closes a
+// caller-owned root.
+func ValidateRecordBinding(ctx context.Context, identity recordlock.Identity, guard *recordlock.Guard, projectRoot, recordRoot *os.Root) error {
+	if err := checkReadContext(ctx); err != nil {
+		return err
+	}
+	if projectRoot == nil || recordRoot == nil {
+		return fmt.Errorf("audit: project and record roots are required: %w", ErrInvalidRoot)
+	}
+	return verifyReadBindings(identity, guard, projectRoot, recordRoot)
+}
+
 func verifyReadBindings(identity recordlock.Identity, guard *recordlock.Guard, projectRoot, recordRoot *os.Root) error {
 	if guard == nil || !guard.Held() {
 		return ErrGuardNotHeld

@@ -72,3 +72,15 @@ Rootからfreshにauditを読み直して判定し、`HUMAN_TURN`はこのAPIか
 artifact filename共有、および対応するunit／integration testと文書に限定した。公開CLI、registry同期、recordlockの再入化、外部Go
 module／toolは追加していない。audit/stateを跨ぐtransactionの電源断耐性、productionのtrusted receipt取得元、registry status同期は
 引き続き後続境界であり、このPRの完了条件には含めない。
+
+## PR7接続時の確認記録（2026-09-04）
+
+Issue #83の内部`Next`／`Report`は、PR6のgate／approve transactionを新しいlock wrapperで包まずに呼び出す薄いfacadeとして接続した。
+Nextは自身のrecord lock内でRoot・Guard・identity bindingを前後に確認し、保存済みstateを一度fresh readして`run-stage`、
+`awaiting-approval`、`revising`、`workflow-complete`へ分類する。Reportは必須Current stageとSlugの完全一致を確認し、明示されたkindだけを
+一度委譲して、下位操作が返すpartial result／errorを保持する。終端Nextは壊れたaudit／graph／artifact本文に依存せず、stateとbindingだけで判定する。
+
+integration fixtureは`StartIntent`が作る実filesystem recordを使用し、artifactと`HUMAN_TURN`だけを製品外のfixture準備として配置した。
+保存suffixと注入graphのSKIP差異、旧receipt再利用、reject/revise、phase境界、unknown bytes、registry未同期、無関係record、
+terminal後のaudit／graph／artifact欠落を確認した。`Directive.Stage`はSensors／ProducesKindsをdeep copyし、caller間のslice共有を防ぐ。
+CI quality jobは既存のpin・matrix・権限を変更せず、audit／recordlock／orchestratorのintegrationをrace・shuffle付きで追加実行する。

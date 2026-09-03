@@ -88,6 +88,146 @@ func TestReadEventsIntegrationTreatsMissingAuditDirectoryAsEmpty(t *testing.T) {
 	}
 }
 
+func TestValidateRecordBindingIntegrationDoesNotReadAuditBody(t *testing.T) {
+	projectDir := t.TempDir()
+	recordDir := filepath.Join(projectDir, cloneIDDirectory, "spaces", "default", "intents", "build")
+	if err := os.MkdirAll(filepath.Join(recordDir, auditDirectory), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(recordDir, auditDirectory, "broken.md"), []byte("not a canonical audit shard"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	projectRoot, recordRoot, identity, guard := openAuditReadRoots(t, projectDir, recordDir)
+	defer func() { _ = projectRoot.Close() }()
+	defer func() { _ = recordRoot.Close() }()
+	defer func() { _ = guard.Release() }()
+
+	if err := ValidateRecordBinding(context.Background(), identity, guard, projectRoot, recordRoot); err != nil {
+		t.Fatalf("ValidateRecordBinding() error = %v, want nil without reading audit body", err)
+	}
+}
+
+func TestValidateRecordBindingIntegrationRejectsUnboundInputs(t *testing.T) {
+	t.Run("nil context", func(t *testing.T) {
+		projectDir := t.TempDir()
+		recordDir := filepath.Join(projectDir, cloneIDDirectory, "spaces", "default", "intents", "build")
+		if err := os.MkdirAll(recordDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		projectRoot, recordRoot, identity, guard := openAuditReadRoots(t, projectDir, recordDir)
+		defer func() { _ = projectRoot.Close() }()
+		defer func() { _ = recordRoot.Close() }()
+		defer func() { _ = guard.Release() }()
+		if err := ValidateRecordBinding(nil, identity, guard, projectRoot, recordRoot); !errors.Is(err, fs.ErrInvalid) {
+			t.Fatalf("ValidateRecordBinding() error = %v, want fs.ErrInvalid", err)
+		}
+	})
+
+	t.Run("canceled context", func(t *testing.T) {
+		projectDir := t.TempDir()
+		recordDir := filepath.Join(projectDir, cloneIDDirectory, "spaces", "default", "intents", "build")
+		if err := os.MkdirAll(recordDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		projectRoot, recordRoot, identity, guard := openAuditReadRoots(t, projectDir, recordDir)
+		defer func() { _ = projectRoot.Close() }()
+		defer func() { _ = recordRoot.Close() }()
+		defer func() { _ = guard.Release() }()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if err := ValidateRecordBinding(ctx, identity, guard, projectRoot, recordRoot); !errors.Is(err, context.Canceled) {
+			t.Fatalf("ValidateRecordBinding() error = %v, want context.Canceled", err)
+		}
+	})
+
+	t.Run("nil guard", func(t *testing.T) {
+		projectDir := t.TempDir()
+		recordDir := filepath.Join(projectDir, cloneIDDirectory, "spaces", "default", "intents", "build")
+		if err := os.MkdirAll(recordDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		projectRoot, recordRoot, identity, guard := openAuditReadRoots(t, projectDir, recordDir)
+		defer func() { _ = projectRoot.Close() }()
+		defer func() { _ = recordRoot.Close() }()
+		defer func() { _ = guard.Release() }()
+		if err := ValidateRecordBinding(context.Background(), identity, nil, projectRoot, recordRoot); !errors.Is(err, ErrGuardNotHeld) {
+			t.Fatalf("ValidateRecordBinding() error = %v, want ErrGuardNotHeld", err)
+		}
+	})
+
+	t.Run("released guard", func(t *testing.T) {
+		projectDir := t.TempDir()
+		recordDir := filepath.Join(projectDir, cloneIDDirectory, "spaces", "default", "intents", "build")
+		if err := os.MkdirAll(recordDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		projectRoot, recordRoot, identity, guard := openAuditReadRoots(t, projectDir, recordDir)
+		defer func() { _ = projectRoot.Close() }()
+		defer func() { _ = recordRoot.Close() }()
+		if err := guard.Release(); err != nil {
+			t.Fatal(err)
+		}
+		if err := ValidateRecordBinding(context.Background(), identity, guard, projectRoot, recordRoot); !errors.Is(err, ErrGuardNotHeld) {
+			t.Fatalf("ValidateRecordBinding() error = %v, want ErrGuardNotHeld", err)
+		}
+	})
+
+	t.Run("wrong guard", func(t *testing.T) {
+		projectDir := t.TempDir()
+		recordDir := filepath.Join(projectDir, cloneIDDirectory, "spaces", "default", "intents", "build")
+		if err := os.MkdirAll(recordDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		projectRoot, recordRoot, identity, guard := openAuditReadRoots(t, projectDir, recordDir)
+		defer func() { _ = projectRoot.Close() }()
+		defer func() { _ = recordRoot.Close() }()
+		defer func() { _ = guard.Release() }()
+		otherIdentity, err := recordlock.NewIdentity(projectDir, "default", "other")
+		if err != nil {
+			t.Fatal(err)
+		}
+		otherGuard, err := recordlock.Acquire(context.Background(), otherIdentity)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = otherGuard.Release() }()
+		if err := ValidateRecordBinding(context.Background(), identity, otherGuard, projectRoot, recordRoot); !errors.Is(err, ErrGuardIdentity) {
+			t.Fatalf("ValidateRecordBinding() error = %v, want ErrGuardIdentity", err)
+		}
+	})
+
+	t.Run("wrong record root", func(t *testing.T) {
+		projectDir := t.TempDir()
+		recordDir := filepath.Join(projectDir, cloneIDDirectory, "spaces", "default", "intents", "build")
+		if err := os.MkdirAll(recordDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		projectRoot, recordRoot, identity, guard := openAuditReadRoots(t, projectDir, recordDir)
+		defer func() { _ = projectRoot.Close() }()
+		defer func() { _ = recordRoot.Close() }()
+		defer func() { _ = guard.Release() }()
+		otherProject := t.TempDir()
+		otherRecordDir := filepath.Join(otherProject, cloneIDDirectory, "spaces", "default", "intents", "build")
+		if err := os.MkdirAll(otherRecordDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		otherProjectRoot, err := os.OpenRoot(otherProject)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = otherProjectRoot.Close() }()
+		otherRecordRoot, err := otherProjectRoot.OpenRoot(filepath.Join(cloneIDDirectory, "spaces", "default", "intents", "build"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = otherRecordRoot.Close() }()
+		if err := ValidateRecordBinding(context.Background(), identity, guard, projectRoot, otherRecordRoot); !errors.Is(err, ErrInvalidRoot) {
+			t.Fatalf("ValidateRecordBinding() error = %v, want ErrInvalidRoot", err)
+		}
+	})
+}
+
 func TestReadEventsIntegrationRejectsNonregularShard(t *testing.T) {
 	tests := []struct {
 		name         string

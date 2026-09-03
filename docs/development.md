@@ -800,6 +800,34 @@ go test -count=1 -run '^(TestTransitionFieldAccessorsReadCanonicalSections|TestP
 [承認から次Stage・workflow完了までの接続計画](ram/decisions/2026-09-04-approve-advance-plan.md)と
 [report・approval・state遷移契約](ram/research/2026-09-03-thin-lifecycle-transition-contracts.md)に記録しています。
 
+### 内部Next・Reportと一周lifecycle
+
+`Next`はcaller-owned Rootをcloseせず、record lock内でidentity bindingを確認してから`state.ReadDocument`をfresh readし、もう一度
+bindingを確認してdirectiveを分類します。保存済みstateのsuffixをroutingのauthorityとして、`[-]`は`run-stage`、`[?]`は
+`awaiting-approval`、`[R]`は`revising`へ分類します。整合したCompleted stateは`workflow-complete`を返します。Nextはstate、audit、registry、
+cursorを変更せず、terminal判定ではaudit本文、graph、artifactを要求しません。未対応phase/capability、currentの不整合、lock releaseを含む
+エラーは成功扱いにせず、エラー時のresultはzeroです。`Directive.Stage()`とNextのContentはnested sliceを含めて独立copyです。
+
+`Report`のkindは`awaiting-approval`、`rejected`、`revised`、`approved`の4種に限定し、必須のCurrent stageとSlugが同じcanonical slugで
+あることを検証した後、対応する既存gateを一度だけ委譲します。Reportに外側lockを置かず、approved後のadvanceも行いません。下位のgate／
+Approve transactionがfresh audit、exact choice、artifact、bindingを検証し、partial resultとerrorはReportから失われません。
+
+StartIntentから終端までの実filesystem確認はintegration tag付きtestで実行します。fixtureが配置するartifactと`HUMAN_TURN`以外は既存APIを
+使用し、reject/revise、旧receipt再利用拒否、SKIP、phase境界、unknown state bytes、registry status未同期、無関係record、terminal後の
+audit／graph／artifact欠落を確認します。
+
+loopでの対象確認は次です。
+
+```sh
+go test -count=1 -run '^(TestNext|TestReport|Test.*Directive)' ./src/internal/orchestrator
+go test -tags=integration -count=1 -run '^TestLifecycle' ./src/internal/orchestrator
+go test -tags=integration -count=1 -run '^TestValidateRecordBindingIntegration' ./src/internal/audit
+```
+
+quality jobでは既存integration stepに加えて、`go test -tags=integration -race -count=1 -shuffle=on ./src/internal/audit ./src/internal/recordlock ./src/internal/orchestrator`
+を実行します。全体test、race、vet、cross buildなどのfinal gateは親agentが差分安定後に一度だけ実施します。詳細な固定snapshot範囲と
+実装記録は[内部Next・Reportとライフサイクル一周テストの計画](ram/decisions/2026-09-04-next-report-lifecycle-plan.md)を参照してください。
+
 ### Intent開始 orchestration（内部API）
 
 `orchestrator.StartIntent`は、callerが解決したscope・説明・repositoryを使い、workspace lock内で
