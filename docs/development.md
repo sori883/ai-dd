@@ -536,6 +536,26 @@ stateのfail-closedを検証します。CIでは`go test -tags=integration -coun
 実行します。loopでは全体test、race、vet、lint、cross compile、配布E2Eを実行せず、独立review後に親agentが
 final gateを実施します。
 
+### 既存state atomic update writer（内部API）
+
+`state.WriteState(recordRoot *os.Root, replacement []byte) error`は、既存のregularな
+`aidlc-state.md`だけを検証済みreplacement bytesへ置換します。replacementは先に`state.Parse`へ渡し、
+不正なstateの保存を拒否します。対象の`Lstat`、非truncate `O_WRONLY` open/closeによるwrite barrierを
+経てから、同一Rootのsibling temporaryを`O_EXCL`で作成し、全量write、close、`Root.Rename`の順で処理します。
+missing、nonregular（directory、symlink、FIFO等）、read-only targetはfail-closedです。
+
+rename前のwrite、short write、close、rename失敗では旧targetを保持し、取得済みtemporaryだけをcleanupします。
+cleanup errorは主原因と`errors.Join`され、collisionした他writerのtemporaryは削除されません。caller-owned Rootは
+closeせず、`WriteInitial`の2ファイル初期化契約も変更しません。audit、lock、遷移認可、`fsync`、複数fileのatomic
+transactionはこのwriterの責務ではありません。詳細は[既存state atomic update writer計画](ram/decisions/2026-09-03-state-update-writer-plan.md)を参照してください。
+
+loopでの対象確認:
+
+```sh
+go test -count=1 -run '^(TestWriteState|TestWriteInitial)' ./src/internal/state
+go test -tags=integration -count=1 -run '^(TestWriteState|TestWriteInitial)' ./src/internal/state
+```
+
 ### 保存済み aidlc-state.md reader/parser（内部API）
 
 `state.Read(recordRoot *os.Root) (State, error)`は、callerが開いたIntent record rootの固定leaf

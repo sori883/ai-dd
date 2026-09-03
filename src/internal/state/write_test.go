@@ -20,6 +20,359 @@ func TestWriteInitialRejectsNilRoot(t *testing.T) {
 	}
 }
 
+func TestWriteStateRejectsNilRoot(t *testing.T) {
+	t.Parallel()
+
+	err := WriteState(nil, []byte(canonicalStateContent()))
+	if !errors.Is(err, fs.ErrInvalid) {
+		t.Fatalf("WriteState() error = %v, want fs.ErrInvalid", err)
+	}
+}
+
+func TestWriteStateRejectsMalformedReplacementBeforeFilesystem(t *testing.T) {
+	t.Parallel()
+
+	recordDir := t.TempDir()
+	root, err := os.OpenRoot(recordDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := root.Close(); err != nil {
+			t.Errorf("Root.Close() error = %v", err)
+		}
+	})
+	oldState := []byte(canonicalStateContent())
+	if err := root.WriteFile(stateFile, oldState, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err = WriteState(root, []byte("not a canonical state"))
+	if !errors.Is(err, fs.ErrInvalid) {
+		t.Fatalf("WriteState() error = %v, want fs.ErrInvalid", err)
+	}
+	gotState, err := root.ReadFile(stateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(gotState, oldState) {
+		t.Errorf("state bytes = %q, want unchanged bytes", gotState)
+	}
+	if _, err := root.Stat(stateFile); err != nil {
+		t.Errorf("Root was closed after malformed replacement: %v", err)
+	}
+}
+
+func TestWriteStateParsesReplacementBeforeTargetInspection(t *testing.T) {
+	t.Parallel()
+
+	inspected := false
+	ops := successfulStateWriteOps()
+	ops.lstat = func(string) (fs.FileInfo, error) {
+		inspected = true
+		return writeTestFileInfo{mode: 0o600}, nil
+	}
+
+	err := writeStateWithOps([]byte("not a canonical state"), ops)
+	if !errors.Is(err, fs.ErrInvalid) {
+		t.Fatalf("writeStateWithOps() error = %v, want fs.ErrInvalid", err)
+	}
+	if inspected {
+		t.Error("target was inspected before replacement parsing")
+	}
+}
+
+func TestWriteStateChecksWriteBarrierBeforeTemporaryReplacement(t *testing.T) {
+	t.Parallel()
+
+	steps := []string{}
+	ops := successfulStateWriteOps()
+	ops.lstat = func(name string) (fs.FileInfo, error) {
+		steps = append(steps, "inspect "+name)
+		return writeTestFileInfo{mode: 0o600}, nil
+	}
+	ops.openFile = func(name string, flags int, mode fs.FileMode) (*os.File, error) {
+		steps = append(steps, fmt.Sprintf("open %s %d %04o", name, flags, mode))
+		return &os.File{}, nil
+	}
+	ops.write = func(_ *os.File, data []byte) (int, error) {
+		steps = append(steps, "write "+string(data))
+		return len(data), nil
+	}
+	ops.close = func(*os.File) error {
+		steps = append(steps, "close")
+		return nil
+	}
+	ops.rename = func(from, to string) error {
+		steps = append(steps, "rename "+from+" "+to)
+		return nil
+	}
+
+	replacement := []byte(canonicalStateContent())
+	if err := writeStateWithOps(replacement, ops); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"inspect aidlc-state.md",
+		fmt.Sprintf("open aidlc-state.md %d 0000", os.O_WRONLY),
+		"close",
+		fmt.Sprintf("open .aidlc-state.md.tmp %d 0666", os.O_WRONLY|os.O_CREATE|os.O_EXCL),
+		"write " + string(replacement),
+		"close",
+		"rename .aidlc-state.md.tmp aidlc-state.md",
+	}
+	if !slices.Equal(steps, want) {
+		t.Errorf("steps = %q, want barrier-before-replacement order %q", steps, want)
+	}
+}
+
+func TestWriteStateRejectsInvalidTargetBeforeTemporaryCreation(t *testing.T) {
+	t.Parallel()
+
+	barrierErr := errors.New("injected barrier error")
+	inspectErr := errors.New("injected inspect error")
+	tests := []struct {
+		name        string
+		infoMode    fs.FileMode
+		lstatErr    error
+		openErr     error
+		closeErr    error
+		wantErr     error
+		wantBarrier bool
+	}{
+		{name: "missing", lstatErr: fs.ErrNotExist, wantErr: fs.ErrNotExist},
+		{name: "inspect failure", lstatErr: inspectErr, wantErr: inspectErr},
+		{name: "directory", infoMode: fs.ModeDir, wantErr: fs.ErrInvalid},
+		{name: "symlink", infoMode: fs.ModeSymlink, wantErr: fs.ErrInvalid},
+		{name: "named pipe", infoMode: fs.ModeNamedPipe, wantErr: fs.ErrInvalid},
+		{name: "barrier open failure", infoMode: 0o600, openErr: barrierErr, wantErr: barrierErr, wantBarrier: true},
+		{name: "barrier close failure", infoMode: 0o600, closeErr: barrierErr, wantErr: barrierErr, wantBarrier: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ops := successfulStateWriteOps()
+			barrierOpened := false
+			tempOpened := false
+			ops.lstat = func(string) (fs.FileInfo, error) {
+				if tt.lstatErr != nil {
+					return nil, tt.lstatErr
+				}
+				return writeTestFileInfo{mode: tt.infoMode}, nil
+			}
+			ops.openFile = func(name string, _ int, _ fs.FileMode) (*os.File, error) {
+				if name == stateFile {
+					barrierOpened = true
+					if tt.openErr != nil {
+						return nil, tt.openErr
+					}
+					return &os.File{}, nil
+				}
+				tempOpened = true
+				return &os.File{}, nil
+			}
+			ops.close = func(*os.File) error {
+				if barrierOpened && tt.closeErr != nil {
+					return tt.closeErr
+				}
+				return nil
+			}
+
+			err := writeStateWithOps([]byte(canonicalStateContent()), ops)
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("error = %v, want %v", err, tt.wantErr)
+			}
+			if barrierOpened != tt.wantBarrier {
+				t.Errorf("barrier opened = %t, want %t", barrierOpened, tt.wantBarrier)
+			}
+			if tempOpened {
+				t.Error("temporary file was opened after target rejection")
+			}
+		})
+	}
+}
+
+func TestWriteStateFailuresKeepTargetAndJoinCleanupError(t *testing.T) {
+	t.Parallel()
+
+	primary := errors.New("injected state update failure")
+	cleanup := errors.New("injected temporary cleanup failure")
+	tests := []struct {
+		name           string
+		stage          string
+		wantTemp       bool
+		wantClose      bool
+		wantCleanup    bool
+		wantRename     bool
+		wantCause      error
+		wantCleanupErr bool
+	}{
+		{name: "create", stage: "create", wantCause: primary},
+		{name: "write", stage: "write", wantTemp: true, wantClose: true, wantCleanup: true, wantCause: primary},
+		{name: "short write", stage: "short write", wantTemp: true, wantClose: true, wantCleanup: true, wantCause: io.ErrShortWrite},
+		{name: "close", stage: "close", wantTemp: true, wantClose: true, wantCleanup: true, wantCause: primary},
+		{name: "rename", stage: "rename", wantTemp: true, wantClose: true, wantCleanup: true, wantCause: primary},
+		{name: "cleanup", stage: "cleanup", wantTemp: true, wantClose: true, wantCleanup: true, wantCause: primary, wantCleanupErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ops := successfulStateWriteOps()
+			tempOpened := false
+			tempClosed := false
+			closeCalls := 0
+			cleanupCalled := false
+			renameSucceeded := false
+			ops.openFile = func(name string, _ int, _ fs.FileMode) (*os.File, error) {
+				if name == stateFile {
+					return &os.File{}, nil
+				}
+				if tt.stage == "create" {
+					return nil, primary
+				}
+				tempOpened = true
+				return &os.File{}, nil
+			}
+			ops.write = func(_ *os.File, data []byte) (int, error) {
+				switch tt.stage {
+				case "write":
+					return 0, primary
+				case "short write":
+					return len(data) - 1, nil
+				default:
+					return len(data), nil
+				}
+			}
+			ops.close = func(*os.File) error {
+				closeCalls++
+				if closeCalls == 1 {
+					return nil
+				}
+				tempClosed = true
+				if tt.stage == "close" {
+					return primary
+				}
+				return nil
+			}
+			ops.rename = func(_, _ string) error {
+				if tt.stage == "rename" || tt.stage == "cleanup" {
+					return primary
+				}
+				renameSucceeded = true
+				return nil
+			}
+			ops.remove = func(string) error {
+				cleanupCalled = true
+				if tt.stage == "cleanup" {
+					return cleanup
+				}
+				return nil
+			}
+
+			replacement := []byte(canonicalStateContent())
+			original := slices.Clone(replacement)
+			err := writeStateWithOps(replacement, ops)
+			if !errors.Is(err, tt.wantCause) {
+				t.Errorf("error = %v, want cause %v", err, tt.wantCause)
+			}
+			if tt.wantCleanupErr && !errors.Is(err, cleanup) {
+				t.Errorf("error = %v, want cleanup cause", err)
+			}
+			if tempOpened != tt.wantTemp {
+				t.Errorf("temporary opened = %t, want %t", tempOpened, tt.wantTemp)
+			}
+			if tempClosed != tt.wantClose {
+				t.Errorf("temporary closed = %t, want %t", tempClosed, tt.wantClose)
+			}
+			if cleanupCalled != tt.wantCleanup {
+				t.Errorf("temporary cleanup called = %t, want %t", cleanupCalled, tt.wantCleanup)
+			}
+			if renameSucceeded != tt.wantRename {
+				t.Errorf("rename succeeded = %t, want %t", renameSucceeded, tt.wantRename)
+			}
+			if !slices.Equal(replacement, original) {
+				t.Error("replacement bytes were mutated")
+			}
+		})
+	}
+}
+
+func TestWriteStateRetriesTemporaryCollisionsWithoutRemovingCollision(t *testing.T) {
+	t.Parallel()
+
+	attempts := 0
+	opened := []string{}
+	removed := []string{}
+	ops := successfulStateWriteOps()
+	ops.tempName = func(string) string {
+		attempts++
+		if attempts == 1 {
+			return ".occupied-aidlc-state.md.tmp"
+		}
+		return ".free-aidlc-state.md.tmp"
+	}
+	ops.openFile = func(name string, _ int, _ fs.FileMode) (*os.File, error) {
+		opened = append(opened, name)
+		if name == ".occupied-aidlc-state.md.tmp" {
+			return nil, fs.ErrExist
+		}
+		return &os.File{}, nil
+	}
+	ops.remove = func(name string) error {
+		removed = append(removed, name)
+		return nil
+	}
+
+	if err := writeStateWithOps([]byte(canonicalStateContent()), ops); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 {
+		t.Errorf("temporary attempts = %d, want one collision retry", attempts)
+	}
+	wantOpened := []string{stateFile, ".occupied-aidlc-state.md.tmp", ".free-aidlc-state.md.tmp"}
+	if !slices.Equal(opened, wantOpened) {
+		t.Errorf("opened paths = %q, want %q", opened, wantOpened)
+	}
+	if len(removed) != 0 {
+		t.Errorf("removed paths = %q, want no cleanup after success", removed)
+	}
+}
+
+func TestWriteStateStopsAfterTemporaryCollisionBudget(t *testing.T) {
+	t.Parallel()
+
+	attempts := 0
+	removed := false
+	ops := successfulStateWriteOps()
+	ops.tempName = func(string) string {
+		attempts++
+		return ".occupied-aidlc-state.md.tmp"
+	}
+	ops.openFile = func(name string, _ int, _ fs.FileMode) (*os.File, error) {
+		if name == stateFile {
+			return &os.File{}, nil
+		}
+		return nil, fs.ErrExist
+	}
+	ops.remove = func(string) error {
+		removed = true
+		return nil
+	}
+
+	err := writeStateWithOps([]byte(canonicalStateContent()), ops)
+	if !errors.Is(err, fs.ErrExist) {
+		t.Errorf("error = %v, want fs.ErrExist", err)
+	}
+	if attempts != stateWriteTempAttempts {
+		t.Errorf("collision attempts = %d, want %d", attempts, stateWriteTempAttempts)
+	}
+	if removed {
+		t.Error("collision temporary was removed")
+	}
+}
+
 func TestWriteInitialWritesSidecarBeforeState(t *testing.T) {
 	t.Parallel()
 
@@ -517,6 +870,18 @@ func successfulInitialWriteOps() initialWriteOps {
 		tempName: func(target string) string { return "." + target + ".tmp" },
 		lstat:    func(string) (fs.FileInfo, error) { return nil, fs.ErrNotExist },
 		openFile: func(string, int, fs.FileMode) (*os.File, error) { return nil, nil },
+		write:    func(_ *os.File, data []byte) (int, error) { return len(data), nil },
+		close:    func(*os.File) error { return nil },
+		rename:   func(string, string) error { return nil },
+		remove:   func(string) error { return nil },
+	}
+}
+
+func successfulStateWriteOps() stateWriteOps {
+	return stateWriteOps{
+		tempName: func(string) string { return ".aidlc-state.md.tmp" },
+		lstat:    func(string) (fs.FileInfo, error) { return writeTestFileInfo{mode: 0o600}, nil },
+		openFile: func(string, int, fs.FileMode) (*os.File, error) { return &os.File{}, nil },
 		write:    func(_ *os.File, data []byte) (int, error) { return len(data), nil },
 		close:    func(*os.File) error { return nil },
 		rename:   func(string, string) error { return nil },
