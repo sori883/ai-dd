@@ -39,27 +39,11 @@ var phaseDefinitions = [...]struct {
 // bytes, mode, and mtime unchanged, but does not guarantee that an ordinary
 // read leaves atime unchanged.
 func Read(recordRoot *os.Root) (State, error) {
-	if recordRoot == nil {
-		return State{}, fmt.Errorf("read state: record root is nil: %w", fs.ErrInvalid)
-	}
-
-	info, err := recordRoot.Lstat(stateFile)
+	document, err := ReadDocument(recordRoot)
 	if err != nil {
-		return State{}, fmt.Errorf("read state: inspect %q: %w", stateFile, err)
+		return State{}, err
 	}
-	if info == nil || !info.Mode().IsRegular() {
-		return State{}, fmt.Errorf("read state: %q is not a regular file: %w", stateFile, fs.ErrInvalid)
-	}
-
-	content, err := recordRoot.ReadFile(stateFile)
-	if err != nil {
-		return State{}, fmt.Errorf("read state: read %q: %w", stateFile, err)
-	}
-	parsed, err := Parse(content)
-	if err != nil {
-		return State{}, fmt.Errorf("read state: parse %q: %w", stateFile, err)
-	}
-	return parsed, nil
+	return document.State, nil
 }
 
 // Parse validates a State Version 8 canonical Markdown document and returns a

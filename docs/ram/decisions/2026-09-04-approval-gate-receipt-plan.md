@@ -29,6 +29,8 @@ Go版にはStage完了条件の判定、state文書の局所置換とatomic保�
 - ゲートAPIは`CompletionEvidence`を受け取らない。summary policyが非空（`if-present`含む）、pipeline、
   reviewer、sensor、agent-team、per-unit、CodeKB、workspace sourceなどの未対応能力が必要ならfail-closed。
   対応する通常Stageだけに、zero evidenceで既存completion evaluatorを接続する。
+- Initializationの未完Stageと、Skeleton Stance判断が未実装のConstruction Stageもunsupportedとする。
+  本家のgate軸はexecution軸と異なるため、通常のgated Stageへ推測で分類しない。
 - 呼び出し側の自由な文字列・boolean・timestampからHUMAN_TURNを生成しない。信頼済みadapterの代わりに
   integration fixtureが既存`audit.Append`を使う。production取得元や新しい公開CLI入口は追加しない。
 
@@ -131,6 +133,6 @@ darwin/linux/windows × amd64/arm64のCLI buildと対象integration test binary 
 ## 根拠とリスク
 
 固定snapshotの`aidlc-lib.ts:6180-6310,6320-6455,7745-7870`、`aidlc-state.ts:4694-5494`、
-`tests/unit/t261-audit-authority-floor.test.ts`を参照した。既承認のstrict state/suffix authorityを維持し、
+`aidlc-orchestrate.ts:2723`（gate軸）、`tests/unit/t261-audit-authority-floor.test.ts`を参照した。既承認のstrict state/suffix authorityを維持し、
 新しい意図的差分は採用しない。production receipt sourceは未決であり、公開接続前に確認する。
 canonical内部範囲を越える互換性やauthorityの選択が必要になれば停止する。
