@@ -1,6 +1,6 @@
 interface:
   display_name: "Go TDD"
-  short_description: "Implement approved Go changes with Red-Green-Refactor"
-  default_prompt: "Use $go-tdd to implement this approved Go change one behavior at a time."
+  short_description: "Implement authorized Go changes with Red-Green-Refactor"
+  default_prompt: "Use $go-tdd to implement this authorized Go change one behavior at a time."
 policy:
   allow_implicit_invocation: true

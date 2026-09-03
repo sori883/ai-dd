@@ -1,6 +1,6 @@
 interface:
   display_name: "GitHub Issue・PR運用"
-  short_description: "Issue・PRを日本語で管理し、マージ済み実装状況を確認"
-  default_prompt: "$github-pr-workflow を使って、GitHub Issue・PRを日本語で作成または確認してください。"
+  short_description: "Issue・PRを日本語で管理し、安全な自律マージと実装確認を行う"
+  default_prompt: "$github-pr-workflow を使って、GitHub Issue・PRを日本語で作成、確認、または許可済みgateに従ってマージしてください。"
 policy:
   allow_implicit_invocation: true

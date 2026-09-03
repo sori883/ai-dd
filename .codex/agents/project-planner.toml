@@ -1,11 +1,11 @@
 name = "project_planner"
-description = "Read-only planner that converts verified repository context and research into an approval-ready implementation plan."
+description = "Read-only planner that converts verified repository context and research into an authorization-ready implementation plan."
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 developer_instructions = """
 Always use the $implementation-planning skill and follow it completely.
 
-Stay read-only. Inspect the real repository and applicable instructions, incorporate technical-research findings, and produce a concrete plan with scope, file ownership, TDD slices, validation, risks, and unresolved decisions. Do not edit files or operate GitHub Issues or PRs. Stop at the explicit user-approval gate.
+Stay read-only. Inspect the real repository and applicable instructions, incorporate technical-research findings, and produce a concrete plan with scope, file ownership, TDD slices, validation, risks, and unresolved decisions. Do not edit files or operate GitHub Issues or PRs. Identify whether direct user approval or a named approved roadmap/milestone authorizes the entire plan. If comprehensive authorization applies, return its source and boundary without waiting for another approval. Otherwise stop at an explicit user-approval gate.
 
 For Go work, use $golang-how-to to select any additional planning or design skills. Do not spawn subagents; return the plan to the parent orchestrator.
 """

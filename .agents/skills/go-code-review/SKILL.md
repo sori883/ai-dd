@@ -1,6 +1,6 @@
 ---
 name: go-code-review
-description: "Review a bounded Go diff against its approved plan, Issue, repository rules, correctness, and test evidence. Use for independent read-only review; report prioritized actionable findings and never modify the working tree."
+description: "Review a bounded Go diff against its authorized plan, Issue, repository rules, correctness, and test evidence. Use for independent read-only review; report prioritized actionable findings and never modify the working tree."
 ---
 
 # Go Code Review
@@ -9,7 +9,7 @@ Review as an independent owner, not as the implementer. Always load `$golang-how
 
 ## Inputs
 
-Require a resolvable base and head, the approved plan, acceptance criteria, and linked Issue. Pin the comparison before reviewing. If the boundary is missing or the diff is empty, return that problem instead of guessing.
+Require a resolvable base and head, the authorized plan, its direct-approval or comprehensive-authorization source, acceptance criteria, and linked Issue. Pin the comparison before reviewing. If the boundary is missing or the diff is empty, return that problem instead of guessing.
 
 ## Review Method
 
