@@ -1057,6 +1057,25 @@ registry status同期、公開CLI接続はこの内部APIの責務ではあり�
 [承認から次Stage・workflow完了までの接続計画](ram/decisions/2026-09-04-approve-advance-plan.md)と
 [report・approval・state遷移契約](ram/research/2026-09-03-thin-lifecycle-transition-contracts.md)を参照してください。
 
+## 内部Next・Reportとライフサイクル一周
+
+`orchestrator.Next`はidentity-boundなproject／record Rootとgraph snapshotを受け取り、自身でrecord lockを取得して、binding確認、
+`state.ReadDocument`による保存stateのfresh read、binding再確認、directive分類を一回の読取りとして行います。`[-]`の通常Stageは
+`run-stage`、`[?]`は`awaiting-approval`、`[R]`は`revising`、整合したCompleted stateは`workflow-complete`です。Nextはstate、audit、
+registry、cursorを変更せず、返却stateとdirectiveのnested metadataをcallerから独立したcopyとして返します。lockのrelease errorを含む
+エラー時はzero resultを返し、未完Initialization／Construction、未対応capability、stateとcatalogの不整合を完了へ読み替えません。
+終端の判定にはaudit本文、graph、artifactの存在を要求しませんが、root bindingは常に確認します。
+
+`orchestrator.Report`は`awaiting-approval`、`rejected`、`revised`、`approved`の4種を明示的に受け、対応する
+`OpenGate`、`RejectGate`、`ReviseGate`、`ApproveGate`へ一度だけ委譲します。Report自身はlockを取得せず、approved後に別advanceを呼ばず、
+下位操作のpartial resultとerrorを保持して返します。choice、fresh HUMAN_TURN、artifact、state/audit bindingの権限判断は既存gate transactionへ
+委譲し、Reportは自由文やbooleanから種別を推測しません。
+
+integration tag付きの`lifecycle_integration_test.go`は`StartIntent`が実filesystemへ作ったrecordを起点に、成果物、gate、fresh human receipt、
+reject/revise、保存suffix優先のSKIP、phase境界、終端Nextまでを一周します。fixture以外は既存内部APIを通し、unknown state bytes、registryの
+未同期status、無関係record、rootの継続利用、terminal後のaudit／graph／artifact欠落を確認します。workflowの公開CLI接続やregistry同期は
+この内部入口の責務ではありません。計画、受入条件、実装記録は[内部Next・Reportとライフサイクル一周テストの計画](ram/decisions/2026-09-04-next-report-lifecycle-plan.md)を参照してください。
+
 ## Intent開始 orchestration
 
 `orchestrator.StartIntent(ctx, input) (StartedIntent, error)`は、callerが解決したlabel、scope、説明、

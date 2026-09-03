@@ -224,6 +224,8 @@ func resolveCompletedDirective(current state.State) (Directive, error) {
 func cloneDirectiveStage(stage graph.Stage) graph.Stage {
 	stage.SupportAgents = slices.Clone(stage.SupportAgents)
 	stage.Scopes = slices.Clone(stage.Scopes)
+	stage.Sensors = slices.Clone(stage.Sensors)
+	stage.ProducesKinds = cloneGateKinds(stage.ProducesKinds)
 	stage.Produces = slices.Clone(stage.Produces)
 	stage.OptionalProduces = slices.Clone(stage.OptionalProduces)
 	stage.Consumes = slices.Clone(stage.Consumes)

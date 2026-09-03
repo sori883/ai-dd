@@ -408,6 +408,35 @@ func TestDirectiveStageOwnership(t *testing.T) {
 	}
 }
 
+func TestDirectiveStageOwnershipIncludesSensorsAndProducesKinds(t *testing.T) {
+	t.Parallel()
+
+	graphStage := directiveStage("intent-capture", "2.1", "ideation")
+	graphStage["sensors"] = []string{"quality"}
+	graphStage["produces_kinds"] = map[string][]string{"report": {"summary"}}
+	snapshot := loadDirectiveGraph(t, graphStage)
+	parsed := parseDirectiveState(t, directiveRunningState)
+
+	got, err := ResolveDirective(parsed, snapshot)
+	if err != nil {
+		t.Fatalf("ResolveDirective() error = %v", err)
+	}
+	first, ok := got.Stage()
+	if !ok {
+		t.Fatal("Directive.Stage() reports no stage")
+	}
+	first.Sensors[0] = "mutated-sensor"
+	first.ProducesKinds["report"][0] = "mutated-kind"
+
+	second, ok := got.Stage()
+	if !ok {
+		t.Fatal("Directive.Stage() reports no stage on second read")
+	}
+	if second.Sensors[0] != "quality" || second.ProducesKinds["report"][0] != "summary" {
+		t.Fatalf("Directive.Stage() after mutation = %#v, want independent sensor/kind copies", second)
+	}
+}
+
 func TestResolveDirectiveRejectsInvalidCompletedState(t *testing.T) {
 	t.Parallel()
 

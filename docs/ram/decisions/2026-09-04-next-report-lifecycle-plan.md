@@ -130,3 +130,14 @@ darwin/linux/windows × amd64/arm64 CLI build、対象audit/orchestrator integra
 本家の広いreport recoveryやproduction dispatcherは、未実装を迂回せず将来接続時の確認対象とする。
 production trusted入力取得元が未接続であること、audit-firstの非対称durability、中間stateは自動修復しない制約は維持。
 
+## 実施記録（2026-09-04）
+
+Issue #83／PR7として、計画の順序どおり次を実装した。`audit.ValidateRecordBinding`は既存のRoot・Guard・identity検証を
+audit本文の読取りから分離し、Nextがlock内でbinding→fresh state→binding再確認を行えるようにした。`Next`は4つのread-only
+directive結果を保存suffixから分類し、`Directive.Stage`とstate contentの所有権を分離した。`Report`は4種類を既存gateへ一度だけ
+委譲し、下位transactionのpartial result／errorを保持した。StartIntent起点のintegration testでは、成果物、fresh receipt、
+reject/revise、SKIP、phase境界、終端、unknown bytes、registry未同期、無関係record、terminal後のaudit／graph／artifact欠落を一周確認した。
+
+受入対象のGo変更は標準ライブラリのみで、公開CLI、registry同期、production dispatcher、state/audit形式の拡張は行っていない。CIの
+quality jobにはaudit／recordlock／orchestrator integrationをrace・shuffle付きで追加した。loopでの対象確認結果は実装担当の完了報告に
+記録し、全体test・race・vet・cross build・GitHub checksは親agentのfinal gateへ委譲する。
