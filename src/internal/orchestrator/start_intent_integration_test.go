@@ -138,10 +138,10 @@ func startIntentIntegrationFS(t *testing.T) (fs.FS, fs.FS) {
 	t.Helper()
 	dataFS := fstest.MapFS{
 		"stage-graph.json": {Data: []byte(`[
-  {"slug":"workspace-scaffold","number":"0.1","name":"Workspace Scaffold","phase":"initialization","execution":"ALWAYS","lead_agent":"aidlc-orchestrator","support_agents":[],"mode":"sequential","scopes":["classic"],"produces":[],"consumes":[],"requires_stage":[]},
-  {"slug":"intent-capture","number":"1.1","name":"Intent Capture","phase":"ideation","execution":"ALWAYS","lead_agent":"aidlc-product-agent","support_agents":[],"mode":"sequential","scopes":["classic"],"produces":[],"consumes":[],"requires_stage":[]},
-  {"slug":"reverse-engineering","number":"2.1","name":"Reverse Engineering","phase":"inception","execution":"ALWAYS","lead_agent":"aidlc-product-agent","support_agents":[],"mode":"sequential","scopes":["classic"],"produces":[],"consumes":[],"requires_stage":[]},
-  {"slug":"operation","number":"4.1","name":"Operation","phase":"operation","execution":"ALWAYS","lead_agent":"aidlc-product-agent","support_agents":[],"mode":"sequential","scopes":["classic"],"produces":[],"consumes":[],"requires_stage":[]}
+  {"slug":"workspace-scaffold","number":"0.1","name":"Workspace Scaffold","phase":"initialization","execution":"ALWAYS","lead_agent":"aidlc-orchestrator","support_agents":[],"mode":"inline","scopes":["classic"],"produces":[],"consumes":[],"requires_stage":[]},
+  {"slug":"intent-capture","number":"1.1","name":"Intent Capture","phase":"ideation","execution":"ALWAYS","lead_agent":"aidlc-product-agent","support_agents":[],"mode":"inline","scopes":["classic"],"produces":[],"consumes":[],"requires_stage":[]},
+  {"slug":"reverse-engineering","number":"2.1","name":"Reverse Engineering","phase":"inception","execution":"ALWAYS","lead_agent":"aidlc-product-agent","support_agents":[],"mode":"inline","scopes":["classic"],"produces":[],"consumes":[],"requires_stage":[]},
+  {"slug":"operation","number":"4.1","name":"Operation","phase":"operation","execution":"ALWAYS","lead_agent":"aidlc-product-agent","support_agents":[],"mode":"inline","scopes":["classic"],"produces":[],"consumes":[],"requires_stage":[]}
 ]`)},
 		"scope-grid.json": {Data: []byte(`{"classic":{"stages":{"workspace-scaffold":"EXECUTE","intent-capture":"EXECUTE","reverse-engineering":"EXECUTE","operation":"SKIP"}}}`)},
 	}

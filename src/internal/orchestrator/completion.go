@@ -17,6 +17,7 @@ const (
 	CompletionBlockerNone          CompletionBlocker = ""
 	CompletionBlockerInvalidInput  CompletionBlocker = "invalid-input"
 	CompletionBlockerStageMismatch CompletionBlocker = "stage-mismatch"
+	CompletionBlockerMode          CompletionBlocker = "mode"
 	CompletionBlockerArtifact      CompletionBlocker = "artifact"
 	CompletionBlockerSummary       CompletionBlocker = "summary"
 	CompletionBlockerPipeline      CompletionBlocker = "pipeline"
@@ -75,54 +76,58 @@ func EvaluateStageCompletion(input CompletionInput) CompletionDecision {
 		return completionBlocked(CompletionBlockerStageMismatch, fmt.Sprintf("current stage %q does not match graph metadata", input.Current.Slug))
 	}
 
-	if isUnsupportedPerUnitStage(input.Current) {
-		return completionBlocked(CompletionBlockerPerUnit, fmt.Sprintf("stage %q uses unsupported per-unit artifact placement", input.Current.Slug))
+	stage := selected
+	if stage.Mode == "agent-team" {
+		return completionBlocked(CompletionBlockerMode, fmt.Sprintf("stage %q requires unsupported agent-team dispatcher", stage.Slug))
 	}
-	if input.Current.Slug == "reverse-engineering" {
-		return completionBlocked(CompletionBlockerCodeKB, fmt.Sprintf("stage %q writes unsupported CodeKB artifacts", input.Current.Slug))
+	if isUnsupportedPerUnitStage(stage) {
+		return completionBlocked(CompletionBlockerPerUnit, fmt.Sprintf("stage %q uses unsupported per-unit artifact placement", stage.Slug))
 	}
-	if input.Current.ProducesKinds != nil {
-		return completionBlocked(CompletionBlockerPerUnit, fmt.Sprintf("stage %q declares unsupported per-kind artifact applicability", input.Current.Slug))
+	if stage.Slug == "reverse-engineering" {
+		return completionBlocked(CompletionBlockerCodeKB, fmt.Sprintf("stage %q writes unsupported CodeKB artifacts", stage.Slug))
+	}
+	if stage.ProducesKinds != nil {
+		return completionBlocked(CompletionBlockerPerUnit, fmt.Sprintf("stage %q declares unsupported per-kind artifact applicability", stage.Slug))
 	}
 
-	present, err := artifact.HasRequiredOutput(input.RecordFS, input.Current)
+	present, err := artifact.HasRequiredOutput(input.RecordFS, stage)
 	if err != nil {
-		return completionBlocked(CompletionBlockerArtifact, fmt.Sprintf("artifact evidence could not be checked: %v", err))
+		return completionBlocked(CompletionBlockerArtifact, fmt.Sprintf("artifact evidence for %q could not be checked: %v", stage.Slug, err))
 	}
 	if !present {
-		return completionBlocked(CompletionBlockerArtifact, fmt.Sprintf("stage %q has no required artifact", input.Current.Slug))
+		return completionBlocked(CompletionBlockerArtifact, fmt.Sprintf("stage %q has no required artifact", stage.Slug))
 	}
-	if input.Current.WorkspaceRequires {
-		return completionBlocked(CompletionBlockerWorkspace, fmt.Sprintf("stage %q requires unsupported workspace source evidence", input.Current.Slug))
+	if stage.WorkspaceRequires {
+		return completionBlocked(CompletionBlockerWorkspace, fmt.Sprintf("stage %q requires unsupported workspace source evidence", stage.Slug))
 	}
 
-	switch input.Current.SummaryConfirmation {
+	switch stage.SummaryConfirmation {
 	case "":
 		// This stage has no summary confirmation policy.
 	case "required":
 		if !input.Evidence.SummaryConfirmed {
-			return completionBlocked(CompletionBlockerSummary, fmt.Sprintf("stage %q requires confirmed summary evidence", input.Current.Slug))
+			return completionBlocked(CompletionBlockerSummary, fmt.Sprintf("stage %q requires confirmed summary evidence", stage.Slug))
 		}
 	case "if-present":
 		if input.Evidence.SummaryPresent && !input.Evidence.SummaryConfirmed {
-			return completionBlocked(CompletionBlockerSummary, fmt.Sprintf("stage %q has an unconfirmed summary", input.Current.Slug))
+			return completionBlocked(CompletionBlockerSummary, fmt.Sprintf("stage %q has an unconfirmed summary", stage.Slug))
 		}
 	default:
-		return completionBlocked(CompletionBlockerSummary, fmt.Sprintf("stage %q has an invalid summary confirmation policy %q", input.Current.Slug, input.Current.SummaryConfirmation))
+		return completionBlocked(CompletionBlockerSummary, fmt.Sprintf("stage %q has an invalid summary confirmation policy %q", stage.Slug, stage.SummaryConfirmation))
 	}
 
-	if input.Current.Mode == "pipeline" && !input.Evidence.PipelineLinked {
-		return completionBlocked(CompletionBlockerPipeline, fmt.Sprintf("stage %q has no recorded pipeline handoff evidence", input.Current.Slug))
+	if stage.Mode == "pipeline" && !input.Evidence.PipelineLinked {
+		return completionBlocked(CompletionBlockerPipeline, fmt.Sprintf("stage %q has no recorded pipeline handoff evidence", stage.Slug))
 	}
-	if input.Current.Reviewer != "" && !input.Evidence.ReviewReceipt {
-		return completionBlocked(CompletionBlockerReview, fmt.Sprintf("stage %q has no reviewer receipt", input.Current.Slug))
+	if stage.Reviewer != "" && !input.Evidence.ReviewReceipt {
+		return completionBlocked(CompletionBlockerReview, fmt.Sprintf("stage %q has no reviewer receipt", stage.Slug))
 	}
-	if len(input.Current.Sensors) > 0 {
+	if len(stage.Sensors) > 0 {
 		if !input.Evidence.SensorsPassed {
-			return completionBlocked(CompletionBlockerSensor, fmt.Sprintf("stage %q has unsatisfied sensor evidence", input.Current.Slug))
+			return completionBlocked(CompletionBlockerSensor, fmt.Sprintf("stage %q has unsatisfied sensor evidence", stage.Slug))
 		}
 		if !input.Evidence.BlockingSensorsClear {
-			return completionBlocked(CompletionBlockerBlocking, fmt.Sprintf("stage %q has uncleared blocking sensor evidence", input.Current.Slug))
+			return completionBlocked(CompletionBlockerBlocking, fmt.Sprintf("stage %q has uncleared blocking sensor evidence", stage.Slug))
 		}
 	}
 
@@ -196,13 +201,21 @@ func sameCompletionStage(current, selected graph.Stage) bool {
 			return false
 		}
 	}
+	if (current.ProducesKinds == nil) != (selected.ProducesKinds == nil) {
+		return false
+	}
 	if len(current.ProducesKinds) != len(selected.ProducesKinds) {
 		return false
 	}
 	for name, kinds := range current.ProducesKinds {
-		if !slices.Equal(kinds, selected.ProducesKinds[name]) {
+		selectedKinds, ok := selected.ProducesKinds[name]
+		if !ok || !strictStringSlicesEqual(kinds, selectedKinds) {
 			return false
 		}
 	}
 	return true
+}
+
+func strictStringSlicesEqual(left, right []string) bool {
+	return (left == nil) == (right == nil) && slices.Equal(left, right)
 }

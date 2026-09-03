@@ -51,4 +51,3 @@ Goの`state.State`は未知sectionや未知field、Active Agent、Last Updated�
 - `docs/実装_aidlc-workflows/tests/unit/t115.test.ts:746`
 - `docs/実装_aidlc-workflows/tests/unit/t125.test.ts:20-90`
 - `docs/実装_aidlc-workflows/tests/unit/t232-phase-progress-flip.test.ts:12`
-

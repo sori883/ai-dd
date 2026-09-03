@@ -53,4 +53,3 @@ StartIntent
 trusted `HUMAN_TURN`のproduction取得元も未決である。CLI引数を人間の権限証明として扱わず、Codex hook、対話入力、nonce付きreceiptなどの選択は公開接続前に確認する。
 
 現在のproduction graphはsummary、review、sensor等を要求する。dispatcherとreceiptが未実装の間はfail-closedとし、それらを省略する恒久仕様は採用しない。
-

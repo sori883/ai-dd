@@ -174,6 +174,7 @@ type stageDocument struct {
 	ForEach                    string
 	WorkspaceRequires          bool
 	Reviewer                   string
+	ReviewerPresent            bool
 	SummaryConfirmation        string
 	SummaryConfirmationPresent bool
 	Sensors                    []string
@@ -266,6 +267,7 @@ func decodeStageDocument(data []byte) (stageDocument, error) {
 		}
 	}
 	if raw, exists := fields["reviewer"]; exists {
+		stage.ReviewerPresent = true
 		if isJSONNull(raw) {
 			return stageDocument{}, errors.New(`field "reviewer" must be a string`)
 		}
@@ -502,6 +504,12 @@ func validateStageDocuments(stages []stageDocument) error {
 		if stage.Execution != "ALWAYS" && stage.Execution != "CONDITIONAL" {
 			return fmt.Errorf("stage %d: execution %q is invalid", index, stage.Execution)
 		}
+		if !validStageModes[stage.Mode] {
+			return fmt.Errorf("stage %d: mode %q is invalid", index, stage.Mode)
+		}
+		if stage.ReviewerPresent && stage.Reviewer == "" {
+			return fmt.Errorf("stage %d: reviewer must be non-empty when declared", index)
+		}
 		if stage.SummaryConfirmationPresent && stage.SummaryConfirmation != "required" && stage.SummaryConfirmation != "if-present" {
 			return fmt.Errorf("stage %d: summary_confirmation %q is invalid", index, stage.SummaryConfirmation)
 		}
@@ -543,6 +551,14 @@ func validateStageDocuments(stages []stageDocument) error {
 		}
 	}
 	return nil
+}
+
+var validStageModes = map[string]bool{
+	"inline":     true,
+	"subagent":   true,
+	"pipeline":   true,
+	"mob":        true,
+	"agent-team": true,
 }
 
 func findStageDocument(stages []stageDocument, slug string) (stageDocument, bool) {

@@ -57,4 +57,3 @@ go test -count=1 -run '^(TestLoad|TestEvaluateStageCompletion)' ./src/internal/g
 外部Go moduleは追加しない。固定AI-DLC 2.6.123の確認済み完了順序を採用し、新しい意図的差分はない。未実装能力を要求するStageが進まないことは、安全な段階的実装境界であり、恒久的に条件を省略する仕様ではない。
 
 最大のリスクは、stage graph生成物のfield欠落を既定値で成功扱いすることである。必須性が判定できないfieldはfail-closedにし、既存fixtureも明示的なmetadataへ更新して回帰を可視化する。
-

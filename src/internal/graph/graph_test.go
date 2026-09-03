@@ -196,6 +196,33 @@ func TestLoadRejectsInvalidStageCompletionMetadata(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsUnsupportedStageMode(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range []string{"sequential", "unknown"} {
+		mode := mode
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+
+			stage := stageFixture("stage", "1.1")
+			stage["mode"] = mode
+			if _, err := Load(fixtureFS(t, []any{stage}, map[string]any{})); err == nil {
+				t.Fatalf("Load() error = nil for unsupported mode %q", mode)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsEmptyReviewerWhenDeclared(t *testing.T) {
+	t.Parallel()
+
+	stage := stageFixture("stage", "1.1")
+	stage["reviewer"] = ""
+	if _, err := Load(fixtureFS(t, []any{stage}, map[string]any{})); err == nil {
+		t.Fatal("Load() error = nil for declared empty reviewer")
+	}
+}
+
 func TestLoadValidatesStageConsumes(t *testing.T) {
 	t.Parallel()
 
@@ -899,6 +926,10 @@ func TestSnapshotReturnsDefensiveCopies(t *testing.T) {
 	stage["scopes"] = []string{"classic"}
 	stage["produces"] = []string{"intent-statement"}
 	stage["optional_produces"] = []string{"questions"}
+	stage["sensors"] = []string{"required-sections"}
+	stage["produces_kinds"] = map[string]any{
+		"intent-statement": []string{"service"},
+	}
 	stage["consumes"] = []map[string]any{{"artifact": "project-description", "required": true}}
 	stage["requires_stage"] = []string{"dependency"}
 	dependency := stageFixture("dependency", "1.1")
@@ -916,6 +947,9 @@ func TestSnapshotReturnsDefensiveCopies(t *testing.T) {
 	stages[0].Slug = "changed"
 	stages[0].SupportAgents[0] = "changed"
 	stages[0].Scopes[0] = "changed"
+	stages[0].Sensors[0] = "changed"
+	stages[0].ProducesKinds["intent-statement"][0] = "changed"
+	stages[0].ProducesKinds["new-artifact"] = []string{"changed"}
 	stages[0].Produces[0] = "changed"
 	stages[0].OptionalProduces[0] = "changed"
 	stages[0].Consumes[0].Artifact = "changed"
@@ -931,6 +965,8 @@ func TestSnapshotReturnsDefensiveCopies(t *testing.T) {
 		Mode:             "inline",
 		Scopes:           []string{"classic"},
 		Enabled:          true,
+		Sensors:          []string{"required-sections"},
+		ProducesKinds:    map[string][]string{"intent-statement": {"service"}},
 		Produces:         []string{"intent-statement"},
 		OptionalProduces: []string{"questions"},
 		Consumes:         []Consume{{Artifact: "project-description", Required: true}},

@@ -200,6 +200,11 @@ func TestEvaluateStageCompletionRejectsUnsupportedOrInvalidInput(t *testing.T) {
 			blocker: CompletionBlockerCodeKB,
 		},
 		{
+			name:    "agent-team dispatcher is unsupported",
+			stage:   map[string]any{"mode": "agent-team"},
+			blocker: CompletionBlockerMode,
+		},
+		{
 			name:  "catalog mismatch",
 			stage: map[string]any{},
 			mutate: func(stage graph.Stage) graph.Stage {
@@ -244,6 +249,98 @@ func TestEvaluateStageCompletionRejectsUnsupportedOrInvalidInput(t *testing.T) {
 	var zeroDecision CompletionDecision
 	if zeroDecision.Ready {
 		t.Error("zero CompletionDecision.Ready = true, want false")
+	}
+}
+
+func TestEvaluateStageCompletionStrictlyMatchesProducesKinds(t *testing.T) {
+	t.Parallel()
+
+	fields := map[string]any{
+		"produces":       []string{"artifact"},
+		"produces_kinds": map[string]any{"artifact": []string{}},
+	}
+	catalog := loadCompletionCatalog(t, fields)
+	selected := catalog.Stages()[0]
+
+	tests := []struct {
+		name    string
+		mutate  func(graph.Stage) graph.Stage
+		blocker CompletionBlocker
+	}{
+		{
+			name: "nil map differs from populated map",
+			mutate: func(stage graph.Stage) graph.Stage {
+				stage.ProducesKinds = nil
+				return stage
+			},
+			blocker: CompletionBlockerStageMismatch,
+		},
+		{
+			name: "empty map differs from populated map",
+			mutate: func(stage graph.Stage) graph.Stage {
+				stage.ProducesKinds = map[string][]string{}
+				return stage
+			},
+			blocker: CompletionBlockerStageMismatch,
+		},
+		{
+			name: "missing key differs from same length map",
+			mutate: func(stage graph.Stage) graph.Stage {
+				stage.ProducesKinds = map[string][]string{"other": {}}
+				return stage
+			},
+			blocker: CompletionBlockerStageMismatch,
+		},
+		{
+			name: "nil inner slice differs from empty inner slice",
+			mutate: func(stage graph.Stage) graph.Stage {
+				stage.ProducesKinds = map[string][]string{"artifact": nil}
+				return stage
+			},
+			blocker: CompletionBlockerStageMismatch,
+		},
+		{
+			name:    "matching map reaches unsupported per-kind guard",
+			blocker: CompletionBlockerPerUnit,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			current := selected
+			if tt.mutate != nil {
+				current = tt.mutate(current)
+			}
+			got := EvaluateStageCompletion(CompletionInput{
+				Current: current,
+				Catalog: catalog,
+				RecordFS: fstest.MapFS{
+					"ideation/completion/artifact.md": {Data: []byte("content")},
+				},
+			})
+			if got.Blocker != tt.blocker {
+				t.Errorf("CompletionDecision.Blocker = %q, want %q (reason: %s)", got.Blocker, tt.blocker, got.Reason)
+			}
+		})
+	}
+}
+
+func TestEvaluateStageCompletionDistinguishesNilAndEmptyProducesKinds(t *testing.T) {
+	t.Parallel()
+
+	catalog := loadCompletionCatalog(t, map[string]any{
+		"produces":       []string{"artifact"},
+		"produces_kinds": map[string]any{},
+	})
+	current := catalog.Stages()[0]
+	current.ProducesKinds = nil
+	got := EvaluateStageCompletion(CompletionInput{
+		Current: current,
+		Catalog: catalog,
+	})
+	if got.Blocker != CompletionBlockerStageMismatch {
+		t.Errorf("nil versus empty ProducesKinds map blocker = %q, want %q (reason: %s)", got.Blocker, CompletionBlockerStageMismatch, got.Reason)
 	}
 }
 
