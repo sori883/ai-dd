@@ -871,7 +871,7 @@ symlinkの場合はリンク本体を退避し、リンク先は変更しませ�
 `aidlc-state.md`をread-onlyで読みます。ReadはrootをCloseせず、`Lstat`でregular fileだけを許可してから同じ
 Rootで全量readし、`state.Parse(content []byte) (State, error)`へ渡します。nil root、missing、permission、
 directory、symlink、FIFO、deviceなどの異常はerrorとして返し、error時はzero Stateです。error chainにはI/O
-原因を保持し、filesystemの内容、mode、timestampを変更しません。
+原因を保持し、state bytes、mode、mtimeを変更しません。通常readに伴うatimeの不変までは保証しません。
 
 `Parse`は、State Version 8のcanonical Markdownをsection単位で検証します。先頭headerと
 `Project Information`、`Execution Plan Summary`、`Phase Progress`、`Stage Progress`、`Current Status`を
@@ -882,7 +882,8 @@ Stage rowを`fs.ErrInvalid`として拒否します。先頭BOM最大1個、LF�
 typed `State`のfieldは非公開です。value accessorからVersion、Scope、ProjectType、WorkflowStatus、
 LifecyclePhase、CurrentStage、NextStage、Summary、canonical 5件のPhaseProgress、document順のStagesを
 取得できます。StageProgressはSlug、CheckboxMarker、markerから導いたCheckboxState、trim済みraw Suffix、
-suffixの先頭tokenから導いたPlanActionを保持します。checkbox状態とPlanActionは直交するため、`[S] stage —
+suffix先頭の`EXECUTE` / `SKIP`をword boundaryで導いたPlanActionを保持します。`EXECUTE: reason`・`SKIP: reason`の
+説明はraw Suffixへ残し、`EXECUTEfoo`・`SKIP_foo`は拒否します。checkbox状態とPlanActionは直交するため、`[S] stage —
 EXECUTE`も有効です。slice accessorはdefensive copyを返し、Parseは入力byteを保持しません。
 
 このreaderは低水準の構造・値境界であり、graph membership、canonical slug grammar、`Completed <= Total`、

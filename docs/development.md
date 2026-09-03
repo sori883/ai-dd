@@ -557,7 +557,8 @@ go test -count=1 -run '^TestParse' ./src/internal/state
 ```
 
 UTF-8、BOM、LF/CRLF、header、必須section/field、scalar、enum、phase、Stage row、malformed・duplicate・decoy、
-raw suffix、graph/cross-validation非実施を確認します。`bufio.Scanner`の64 KiB制限を持たない入力もこの範囲に含みます。
+raw suffix（`EXECUTE:` / `SKIP:`の説明を含む）、graph/cross-validation非実施を確認します。`EXECUTEfoo`・`SKIP_foo`のような
+word継続は拒否します。`bufio.Scanner`の64 KiB制限を持たない入力もこの範囲に含みます。
 
 ```sh
 go test -count=1 -run '^TestState' ./src/internal/state
@@ -570,14 +571,15 @@ go test -tags=integration -count=1 -run '^TestRead' ./src/internal/state
 ```
 
 実`os.Root`でregular fileの成功、missing、nil root、directory、symlink、invalid contentを確認します。成功・失敗の
-どちらでもRootがcaller側で継続利用でき、filesystemが変更されないことを確認します。Windowsでsymlink作成権限が
-ない場合は該当caseだけ理由付きでskipします。
+どちらでもRootがcaller側で継続利用でき、directory entries、state bytes、mode、mtimeが変更されないことを確認します。
+通常readに伴うatimeの不変までは検証・保証しません。Windowsでsymlink作成権限がない場合は該当caseだけ理由付きで
+skipします。
 
 Issue #63の意図的差分として、必須fieldのsection-scoped unique判定、Stage section限定とmalformed拒否、duplicate slug拒否、
 regular leaf barrier、invalid UTF-8・不正CR拒否を維持します。本家AI-DLC `2.6.123`との差分の理由と影響は
 [state readerの参照契約](ram/research/2026-09-03-state-reader-contracts.md)を参照してください。
 
-独立reviewでblocking findingがなく、対象差分が安定した後だけ、親agentが`final` modeで広い検証を一度実行します。
+独立reviewのfindingを修正し、対象差分が安定した後だけ、親agentが`final` modeで広い検証を一度実行します。
 finalではloopのtargeted testに加え、計画に該当する全package test、integration test、race、vet、format check、
 `go mod tidy -diff`、lint、cross compileを実行します。final後にGo fileが変わった場合、その証拠は古くなるため、
 再度loopのtargeted testとgofmtへ戻ってからfinalをやり直します。配布E2Eは、このinternal APIがCLIへ接続されていない間は

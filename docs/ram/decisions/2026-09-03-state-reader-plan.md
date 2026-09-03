@@ -50,7 +50,7 @@ LifecyclePhase、CurrentStage、NextStage、Summary、canonical 5件のPhaseProg
 取得できる。`Summary`は`TotalStages int`、`Completed int`、`InProgress string`を持つ。
 
 各`StageProgress`は、documentの`Slug`、`CheckboxMarker`、trim済みraw `Suffix`、markerから導いた
-`CheckboxState`、suffixの先頭tokenから導いた`PlanAction`を持つ。checkbox stateはpending、in-progress、
+`CheckboxState`、suffix先頭のword boundary付きaction wordから導いた`PlanAction`を持つ。checkbox stateはpending、in-progress、
 awaiting-approval、revising、completed、skipped、PlanActionはEXECUTE、SKIPである。両者は直交し、
 `[S] stage-slug — EXECUTE`も有効とする。enumのzero/unknown valueはparse成功値にしない。
 
@@ -68,16 +68,16 @@ slice accessorはdefensive copyを返し、Parseは入力byteのbacking arrayを
 - 必須fieldはtrim後nonemptyとし、`none`は通常の文字列値として許容する。State Versionはbare token `8`だけ、整数はASCII decimalの`0`または先頭zeroなしでint overflowなしだけを許容する。workflow/phase/phase statusはexact caseの既知enumだけを許容する。
 - Phase Progressは`Initialization`、`Ideation`、`Inception`、`Construction`、`Operation`のexact順を要求し、各statusを`Pending`、`Active`、`Verified`、`Skipped`から選ぶ。
 - Stage Progress内だけをdocument順に走査し、rowは`- [marker] slug — suffix`とする。markerは`[ ]`、`[-]`、`[?]`、`[R]`、`[x]`、`[S]`、separatorはU+2014 EM DASHとする。dash前後のhorizontal whitespaceは柔軟に扱い、slugはnonemptyかつwhitespaceなしとする。
-- suffixはtrim後nonempty、先頭tokenがexact `EXECUTE`または`SKIP`で、後続説明をraw Suffixへ保持する。`EXECUTEfoo`などは拒否する。duplicate slug、Stageらしく`- [`で始まるmalformed row、Stage row 0件を拒否し、section外のdecoyは無視する。
+- suffixはtrim後nonempty、先頭action wordがexact `EXECUTE`または`SKIP`であることをword boundaryで確認し、後続説明をraw Suffixへ保持する。`EXECUTE: reason`・`SKIP: reason`は受理し、`EXECUTEfoo`・`SKIP_foo`などword継続は拒否する。duplicate slug、Stageらしく`- [`で始まるmalformed row、Stage row 0件を拒否し、section外のdecoyは無視する。
 - `Completed <= Total`、`[x]`件数、Current Stageとmarkerの一致、graph membershipやcanonical slug grammarなどのcross validationは行わない。
 
 ## Read契約
 
 `Read`はnil rootをI/O前に`fs.ErrInvalid`で拒否する。record root相対の固定leaf `aidlc-state.md`だけを
 `Lstat`し、regular fileであることを確認してから同じRootで全量readし`Parse`へ渡す。symlink、directory、FIFO、
-deviceなどはregularでないため拒否する。caller-owned rootをCloseせず、filesystemを変更しない。missing、
-permissionなどのI/O causeは`%w`でerror chainへ保持し、全errorでStateをzeroにする。Lstat/read間のTOCTOUは
-このsliceでは完全解消しない。
+deviceなどはregularでないため拒否する。caller-owned rootをCloseせず、state bytes、mode、mtimeを変更しない。
+通常readに伴うatimeの不変までは保証しない。missing、permissionなどのI/O causeは`%w`でerror chainへ保持し、
+全errorでStateをzeroにする。Lstat/read間のTOCTOUはこのsliceでは完全解消しない。
 
 ## 本家AI-DLCとの意図的な差分
 
@@ -161,8 +161,41 @@ ok   github.com/sori883/ai-dd/src/internal/state
 ```
 
 変更Go fileはgofmt済みで、`gofmt -l`は出力なし、`git diff --check`も成功している。docs追加・更新後は
-文書差分に対して`git diff --check`を再実行する。独立reviewでblocking findingがなく、対象差分が安定した
+文書差分に対して`git diff --check`を再実行する。独立reviewのfinding修正とloop確認が完了し、対象差分が安定した
 後の全package test、race、vet、format、lint、cross compileなどのfinal gateは親agentが一度だけ実施する。
+
+### 独立review finding修正のloop証拠
+
+2026-09-03の独立reviewで、Stage suffixのword boundary、slug内EM DASH、required sectionテスト、filesystem snapshot、
+Windows symlink fixtureに関するfindingを受けた。Finding 1/2では先に次の回帰テストを追加し、旧実装が失敗することを確認した。
+
+```text
+go test -count=1 -run '^TestParseStage(SuffixWithColonExplanation|SlugMayContainEmDash)$' ./src/internal/state
+--- FAIL: TestParseStageSuffixWithColonExplanation
+    ... stage suffix must begin with exact EXECUTE or SKIP token
+--- FAIL: TestParseStageSlugMayContainEmDash
+    ... stage suffix must begin with exact EXECUTE or SKIP token
+FAIL
+```
+
+最小修正は、`EXECUTE` / `SKIP`直後のASCII word継続だけを拒否するprefix判定と、EM DASH separator候補を右から評価して
+有効なslug・suffixを選ぶ処理である。`EXECUTE: reason`、`SKIP: reason`、内部EM DASH、action風substringを含むgreedy slugを
+受理し、`EXECUTEfoo`・`SKIP_foo`を拒否することを同じpatternでGREENにした。Finding 3は初回実装がすでにsection順不同と
+required section重複を正しく扱っていたためproduction REDはなく、全required sectionのmissing/duplicateとsection・field
+reorderをテストで固定した。Finding 4/5は統合テストを修正し、metadata snapshotとsymlink fixtureの失敗分類を固定した。
+
+```text
+go test -count=1 -run '^TestParseStage(SuffixWithColonExplanation|SlugMayContainEmDash)$' ./src/internal/state
+ok   github.com/sori883/ai-dd/src/internal/state
+go test -count=1 -run '^TestParseRequiredSectionsMayBeReorderedButMustBeUnique$' ./src/internal/state
+ok   github.com/sori883/ai-dd/src/internal/state
+go test -tags=integration -count=1 -run '^TestReadIntegrationRejectsNonRegularLeaf$' ./src/internal/state
+ok   github.com/sori883/ai-dd/src/internal/state
+```
+
+最終loop確認では`go test -count=1 -run '^TestParse' ./src/internal/state`、`go test -count=1 -run '^TestState' ./src/internal/state`、
+`go test -tags=integration -count=1 -run '^TestRead' ./src/internal/state`、およびmetadata判定の`-count=10`を実行し、すべて
+成功した。通常readに伴うatimeは保証せず、snapshotではdirectory entries、state bytes、mode、mtimeだけを比較する。
 
 ## 対象境界と残余risk
 

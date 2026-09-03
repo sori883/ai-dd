@@ -63,7 +63,8 @@ func Parse(content []byte) (State, error)
 
 `Read`はcaller-ownedのrecord `*os.Root`から固定leaf `aidlc-state.md`を読む。nil rootはI/O前に
 `fs.ErrInvalid`で拒否し、`Lstat`でregular fileだけを受け入れる。symlink、directory、FIFO、deviceなどは
-拒否し、rootをCloseせず、filesystemを変更しない。missingやpermissionなどのI/O原因はerror chainへ保持する。
+拒否し、rootをCloseせず、state bytes、mode、mtimeを変更しない。通常readに伴うatimeの不変までは保証しない。
+missingやpermissionなどのI/O原因はerror chainへ保持する。
 
 `Parse`は入力byteを保持せず、invalid UTF-8、不正なlone CR、`\r\r\n`、header不一致を拒否する。先頭BOMは
 最大1個だけ除去し、LF・CRLFの混在と末尾LFなしを受け入れる。`bufio.Scanner`の既定64 KiB制限は使わない。
@@ -79,11 +80,13 @@ header、必須section、section内必須fieldは一意に要求し、section順
 
 必須fieldの重複・欠落・空値、State Version以外のversion、非canonical decimal、未知enumを拒否する。
 `Completed <= Total`、`[x]`件数、Current Stageのmarker、graph membershipなどの意味的な相互検証はこの
-低水準readerの責務にしない。Stage suffixの最初のtokenだけをexactな`EXECUTE`または`SKIP`として解釈し、後続の
-説明はSuffixへ保持する。checkbox stateとPlanActionは直交するため、`[S] stage-slug — EXECUTE`を受理する。
+低水準readerの責務にしない。Stage suffixの先頭action wordだけをword boundary付きで`EXECUTE`または`SKIP`として解釈し、
+後続の説明はSuffixへ保持する。checkbox stateとPlanActionは直交するため、`[S] stage-slug — EXECUTE`を受理する。
 
 返却sliceはcallerが変更できる独立コピーとし、error時はpartial Stateを返さずzero Stateにする。保存済み
-`aidlc-state.md`の`EXECUTE` / `SKIP` suffixは、将来のin-flight recomposeでroutingを判断する正本である。
+`aidlc-state.md`の`EXECUTE` / `SKIP` suffixは、先頭action wordをword boundaryで判定し、`EXECUTE: reason`・
+`SKIP: reason`のような説明もraw suffixへ保持する。`EXECUTEfoo`・`SKIP_foo`などword継続は拒否する。suffixは
+将来のin-flight recomposeでroutingを判断する正本である。
 readerはgraphを再計算したり、stateを書き換えたりしない。
 
 ## 本家AI-DLCとの差分

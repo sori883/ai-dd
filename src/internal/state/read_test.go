@@ -391,6 +391,86 @@ func TestParseSectionScopedFieldsAndValues(t *testing.T) {
 	}
 }
 
+func TestParseRequiredSectionsMayBeReorderedButMustBeUnique(t *testing.T) {
+	t.Parallel()
+
+	for _, section := range requiredSections {
+		section := section
+		t.Run("missing "+section, func(t *testing.T) {
+			t.Parallel()
+			content := removeCanonicalSection(canonicalStateContent(), section)
+			got, err := Parse([]byte(content))
+			if !errors.Is(err, fs.ErrInvalid) {
+				t.Fatalf("Parse() error = %v, want fs.ErrInvalid", err)
+			}
+			if got.Version() != 0 || got.Scope() != "" || len(got.PhaseProgress()) != 0 || len(got.Stages()) != 0 {
+				t.Fatalf("Parse() state = %#v, want zero State", got)
+			}
+		})
+
+		t.Run("duplicate "+section, func(t *testing.T) {
+			t.Parallel()
+			content := canonicalStateContent() + "\n## " + section + "\n"
+			got, err := Parse([]byte(content))
+			if !errors.Is(err, fs.ErrInvalid) {
+				t.Fatalf("Parse() error = %v, want fs.ErrInvalid", err)
+			}
+			if got.Version() != 0 || got.Scope() != "" || len(got.PhaseProgress()) != 0 || len(got.Stages()) != 0 {
+				t.Fatalf("Parse() state = %#v, want zero State", got)
+			}
+		})
+	}
+
+	sectionOrder := []string{
+		"Current Status",
+		"Stage Progress",
+		"Phase Progress",
+		"Execution Plan Summary",
+		"Project Information",
+	}
+	sectionReordered := reorderCanonicalSections(canonicalStateContent(), sectionOrder)
+	if got, err := Parse([]byte(sectionReordered)); err != nil {
+		t.Fatalf("Parse(reordered sections) error = %v", err)
+	} else if got.Version() != 8 || len(got.PhaseProgress()) != 5 || len(got.Stages()) != 7 {
+		t.Fatalf("Parse(reordered sections) = version %d, %d phases, %d stages", got.Version(), len(got.PhaseProgress()), len(got.Stages()))
+	}
+
+	fieldReordered := []struct {
+		name   string
+		first  string
+		second string
+	}{
+		{
+			name:   "project information",
+			first:  "- **Project Type**: Brownfield",
+			second: "- **Scope**: classic",
+		},
+		{
+			name:   "execution plan summary",
+			first:  "- **Total Stages**: 5",
+			second: "- **Completed**: 2",
+		},
+		{
+			name:   "current status",
+			first:  "- **Lifecycle Phase**: IDEATION",
+			second: "- **Current Stage**: intent-capture",
+		},
+	}
+	for _, tt := range fieldReordered {
+		t.Run("field order in "+tt.name, func(t *testing.T) {
+			t.Parallel()
+			content := swapCanonicalLines(canonicalStateContent(), tt.first, tt.second)
+			got, err := Parse([]byte(content))
+			if err != nil {
+				t.Fatalf("Parse(reordered fields) error = %v", err)
+			}
+			if got.Version() != 8 {
+				t.Errorf("Version() = %d, want 8", got.Version())
+			}
+		})
+	}
+}
+
 func TestParseStageProgressStrictness(t *testing.T) {
 	t.Parallel()
 
@@ -453,6 +533,10 @@ func TestParseStageProgressStrictness(t *testing.T) {
 			content: strings.Replace(canonicalStateContent(), stageRow, "- [S] deployment-pipeline — EXECUTEfoo", 1),
 		},
 		{
+			name:    "skip action word continuation",
+			content: strings.Replace(canonicalStateContent(), stageRow, "- [S] deployment-pipeline — SKIP_foo", 1),
+		},
+		{
 			name:    "stage-like malformed row",
 			content: strings.Replace(canonicalStateContent(), stageRow, "- [", 1),
 		},
@@ -506,6 +590,71 @@ func TestParseStageProgressStrictness(t *testing.T) {
 	}
 }
 
+func TestParseStageSuffixWithColonExplanation(t *testing.T) {
+	t.Parallel()
+
+	const stageRow = "- [S] deployment-pipeline — EXECUTE"
+	for _, action := range []PlanAction{PlanActionExecute, PlanActionSkip} {
+		action := action
+		t.Run(string(action), func(t *testing.T) {
+			t.Parallel()
+			content := strings.Replace(
+				canonicalStateContent(),
+				stageRow,
+				"- [S] deployment-pipeline — "+string(action)+": reason",
+				1,
+			)
+			got, err := Parse([]byte(content))
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+			stage := got.Stages()[6]
+			if stage.PlanAction != action || stage.Suffix != string(action)+": reason" {
+				t.Errorf("StageProgress = %#v, want %s: reason with derived action", stage, action)
+			}
+		})
+	}
+}
+
+func TestParseStageSlugMayContainEmDash(t *testing.T) {
+	t.Parallel()
+
+	const stageRow = "- [S] deployment-pipeline — EXECUTE"
+	tests := []struct {
+		name       string
+		row        string
+		wantSlug   string
+		wantAction PlanAction
+	}{
+		{
+			name:       "internal em dash",
+			row:        "- [S] feature—v2 — EXECUTE",
+			wantSlug:   "feature—v2",
+			wantAction: PlanActionExecute,
+		},
+		{
+			name:       "greedy slug keeps action-like text",
+			row:        "- [S] feature—EXECUTEfoo—v2 — SKIP",
+			wantSlug:   "feature—EXECUTEfoo—v2",
+			wantAction: PlanActionSkip,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			content := strings.Replace(canonicalStateContent(), stageRow, tt.row, 1)
+			got, err := Parse([]byte(content))
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+			stage := got.Stages()[6]
+			if stage.Slug != tt.wantSlug || stage.PlanAction != tt.wantAction {
+				t.Errorf("StageProgress = %#v, want slug %q/action %q", stage, tt.wantSlug, tt.wantAction)
+			}
+		})
+	}
+}
+
 func TestParseDoesNotCrossValidateSemanticRelationships(t *testing.T) {
 	t.Parallel()
 
@@ -542,6 +691,74 @@ func removeCanonicalStageRows(content string) string {
 		content = strings.Replace(content, row, "", 1)
 	}
 	return content
+}
+
+func removeCanonicalSection(content, section string) string {
+	lines := strings.Split(strings.TrimSuffix(content, "\n"), "\n")
+	start := -1
+	end := len(lines)
+	for index, line := range lines {
+		if line != "## "+section {
+			continue
+		}
+		start = index
+		for next := index + 1; next < len(lines); next++ {
+			if strings.HasPrefix(lines[next], "## ") {
+				end = next
+				break
+			}
+		}
+		break
+	}
+	if start < 0 {
+		return content
+	}
+	lines = append(lines[:start], lines[end:]...)
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func reorderCanonicalSections(content string, order []string) string {
+	lines := strings.Split(strings.TrimSuffix(content, "\n"), "\n")
+	blocks := make(map[string][]string, len(order))
+	for index := 1; index < len(lines); {
+		if !strings.HasPrefix(lines[index], "## ") {
+			index++
+			continue
+		}
+		section := strings.TrimPrefix(lines[index], "## ")
+		end := index + 1
+		for end < len(lines) && !strings.HasPrefix(lines[end], "## ") {
+			end++
+		}
+		blocks[section] = append([]string(nil), lines[index:end]...)
+		index = end
+	}
+
+	result := []string{lines[0], ""}
+	for _, section := range order {
+		result = append(result, blocks[section]...)
+		result = append(result, "")
+	}
+	return strings.Join(result, "\n")
+}
+
+func swapCanonicalLines(content, first, second string) string {
+	lines := strings.Split(content, "\n")
+	firstIndex := -1
+	secondIndex := -1
+	for index, line := range lines {
+		switch line {
+		case first:
+			firstIndex = index
+		case second:
+			secondIndex = index
+		}
+	}
+	if firstIndex < 0 || secondIndex < 0 {
+		return content
+	}
+	lines[firstIndex], lines[secondIndex] = lines[secondIndex], lines[firstIndex]
+	return strings.Join(lines, "\n")
 }
 
 func scopeMetadata(name string) scope.Metadata {

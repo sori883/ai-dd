@@ -380,30 +380,49 @@ func parseStageRow(line string) (StageProgress, error) {
 		return StageProgress{}, invalidState("stage row must separate marker and slug with horizontal whitespace")
 	}
 	rest = strings.TrimLeftFunc(rest, isHorizontalWhitespace)
-	dashIndex := strings.Index(rest, emDash)
-	if dashIndex < 0 {
+	if !strings.Contains(rest, emDash) {
 		return StageProgress{}, invalidState("stage row is missing em dash separator")
 	}
-	slug := strings.TrimFunc(rest[:dashIndex], isHorizontalWhitespace)
-	if slug == "" || containsWhitespace(slug) {
+
+	var (
+		validSlug   bool
+		validSuffix bool
+	)
+	for dashIndex := strings.LastIndex(rest, emDash); dashIndex >= 0; {
+		slug := strings.TrimFunc(rest[:dashIndex], isHorizontalWhitespace)
+		previousDash := strings.LastIndex(rest[:dashIndex], emDash)
+		if slug == "" || containsWhitespace(slug) {
+			dashIndex = previousDash
+			continue
+		}
+		validSlug = true
+
+		suffix := strings.TrimSpace(rest[dashIndex+len(emDash):])
+		if suffix == "" {
+			dashIndex = previousDash
+			continue
+		}
+		validSuffix = true
+		planAction, ok := parsePlanActionPrefix(suffix)
+		if !ok {
+			dashIndex = previousDash
+			continue
+		}
+		return StageProgress{
+			Slug:           slug,
+			CheckboxMarker: marker,
+			CheckboxState:  checkboxState,
+			Suffix:         suffix,
+			PlanAction:     planAction,
+		}, nil
+	}
+	if !validSlug {
 		return StageProgress{}, invalidState("stage slug must be nonempty and contain no whitespace")
 	}
-	suffix := strings.TrimSpace(rest[dashIndex+len(emDash):])
-	if suffix == "" {
+	if !validSuffix {
 		return StageProgress{}, invalidState("stage suffix must be nonempty")
 	}
-	firstToken := strings.Fields(suffix)[0]
-	planAction, ok := parsePlanAction(firstToken)
-	if !ok {
-		return StageProgress{}, invalidState("stage suffix must begin with exact EXECUTE or SKIP token")
-	}
-	return StageProgress{
-		Slug:           slug,
-		CheckboxMarker: marker,
-		CheckboxState:  checkboxState,
-		Suffix:         suffix,
-		PlanAction:     planAction,
-	}, nil
+	return StageProgress{}, invalidState("stage suffix must begin with exact EXECUTE or SKIP token")
 }
 
 func checkboxStateForMarker(marker string) (CheckboxState, bool) {
@@ -425,13 +444,29 @@ func checkboxStateForMarker(marker string) (CheckboxState, bool) {
 	}
 }
 
-func parsePlanAction(value string) (PlanAction, bool) {
-	switch PlanAction(value) {
-	case PlanActionExecute, PlanActionSkip:
-		return PlanAction(value), true
-	default:
-		return PlanActionUnknown, false
+func parsePlanActionPrefix(value string) (PlanAction, bool) {
+	for _, candidate := range []struct {
+		word   string
+		action PlanAction
+	}{
+		{word: string(PlanActionExecute), action: PlanActionExecute},
+		{word: string(PlanActionSkip), action: PlanActionSkip},
+	} {
+		if !strings.HasPrefix(value, candidate.word) {
+			continue
+		}
+		if len(value) == len(candidate.word) || !isASCIIWordContinuation(value[len(candidate.word)]) {
+			return candidate.action, true
+		}
 	}
+	return PlanActionUnknown, false
+}
+
+func isASCIIWordContinuation(value byte) bool {
+	return value >= 'A' && value <= 'Z' ||
+		value >= 'a' && value <= 'z' ||
+		value >= '0' && value <= '9' ||
+		value == '_'
 }
 
 func isHorizontalWhitespace(value rune) bool {
