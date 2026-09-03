@@ -116,3 +116,36 @@ func TestRecordLockIntegrationReleaseRejectsOwnerFIFOSwap(t *testing.T) {
 		t.Errorf("original owner marker = (%v, %v), want preserved regular file", info, err)
 	}
 }
+
+func TestRecordLockIntegrationAcquireOpenRootFailurePreservesFIFO(t *testing.T) {
+	project := t.TempDir()
+	lockTemp := t.TempDir()
+	identity, err := NewIdentity(project, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := systemLockOps()
+	ops.tempDir = func() string { return lockTemp }
+	lockPath := lockPathForTemp(identity, lockTemp)
+	replacedPath := lockPath + ".replaced"
+	openErr := errors.New("pin refused")
+	ops.openRoot = func(path string) (*os.Root, error) {
+		if err := os.Rename(path, replacedPath); err != nil {
+			return nil, err
+		}
+		if err := syscall.Mkfifo(path, 0o600); err != nil {
+			return nil, err
+		}
+		return nil, openErr
+	}
+	guard, err := acquireWithOps(context.Background(), identity, lockSettings{maxRetries: 0}, ops)
+	if guard != nil || !errors.Is(err, openErr) {
+		t.Fatalf("acquire after rejected pin = (%v, %v), want no Guard and pin error", guard, err)
+	}
+	if info, err := os.Lstat(lockPath); err != nil || info.Mode()&fs.ModeNamedPipe == 0 {
+		t.Errorf("replacement lock path = (%v, %v), want preserved FIFO", info, err)
+	}
+	if info, err := os.Stat(replacedPath); err != nil || !info.IsDir() {
+		t.Errorf("original lock path = (%v, %v), want preserved directory", info, err)
+	}
+}

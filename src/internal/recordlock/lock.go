@@ -222,16 +222,15 @@ type lockOps struct {
 	mkdirAll         func(string, fs.FileMode) error
 	mkdir            func(string, fs.FileMode) error
 	openFile         func(string, int, fs.FileMode) (*os.File, error)
-	openRead         func(string) (*os.File, error)
 	openRoot         func(string) (*os.Root, error)
 	rootLstat        func(*os.Root, string) (fs.FileInfo, error)
+	rootCreate       func(*os.Root, string) (*os.File, error)
 	rootOpen         func(*os.Root, string) (*os.File, error)
 	rootRemove       func(*os.Root, string) error
 	rootClose        func(*os.Root) error
 	write            func(*os.File, []byte) (int, error)
 	close            func(*os.File) error
 	lstat            func(string) (fs.FileInfo, error)
-	readFile         func(string) ([]byte, error)
 	remove           func(string) error
 	beforeOwnerProof func(string) error
 	now              func() time.Time
@@ -246,16 +245,15 @@ func systemLockOps() lockOps {
 		mkdirAll:   os.MkdirAll,
 		mkdir:      os.Mkdir,
 		openFile:   os.OpenFile,
-		openRead:   os.Open,
 		openRoot:   openLockRoot,
 		rootLstat:  (*os.Root).Lstat,
+		rootCreate: openLockOwnerCreate,
 		rootOpen:   openLockOwner,
 		rootRemove: (*os.Root).Remove,
 		rootClose:  (*os.Root).Close,
 		write:      (*os.File).Write,
 		close:      (*os.File).Close,
 		lstat:      os.Lstat,
-		readFile:   os.ReadFile,
 		remove:     os.Remove,
 		now:        time.Now,
 		pid:        os.Getpid,
@@ -454,10 +452,7 @@ func acquireWithOps(ctx context.Context, identity Identity, settings lockSetting
 func initializeGuard(identity Identity, path string, ops lockOps) (guard *Guard, err error) {
 	token, err := randomToken(ops.random)
 	if err != nil {
-		return nil, errors.Join(
-			fmt.Errorf("recordlock: generate owner token: %w", err),
-			removeOwnedLock(path, "", ops),
-		)
+		return nil, fmt.Errorf("recordlock: generate owner token: %w", err)
 	}
 	openRoot := ops.openRoot
 	if openRoot == nil {
@@ -465,16 +460,10 @@ func initializeGuard(identity Identity, path string, ops lockOps) (guard *Guard,
 	}
 	lockRoot, err := openRoot(path)
 	if err != nil {
-		return nil, errors.Join(
-			fmt.Errorf("recordlock: open lock root %q: %w", path, err),
-			removeOwnedLock(path, token, ops),
-		)
+		return nil, fmt.Errorf("recordlock: open lock root %q: %w", path, err)
 	}
 	if lockRoot == nil {
-		return nil, errors.Join(
-			fmt.Errorf("recordlock: open lock root %q returned nil root: %w", path, ErrOwnerMismatch),
-			removeOwnedLock(path, token, ops),
-		)
+		return nil, fmt.Errorf("recordlock: open lock root %q returned nil root: %w", path, ErrOwnerMismatch)
 	}
 	rootClose := ops.rootClose
 	if rootClose == nil {
@@ -496,8 +485,13 @@ func initializeGuard(identity Identity, path string, ops lockOps) (guard *Guard,
 		StartedAt:   startedAt.Format(time.RFC3339Nano),
 		StartedAtMS: startedAt.UnixMilli(),
 	}
-	if err := writeOwner(filepath.Join(path, ownerMarkerName(token)), owner, ops); err != nil {
-		return nil, errors.Join(err, removeOwnedLock(path, token, ops))
+	ownerName := ownerMarkerName(token)
+	ownerInfo, err := writeOwnerAtRoot(lockRoot, ownerName, owner, ops)
+	if err != nil {
+		return nil, errors.Join(err, cleanupInitializedLock(lockRoot, path, ownerName, ownerInfo, ops))
+	}
+	if _, err := verifyPinnedLockPath(path, lockRoot, ops); err != nil {
+		return nil, errors.Join(err, cleanupInitializedLock(lockRoot, path, ownerName, ownerInfo, ops))
 	}
 	guard = &Guard{state: &guardState{
 		identity: identity,
@@ -527,24 +521,79 @@ func randomToken(random io.Reader) (string, error) {
 	return hex.EncodeToString(value[:]), nil
 }
 
-func writeOwner(path string, owner lockOwner, ops lockOps) (err error) {
+func writeOwnerAtRoot(root *os.Root, name string, owner lockOwner, ops lockOps) (ownerInfo fs.FileInfo, err error) {
 	data, err := json.Marshal(owner)
 	if err != nil {
-		return fmt.Errorf("recordlock: encode owner: %w", err)
+		return nil, fmt.Errorf("recordlock: encode owner: %w", err)
 	}
-	file, err := ops.openFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if root == nil {
+		return nil, fmt.Errorf("recordlock: open owner %q: %w", name, ErrOwnerMismatch)
+	}
+	rootCreate := ops.rootCreate
+	if rootCreate == nil {
+		rootCreate = openLockOwnerCreate
+	}
+	file, err := rootCreate(root, name)
 	if err != nil {
-		return fmt.Errorf("recordlock: open owner %q: %w", path, err)
+		return nil, fmt.Errorf("recordlock: open owner %q: %w", name, err)
 	}
 	if file == nil {
-		return fmt.Errorf("recordlock: open owner %q returned nil file: %w", path, fs.ErrInvalid)
+		return nil, fmt.Errorf("recordlock: open owner %q returned nil file: %w", name, fs.ErrInvalid)
+	}
+	ownerInfo, err = file.Stat()
+	if err != nil {
+		closeErr := closeLockFile(file, ops)
+		if closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+		return nil, fmt.Errorf("recordlock: stat owner %q: %w", name, err)
 	}
 	writeErr := writeLockBytes(file, data, ops.write)
 	if writeErr != nil {
-		err = fmt.Errorf("recordlock: write owner %q: %w", path, writeErr)
+		err = fmt.Errorf("recordlock: write owner %q: %w", name, writeErr)
 	}
-	if closeErr := ops.close(file); closeErr != nil {
-		err = errors.Join(err, fmt.Errorf("recordlock: close owner %q: %w", path, closeErr))
+	if closeErr := closeLockFile(file, ops); closeErr != nil {
+		err = errors.Join(err, fmt.Errorf("recordlock: close owner %q: %w", name, closeErr))
+	}
+	return ownerInfo, err
+}
+
+func cleanupInitializedLock(root *os.Root, path, ownerName string, ownerInfo fs.FileInfo, ops lockOps) (err error) {
+	if root == nil {
+		return fmt.Errorf("recordlock: cleanup lock %q has no pinned root: %w", path, ErrOwnerMismatch)
+	}
+	rootRemove := ops.rootRemove
+	if rootRemove == nil {
+		rootRemove = (*os.Root).Remove
+	}
+	if ownerInfo != nil {
+		ownerLstat := ops.rootLstat
+		if ownerLstat == nil {
+			ownerLstat = (*os.Root).Lstat
+		}
+		current, lstatErr := ownerLstat(root, ownerName)
+		if lstatErr != nil {
+			if !errors.Is(lstatErr, fs.ErrNotExist) {
+				err = errors.Join(err, fmt.Errorf("recordlock: inspect owner %q for cleanup: %w", ownerName, lstatErr))
+			}
+			return err
+		}
+		if current == nil || current.Mode()&fs.ModeSymlink != 0 || !current.Mode().IsRegular() || !sameFileInfo(ownerInfo, current) {
+			return errors.Join(err, fmt.Errorf("recordlock: preserve replaced owner %q: %w", ownerName, ErrOwnerMismatch))
+		}
+		if removeErr := rootRemove(root, ownerName); removeErr != nil {
+			return errors.Join(err, fmt.Errorf("recordlock: remove owner %q: %w", ownerName, removeErr))
+		}
+	}
+	if _, verifyErr := verifyPinnedLockPath(path, root, ops); verifyErr != nil {
+		return errors.Join(err, fmt.Errorf("recordlock: preserve replaced lock %q: %w", path, verifyErr))
+	}
+	remove := ops.remove
+	if remove == nil {
+		remove = os.Remove
+	}
+	if removeErr := remove(path); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
+		err = errors.Join(err, fmt.Errorf("recordlock: remove lock %q: %w", path, removeErr))
 	}
 	return err
 }
@@ -564,18 +613,6 @@ func writeLockBytes(file *os.File, data []byte, write func(*os.File, []byte) (in
 		data = data[n:]
 	}
 	return nil
-}
-
-func removeOwnedLock(path, token string, ops lockOps) (err error) {
-	if token != "" {
-		if removeErr := ops.remove(filepath.Join(path, ownerMarkerName(token))); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
-			err = errors.Join(err, fmt.Errorf("recordlock: remove owner %q: %w", path, removeErr))
-		}
-	}
-	if removeErr := ops.remove(path); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
-		err = errors.Join(err, fmt.Errorf("recordlock: remove lock %q: %w", path, removeErr))
-	}
-	return err
 }
 
 // Release verifies the persisted owner token before removing this Guard's
@@ -704,64 +741,6 @@ func markUnheld(state *guardState) {
 	state.held = false
 	state.releasing = false
 	state.mu.Unlock()
-}
-
-func readOwnerProof(ownerPath string, ops lockOps) (lockOwner, fs.FileInfo, error) {
-	before, err := ops.lstat(ownerPath)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return lockOwner{}, nil, fmt.Errorf("recordlock: owner disappeared at %q: %w", ownerPath, ErrOwnerMismatch)
-		}
-		return lockOwner{}, nil, fmt.Errorf("recordlock: inspect owner %q: %w", ownerPath, err)
-	}
-	if before == nil || before.Mode()&fs.ModeSymlink != 0 || !before.Mode().IsRegular() {
-		return lockOwner{}, nil, fmt.Errorf("recordlock: owner path changed at %q: %w", ownerPath, ErrOwnerMismatch)
-	}
-	// Keep the existing read seam in the proof path.  Besides preserving
-	// deterministic tests, the immediate identity check catches a replacement
-	// that occurred while reading the pathname.
-	if _, err := ops.readFile(ownerPath); err != nil {
-		return lockOwner{}, nil, fmt.Errorf("recordlock: read owner %q: %w", ownerPath, err)
-	}
-	afterRead, err := ops.lstat(ownerPath)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return lockOwner{}, nil, fmt.Errorf("recordlock: owner disappeared at %q: %w", ownerPath, ErrOwnerMismatch)
-		}
-		return lockOwner{}, nil, fmt.Errorf("recordlock: verify owner %q: %w", ownerPath, err)
-	}
-	if !sameFileInfo(before, afterRead) || afterRead.Mode()&fs.ModeSymlink != 0 || !afterRead.Mode().IsRegular() {
-		return lockOwner{}, nil, fmt.Errorf("recordlock: owner path changed at %q: %w", ownerPath, ErrOwnerMismatch)
-	}
-	ownerFile, err := ops.openRead(ownerPath)
-	if err != nil {
-		return lockOwner{}, nil, fmt.Errorf("recordlock: open owner %q: %w", ownerPath, err)
-	}
-	if ownerFile == nil {
-		return lockOwner{}, nil, fmt.Errorf("recordlock: open owner %q returned nil file: %w", ownerPath, ErrOwnerMismatch)
-	}
-	ownerInfo, err := ownerFile.Stat()
-	if err != nil {
-		_ = ops.close(ownerFile)
-		return lockOwner{}, nil, fmt.Errorf("recordlock: stat owner %q: %w", ownerPath, err)
-	}
-	if ownerInfo == nil || !ownerInfo.Mode().IsRegular() || !sameFileInfo(afterRead, ownerInfo) {
-		_ = ops.close(ownerFile)
-		return lockOwner{}, nil, fmt.Errorf("recordlock: owner descriptor changed at %q: %w", ownerPath, ErrOwnerMismatch)
-	}
-	data, readErr := io.ReadAll(ownerFile)
-	closeErr := ops.close(ownerFile)
-	if readErr != nil {
-		return lockOwner{}, nil, fmt.Errorf("recordlock: read owner descriptor %q: %w", ownerPath, readErr)
-	}
-	if closeErr != nil {
-		return lockOwner{}, nil, fmt.Errorf("recordlock: close owner %q: %w", ownerPath, closeErr)
-	}
-	var owner lockOwner
-	if err := json.Unmarshal(data, &owner); err != nil || owner.Token == "" {
-		return lockOwner{}, nil, fmt.Errorf("recordlock: decode owner %q: %w", ownerPath, ErrOwnerMismatch)
-	}
-	return owner, ownerInfo, nil
 }
 
 func readOwnerProofAtRoot(root *os.Root, ownerName, ownerPath string, ops lockOps) (lockOwner, fs.FileInfo, error) {
@@ -896,6 +875,34 @@ func verifyLockPath(lockPath string, expected fs.FileInfo, ops lockOps) error {
 
 func sameFileInfo(first, second fs.FileInfo) bool {
 	return first != nil && second != nil && os.SameFile(first, second)
+}
+
+func verifyPinnedLockPath(lockPath string, root *os.Root, ops lockOps) (fs.FileInfo, error) {
+	if root == nil {
+		return nil, fmt.Errorf("recordlock: pinned lock root is nil: %w", ErrOwnerMismatch)
+	}
+	lstat := ops.lstat
+	if lstat == nil {
+		lstat = os.Lstat
+	}
+	current, err := lstat(lockPath)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("recordlock: lock disappeared at %q: %w", lockPath, ErrOwnerMismatch)
+		}
+		return nil, fmt.Errorf("recordlock: inspect lock %q: %w", lockPath, err)
+	}
+	if current == nil || current.Mode()&fs.ModeSymlink != 0 || !current.IsDir() {
+		return nil, fmt.Errorf("recordlock: lock path changed at %q: %w", lockPath, ErrOwnerMismatch)
+	}
+	opened, err := root.Stat(".")
+	if err != nil {
+		return nil, fmt.Errorf("recordlock: stat pinned lock root %q: %w", lockPath, err)
+	}
+	if opened == nil || !opened.IsDir() || !os.SameFile(current, opened) {
+		return nil, fmt.Errorf("recordlock: lock path changed at %q: %w", lockPath, ErrOwnerMismatch)
+	}
+	return current, nil
 }
 
 // With acquires one record lock, invokes fn with its identity-bound Guard, and

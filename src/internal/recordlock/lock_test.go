@@ -192,6 +192,225 @@ func TestReleaseUsesPinnedLockRootWithoutPathReopen(t *testing.T) {
 	}
 }
 
+func TestAcquireRejectsLockPathReplacementBeforeOwnerWrite(t *testing.T) {
+	project := t.TempDir()
+	lockTemp := t.TempDir()
+	identity, err := NewIdentity(project, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := systemLockOps()
+	ops.tempDir = func() string { return lockTemp }
+	ops.random = bytes.NewReader(bytes.Repeat([]byte{0xab}, lockTokenByteCount))
+	lockPath := lockPathForTemp(identity, lockTemp)
+	replacedPath := lockPath + ".replaced"
+	t.Cleanup(func() {
+		_ = os.RemoveAll(lockPath)
+		_ = os.RemoveAll(replacedPath)
+	})
+	actualRootCreate := ops.rootCreate
+	ops.rootCreate = func(root *os.Root, name string) (*os.File, error) {
+		if err := os.Rename(lockPath, replacedPath); err != nil {
+			return nil, err
+		}
+		if err := os.Mkdir(lockPath, 0o700); err != nil {
+			return nil, err
+		}
+		other := lockOwner{Token: "other-owner", PID: 99, StartedAt: "other"}
+		data, err := json.Marshal(other)
+		if err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(filepath.Join(lockPath, ownerMarkerName(other.Token)), data, 0o600); err != nil {
+			return nil, err
+		}
+		return actualRootCreate(root, name)
+	}
+	guard, err := acquireWithOps(context.Background(), identity, lockSettings{maxRetries: 0}, ops)
+	if guard != nil || !errors.Is(err, ErrOwnerMismatch) {
+		t.Fatalf("acquire after lock replacement = (%v, %v), want no Guard and ErrOwnerMismatch", guard, err)
+	}
+	if _, err := os.Stat(filepath.Join(lockPath, ownerMarkerName("other-owner"))); err != nil {
+		t.Fatalf("replacement owner marker = %v, want preserved marker", err)
+	}
+	ownerName := ownerMarkerName(fmt.Sprintf("%x", bytes.Repeat([]byte{0xab}, lockTokenByteCount)))
+	if _, err := os.Stat(filepath.Join(lockPath, ownerName)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("replacement received acquired owner marker: %v", err)
+	}
+}
+
+func TestAcquireOpenRootFailurePreservesReplacementLockPath(t *testing.T) {
+	project := t.TempDir()
+	lockTemp := t.TempDir()
+	identity, err := NewIdentity(project, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := systemLockOps()
+	ops.tempDir = func() string { return lockTemp }
+	lockPath := lockPathForTemp(identity, lockTemp)
+	replacedPath := lockPath + ".replaced"
+	openErr := errors.New("pin refused")
+	ops.openRoot = func(path string) (*os.Root, error) {
+		if err := os.Rename(path, replacedPath); err != nil {
+			return nil, err
+		}
+		if err := os.Mkdir(path, 0o700); err != nil {
+			return nil, err
+		}
+		return nil, openErr
+	}
+	guard, err := acquireWithOps(context.Background(), identity, lockSettings{maxRetries: 0}, ops)
+	if guard != nil || !errors.Is(err, openErr) {
+		t.Fatalf("acquire after rejected pin = (%v, %v), want no Guard and pin error", guard, err)
+	}
+	if info, err := os.Stat(lockPath); err != nil || !info.IsDir() {
+		t.Errorf("replacement lock path = (%v, %v), want preserved directory", info, err)
+	}
+	if info, err := os.Stat(replacedPath); err != nil || !info.IsDir() {
+		t.Errorf("original lock path = (%v, %v), want preserved directory", info, err)
+	}
+}
+
+func TestAcquireOwnerCreateDoesNotUseGlobalPathOpen(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	lockTemp := t.TempDir()
+	identity, err := NewIdentity(project, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := systemLockOps()
+	ops.tempDir = func() string { return lockTemp }
+	globalOpenErr := errors.New("global owner open must not be called")
+	ops.openFile = func(string, int, fs.FileMode) (*os.File, error) { return nil, globalOpenErr }
+	guard, err := acquireWithOps(context.Background(), identity, lockSettings{maxRetries: 0}, ops)
+	if err != nil {
+		t.Fatalf("acquire with global owner open disabled = %v", err)
+	}
+	if err := guard.Release(); err != nil {
+		t.Fatalf("Release() = %v", err)
+	}
+}
+
+func TestAcquireOwnerCreateWriteAndCloseFailuresCleanOwnGeneration(t *testing.T) {
+	tests := []struct {
+		name      string
+		configure func(*lockOps, error)
+	}{
+		{
+			name: "write",
+			configure: func(ops *lockOps, cause error) {
+				ops.write = func(*os.File, []byte) (int, error) { return 0, cause }
+			},
+		},
+		{
+			name: "close",
+			configure: func(ops *lockOps, cause error) {
+				actualClose := ops.close
+				ops.close = func(file *os.File) error {
+					if err := actualClose(file); err != nil {
+						return err
+					}
+					return cause
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			project := t.TempDir()
+			lockTemp := t.TempDir()
+			identity, err := NewIdentity(project, "default", "build")
+			if err != nil {
+				t.Fatal(err)
+			}
+			ops := systemLockOps()
+			ops.tempDir = func() string { return lockTemp }
+			cause := errors.New(tt.name + " owner failure")
+			tt.configure(&ops, cause)
+			guard, err := acquireWithOps(context.Background(), identity, lockSettings{maxRetries: 0}, ops)
+			if guard != nil || !errors.Is(err, cause) {
+				t.Fatalf("acquire after owner %s failure = (%v, %v), want no Guard and cause", tt.name, guard, err)
+			}
+			if _, err := os.Lstat(lockPathForTemp(identity, lockTemp)); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("lock path after owner %s failure = %v, want removed own generation", tt.name, err)
+			}
+		})
+	}
+}
+
+func TestAcquireOwnerFailurePreservesReplacedLockPath(t *testing.T) {
+	project := t.TempDir()
+	lockTemp := t.TempDir()
+	identity, err := NewIdentity(project, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := systemLockOps()
+	ops.tempDir = func() string { return lockTemp }
+	lockPath := lockPathForTemp(identity, lockTemp)
+	replacedPath := lockPath + ".replaced"
+	ownerWriteErr := errors.New("owner write failed")
+	ops.write = func(file *os.File, data []byte) (int, error) {
+		if err := os.Rename(lockPath, replacedPath); err != nil {
+			return 0, err
+		}
+		if err := os.Mkdir(lockPath, 0o700); err != nil {
+			return 0, err
+		}
+		return 0, ownerWriteErr
+	}
+	guard, err := acquireWithOps(context.Background(), identity, lockSettings{maxRetries: 0}, ops)
+	if guard != nil || !errors.Is(err, ownerWriteErr) {
+		t.Fatalf("acquire after owner write/path replacement = (%v, %v), want no Guard and write error", guard, err)
+	}
+	if info, err := os.Stat(lockPath); err != nil || !info.IsDir() {
+		t.Errorf("replacement lock path = (%v, %v), want preserved directory", info, err)
+	}
+	if info, err := os.Stat(replacedPath); err != nil || !info.IsDir() {
+		t.Errorf("original lock path = (%v, %v), want preserved directory", info, err)
+	}
+}
+
+func TestAcquireOwnerCloseFailurePreservesReplacedLockPath(t *testing.T) {
+	project := t.TempDir()
+	lockTemp := t.TempDir()
+	identity, err := NewIdentity(project, "default", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := systemLockOps()
+	ops.tempDir = func() string { return lockTemp }
+	lockPath := lockPathForTemp(identity, lockTemp)
+	replacedPath := lockPath + ".replaced"
+	ownerCloseErr := errors.New("owner close failed")
+	actualClose := ops.close
+	ops.close = func(file *os.File) error {
+		if err := actualClose(file); err != nil {
+			return err
+		}
+		if err := os.Rename(lockPath, replacedPath); err != nil {
+			return err
+		}
+		if err := os.Mkdir(lockPath, 0o700); err != nil {
+			return err
+		}
+		return ownerCloseErr
+	}
+	guard, err := acquireWithOps(context.Background(), identity, lockSettings{maxRetries: 0}, ops)
+	if guard != nil || !errors.Is(err, ownerCloseErr) {
+		t.Fatalf("acquire after owner close/path replacement = (%v, %v), want no Guard and close error", guard, err)
+	}
+	if info, err := os.Stat(lockPath); err != nil || !info.IsDir() {
+		t.Errorf("replacement lock path = (%v, %v), want preserved directory", info, err)
+	}
+	if info, err := os.Stat(replacedPath); err != nil || !info.IsDir() {
+		t.Errorf("original lock path = (%v, %v), want preserved directory", info, err)
+	}
+}
+
 func TestAcquireWritesOwnerWithShortSuccessfulWritesUntilComplete(t *testing.T) {
 	t.Parallel()
 
