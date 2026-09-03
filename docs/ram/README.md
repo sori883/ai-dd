@@ -77,6 +77,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [byte-preserving state transition patcherの実装計画](decisions/2026-09-03-state-transition-patcher-plan.md) | Accepted（薄いライフサイクルマイルストーン内） |
 | 意思決定 | [既存state atomic update writerの実装計画](decisions/2026-09-03-state-update-writer-plan.md) | Accepted（薄いライフサイクルマイルストーン内） |
 | 意思決定 | [最小audit ledgerとrecord lockの実装計画](decisions/2026-09-03-audit-record-lock-plan.md) | Accepted（薄いライフサイクルマイルストーン内） |
+| 意思決定 | [承認ゲート遷移と人間応答監査記録の接続計画](decisions/2026-09-04-approval-gate-receipt-plan.md) | Accepted（薄いライフサイクルPR5、canonical内部API） |
 | 調査 | [既存AI-DLCの配布形式](research/2026-08-29-existing-distribution-format.md) | Current for local v2.6.123 snapshot |
 | 調査 | [共通space読み取りの参照契約](research/2026-08-31-space-reading-contracts.md) | Current for local v2.6.123 snapshot |
 | 調査 | [Space作成の参照契約](research/2026-08-31-space-creation-contracts.md) | Current for local v2.6.123 snapshot（U+0130小文字化の追加調査を含む） |
