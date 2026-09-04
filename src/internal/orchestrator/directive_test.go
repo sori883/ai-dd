@@ -437,6 +437,33 @@ func TestDirectiveStageOwnershipIncludesSensorsAndProducesKinds(t *testing.T) {
 	}
 }
 
+func TestDirectiveRulesInContextOwnership(t *testing.T) {
+	t.Parallel()
+
+	graphStage := directiveStage("intent-capture", "2.1", "ideation")
+	graphStage["rules_in_context"] = []map[string]any{{"path": "/memory/org.md", "scope": "org"}}
+	snapshot := loadDirectiveGraph(t, graphStage)
+	parsed := parseDirectiveState(t, directiveRunningState)
+
+	got, err := ResolveDirective(parsed, snapshot)
+	if err != nil {
+		t.Fatalf("ResolveDirective() error = %v", err)
+	}
+	first, ok := got.Stage()
+	if !ok {
+		t.Fatal("Directive.Stage() reports no stage")
+	}
+	first.RulesInContext[0].Path = "changed"
+
+	second, ok := got.Stage()
+	if !ok {
+		t.Fatal("Directive.Stage() reports no stage on second read")
+	}
+	if got := second.RulesInContext[0].Path; got != "/memory/org.md" {
+		t.Fatalf("Directive.Stage() exposed RulesInContext storage: got %q", got)
+	}
+}
+
 func TestResolveDirectiveRejectsInvalidCompletedState(t *testing.T) {
 	t.Parallel()
 

@@ -32,6 +32,12 @@ type Consume struct {
 	ConditionalOn string `json:"conditional_on"`
 }
 
+// Rule identifies one required rule reference and its declared scope.
+type Rule struct {
+	Path  string
+	Scope string
+}
+
 // Stage is the routing metadata required by the AI-DLC runtime.
 type Stage struct {
 	Slug                string
@@ -54,6 +60,7 @@ type Stage struct {
 	OptionalProduces    []string
 	Consumes            []Consume
 	RequiresStages      []string
+	RulesInContext      []Rule
 }
 
 // Scope contains the routing actions for one scope.
@@ -131,6 +138,7 @@ func Load(dataFS fs.FS) (Snapshot, error) {
 			OptionalProduces:    raw.OptionalProduces,
 			Consumes:            consumeValues(raw.Consumes),
 			RequiresStages:      raw.RequiresStages,
+			RulesInContext:      ruleValues(raw.RulesInContext),
 		})
 		enabledSlugs[raw.Slug] = struct{}{}
 	}
@@ -187,6 +195,8 @@ type stageDocument struct {
 	ConsumesPresent            bool
 	RequiresStages             []string
 	RequiresStagesPresent      bool
+	RulesInContext             []ruleDocument
+	RulesInContextPresent      bool
 }
 
 type consumeDocument struct {
@@ -194,6 +204,12 @@ type consumeDocument struct {
 	ArtifactPresent      bool
 	RequiredPresent      bool
 	ConditionalOnPresent bool
+}
+
+type ruleDocument struct {
+	Rule
+	PathPresent  bool
+	ScopePresent bool
 }
 
 func decodeStageDocuments(data []byte) ([]stageDocument, error) {
@@ -330,6 +346,14 @@ func decodeStageDocument(data []byte) (stageDocument, error) {
 			return stageDocument{}, fmt.Errorf("field %q: %w", "requires_stage", err)
 		}
 	}
+	if raw, exists := fields["rules_in_context"]; exists {
+		stage.RulesInContextPresent = true
+		var err error
+		stage.RulesInContext, err = decodeRulesInContext(raw)
+		if err != nil {
+			return stageDocument{}, fmt.Errorf("field %q: %w", "rules_in_context", err)
+		}
+	}
 	return stage, nil
 }
 
@@ -355,6 +379,65 @@ func decodeStringArray(data json.RawMessage) ([]string, error) {
 		}
 	}
 	return values, nil
+}
+
+func decodeRulesInContext(data json.RawMessage) ([]ruleDocument, error) {
+	if isJSONNull(data) {
+		return nil, errors.New("must be an array")
+	}
+
+	var rawRules []json.RawMessage
+	if err := json.Unmarshal(data, &rawRules); err != nil {
+		return nil, err
+	}
+	if rawRules == nil {
+		return nil, errors.New("must be an array")
+	}
+
+	rules := make([]ruleDocument, len(rawRules))
+	for index, rawRule := range rawRules {
+		rule, err := decodeRuleDocument(rawRule)
+		if err != nil {
+			return nil, fmt.Errorf("item %d: %w", index, err)
+		}
+		rules[index] = rule
+	}
+	return rules, nil
+}
+
+func decodeRuleDocument(data json.RawMessage) (ruleDocument, error) {
+	if isJSONNull(data) {
+		return ruleDocument{}, errors.New("must be an object")
+	}
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return ruleDocument{}, err
+	}
+	if fields == nil {
+		return ruleDocument{}, errors.New("must be an object")
+	}
+
+	var rule ruleDocument
+	if raw, exists := fields["path"]; exists {
+		rule.PathPresent = true
+		if isJSONNull(raw) {
+			return ruleDocument{}, errors.New(`field "path" must be a string`)
+		}
+		if err := json.Unmarshal(raw, &rule.Path); err != nil {
+			return ruleDocument{}, fmt.Errorf("field %q: %w", "path", err)
+		}
+	}
+	if raw, exists := fields["scope"]; exists {
+		rule.ScopePresent = true
+		if isJSONNull(raw) {
+			return ruleDocument{}, errors.New(`field "scope" must be a string`)
+		}
+		if err := json.Unmarshal(raw, &rule.Scope); err != nil {
+			return ruleDocument{}, fmt.Errorf("field %q: %w", "scope", err)
+		}
+	}
+	return rule, nil
 }
 
 func decodeStringArrayMap(data json.RawMessage) (map[string][]string, error) {
@@ -464,6 +547,17 @@ func consumeValues(documents []consumeDocument) []Consume {
 	return consumes
 }
 
+func ruleValues(documents []ruleDocument) []Rule {
+	if documents == nil {
+		return nil
+	}
+	rules := make([]Rule, len(documents))
+	for index, document := range documents {
+		rules[index] = document.Rule
+	}
+	return rules
+}
+
 func validateStageDocuments(stages []stageDocument) error {
 	if stages == nil {
 		return errors.New("top-level array is required")
@@ -500,6 +594,19 @@ func validateStageDocuments(stages []stageDocument) error {
 		}
 		if !stage.RequiresStagesPresent || stage.RequiresStages == nil {
 			return fmt.Errorf("stage %d: requires_stage array is required", index)
+		}
+		if stage.RulesInContextPresent {
+			for ruleIndex, rule := range stage.RulesInContext {
+				if !rule.PathPresent || rule.Path == "" {
+					return fmt.Errorf("stage %d: rules_in_context[%d].path is required", index, ruleIndex)
+				}
+				if !rule.ScopePresent || rule.Scope == "" {
+					return fmt.Errorf("stage %d: rules_in_context[%d].scope is required", index, ruleIndex)
+				}
+				if !validRuleScope(rule.Scope) {
+					return fmt.Errorf("stage %d: rules_in_context[%d].scope %q is invalid", index, ruleIndex, rule.Scope)
+				}
+			}
 		}
 		if stage.Execution != "ALWAYS" && stage.Execution != "CONDITIONAL" {
 			return fmt.Errorf("stage %d: execution %q is invalid", index, stage.Execution)
@@ -551,6 +658,15 @@ func validateStageDocuments(stages []stageDocument) error {
 		}
 	}
 	return nil
+}
+
+func validRuleScope(scope string) bool {
+	switch scope {
+	case "org", "team", "project", "phase":
+		return true
+	default:
+		return false
+	}
 }
 
 var validStageModes = map[string]bool{
@@ -698,6 +814,7 @@ func (s Snapshot) Stages() []Stage {
 		stage.OptionalProduces = slices.Clone(stage.OptionalProduces)
 		stage.Consumes = slices.Clone(stage.Consumes)
 		stage.RequiresStages = slices.Clone(stage.RequiresStages)
+		stage.RulesInContext = slices.Clone(stage.RulesInContext)
 		stages[index] = stage
 	}
 	return stages

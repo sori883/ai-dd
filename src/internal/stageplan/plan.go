@@ -242,6 +242,7 @@ func cloneStage(stage graph.Stage) graph.Stage {
 	stage.OptionalProduces = slices.Clone(stage.OptionalProduces)
 	stage.Consumes = slices.Clone(stage.Consumes)
 	stage.RequiresStages = slices.Clone(stage.RequiresStages)
+	stage.RulesInContext = slices.Clone(stage.RulesInContext)
 	return stage
 }
 

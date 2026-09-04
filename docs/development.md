@@ -75,6 +75,29 @@ integration fixtureは通常file、Root内相対symlink、Root外symlink、reade
 Windowsでsymlink作成がpermission・privilege・unsupportedの理由だけで利用できない場合は、そのケースだけを
 理由付きでskipします。複数Markdownの同時編集に対する原子的snapshot、mount/deviceを含む完全sandboxは保証しません。
 
+`steering.ResolveRulePaths(projectDir, activeSpace, rulesDir, refs)`は、graphの`rules_in_context`をactive Spaceの表示pathと
+Project/Memory別のFS相対読込pathへ純粋に解決します。`projectDir`は絶対path、active Spaceは1 componentとして先に検証し、
+rulesDirは空なら`project/aidlc/spaces/<activeSpace>/memory`、相対ならproject基準、絶対なら指定値を使います。参照中の最初の
+`/memory/`より後をMemory root相対pathへ割り当て、markerのない参照はProject root相対pathとして保持します。resolverはFS、
+環境変数、cwd、Rootのopen/Closeを行いません。
+`rulesDir`に明示された相対`../`は配置rootとして許可しますが、graph由来のFS相対`ReadPath`の`../`は拒否します。
+生成した表示pathと読込pathも返却前にEntry検証へ通します。
+Windowsのdrive-relativeやdriveなしroot-relativeな`rulesDir`はproject基準へ解釈し直さず拒否します。
+active Spaceと表示用`Path`はnative検証でPOSIXのliteral backslashを保持しますが、graph由来の参照pathと
+FS相対`ReadPath`は既存`validateRulePath`のbackslash拒否を維持します。
+
+`steering.ReadResolvedRules(projectFS, memoryFS, entries)`は、全EntryをI/O前に検証してからdisplay pathのfirst-winsを適用し、
+実際に使うFSだけをnil/typed-nil検査して既存`ReadRules`へ委譲します。未使用FSのnilは許可し、template除外後もEntryごとの
+display pathを保持します。readerはcaller-ownedな`os.Root.FS()`をcloseせず、読取error・不正UTF-8では表示pathと原因を残して
+結果全体を破棄します。graph、stageplan、orchestratorのStage返却値は`RulesInContext`のsliceを複製します。
+
+このIssueの単体・統合確認は次で行います。
+
+```sh
+GOTOOLCHAIN=go1.26.8 go test -count=1 -run 'TestResolveRulePaths|TestReadResolvedRules' ./src/internal/steering
+GOTOOLCHAIN=go1.26.8 go test -tags=integration -count=1 -run '^TestReadResolvedRules' ./src/internal/steering
+```
+
 ### Workspaceのspace・intent readerと接続
 
 内部readerの単体テストと、実filesystemでの統合テストを分けて実行します。
@@ -414,6 +437,11 @@ stage field名は大小文字を含めた完全一致で解釈します。`Scope
 `.codex/scopes/*.md`から取得する将来consumerの責務です。
 完了判定で参照する`for_each`、`workspace_requires`、`reviewer`、`summary_confirmation`、`sensors`、
 `produces_kinds`もStage metadataとして保持し、型不正とsummary policyの未知値はLoad errorにします。
+
+任意の`rules_in_context`は必須ルールの`path`とscope（`org`、`team`、`project`、`phase`）をJSON記述順と重複を
+保ったまま保持します。省略はnil、明示した空配列はnon-nil空配列です。`Snapshot.Stages`、stageplan、orchestratorの
+Stage返却値はこのsliceを複製します。配置先への解決と本文読込は`steering.ResolveRulePaths`および
+`steering.ReadResolvedRules`が担当し、graphはphaseからの補完や並べ替えを行いません。
 
 gridのread errorとJSON構文errorはfallbackするため、その成功結果だけで「dataが存在する」と
 「読めない」を区別できません。一方、構文上validな構造不正はerrorです。供給`fs.FS`自体のsandbox、
