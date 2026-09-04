@@ -2,6 +2,7 @@ package knowledge_test
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -110,6 +111,159 @@ func TestBuildRosterPathBudgetExactBoundary(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBuildRosterWarningBudgetExactBoundary(t *testing.T) {
+	const maxJSONWarningBytes = 6144
+
+	summaryOne := budgetWarningWire{
+		raw:  "Warning: 1 additional optional persona/knowledge warning(s) were omitted from this directive. Inspect the configured context directories and repair missing, unreadable, or invalid UTF-8 files.",
+		wire: `"Warning: 1 additional optional persona/knowledge warning(s) were omitted from this directive. Inspect the configured context directories and repair missing, unreadable, or invalid UTF-8 files."`,
+	}
+	summaryTwo := budgetWarningWire{
+		raw:  "Warning: 2 additional optional persona/knowledge warning(s) were omitted from this directive. Inspect the configured context directories and repair missing, unreadable, or invalid UTF-8 files.",
+		wire: `"Warning: 2 additional optional persona/knowledge warning(s) were omitted from this directive. Inspect the configured context directories and repair missing, unreadable, or invalid UTF-8 files."`,
+	}
+	base := warningBudgetFixtureFor(0)
+	exactPadding := maxJSONWarningBytes - explicitJSONWarningArraySize(base.first)
+	if exactPadding < 0 {
+		t.Fatalf("warning base exceeds test budget: padding=%d", exactPadding)
+	}
+	reservedPadding := maxJSONWarningBytes - explicitJSONWarningArraySize(base.first, summaryOne)
+	if reservedPadding < 0 {
+		t.Fatalf("warning base and summary exceed test budget: padding=%d", reservedPadding)
+	}
+
+	exact := warningBudgetFixtureFor(exactPadding)
+	reserved := warningBudgetFixtureFor(reservedPadding)
+	over := warningBudgetFixtureFor(reservedPadding + 1)
+	singleOver := warningBudgetFixtureFor(exactPadding + 1)
+	tests := []struct {
+		name             string
+		fixture          warningBudgetFixture
+		fileCount        int
+		boundaryWarnings []budgetWarningWire
+		expectedBytes    int
+		wantWarnings     []string
+	}{
+		{
+			name:             "exact cap retains all warnings",
+			fixture:          exact,
+			fileCount:        1,
+			boundaryWarnings: []budgetWarningWire{exact.first},
+			expectedBytes:    maxJSONWarningBytes,
+			wantWarnings:     []string{exact.first.raw},
+		},
+		{
+			name:             "reserved summary fits exactly",
+			fixture:          reserved,
+			fileCount:        2,
+			boundaryWarnings: []budgetWarningWire{reserved.first, summaryOne},
+			expectedBytes:    maxJSONWarningBytes,
+			wantWarnings:     []string{reserved.first.raw, summaryOne.raw},
+		},
+		{
+			name:             "reserved summary over cap keeps summary only",
+			fixture:          over,
+			fileCount:        2,
+			boundaryWarnings: []budgetWarningWire{over.first, summaryOne},
+			expectedBytes:    maxJSONWarningBytes + 1,
+			wantWarnings:     []string{summaryTwo.raw},
+		},
+		{
+			name:             "single warning over cap keeps summary only",
+			fixture:          singleOver,
+			fileCount:        1,
+			boundaryWarnings: []budgetWarningWire{singleOver.first},
+			expectedBytes:    maxJSONWarningBytes + 1,
+			wantWarnings:     []string{summaryOne.raw},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := explicitJSONWarningArraySize(tt.boundaryWarnings...); got != tt.expectedBytes {
+				t.Fatalf("independent JSON warning wire size = %d, want %d", got, tt.expectedBytes)
+			}
+
+			got, err := knowledge.BuildRoster(warningBudgetInput(tt.fixture, tt.fileCount))
+			if err != nil {
+				t.Fatalf("BuildRoster() error = %v, want nil", err)
+			}
+			wantPaths := []string{tt.fixture.displayPrefix + "/agents/lead.md"}
+			if !reflect.DeepEqual(got.Paths, wantPaths) {
+				t.Errorf("BuildRoster() paths = %#v, want %#v", got.Paths, wantPaths)
+			}
+			if !reflect.DeepEqual(got.Warnings, tt.wantWarnings) {
+				t.Errorf("BuildRoster() warnings = %#v, want %#v", got.Warnings, tt.wantWarnings)
+			}
+		})
+	}
+}
+
+type budgetWarningWire struct {
+	raw  string
+	wire string
+}
+
+type warningBudgetFixture struct {
+	displayPrefix string
+	first         budgetWarningWire
+	second        budgetWarningWire
+}
+
+func warningBudgetFixtureFor(padding int) warningBudgetFixture {
+	paddingValue := strings.Repeat("p", padding)
+	displayPrefix := "display-" + specialBudgetRawPrefix + paddingValue
+	displayWirePrefix := "display-" + specialBudgetWirePrefix + paddingValue
+	return warningBudgetFixture{
+		displayPrefix: displayPrefix,
+		first:         warningBudgetWarning(displayPrefix, displayWirePrefix, "a.md", "first"),
+		second:        warningBudgetWarning(displayPrefix, displayWirePrefix, "b.md", "second"),
+	}
+}
+
+func warningBudgetWarning(displayPrefix, displayWirePrefix, name, reason string) budgetWarningWire {
+	const relative = "/knowledge/aidlc-shared/"
+	return budgetWarningWire{
+		raw:  `Warning: optional persona/knowledge file "` + displayPrefix + relative + name + `" is unreadable or invalid UTF-8 (` + reason + `). Fix the file, encoding, or permissions; this stage will continue without that context.`,
+		wire: `"Warning: optional persona/knowledge file \"` + displayWirePrefix + relative + name + `\" is unreadable or invalid UTF-8 (` + reason + `). Fix the file, encoding, or permissions; this stage will continue without that context."`,
+	}
+}
+
+func warningBudgetInput(fixture warningBudgetFixture, fileCount int) knowledge.RosterInput {
+	files := fstest.MapFS{
+		"agents/lead.md": {Data: []byte("lead")},
+	}
+	failures := map[string]error{}
+	entries := []struct {
+		name   string
+		reason string
+	}{
+		{name: "a.md", reason: "first"},
+		{name: "b.md", reason: "second"},
+	}
+	for _, entry := range entries[:fileCount] {
+		relative := "knowledge/aidlc-shared/" + entry.name
+		files[relative] = &fstest.MapFile{Data: []byte(entry.name)}
+		failures[relative] = errors.New(entry.reason)
+	}
+	return knowledge.RosterInput{
+		Stage: graph.Stage{Mode: "inline", LeadAgent: "lead"},
+		Framework: knowledge.Source{
+			FS:            &readErrorFS{base: files, fail: failures},
+			DisplayPrefix: fixture.displayPrefix,
+		},
+		FrameworkDir: "/project/.codex",
+	}
+}
+
+func explicitJSONWarningArraySize(warnings ...budgetWarningWire) int {
+	wireValues := make([]string, 0, len(warnings))
+	for _, warning := range warnings {
+		wireValues = append(wireValues, warning.wire)
+	}
+	return len([]byte("[" + strings.Join(wireValues, ",") + "]"))
 }
 
 type budgetPathWire struct {
