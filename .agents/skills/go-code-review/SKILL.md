@@ -17,6 +17,7 @@ Require a resolvable base and head, the authorized plan, its direct-approval or 
 2. Review the diff before relying on the implementer's self-assessment.
 3. Prioritize correctness, regressions, data loss, security, error handling, cancellation, goroutine lifecycle, races, API compatibility, and test validity.
 4. Check that changed observable behavior has a regression test and that the test would fail against the broken or pre-change behavior. Tests do not validate themselves.
+   For Go changes using the phase handoff, read [the phase contract](../../../docs/tdd-handoff.md). Verify separate RED/GREEN returns, the parent's targeted rerun and fresh acceptance, unchanged accepted tests, and one-behavior scope. Do not accept an implementer's self-issued acceptance or manufactured RED. Distinguish a real test gap from the irrecoverable absence of historical test-first evidence; report either without inventing a history.
 5. Run safe targeted tests or diagnostics when they materially confirm a finding. Distinguish verified failures from reasoned risks.
 6. Ignore personal style preferences unless they obscure a defect or violate an applicable repository rule.
 

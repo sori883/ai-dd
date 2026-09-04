@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | `project_planner` | ユーザー要件、リポジトリ、調査報告 | 許可判定可能な実装計画 | read-only |
 | `technical_researcher` | 明確な調査質問、対象version、制約 | 一次資料に基づく判断材料 | read-only |
-| `go_tdd_implementer` | 実装許可のある計画、Issue、受入条件 | Red-Green-Refactorの実装と検証証拠 | workspace-write |
+| `go_tdd_implementer` | 実装許可のある計画、Issue、1振る舞い・1phase | 当該REDまたはGREENの終了結果と証拠 | workspace-write |
 | `independent_reviewer` | base/head、計画、Issue、差分 | 優先度付きfindingと残余リスク | read-only |
 
 各agentは同名の役割skillを明示的に使用する。Go担当は追加で `golang-how-to` を読み、タスクに必要なGo skillsだけを選ぶ。
@@ -34,7 +34,8 @@
 3. 適用するRAM、仕様、skill、`AGENTS.md`への参照。
 4. 既に確定した制約、未解決事項、外部依存の承認状態。
 5. 書き込みの所有権と、同じ作業ツリーに他の作業者がいる場合の注意。
-6. 実装・reviewの場合は `verification_mode` と必要な検証範囲。
+6. 実装・reviewの場合は `verification_mode` と必要な検証範囲。Goのloopはさらに1件の`slice_id`と
+   `tdd_phase`、phase別対象file、正確なtargeted command。GREENは親のRED受入証拠も渡す。
 
 サブエージェントはhandoffに列挙された参照先から必要な箇所だけを読み、親は長いファイル本文やコマンド
 出力を依頼文へ重複掲載しない。最近の会話を継承する正の `fork_turns`、または全文を継承する
@@ -54,6 +55,10 @@ reviewerは明示された`review`だけ、implementerは`loop`または親が�
 個々のTDD sliceやreview finding修正の完了を、`final`の開始条件と解釈しない。`final`は親エージェント
 だけが明示的に開始し、必要な場合は実行自体をimplementerへ委譲できる。
 
+Goのloopは[段階別handoff](tdd-handoff.md)に従い、REDとGREENを別依頼にする。phaseがない場合は
+全loopを実行せず停止する。担当は各phaseの最終応答で終了し、親が差分と同じtargeted testを
+再確認してから次を発行する。中間連絡の有無に依存せず、担当が実行中の次phase予約は禁止する。
+
 Go codeの`gofmt`適用は実装変更として`loop`中かつreview前に完了させ、適用後のtargeted testを確認する。
 固定headのreview後に行う`final`はread-onlyとし、`gofmt -l`等でformatを確認するだけでファイルを変更しない。
 
@@ -67,7 +72,10 @@ Go codeの`gofmt`適用は実装変更として`loop`中かつreview前に完了
    ユーザーへ提示して承認を待つ。
 5. 親エージェントが `github-pr-workflow` skillを使い、主要な成果に対応する分類ラベルを
    1つ付けて日本語のGitHub Issueを作成し、番号、計画、実装許可の根拠を `go_tdd_implementer` に渡す。
-6. 実装担当が`loop`で1 behaviorずつREDを観測し、最小GREEN、GREEN上のrefactorを繰り返す。
+6. 親が`loop`のREDを1 behaviorだけ依頼し、担当はtest作成・失敗確認で終了する。親は差分と同じ
+   targeted testの失敗を再確認し、snapshot付きRED受入を添えたGREENを別依頼で発行する。
+   担当はその1件の最小実装・GREEN上のrefactor・targeted確認で終了する。親の成功再確認後だけ
+   次のsliceへ進む。初回GREENやcompile failureを実装前REDと偽らない。
 7. `independent_reviewer` が`review`で固定したbase/headを読み取り専用でレビューする。
 8. P0/P1、受入条件違反、またはblockingなテスト不足を実装担当へ`loop`で戻す。修正中はtargeted test、
    再reviewも`review`のtargeted確認に留める。
@@ -137,6 +145,9 @@ targeted検証、final検証、リスク、未決事項、実装許可の根拠�
 コマンド証拠、変更ファイル、refactor、残余リスクを返し、`final`では全検証のfresh evidenceを返す。
 レビューは、severity、file/line、発生条件、影響、根拠、最小修正と、`final`へ進めるかを返す。
 handoffは上記のコンテキスト予算に従い、会話履歴の代わりに永続資料への具体的な参照を渡す。
+
+Goのloopで必要な入力・RED受入・freshness・終了statusは[段階別handoff](tdd-handoff.md)を正本とする。
+親と実装担当は最初のloop依頼前に同文書を読み、final検証とphaseの役割を混同しない。
 
 ## 検証
 
