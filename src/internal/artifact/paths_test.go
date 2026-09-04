@@ -281,6 +281,20 @@ func TestResolvePathsRejectsInvalidMetadataOrUnsupportedPlacement(t *testing.T) 
 			wantErr:     artifact.ErrInvalidMetadata,
 		},
 		{
+			name: "mixed-case conditional on is not canonical",
+			stage: graph.Stage{
+				Phase: "inception",
+				Slug:  "requirements-analysis",
+				Consumes: []graph.Consume{{
+					Artifact:      "conditional-artifact",
+					Required:      true,
+					ConditionalOn: "Brownfield",
+				}},
+			},
+			projectType: "brownfield",
+			wantErr:     artifact.ErrInvalidMetadata,
+		},
+		{
 			name:    "invalid selected producer phase",
 			stage:   consumerStage(invalidProducerPhaseCatalog),
 			catalog: invalidProducerPhaseCatalog,

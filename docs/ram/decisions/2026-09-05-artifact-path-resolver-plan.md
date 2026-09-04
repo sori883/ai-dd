@@ -158,5 +158,8 @@ cross compileは各OS上の実行証拠とはしない。final後に対象file�
   current／選択producerの事前検証とerror時zero `Paths{}`をGREENにした。
 - `artifact-result-ownership`: current Stage、catalog、1回目と2回目の返却値の独立性testを追加し、
   production変更なしの`ALREADY_GREEN`として受理した。
+- 独立reviewで、`ConditionalOn`までcase-insensitiveに受理していた計画違反を検出した。mixed-case metadataで
+  REDを固定し、生値をexactな空・`brownfield`・`greenfield`だけに制限してGREENにした。project typeの
+  case-insensitive比較は維持した。
 
 各GREEN／`ALREADY_GREEN`後に親エージェントがexact targeted commandと対象file hashを再確認した。

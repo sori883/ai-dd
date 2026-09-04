@@ -95,8 +95,7 @@ func validateResolvePathsMetadata(stage graph.Stage) error {
 		if !artifactNamePattern.MatchString(consume.Artifact) {
 			return fmt.Errorf("resolve paths: invalid consumes[%d].artifact %q: %w", index, consume.Artifact, ErrInvalidMetadata)
 		}
-		conditionalProjectType := strings.ToLower(consume.ConditionalOn)
-		if conditionalProjectType != "" && conditionalProjectType != "brownfield" && conditionalProjectType != "greenfield" {
+		if consume.ConditionalOn != "" && consume.ConditionalOn != "brownfield" && consume.ConditionalOn != "greenfield" {
 			return fmt.Errorf("resolve paths: invalid consumes[%d].conditional_on %q: %w", index, consume.ConditionalOn, ErrInvalidMetadata)
 		}
 	}
