@@ -69,4 +69,3 @@ locale未指定の `localeCompare` で並べる。固定snapshot内ではBun・I
 既存Nextのread-only、人間承認、未対応工程のfail-closed、標準ライブラリ優先、
 単独writer・独立review・read-only final・現在headのCI成功という境界は維持する。
 この記録は供給全体の実装完了を意味しない。
-
