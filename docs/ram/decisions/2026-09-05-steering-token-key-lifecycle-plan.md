@@ -92,7 +92,7 @@ key fileは次の1行だけである。
   invalid UTF-8、空、短い／長いkeyを拒否する。
 - 既存keyをchmod、rotate、cacheせず、呼出し間の正当なfile差替えは次回readへ反映する。
 - 返却`[]byte`はcaller所有で、production package globalへ保持しない。
-- corrupt／nonregular／root外symlink、short write、read／write／Close errorではzero keyとerrorを返す。
+- corrupt／nonregular／root内外のsymlink、short write、read／write／Close errorではzero keyとerrorを返す。
 
 native filesystemの失敗を再現するprivate helperには、production公開interfaceやmutable globalを追加せず、具体的な
 private operation集合を引数として渡す。通常APIは実operationを直接選ぶ。
@@ -192,10 +192,13 @@ Issue #107では、Go標準libraryとcaller-owned `os.Root`だけで計画した
 - random、open、stat、read、short write、write、Close、winner再読込、state inspection、session mkdirの
   14 failure caseを注入するため、全既存testがGREENの状態でprivate operations structへ挙動不変refactorした。
   failure testは追加実装なしで`ALREADY_GREEN`だった。
-- nil Root、state／keyのdirectory・in-root／root外symlink、session key symlinkの8安全境界と、darwin／linuxの
+- nil Root、state／keyのdirectory・in-root／root外symlinkを含む10安全境界と、darwin／linuxの
   record／session新規file `0600`も`ALREADY_GREEN`だった。
 - session pathはcallerのproject Rootに対する固定root-relative pathだけで安全に表現できたため、計画時に想定した
   追加child Rootを開かず、close対象を増やさない実装詳細へ整理した。固定本家の正常配置のpathと結果は変えない。
+- 独立reviewで、`os.Root.OpenFile`がroot内symlinkを追い、targetがregularなら既存descriptor検査だけでは受理する
+  不足を検出した。record／sessionのkey leafから同じroot内のvalid key fileを指す回帰testをREDにし、Open前の
+  `Lstat`で全symlink／nonregular leafを拒否するGREENへ修正した。descriptorのregular検査も維持する。
 
 key APIは既存HMAC codecへ渡せるが、active-directive cursorとpublication transactionはまだ接続していない。
 same-token exactly-once、canonical run-stage composition、public `next`／`continue`、Codex受領E2Eは後続Issueの責務である。

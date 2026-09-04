@@ -250,6 +250,13 @@ func TestReadOrCreateContinuationKeyIntegrationRejectsUnsafeLeaf(t *testing.T) {
 			},
 		},
 		{
+			name:      "record key in-root relative symlink",
+			useRecord: true,
+			setup: func(f *unsafeContinuationKeyFixture) {
+				f.createInRootRecordKeySymlink(t)
+			},
+		},
+		{
 			name:        "session key root-out symlink",
 			sessionLeaf: true,
 			setup: func(f *unsafeContinuationKeyFixture) {
@@ -259,6 +266,13 @@ func TestReadOrCreateContinuationKeyIntegrationRejectsUnsafeLeaf(t *testing.T) {
 				if err := os.Symlink(f.outsidePath, f.sessionKeyPath); err != nil {
 					t.Skipf("symlink unsupported: %v", err)
 				}
+			},
+		},
+		{
+			name:        "session key in-root relative symlink",
+			sessionLeaf: true,
+			setup: func(f *unsafeContinuationKeyFixture) {
+				f.createInRootSessionKeySymlink(t)
 			},
 		},
 	}
@@ -317,6 +331,29 @@ func TestReadOrCreateContinuationKeyIntegrationRejectsUnsafeLeaf(t *testing.T) {
 			if got := outsideInfo.Mode().Perm(); got != fixture.outsideMode {
 				t.Errorf("outside sentinel mode = %o, want %o", got, fixture.outsideMode)
 			}
+			if fixture.targetPath != "" {
+				targetBytes, err := os.ReadFile(fixture.targetPath)
+				if err != nil {
+					t.Fatalf("read in-root target: %v", err)
+				}
+				if !bytes.Equal(targetBytes, fixture.targetBytes) {
+					t.Errorf("in-root target = %q, want %q", targetBytes, fixture.targetBytes)
+				}
+				targetInfo, err := os.Stat(fixture.targetPath)
+				if err != nil {
+					t.Fatalf("stat in-root target: %v", err)
+				}
+				if got := targetInfo.Mode().Perm(); got != fixture.targetMode {
+					t.Errorf("in-root target mode = %o, want %o", got, fixture.targetMode)
+				}
+				leafInfo, err := os.Lstat(fixture.targetLeafPath)
+				if err != nil {
+					t.Fatalf("lstat in-root key leaf: %v", err)
+				}
+				if leafInfo.Mode()&os.ModeSymlink == 0 {
+					t.Errorf("in-root key leaf mode = %v, want symlink", leafInfo.Mode())
+				}
+			}
 
 			if test.sessionLeaf {
 				keyInfo, err := os.Lstat(fixture.sessionKeyPath)
@@ -328,6 +365,11 @@ func TestReadOrCreateContinuationKeyIntegrationRejectsUnsafeLeaf(t *testing.T) {
 				}
 			} else if _, err := os.Lstat(fixture.projectSessionKeyPath); !errors.Is(err, os.ErrNotExist) {
 				t.Errorf("project session key stat error = %v, want os.ErrNotExist", err)
+			}
+			if !test.useRecord {
+				if _, err := os.Lstat(fixture.recordKeyPath); !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("record key stat error = %v, want os.ErrNotExist", err)
+				}
 			}
 			if _, err := fixture.projectRoot.Stat("."); err != nil {
 				t.Errorf("project root unavailable after call: %v", err)
@@ -348,6 +390,10 @@ type unsafeContinuationKeyFixture struct {
 	recordKeyPath         string
 	projectSessionKeyPath string
 	sessionKeyPath        string
+	targetPath            string
+	targetLeafPath        string
+	targetBytes           []byte
+	targetMode            os.FileMode
 	outsidePath           string
 	outsideBytes          []byte
 	outsideMode           os.FileMode
@@ -424,6 +470,45 @@ func (f *unsafeContinuationKeyFixture) replaceState(t *testing.T) {
 	t.Helper()
 	if err := os.Remove(f.statePath); err != nil {
 		t.Fatalf("remove regular state file: %v", err)
+	}
+}
+
+func (f *unsafeContinuationKeyFixture) createInRootRecordKeySymlink(t *testing.T) {
+	t.Helper()
+	f.targetPath = filepath.Join(f.recordPath, "record-target-key")
+	f.targetLeafPath = f.recordKeyPath
+	f.targetBytes = []byte(base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x73}, 32)) + "\n")
+	if err := os.WriteFile(f.targetPath, f.targetBytes, 0o640); err != nil {
+		t.Fatalf("create in-root record key target: %v", err)
+	}
+	targetInfo, err := os.Stat(f.targetPath)
+	if err != nil {
+		t.Fatalf("stat in-root record key target: %v", err)
+	}
+	f.targetMode = targetInfo.Mode().Perm()
+	if err := os.Symlink(filepath.Base(f.targetPath), f.recordKeyPath); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+}
+
+func (f *unsafeContinuationKeyFixture) createInRootSessionKeySymlink(t *testing.T) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(f.sessionKeyPath), 0o755); err != nil {
+		t.Fatalf("create session directory: %v", err)
+	}
+	f.targetPath = filepath.Join(filepath.Dir(f.sessionKeyPath), "session-target-key")
+	f.targetLeafPath = f.sessionKeyPath
+	f.targetBytes = []byte(base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x74}, 32)) + "\n")
+	if err := os.WriteFile(f.targetPath, f.targetBytes, 0o640); err != nil {
+		t.Fatalf("create in-root session key target: %v", err)
+	}
+	targetInfo, err := os.Stat(f.targetPath)
+	if err != nil {
+		t.Fatalf("stat in-root session key target: %v", err)
+	}
+	f.targetMode = targetInfo.Mode().Perm()
+	if err := os.Symlink(filepath.Base(f.targetPath), f.sessionKeyPath); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
 	}
 }
 

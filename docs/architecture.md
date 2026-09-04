@@ -215,7 +215,7 @@ escapeを検証します。canonical発行では`z`を常にbooleanで含め、d
 `aidlc/.aidlc-sessions/.aidlc-steering-token-key`を選びます。既存fileはsingle descriptorで4 KiBまで毎回読み、
 ECMAScript whitespaceをtrimしたcanonical unpadded base64urlがexact 32 bytesの場合だけ返します。初回は
 `crypto/rand.Reader`の32 bytesを`O_EXCL`、`0600`で保存し、同時作成のloserはwinner fileを1回再読込します。
-破損、nonregular／root外link、random／read／write／Close errorではkeyを返さず、既存fileをrotate、chmod、
+破損、nonregular leaf、root内外のsymlink、random／read／write／Close errorではkeyを返さず、既存fileをrotate、chmod、
 修復、cacheしません。caller所有RootもCloseしません。詳細は[key lifecycleの実装計画](ram/decisions/2026-09-05-steering-token-key-lifecycle-plan.md)
 を参照してください。
 

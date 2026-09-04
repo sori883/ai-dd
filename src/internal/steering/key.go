@@ -90,6 +90,17 @@ func readOrCreateContinuationKey(projectRoot *os.Root, recordRoot *os.Root, ops 
 }
 
 func readContinuationKey(root *os.Root, path string, ops continuationKeyOps) ([]byte, bool, error) {
+	pathInfo, err := ops.lstat(root, path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, false, nil
+		}
+		return nil, true, fmt.Errorf("inspect continuation key file: %w: %w", ErrInvalidContinuationKeyFile, err)
+	}
+	if pathInfo == nil || pathInfo.Mode()&fs.ModeSymlink != 0 || !pathInfo.Mode().IsRegular() {
+		return nil, true, fmt.Errorf("continuation key file is not a regular non-symlink: %w", ErrInvalidContinuationKeyFile)
+	}
+
 	keyFile, err := ops.openFile(root, path, os.O_RDONLY, 0)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
