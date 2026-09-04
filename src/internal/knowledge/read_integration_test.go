@@ -5,6 +5,7 @@ package knowledge_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -67,6 +68,126 @@ func TestBuildRosterIntegrationReadsBorrowedRootsAndFreshEdits(t *testing.T) {
 	}
 	if err := file.Close(); err != nil {
 		t.Errorf("close post-read file: %v", err)
+	}
+}
+
+func TestBuildRosterIntegrationRefreshesJapaneseSpaceKnowledge(t *testing.T) {
+	project := t.TempDir()
+	frameworkDir := filepath.Join(project, ".codex")
+	spaceDir := filepath.Join(project, "aidlc", "spaces", "日本語space", "knowledge")
+	frameworkSharedDir := filepath.Join(frameworkDir, "knowledge", "aidlc-shared")
+	spaceSharedDir := filepath.Join(spaceDir, "aidlc-shared")
+	if err := os.MkdirAll(filepath.Join(frameworkDir, "agents"), 0o700); err != nil {
+		t.Fatalf("create framework agents directory: %v", err)
+	}
+	if err := os.MkdirAll(frameworkSharedDir, 0o700); err != nil {
+		t.Fatalf("create framework shared directory: %v", err)
+	}
+	if err := os.MkdirAll(spaceSharedDir, 0o700); err != nil {
+		t.Fatalf("create space shared directory: %v", err)
+	}
+	writeKnowledgeFile(t, filepath.Join(frameworkDir, "agents", "lead.md"), "リードペルソナ")
+	writeKnowledgeFile(t, filepath.Join(frameworkSharedDir, "a-日本語.md"), "フレームワーク初回")
+	writeKnowledgeFile(t, filepath.Join(frameworkSharedDir, "b-消える.md"), "フレームワーク削除対象")
+	writeKnowledgeFile(t, filepath.Join(spaceSharedDir, "a-日本語.md"), "スペース初回")
+	writeKnowledgeFile(t, filepath.Join(spaceSharedDir, "b-消える.md"), "スペース削除対象")
+
+	frameworkRoot, err := os.OpenRoot(frameworkDir)
+	if err != nil {
+		t.Fatalf("framework OpenRoot() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := frameworkRoot.Close(); err != nil {
+			t.Errorf("framework Root.Close() error: %v", err)
+		}
+	})
+	spaceRoot, err := os.OpenRoot(spaceDir)
+	if err != nil {
+		t.Fatalf("space OpenRoot() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := spaceRoot.Close(); err != nil {
+			t.Errorf("space Root.Close() error: %v", err)
+		}
+	})
+
+	input := knowledge.RosterInput{
+		Stage: graph.Stage{Mode: "inline", LeadAgent: "lead"},
+		Framework: knowledge.Source{
+			FS:            frameworkRoot.FS(),
+			DisplayPrefix: ".codex",
+		},
+		FrameworkDir: frameworkDir,
+		SpaceKnowledge: &knowledge.Source{
+			FS:            spaceRoot.FS(),
+			DisplayPrefix: "aidlc/spaces/日本語space/knowledge",
+		},
+	}
+	checkRoster := func(label string, wantPaths, wantWarnings []string) {
+		t.Helper()
+		got, err := knowledge.BuildRoster(input)
+		if err != nil {
+			t.Fatalf("%s BuildRoster() error = %v, want nil", label, err)
+		}
+		if !reflect.DeepEqual(got.Paths, wantPaths) {
+			t.Errorf("%s BuildRoster() paths = %#v, want %#v", label, got.Paths, wantPaths)
+		}
+		if !reflect.DeepEqual(got.Warnings, wantWarnings) {
+			t.Errorf("%s BuildRoster() warnings = %#v, want %#v", label, got.Warnings, wantWarnings)
+		}
+	}
+
+	checkRoster("first", []string{
+		".codex/agents/lead.md",
+		".codex/knowledge/aidlc-shared/a-日本語.md",
+		".codex/knowledge/aidlc-shared/b-消える.md",
+		"aidlc/spaces/日本語space/knowledge/aidlc-shared/a-日本語.md",
+		"aidlc/spaces/日本語space/knowledge/aidlc-shared/b-消える.md",
+	}, []string{})
+
+	writeRootFile(t, frameworkRoot, "knowledge/aidlc-shared/a-日本語.md", string([]byte{0xff}))
+	writeRootFile(t, spaceRoot, "aidlc-shared/a-日本語.md", string([]byte{0xff}))
+	if err := frameworkRoot.Remove("knowledge/aidlc-shared/b-消える.md"); err != nil {
+		t.Fatalf("remove framework knowledge: %v", err)
+	}
+	if err := spaceRoot.Remove("aidlc-shared/b-消える.md"); err != nil {
+		t.Fatalf("remove space knowledge: %v", err)
+	}
+	writeRootFile(t, frameworkRoot, "knowledge/aidlc-shared/c-追加.md", "フレームワーク追加")
+	writeRootFile(t, spaceRoot, "aidlc-shared/c-追加.md", "スペース追加")
+
+	checkRoster("second", []string{
+		".codex/agents/lead.md",
+		".codex/knowledge/aidlc-shared/c-追加.md",
+		"aidlc/spaces/日本語space/knowledge/aidlc-shared/c-追加.md",
+	}, []string{
+		`Warning: optional persona/knowledge file ".codex/knowledge/aidlc-shared/a-日本語.md" is unreadable or invalid UTF-8 (invalid UTF-8). Fix the file, encoding, or permissions; this stage will continue without that context.`,
+		`Warning: optional persona/knowledge file "aidlc/spaces/日本語space/knowledge/aidlc-shared/a-日本語.md" is unreadable or invalid UTF-8 (invalid UTF-8). Fix the file, encoding, or permissions; this stage will continue without that context.`,
+	})
+
+	writeRootFile(t, frameworkRoot, "knowledge/aidlc-shared/a-日本語.md", "フレームワーク復元")
+	writeRootFile(t, spaceRoot, "aidlc-shared/a-日本語.md", "スペース復元")
+	checkRoster("third", []string{
+		".codex/agents/lead.md",
+		".codex/knowledge/aidlc-shared/a-日本語.md",
+		".codex/knowledge/aidlc-shared/c-追加.md",
+		"aidlc/spaces/日本語space/knowledge/aidlc-shared/a-日本語.md",
+		"aidlc/spaces/日本語space/knowledge/aidlc-shared/c-追加.md",
+	}, []string{})
+
+	frameworkFile, err := frameworkRoot.Open("agents/lead.md")
+	if err != nil {
+		t.Fatalf("framework Root.Open() after BuildRoster() error = %v, want borrowed root still open", err)
+	}
+	if err := frameworkFile.Close(); err != nil {
+		t.Errorf("close framework post-read file: %v", err)
+	}
+	spaceFile, err := spaceRoot.Open("aidlc-shared/a-日本語.md")
+	if err != nil {
+		t.Fatalf("space Root.Open() after BuildRoster() error = %v, want borrowed root still open", err)
+	}
+	if err := spaceFile.Close(); err != nil {
+		t.Errorf("close space post-read file: %v", err)
 	}
 }
 
