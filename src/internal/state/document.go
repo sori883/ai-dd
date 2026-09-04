@@ -201,6 +201,22 @@ func NextAction(content []byte) (string, error) {
 	return value, nil
 }
 
+// Depth returns the unique canonical Depth field in Scope Configuration.
+func Depth(content []byte) (string, error) {
+	if _, err := Parse(content); err != nil {
+		return "", fmt.Errorf("read depth: %w", err)
+	}
+	lines, err := canonicalSectionLines(content, "Scope Configuration")
+	if err != nil {
+		return "", fmt.Errorf("read depth: %w", err)
+	}
+	value, err := requiredStringField(lines, "Depth")
+	if err != nil {
+		return "", fmt.Errorf("read depth: %w", err)
+	}
+	return value, nil
+}
+
 // RevisionCount returns the document's canonical revision count.
 func (d Document) RevisionCount() (int, error) { return RevisionCount(d.Content) }
 

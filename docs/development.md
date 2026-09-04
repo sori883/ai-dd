@@ -734,6 +734,15 @@ go test -count=1 -run '^TestState' ./src/internal/state
 Stateのvalue accessorとslice defensive copy、入力byte ownershipを確認します。
 
 ```sh
+GOTOOLCHAIN=go1.26.8 go test -count=1 -run '^TestDepth' ./src/internal/state
+```
+
+`Depth` accessorが、検証済みstateの`Scope Configuration`から一意な値をtrimして取得し、section外decoyを
+無視することを確認します。section／fieldの欠落・重複・空値と、state全体の不正は`fs.ErrInvalid`として
+拒否します。実装許可、TDD記録、fallbackを持たない境界は
+[Depth reader計画](ram/decisions/2026-09-05-state-depth-reader-plan.md)を参照してください。
+
+```sh
 go test -tags=integration -count=1 -run '^TestRead' ./src/internal/state
 ```
 

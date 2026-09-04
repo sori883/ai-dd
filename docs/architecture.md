@@ -1050,6 +1050,12 @@ FIFO、deviceなどの異常はerrorとして返し、error時はzero State/Docu
 Stage rowを`fs.ErrInvalid`として拒否します。先頭BOM最大1個、LF・CRLFの混在、末尾改行なし、64 KiBを超える
 未知追加sectionを扱えます。section順とfield順は固定せず、未知追加section・fieldは無視します。
 
+`state.Depth(content []byte) (string, error)`は、後続の知識選択が保存済みstateの実効Depthを使うための
+optional accessorです。最初に同じ`Parse`を通し、`Scope Configuration` section内の一意な`Depth`をtrimして
+返します。section外の同名fieldは無視し、section／fieldの欠落・重複・空値は`fs.ErrInvalid`として拒否します。
+scope metadataへのfallback、値のcanonicalize、filesystem I/O、state更新は行いません。詳細は
+[Depth reader計画](ram/decisions/2026-09-05-state-depth-reader-plan.md)を参照してください。
+
 typed `State`のfieldは非公開です。value accessorからVersion、Scope、ProjectType、WorkflowStatus、
 LifecyclePhase、CurrentStage、NextStage、Summary、canonical 5件のPhaseProgress、document順のStagesを
 取得できます。StageProgressはSlug、CheckboxMarker、markerから導いたCheckboxState、trim済みraw Suffix、
@@ -1067,7 +1073,9 @@ pending Stageだけを変更する別Issueの責務です。
 重複・malformed・symlink・encodingをこの境界で拒否しません。Goのsection-scoped unique field、Stage section
 限定とmalformed拒否、duplicate slug拒否、regular leaf barrier、invalid UTF-8/CR拒否は、誤ったroutingへ進めない
 ためにIssue #63で明示承認された意図的差分です。固定snapshotの確認範囲と差分表は[参照契約](ram/research/2026-09-03-state-reader-contracts.md)、
-計画・loop証拠は[実装計画](ram/decisions/2026-09-03-state-reader-plan.md)を参照してください。
+計画・loop証拠は[実装計画](ram/decisions/2026-09-03-state-reader-plan.md)を参照してください。固定catalogの
+Depth・artifact path・未対応gate能力の接続境界は
+[知識配信の前提調査](ram/research/2026-09-05-context-delivery-stage-prerequisites.md)に記録しています。
 
 ## aidlc-state.md transition patcher（内部API）
 

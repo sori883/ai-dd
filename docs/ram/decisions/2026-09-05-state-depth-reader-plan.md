@@ -75,7 +75,8 @@ section外の`Depth`は無視する。sectionまたはfieldの欠落・重複・
 4. 既存GREENであれば`ALREADY_GREEN`として記録し、人工的な不具合は入れない。不足があればtest不変の最小GREENを追加する。
 
 各RED/GREENは別依頼とし、親がexact test commandを再実行してtest hash不変を確認する。compile failureは
-behavior REDとして受理しないため、最初のREDでは同じtest file内に一時的なcompile可能stubを置く。
+behavior REDとして受理しないため、最初のREDではproduction fileに一時的なcompile可能stubを置き、
+testは最初から最終APIを呼ぶ。GREENではtestをbyte-for-byte変更せずstubだけを最小実装へ置換する。
 
 loop commandは次に限定する。
 
@@ -96,3 +97,18 @@ blocking findingを解消し差分が安定した後、親がread-onlyの`final`
 
 cross compileは各OS上の実行証拠とはしない。対象変更後はfinal証拠をstaleとしてloopへ戻し、再review後にfinalをやり直す。
 
+## TDD実施記録
+
+2026-09-05、親が開始HEADと所有file hashを固定し、単独Go writerが次を実施した。
+
+1. 正常系testを最終API呼出しの形で追加し、production側のcompile-only stubが空文字を返すREDを確認した。
+   親も同じexact commandを再実行し、`Depth() = "", want "Standard"`のassertion failureを確認した。
+2. test hashを維持したままstubを`Parse`、`canonicalSectionLines`、`requiredStringField`の組合せへ置換し、
+   同じcommandがGREENになった。親も再実行し、test fileがbyte-for-byte不変であることを確認した。
+3. section欠落／重複、Depth欠落／重複／空値、state header破損の6caseを追加した。現実装が全caseで
+   空文字と`fs.ErrInvalid` chainを返したため`ALREADY_GREEN`とし、人工的な不具合は追加しなかった。
+   親も異常系のexact commandを再実行して成功を確認した。
+
+最初はtest側へcompile stubを置いたが、GREEN時のtest immutabilityを満たすため、そのREDを受理する前に
+production側stubへ移して取り直した。受理済みのREDと最終testは同じ期待値・API呼出しであり、
+compile failureやtest変更によってGREENを作っていない。
