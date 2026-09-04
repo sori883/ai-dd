@@ -265,7 +265,7 @@ func TestDepthRejectsInvalidStateOrAmbiguousField(t *testing.T) {
 		},
 		{
 			name:    "invalid state header",
-			content: []byte(strings.Replace(canonicalStateContent(), "# AI-DLC State Tracking", "# Not AI-DLC State Tracking", 1)),
+			content: []byte(strings.Replace(canonical, "# AI-DLC State Tracking", "# Not AI-DLC State Tracking", 1)),
 		},
 	}
 

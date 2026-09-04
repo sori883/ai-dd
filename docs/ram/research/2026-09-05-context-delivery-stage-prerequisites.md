@@ -56,9 +56,8 @@ summary confirmation、reviewer receipt、sensor実行を製品として実装�
 
 - 固定本家 `core/tools/aidlc-orchestrate.ts:2943-3060,3160-3210`
 - 固定本家 `core/tools/aidlc-lib.ts:16479-16488`
-- 固定本家 `core/tools/data/stage-graph.json`（33 Stage）
+- 固定本家 `docs/配布_ai-dlc/.codex/tools/data/stage-graph.json`（33 Stage）
 - Go `src/internal/orchestrator/gate.go:475-526`
 - Go `src/internal/orchestrator/completion.go:63-132`
 - [配置Markdownによる知識供給マイルストーン](../decisions/2026-09-04-file-based-knowledge-delivery.md)
 - [自律実装の包括承認](../decisions/2026-09-05-context-delivery-autonomous-authorization.md)
-
