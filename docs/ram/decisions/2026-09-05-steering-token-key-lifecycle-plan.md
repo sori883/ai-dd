@@ -70,7 +70,8 @@ regular fileとして存在するときだけrecord側を選ぶ。state不存在
 
 stateful key pathはrecord Root相対`.aidlc-steering-token-key`、session key pathはproject Root相対
 `aidlc/.aidlc-sessions/.aidlc-steering-token-key`である。session directoryだけを必要時に`0777 & umask`相当で
-`MkdirAll`し、内部で開いたchild Rootだけを内部でCloseする。
+`MkdirAll`し、callerのproject Rootから固定root-relative pathとして操作する。APIが追加のRootを開かないため、
+caller Root以外にclose対象はない。
 
 ## key file契約とcommit境界
 
@@ -177,3 +178,24 @@ corrupt keyをrotateして途中配信を黙って無効化すること、cursor
 
 正常なrecord／session以外の永続場所、簡略化した独自cursor schema、project path由来key、credential store、外部module、
 追加権限が必要になった場合は停止する。現時点では固定本家と既存Go boundaryから一意に実装できるため、包括承認内で進める。
+
+## 実装記録
+
+Issue #107では、Go標準libraryとcaller-owned `os.Root`だけで計画したkey lifecycleを実装した。
+
+- stateful record生成とstateなしsession fallbackは、それぞれ未実装errorをREDで確認してからGREENにした。
+- 既存key再利用はexclusive createの`EEXIST`をREDで確認し、single descriptorのregular／bounded read、
+  UTF-8、ECMAScript trim、canonical RawURLEncoding、exact 32-byte検証を追加した。
+- 破損keyの9ケースは安全な既存key readerで既に拒否できたため`ALREADY_GREEN`とし、人工的なfailureを作らなかった。
+- 並行初回生成は、random生成中に別winner fileを作る決定的testで`EEXIST` failureをREDにし、winnerを1回だけ
+  freshに再読込するGREENへ進めた。loserのrandom keyは返さない。
+- random、open、stat、read、short write、write、Close、winner再読込、state inspection、session mkdirの
+  14 failure caseを注入するため、全既存testがGREENの状態でprivate operations structへ挙動不変refactorした。
+  failure testは追加実装なしで`ALREADY_GREEN`だった。
+- nil Root、state／keyのdirectory・in-root／root外symlink、session key symlinkの8安全境界と、darwin／linuxの
+  record／session新規file `0600`も`ALREADY_GREEN`だった。
+- session pathはcallerのproject Rootに対する固定root-relative pathだけで安全に表現できたため、計画時に想定した
+  追加child Rootを開かず、close対象を増やさない実装詳細へ整理した。固定本家の正常配置のpathと結果は変えない。
+
+key APIは既存HMAC codecへ渡せるが、active-directive cursorとpublication transactionはまだ接続していない。
+same-token exactly-once、canonical run-stage composition、public `next`／`continue`、Codex受領E2Eは後続Issueの責務である。
