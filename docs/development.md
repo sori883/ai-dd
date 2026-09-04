@@ -114,6 +114,24 @@ GOTOOLCHAIN=go1.26.8 go test -count=1 -run '^TestChunkRules' ./src/internal/stee
 契約、TDD記録、後続transportとの境界は[配信用chunkの実装計画](ram/decisions/2026-09-05-steering-chunks-plan.md)
 を参照してください。
 
+各chunkを`load-steering`へする前に、分割前の全rulesから`steering.BundleDigest`を1回だけ計算します。
+各partでは同じdigestと総数、1始まりのpart番号、当該chunk、後続が安全に生成したopaque tokenを
+`steering.LoadDirective`へ入れ、`steering.MarshalLoad`でJSON化します。digestをchunkごとに計算したり、
+28 KiB超過時に本文を切り捨てたりしないでください。
+
+`MarshalLoad`はJSON.stringify互換のescape、固定field順、不正UTF-8とpart範囲、完成JSON 28,672 bytesの
+上限を検査します。tokenの生成・署名・保存、fileの再読込み、state/routeとのfreshness比較は行わないため、
+呼出し側が後続transport契約に従って用意します。digestも認証やAIの読了証明ではありません。
+
+digestとload wireだけを確認するloop commandは次です。
+
+```sh
+GOTOOLCHAIN=go1.26.8 go test -count=1 -run '^(TestBundleDigest|TestMarshalLoad)' ./src/internal/steering
+```
+
+field契約、容量境界、TDD記録は[load-steering wireの実装計画](ram/decisions/2026-09-05-steering-load-wire-plan.md)
+を参照してください。
+
 ### Knowledge roster（内部API）
 
 `knowledge.BuildRoster`は、callerが用意したframework `.codex` rootとactive Spaceのknowledge rootを借りて、
