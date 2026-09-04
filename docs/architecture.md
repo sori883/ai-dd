@@ -206,7 +206,8 @@ state/route freshness、token署名・decodeは行いません。詳細は[load-
 `EncodeContinuationToken`／`DecodeContinuationToken`は、固定AI-DLC 2.6.123のversion 1 claimsを
 HMAC-SHA256で認証し、unpadded base64url envelopeとして相互変換するI/Oなしの純粋関数です。keyはexact
 32 bytesで、payload field順、optional／nullable field、gate、unit gate rhythm、JSON.stringify相当の文字列
-escapeを検証します。改ざん、別key、不正schemaは`ErrInvalidContinuationToken`としてfail-closedにし、MACは
+escapeを検証します。canonical発行では`z`を常にbooleanで含め、decoderは署名済みの`z` absentも受理します。
+改ざん、別key、不正schemaは`ErrInvalidContinuationToken`としてfail-closedにし、MACは
 `hmac.Equal`で比較します。base64urlは暗号化ではないため、claimsへ本文や秘密情報は格納しません。
 
 `AdvanceContinuation`はStage、scope、bundle、完成形directive hash、route hashと、state-aware時だけstate hashを

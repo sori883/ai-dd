@@ -74,7 +74,12 @@ func EncodeContinuationToken(key []byte, claims ContinuationClaims) (string, err
 		return "", err
 	}
 
-	payload := marshalContinuationClaims(claims)
+	claimsForWire := claims
+	if claimsForWire.SwarmSettled == nil {
+		swarmSettled := false
+		claimsForWire.SwarmSettled = &swarmSettled
+	}
+	payload := marshalContinuationClaims(claimsForWire)
 	mac := continuationMAC(key, payload)
 	var envelope strings.Builder
 	envelope.WriteString("{\"p\":")

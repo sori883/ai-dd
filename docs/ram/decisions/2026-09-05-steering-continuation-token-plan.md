@@ -103,14 +103,16 @@ func AdvanceContinuation(claims ContinuationClaims, current ContinuationFreshnes
 最終の定数名、private helper、error型はGoの命名規則に従ってよい。`GateValue`はJSON上のboolean
 `false`／`true`と文字列`"unresolved"`を型付きで区別し、zero valueは不正とする。`UnitGateRhythm`は
 空をabsent、`per-stage`、`unit-end`だけを許容する。`OptionalNullableString`はabsent、JSON null、stringを
-区別する。`SwarmSettled`はnilをabsent、非nilをJSON booleanとする。pointer由来の値はencode時に保持せず、
+区別する。`SwarmSettled`はdecoderが固定本家どおり`z` absentも受理するためpointerで保持するが、encoderは
+nilも`false`へ正規化してcanonical payloadへ必ず`z`を出力する。pointer由来の値はencode時に保持せず、
 decode／step結果もcallerから独立したcopyにする。
 
 ## token wireとvalidation
 
 - keyはexact 32 bytesとし、空・短い・長いkeyを拒否する。key生成・保存・permissionは後続のI/O責務である。
-- payloadのJSON field順は固定本家の`v,s,c,i,b,d,r,a,u,k,f,g,n,x,p,w,z,q,h`とする。`n`、`z`、`q`は
-  absent状態ならfield自体を省略する。
+- payloadのJSON field順は固定本家の`v,s,c,i,b,d,r,a,u,k,f,g,n,x,p,w,z,q,h`とする。`n`、`q`は
+  absent状態ならfield自体を省略する。`z`はcanonical encoderが必ずbooleanとして出力し、decoderだけが
+  既存tokenのabsent状態も受理する。
 - envelopeは`p`、`m`の順とし、`m`はcanonical payload bytesのHMAC-SHA256をunpadded base64urlにする。
   envelope全体もunpadded base64urlにする。
 - 文字列は既存`appendJSONString`を使い、HTML escapeを追加しない`JSON.stringify`相当のbyte列にする。
@@ -230,6 +232,9 @@ Issue #105では、計画どおりGo標準libraryだけでversion 1 token codec�
   part進行をstate比較より先に実施し、state testがpart未実装の失敗を誤検出しない順序へ調整した。
 - 所有権testでは返却`Next`のpointerが入力claimsと共有される失敗を再現し、Unit、UnitKind、NextStage、
   SwarmSettled、StateHashを深く複製する最小修正を行った。
+- 独立reviewで、固定本家のpayload constructorが`swarm_settled`未設定時も`z:false`を必ず出力する点を検出した。
+  fixed-wire testを先にREDへ更新し、encoderだけがnilをfalseへ正規化するよう修正した。decoderは固定本家の
+  validationどおり、正しく署名された`z` absent payloadも引き続き受理する。
 
 実装後も純粋APIはtokenを消費しない。exactly-once、private key file、fresh filesystem read、run-stage公開は、
 固定本家のactive-directive cursorを現行Goのrecord identity／lock境界へ接続する後続Issueの責務である。

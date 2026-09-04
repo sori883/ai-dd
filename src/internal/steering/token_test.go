@@ -32,27 +32,38 @@ func TestContinuationTokenRoundTripMatchesFixedWire(t *testing.T) {
 		Wave:          true,
 		StateHash:     &stateHash,
 	}
+	presentClaims := common
+	presentClaims.NextStage = OptionalNullableString{Present: true}
+	presentClaims.SwarmSettled = &swarmSettled
+	wantAbsentSwarmSettled := false
+	wantAbsentClaims := common
+	wantAbsentClaims.SwarmSettled = &wantAbsentSwarmSettled
 
 	tests := []struct {
-		name   string
-		claims ContinuationClaims
-		want   string
+		name       string
+		claims     ContinuationClaims
+		want       string
+		wantClaims ContinuationClaims
 	}{
 		{
 			name: "optional fields present",
 			claims: func() ContinuationClaims {
-				claims := common
-				claims.NextStage = OptionalNullableString{Present: true}
-				claims.SwarmSettled = &swarmSettled
+				claims := presentClaims
+				claims.UnitGate = UnitGateRhythmUnitEnd
+				return claims
+			}(),
+			wantClaims: func() ContinuationClaims {
+				claims := presentClaims
 				claims.UnitGate = UnitGateRhythmUnitEnd
 				return claims
 			}(),
 			want: "eyJwIjp7InYiOjEsInMiOiLmrrXpmo7wn5qAXCJcXFx1MDAwMFxu4oCo4oCpIiwiYyI6IuOCueOCs-ODvOODlyIsImkiOjIsImIiOiJidW5kbGUiLCJkIjoiZGlyZWN0aXZlLWhhc2giLCJyIjoicm91dGUtaGFzaCIsImEiOnRydWUsInUiOm51bGwsImsiOm51bGwsImYiOmZhbHNlLCJnIjoidW5yZXNvbHZlZCIsIm4iOm51bGwsIngiOmZhbHNlLCJwIjp0cnVlLCJ3Ijp0cnVlLCJ6IjpmYWxzZSwicSI6InVuaXQtZW5kIiwiaCI6InN0YXRlLWhhc2gifSwibSI6Iko4UjVvNWVJNnNSY25mcWNmWlVvVUxib1hUM3lVTlBaRjdTYk9PM2Ixd0kifQ",
 		},
 		{
-			name:   "optional fields absent",
-			claims: common,
-			want:   "eyJwIjp7InYiOjEsInMiOiLmrrXpmo7wn5qAXCJcXFx1MDAwMFxu4oCo4oCpIiwiYyI6IuOCueOCs-ODvOODlyIsImkiOjIsImIiOiJidW5kbGUiLCJkIjoiZGlyZWN0aXZlLWhhc2giLCJyIjoicm91dGUtaGFzaCIsImEiOnRydWUsInUiOm51bGwsImsiOm51bGwsImYiOmZhbHNlLCJnIjoidW5yZXNvbHZlZCIsIngiOmZhbHNlLCJwIjp0cnVlLCJ3Ijp0cnVlLCJoIjoic3RhdGUtaGFzaCJ9LCJtIjoiZDBLN3N3VzZWSFV1U2VTeVRFU3JJV0pxSHA1MldCT0lLcXQ0bWJfVHVaTSJ9",
+			name:       "optional fields absent",
+			claims:     common,
+			wantClaims: wantAbsentClaims,
+			want:       "eyJwIjp7InYiOjEsInMiOiLmrrXpmo7wn5qAXCJcXFx1MDAwMFxu4oCo4oCpIiwiYyI6IuOCueOCs-ODvOODlyIsImkiOjIsImIiOiJidW5kbGUiLCJkIjoiZGlyZWN0aXZlLWhhc2giLCJyIjoicm91dGUtaGFzaCIsImEiOnRydWUsInUiOm51bGwsImsiOm51bGwsImYiOmZhbHNlLCJnIjoidW5yZXNvbHZlZCIsIngiOmZhbHNlLCJwIjp0cnVlLCJ3Ijp0cnVlLCJ6IjpmYWxzZSwiaCI6InN0YXRlLWhhc2gifSwibSI6ImJDWTZ5TFNYb3VBQS1VcGNIQW1Bdm05eUJYWHo4b1JDZVJKUE9xNk80RUUifQ",
 		},
 	}
 
@@ -70,11 +81,26 @@ func TestContinuationTokenRoundTripMatchesFixedWire(t *testing.T) {
 			if err != nil {
 				t.Fatalf("DecodeContinuationToken() error = %v", err)
 			}
-			if !reflect.DeepEqual(gotClaims, test.claims) {
-				t.Errorf("DecodeContinuationToken() = %#v, want %#v", gotClaims, test.claims)
+			if !reflect.DeepEqual(gotClaims, test.wantClaims) {
+				t.Errorf("DecodeContinuationToken() = %#v, want %#v", gotClaims, test.wantClaims)
 			}
 		})
 	}
+
+	t.Run("decoder accepts absent swarm settled", func(t *testing.T) {
+		payload := `{"v":1,"s":"段階🚀\"\\\u0000\n  ","c":"スコープ","i":2,"b":"bundle","d":"directive-hash","r":"route-hash","a":true,"u":null,"k":null,"f":false,"g":"unresolved","x":false,"p":true,"w":true,"h":"state-hash"}`
+		token := signedContinuationTokenForTest(key, payload, payload)
+		gotClaims, err := DecodeContinuationToken(key, token)
+		if err != nil {
+			t.Fatalf("DecodeContinuationToken() error = %v", err)
+		}
+		if !reflect.DeepEqual(gotClaims, common) {
+			t.Errorf("DecodeContinuationToken() = %#v, want %#v", gotClaims, common)
+		}
+		if gotClaims.SwarmSettled != nil {
+			t.Errorf("DecodeContinuationToken() SwarmSettled = %v, want nil", *gotClaims.SwarmSettled)
+		}
+	})
 }
 
 func TestContinuationTokenRejectsInvalidSchema(t *testing.T) {
