@@ -83,6 +83,8 @@ rulesDirは空なら`project/aidlc/spaces/<activeSpace>/memory`、相対ならpr
 `rulesDir`に明示された相対`../`は配置rootとして許可しますが、graph由来のFS相対`ReadPath`の`../`は拒否します。
 生成した表示pathと読込pathも返却前にEntry検証へ通します。
 Windowsのdrive-relativeやdriveなしroot-relativeな`rulesDir`はproject基準へ解釈し直さず拒否します。
+active Spaceと表示用`Path`はnative検証でPOSIXのliteral backslashを保持しますが、graph由来の参照pathと
+FS相対`ReadPath`は既存`validateRulePath`のbackslash拒否を維持します。
 
 `steering.ReadResolvedRules(projectFS, memoryFS, entries)`は、全EntryをI/O前に検証してからdisplay pathのfirst-winsを適用し、
 実際に使うFSだけをnil/typed-nil検査して既存`ReadRules`へ委譲します。未使用FSのnilは許可し、template除外後もEntryごとの

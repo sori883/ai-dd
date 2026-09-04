@@ -109,14 +109,12 @@ func validateProjectDir(projectDir string) error {
 }
 
 func validateActiveSpace(activeSpace string) error {
-	if activeSpace == "" || !utf8.ValidString(activeSpace) || strings.IndexByte(activeSpace, 0) >= 0 {
+	if activeSpace == "" || !utf8.ValidString(activeSpace) || strings.IndexByte(activeSpace, 0) >= 0 ||
+		!fs.ValidPath(activeSpace) || activeSpace == "." || strings.Contains(activeSpace, "/") {
 		return fmt.Errorf("active Space must be one path component: %w", fs.ErrInvalid)
 	}
-	if strings.ContainsAny(activeSpace, `/\\`) || activeSpace == "." || activeSpace == ".." {
-		return fmt.Errorf("active Space must be one path component: %w", fs.ErrInvalid)
-	}
-	if !filepath.IsLocal(filepath.FromSlash(activeSpace)) {
-		return fmt.Errorf("active Space must be local: %w", fs.ErrInvalid)
+	if _, err := filepath.Localize(activeSpace); err != nil {
+		return fmt.Errorf("active Space must be local: %w: %v", fs.ErrInvalid, err)
 	}
 	return nil
 }
@@ -150,6 +148,17 @@ func validateReferencePath(rulePath string) error {
 	native := filepath.FromSlash(rulePath)
 	if filepath.IsAbs(native) || !filepath.IsLocal(native) {
 		return fmt.Errorf("invalid rule path %q: %w", rulePath, fs.ErrInvalid)
+	}
+	return nil
+}
+
+func validateDisplayPath(displayPath string) error {
+	if !utf8.ValidString(displayPath) || strings.IndexByte(displayPath, 0) >= 0 ||
+		displayPath == "." || !fs.ValidPath(displayPath) {
+		return fmt.Errorf("invalid display path %q: %w", displayPath, fs.ErrInvalid)
+	}
+	if _, err := filepath.Localize(displayPath); err != nil {
+		return fmt.Errorf("invalid display path %q: %w: %v", displayPath, fs.ErrInvalid, err)
 	}
 	return nil
 }
@@ -208,8 +217,8 @@ func ReadResolvedRules(projectFS, memoryFS fs.FS, entries []RulePath) ([]RuleCon
 }
 
 func validateRulePathEntry(entry RulePath) error {
-	if err := validateReferencePath(entry.Path); err != nil {
-		return fmt.Errorf("display path: %w", err)
+	if err := validateDisplayPath(entry.Path); err != nil {
+		return err
 	}
 	if err := validateReferencePath(entry.ReadPath); err != nil {
 		return fmt.Errorf("read path: %w", err)

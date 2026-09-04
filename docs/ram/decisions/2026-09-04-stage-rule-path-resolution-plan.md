@@ -97,7 +97,8 @@ APIは `src/internal` 内だけで使用する。`MemoryDir` はnative形式の�
 パス検証はJoin前に行う。projectDirの絶対性、activeSpaceの単一component、
 `fs.ValidPath` と既存 `validateRulePath`、native localityを確認する。
 不正UTF-8、`.`、`..`、絶対参照、backslash、その他FS相対として安全でない経路を
-正規化で隠して受理しない（これはgraph由来の参照pathと生成Entryの`Path`/`ReadPath`に適用する）。
+正規化で隠して受理しない（これはgraph由来の参照pathと生成Entryの`ReadPath`に適用する）。
+生成Entryの表示`Path`とactive Spaceはnative localityで検証し、POSIX literal backslashを保持する。
 `rulesDir`は明示された配置rootの指定なので、相対指定は
 project基準で解決し、絶対指定をproject内へ勝手に制限しない。
 Windowsではdrive-relative（`C:rules`）やdriveなしroot-relative（`\rules`／`/rules`）を
@@ -296,3 +297,36 @@ ok   github.com/sori883/ai-dd/src/internal/steering  1.529s
 
 POSIX環境ではWindows driveなしroot-relative拒否testがskipになり、他のnative分岐と全対象sliceは
 通過した。Windows上のnative拒否自体はこのloopでは実行していない。
+
+## 追補実施記録（2026-09-04、独立review P1対応、verification_mode=loop）
+
+独立reviewで、POSIXの既存`workspace.localizeSpace`が許すliteral backslashを
+`ResolveRulePaths`のactive Space検証だけが拒否していることが判明した。固定本家
+`aidlc-lib.ts:585-586`のtoPosixと既存workspace契約に合わせ、表示名とFS参照pathの検証境界を分離した。
+active Spaceと表示用Entry `Path`は`fs.ValidPath`、dot／component条件、`filepath.Localize`相当の
+native検証を用い、POSIX literal backslashを保持する。元graph参照とEntry `ReadPath`は既存
+`validateRulePath`／`ReadRules`のbackslash拒否を維持した。既存の承認範囲内の通常bug修正であり、
+新しい仕様差分ではない。
+
+RED/GREEN:
+
+1. 旧headで `GOTOOLCHAIN=go1.26.8 go test -count=1 -run '^TestResolveRulePathsNativeBackslashActiveSpace$' ./src/internal/steering` を実行し、POSIX literal backslash Spaceを `invalid active Space` として拒否する意図したbehavior REDを確認した。
+2. 旧headで `GOTOOLCHAIN=go1.26.8 go test -tags=integration -count=1 -run '^TestReadResolvedRulesIntegrationPreservesPOSIXBackslashSpace$' ./src/internal/steering` を実行し、同じ拒否をresolver接続fixtureで確認するintegration REDを得た。
+3. active Space／表示Pathをnative検証へ分離し、`ReadPath`／元refのbackslash拒否を維持した最小GREEN後、`TestResolveRulePathsNativeBackslashActiveSpace`、`TestReadResolvedRulesNativeDisplayPath`、`TestReadResolvedRulesRejectsInvalidDisplayPathBeforeIO` は `ok .../steering 0.343s`、integration `TestReadResolvedRulesIntegrationPreservesPOSIXBackslashSpace` は `ok .../steering 0.334s` となった。
+4. 既存`TestResolveRulePathsRejectsUnsafeInput`をOS別期待へ修正し、Windows native拒否・ReadPath／元ref backslash拒否・不正display path拒否を targeted suite で確認した。POSIX上のWindows拒否caseはskipであり、Windows実行はしていない。
+
+今回の追補では`resolve.go`、resolver単体test／integration test、architecture/development、当計画RAMだけを変更し、
+索引の既存Issue #91行は維持した。過去のRED/GREEN記録は削除・上書きしていない。
+
+P1修正後のfresh targeted再確認は次のとおり。
+
+```text
+$ GOTOOLCHAIN=go1.26.8 go test -count=1 -run 'TestResolveRulePaths|TestReadResolvedRules' ./src/internal/steering
+ok   github.com/sori883/ai-dd/src/internal/steering  0.172s
+$ GOTOOLCHAIN=go1.26.8 go test -tags=integration -count=1 -run '^TestReadResolvedRules' ./src/internal/steering
+ok   github.com/sori883/ai-dd/src/internal/steering  0.281s
+```
+
+POSIX環境ではliteral backslash Space／表示`Path`の回帰、元ref／`ReadPath`のbackslash拒否、
+不正display pathのI/O前拒否、既存resolver／reader integrationが通過した。Windows分岐は
+native Localize拒否をコードとOS別期待testへ保持しているが、loopではWindows実行を行っていない。

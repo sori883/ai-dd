@@ -167,6 +167,8 @@ Memory配置rootとして返します。各参照に最初の`/memory/`があれ
 `rulesDir`に明示された相対`../`は配置rootとして許可しますが、graph由来のFS相対`ReadPath`の`../`は拒否します。
 resolverは生成した表示pathと読込pathも同じEntry検証へ通してから返します。
 Windowsのdrive-relativeやdriveなしroot-relativeな`rulesDir`はproject基準へ解釈し直さず拒否します。
+active Spaceと表示用`Path`は`filepath.Localize`相当のnative検証を使い、POSIXのliteral backslashは保持します。
+一方、graph由来の参照pathとFS相対`ReadPath`は既存`validateRulePath`のbackslash拒否を維持します。
 
 `ReadResolvedRules(projectFS, memoryFS, entries)`は全Entryのdisplay/read pathとsourceをI/O前に検証し、display pathのfirst-winsを
 適用した後、実際に使うsourceのFSだけをnil/typed-nil検査して`ReadRules`へ委譲します。未使用sourceのnil FSは許可し、空Entryは

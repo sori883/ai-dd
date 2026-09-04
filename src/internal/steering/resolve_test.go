@@ -215,6 +215,30 @@ func TestResolveRulePathsNativeColonNames(t *testing.T) {
 	}
 }
 
+func TestResolveRulePathsNativeBackslashActiveSpace(t *testing.T) {
+	t.Parallel()
+
+	projectDir := filepath.Join(t.TempDir(), "project")
+	got, err := steering.ResolveRulePaths(
+		projectDir,
+		`team\active`,
+		"",
+		[]graph.Rule{{Path: "aidlc/spaces/default/memory/rule.md", Scope: "org"}},
+	)
+	if filepath.Separator == '\\' {
+		if err == nil {
+			t.Fatalf("ResolveRulePaths() error = nil, result = %#v; want native Windows backslash rejection", got)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("ResolveRulePaths() error = %v, want POSIX literal backslash Space accepted", err)
+	}
+	if len(got.Entries) != 1 || got.Entries[0].Path != `aidlc/spaces/team\active/memory/rule.md` {
+		t.Fatalf("ResolveRulePaths() entries = %#v, want literal backslash in display path", got.Entries)
+	}
+}
+
 func TestResolveRulePathsNativeDriveRelativeRulesDirectory(t *testing.T) {
 	t.Parallel()
 
@@ -266,17 +290,18 @@ func TestResolveRulePathsRejectsUnsafeInput(t *testing.T) {
 	projectDir := filepath.Join(t.TempDir(), "project")
 	validRefs := []graph.Rule{{Path: "rule.md", Scope: "project"}}
 	tests := []struct {
-		name        string
-		projectDir  string
-		activeSpace string
-		rulesDir    string
-		refs        []graph.Rule
+		name         string
+		projectDir   string
+		activeSpace  string
+		rulesDir     string
+		refs         []graph.Rule
+		validOnPOSIX bool
 	}{
 		{name: "relative project directory", projectDir: "project", activeSpace: "active", refs: validRefs},
 		{name: "empty project directory", projectDir: "", activeSpace: "active", refs: validRefs},
 		{name: "empty active space", projectDir: projectDir, activeSpace: "", refs: validRefs},
 		{name: "nested active space", projectDir: projectDir, activeSpace: "team/active", refs: validRefs},
-		{name: "backslash active space", projectDir: projectDir, activeSpace: `team\active`, refs: validRefs},
+		{name: "backslash active space", projectDir: projectDir, activeSpace: `team\active`, refs: validRefs, validOnPOSIX: true},
 		{name: "dot active space", projectDir: projectDir, activeSpace: ".", refs: validRefs},
 		{name: "empty rule path", projectDir: projectDir, activeSpace: "active", refs: []graph.Rule{{Path: "", Scope: "project"}}},
 		{name: "dot rule path", projectDir: projectDir, activeSpace: "active", refs: []graph.Rule{{Path: ".", Scope: "project"}}},
@@ -295,6 +320,12 @@ func TestResolveRulePathsRejectsUnsafeInput(t *testing.T) {
 			t.Parallel()
 
 			got, err := steering.ResolveRulePaths(tt.projectDir, tt.activeSpace, tt.rulesDir, tt.refs)
+			if tt.validOnPOSIX && filepath.Separator != '\\' {
+				if err != nil {
+					t.Fatalf("ResolveRulePaths() error = %v, want POSIX-safe input accepted", err)
+				}
+				return
+			}
 			if err == nil {
 				t.Fatalf("ResolveRulePaths() error = nil, result = %#v", got)
 			}
@@ -440,6 +471,53 @@ func TestReadResolvedRulesRejectsInvalidEntriesBeforeIO(t *testing.T) {
 	}
 	if len(projectFS.calls) != 0 {
 		t.Fatalf("ReadResolvedRules() performed %d reads before validating duplicate entry", len(projectFS.calls))
+	}
+}
+
+func TestReadResolvedRulesRejectsInvalidDisplayPathBeforeIO(t *testing.T) {
+	projectFS := &readFileFS{files: map[string]readFileResult{
+		"valid.md": {data: []byte("valid rule")},
+	}}
+	entries := []steering.RulePath{
+		{Path: "../display.md", ReadPath: "valid.md", Source: steering.RuleSourceProject},
+	}
+
+	got, err := steering.ReadResolvedRules(projectFS, nil, entries)
+	if !errors.Is(err, fs.ErrInvalid) {
+		t.Fatalf("ReadResolvedRules() error = %v, want fs.ErrInvalid", err)
+	}
+	if got != nil {
+		t.Fatalf("ReadResolvedRules() result = %#v, want nil", got)
+	}
+	if len(projectFS.calls) != 0 {
+		t.Fatalf("ReadResolvedRules() performed %d reads before validating display path", len(projectFS.calls))
+	}
+}
+
+func TestReadResolvedRulesNativeDisplayPath(t *testing.T) {
+	projectFS := &readFileFS{files: map[string]readFileResult{
+		"valid.md": {data: []byte("valid rule")},
+	}}
+	entries := []steering.RulePath{
+		{Path: `display\path.md`, ReadPath: "valid.md", Source: steering.RuleSourceProject},
+	}
+
+	got, err := steering.ReadResolvedRules(projectFS, nil, entries)
+	if filepath.Separator == '\\' {
+		if err == nil {
+			t.Fatalf("ReadResolvedRules() error = nil, result = %#v; want native display path rejection", got)
+		}
+		if len(projectFS.calls) != 0 {
+			t.Fatalf("ReadResolvedRules() performed %d reads before native display path rejection", len(projectFS.calls))
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("ReadResolvedRules() error = %v, want POSIX literal backslash display path accepted", err)
+	}
+	want := []steering.RuleContent{{Path: `display\path.md`, Text: "valid rule"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ReadResolvedRules() = %#v, want %#v", got, want)
 	}
 }
 

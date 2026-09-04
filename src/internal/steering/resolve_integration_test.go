@@ -13,6 +13,55 @@ import (
 	"github.com/sori883/ai-dd/src/internal/steering"
 )
 
+func TestReadResolvedRulesIntegrationPreservesPOSIXBackslashSpace(t *testing.T) {
+	t.Parallel()
+
+	if filepath.Separator == '\\' {
+		t.Skip("POSIX literal backslash Space case")
+	}
+	projectDir := t.TempDir()
+	memoryDir := filepath.Join(projectDir, "rules")
+	writeRuleFile(t, memoryDir, "org.md", "POSIX backslash Space rule")
+	resolved, err := steering.ResolveRulePaths(
+		projectDir,
+		`team\active`,
+		"rules",
+		[]graph.Rule{{Path: "aidlc/spaces/default/memory/org.md", Scope: "org"}},
+	)
+	if err != nil {
+		t.Fatalf("ResolveRulePaths() error = %v", err)
+	}
+	if len(resolved.Entries) != 1 || resolved.Entries[0].Path != `aidlc/spaces/team\active/memory/org.md` {
+		t.Fatalf("ResolveRulePaths() entries = %#v, want literal backslash display path", resolved.Entries)
+	}
+
+	memoryRoot, err := os.OpenRoot(resolved.MemoryDir)
+	if err != nil {
+		t.Fatalf("open resolved Memory root: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := memoryRoot.Close(); err != nil {
+			t.Errorf("memory root Close() error = %v", err)
+		}
+	})
+	got, err := steering.ReadResolvedRules(nil, memoryRoot.FS(), resolved.Entries)
+	if err != nil {
+		t.Fatalf("ReadResolvedRules() error = %v", err)
+	}
+	want := []steering.RuleContent{{
+		Path: `aidlc/spaces/team\active/memory/org.md`,
+		Text: "POSIX backslash Space rule",
+	}}
+	if len(got) != 1 || got[0] != want[0] {
+		t.Fatalf("ReadResolvedRules() = %#v, want %#v", got, want)
+	}
+	if file, err := memoryRoot.Open("org.md"); err != nil {
+		t.Fatalf("memory root Open() after read error = %v", err)
+	} else if err := file.Close(); err != nil {
+		t.Errorf("memory root file Close() error = %v", err)
+	}
+}
+
 func TestReadResolvedRulesIntegrationConnectsResolverAndOverrideRoot(t *testing.T) {
 	t.Parallel()
 
