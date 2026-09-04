@@ -90,6 +90,7 @@ type Snapshot struct {
 	stages     []Stage
 	scopeNames []string
 	scopes     map[string]Scope
+	routeNodes map[string][]byte
 }
 
 // Load reads stage-graph.json and scope-grid.json from dataFS.
@@ -110,6 +111,7 @@ func Load(dataFS fs.FS) (Snapshot, error) {
 	}
 
 	stages := make([]Stage, 0, len(rawStages))
+	routeNodes := make(map[string][]byte, len(rawStages))
 	enabledSlugs := make(map[string]struct{}, len(rawStages))
 	allSlugs := make(map[string]struct{}, len(rawStages))
 	for _, raw := range rawStages {
@@ -140,6 +142,7 @@ func Load(dataFS fs.FS) (Snapshot, error) {
 			RequiresStages:      raw.RequiresStages,
 			RulesInContext:      ruleValues(raw.RulesInContext),
 		})
+		routeNodes[raw.Slug] = slices.Clone(raw.RouteNode)
 		enabledSlugs[raw.Slug] = struct{}{}
 	}
 
@@ -165,7 +168,7 @@ func Load(dataFS fs.FS) (Snapshot, error) {
 	slices.SortFunc(scopeNames, func(a, b string) int {
 		return slices.Compare(utf16.Encode([]rune(a)), utf16.Encode([]rune(b)))
 	})
-	return Snapshot{stages: stages, scopeNames: scopeNames, scopes: scopes}, nil
+	return Snapshot{stages: stages, scopeNames: scopeNames, scopes: scopes, routeNodes: routeNodes}, nil
 }
 
 type stageDocument struct {
@@ -197,6 +200,7 @@ type stageDocument struct {
 	RequiresStagesPresent      bool
 	RulesInContext             []ruleDocument
 	RulesInContextPresent      bool
+	RouteNode                  []byte
 }
 
 type consumeDocument struct {
@@ -242,6 +246,11 @@ func decodeStageDocument(data []byte) (stageDocument, error) {
 	}
 
 	var stage stageDocument
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, data); err != nil {
+		return stageDocument{}, fmt.Errorf("compact route node: %w", err)
+	}
+	stage.RouteNode = slices.Clone(compact.Bytes())
 	stageFields := []struct {
 		name   string
 		target any
