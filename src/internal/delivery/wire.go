@@ -35,6 +35,9 @@ type runStageWire struct {
 	ContextWarnings    []string         `json:"context_warnings,omitempty"`
 	ConsumesAbsent     []runStageAbsent `json:"consumes_absent,omitempty"`
 	NextStage          *string          `json:"next_stage"`
+	ProtocolModules    []string         `json:"protocol_modules,omitempty"`
+	ConductorPersona   *string          `json:"conductor_persona,omitempty"`
+	Narration          string           `json:"narration"`
 }
 
 type runStageAbsent struct {
@@ -42,7 +45,7 @@ type runStageAbsent struct {
 	Expected bool   `json:"expected"`
 }
 
-func buildRunStageWire(identity recordlock.Identity, stage graph.Stage, current state.State, catalog graph.Snapshot, recordRoot *os.Root, rules []steering.RuleContent, roster knowledge.Roster) ([]byte, error) {
+func buildRunStageWire(identity recordlock.Identity, stage graph.Stage, current state.State, catalog graph.Snapshot, projectRoot, recordRoot *os.Root, rules []steering.RuleContent, roster knowledge.Roster) ([]byte, error) {
 	nextStage, err := nextStageName(current.NextStage(), catalog)
 	if err != nil {
 		return nil, err
@@ -75,6 +78,7 @@ func buildRunStageWire(identity recordlock.Identity, stage graph.Stage, current 
 	for _, produce := range resolved.Produces {
 		produces = append(produces, path.Join(recordPrefix, produce))
 	}
+	presentation := buildRunStagePresentation(projectRoot, identity, stage, current, catalog)
 
 	wire := runStageWire{
 		Kind:               string(orchestrator.DirectiveKindRunStage),
@@ -106,9 +110,12 @@ func buildRunStageWire(identity recordlock.Identity, stage graph.Stage, current 
 			stage.Phase,
 			stage.Slug+".md",
 		),
-		ContextWarnings: nonNilStrings(roster.Warnings),
-		ConsumesAbsent:  consumesAbsent,
-		NextStage:       nextStage,
+		ContextWarnings:  nonNilStrings(roster.Warnings),
+		ConsumesAbsent:   consumesAbsent,
+		NextStage:        nextStage,
+		ProtocolModules:  presentation.ProtocolModules,
+		ConductorPersona: presentation.ConductorPersona,
+		Narration:        presentation.Narration,
 	}
 
 	data, err := json.Marshal(wire)

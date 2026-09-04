@@ -165,7 +165,7 @@ func ComposeRunStage(ctx context.Context, input RunStageInput) (RunStageComposit
 		return RunStageComposition{}, fmt.Errorf("compose run-stage: digest rules: %w", err)
 	}
 	chunks := steering.ChunkRules(rules)
-	wire, err := buildRunStageWire(input.Identity, stage, next.State, catalog, input.RecordRoot, rules, roster)
+	wire, err := buildRunStageWire(input.Identity, stage, next.State, catalog, input.ProjectRoot, input.RecordRoot, rules, roster)
 	if err != nil {
 		return RunStageComposition{}, fmt.Errorf("compose run-stage: build wire: %w", err)
 	}

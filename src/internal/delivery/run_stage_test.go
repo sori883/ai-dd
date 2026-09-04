@@ -563,7 +563,7 @@ func TestComposeRunStageClassifiesArtifactPresence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ComposeRunStage(artifact fixture) error = %v, want nil", err)
 	}
-	want := `{"kind":"run-stage","stage":"intent-capture","phase":"ideation","lead_agent":"orchestrator","support_agents":[],"mode":"inline","inline_context_paths":[],"gate":true,"memory_path":"aidlc/spaces/team/intents/build/ideation/intent-capture/memory.md","consumes":["` + presentRequired + `","` + presentOptional + `"],"produces":["` + producesOne + `","` + producesTwo + `"],"rules_in_context":[],"sensors_applicable":[],"stage_file":".codex/aidlc-common/stages/ideation/intent-capture.md","consumes_absent":[{"path":"` + orphanRequired + `","expected":true},{"path":"` + directoryRequired + `","expected":true},{"path":"` + symlinkRequired + `","expected":true},{"path":"` + unbuiltRequired + `","expected":false}],"next_stage":"Next Stage"}`
+	want := `{"kind":"run-stage","stage":"intent-capture","phase":"ideation","lead_agent":"orchestrator","support_agents":[],"mode":"inline","inline_context_paths":[],"gate":true,"memory_path":"aidlc/spaces/team/intents/build/ideation/intent-capture/memory.md","consumes":["` + presentRequired + `","` + presentOptional + `"],"produces":["` + producesOne + `","` + producesTwo + `"],"rules_in_context":[],"sensors_applicable":[],"stage_file":".codex/aidlc-common/stages/ideation/intent-capture.md","consumes_absent":[{"path":"` + orphanRequired + `","expected":true},{"path":"` + directoryRequired + `","expected":true},{"path":"` + symlinkRequired + `","expected":true},{"path":"` + unbuiltRequired + `","expected":false}],"next_stage":"Next Stage","narration":"Starting the classic plan for this project. First step is Intent Capture, and I will stop for your review before anything is final."}`
 	if string(got.Wire) != want {
 		t.Errorf("ComposeRunStage() artifact wire = %q, want %q", got.Wire, want)
 	}
@@ -582,10 +582,188 @@ func TestComposeRunStageBuildsCanonicalRequiredWire(t *testing.T) {
 		t.Fatalf("ComposeRunStage() error = %v, want nil", err)
 	}
 
-	want := `{"kind":"run-stage","stage":"intent-capture","phase":"ideation","lead_agent":"orchestrator","support_agents":[],"mode":"inline","inline_context_paths":[],"gate":true,"memory_path":"aidlc/spaces/team/intents/build/ideation/intent-capture/memory.md","consumes":[],"produces":[],"rules_in_context":[],"sensors_applicable":[],"stage_file":".codex/aidlc-common/stages/ideation/intent-capture.md","next_stage":"Next Stage"}`
+	want := `{"kind":"run-stage","stage":"intent-capture","phase":"ideation","lead_agent":"orchestrator","support_agents":[],"mode":"inline","inline_context_paths":[],"gate":true,"memory_path":"aidlc/spaces/team/intents/build/ideation/intent-capture/memory.md","consumes":[],"produces":[],"rules_in_context":[],"sensors_applicable":[],"stage_file":".codex/aidlc-common/stages/ideation/intent-capture.md","next_stage":"Next Stage","narration":"Starting the classic plan for this project. First step is Intent Capture, and I will stop for your review before anything is final."}`
 	if string(got.Wire) != want {
 		t.Errorf("ComposeRunStage() wire = %q, want %q", got.Wire, want)
 	}
+}
+
+func TestComposeRunStageBuildsSupportedOptionalFields(t *testing.T) {
+	t.Run("first substantive subagent", func(t *testing.T) {
+		fixture := newRunStageFixture(t)
+		writeRunStageFile(t, fixture.stageGraphPath, runStageKnowledgeGraphJSON("subagent"))
+
+		conductorPath := filepath.Join(fixture.identity.ProjectPath(), ".codex", "aidlc-common", "conductor.md")
+		if err := os.MkdirAll(filepath.Dir(conductorPath), 0o700); err != nil {
+			t.Fatalf("MkdirAll(%q): %v", filepath.Dir(conductorPath), err)
+		}
+		writeRunStageFile(t, conductorPath, "司令塔 persona 日本語 🚀\n")
+
+		input := RunStageInput{
+			Identity:    fixture.identity,
+			ProjectRoot: fixture.projectRoot,
+			RecordRoot:  fixture.recordRoot,
+		}
+		want := `{"kind":"run-stage","stage":"intent-capture","phase":"ideation","lead_agent":"aidlc-product-agent","support_agents":["aidlc-architect-agent"],"mode":"subagent","inline_context_paths":[],"gate":true,"memory_path":"aidlc/spaces/team/intents/build/ideation/intent-capture/memory.md","consumes":[],"produces":[],"rules_in_context":[],"sensors_applicable":[],"stage_file":".codex/aidlc-common/stages/ideation/intent-capture.md","next_stage":"Next Stage","protocol_modules":["ensemble"],"conductor_persona":"司令塔 persona 日本語 🚀\n","narration":"Bringing in the product manager to work on Intent Capture."}`
+		first, err := ComposeRunStage(context.Background(), input)
+		if err != nil {
+			t.Fatalf("ComposeRunStage(first optional fields) error = %v, want nil", err)
+		}
+		if string(first.Wire) != want {
+			t.Errorf("ComposeRunStage(first optional fields) wire = %q, want %q", first.Wire, want)
+		}
+
+		writeRunStageFile(t, conductorPath, "更新された司令塔 persona 日本語 🚀\n")
+		updatedWant := strings.Replace(want, `"conductor_persona":"司令塔 persona 日本語 🚀\n"`, `"conductor_persona":"更新された司令塔 persona 日本語 🚀\n"`, 1)
+		second, err := ComposeRunStage(context.Background(), input)
+		if err != nil {
+			t.Fatalf("ComposeRunStage(updated optional fields) error = %v, want nil", err)
+		}
+		if string(second.Wire) != updatedWant {
+			t.Errorf("ComposeRunStage(updated optional fields) wire = %q, want %q", second.Wire, updatedWant)
+		}
+		if string(first.Wire) == string(second.Wire) {
+			t.Error("ComposeRunStage(updated optional fields) did not refresh conductor persona")
+		}
+
+		if err := os.Remove(conductorPath); err != nil {
+			t.Fatalf("Remove(conductor persona): %v", err)
+		}
+		withoutConductorWant := strings.Replace(updatedWant, `,"conductor_persona":"更新された司令塔 persona 日本語 🚀\n"`, "", 1)
+		third, err := ComposeRunStage(context.Background(), input)
+		if err != nil {
+			t.Fatalf("ComposeRunStage(missing conductor persona) error = %v, want nil", err)
+		}
+		if string(third.Wire) != withoutConductorWant {
+			t.Errorf("ComposeRunStage(missing conductor persona) wire = %q, want %q", third.Wire, withoutConductorWant)
+		}
+	})
+
+	t.Run("terminal substantive stage", func(t *testing.T) {
+		fixture := newRunStageFixture(t)
+		terminalGraph := `[
+  {"slug":"workspace-scaffold","number":"0.1","name":"Workspace Scaffold","phase":"initialization","execution":"ALWAYS","lead_agent":"orchestrator","support_agents":[],"mode":"inline","scopes":["classic"],"enabled":true,"produces":[],"consumes":[],"requires_stage":[]},
+  {"slug":"intent-capture","number":"1.1","name":"Intent Capture","phase":"ideation","execution":"ALWAYS","lead_agent":"aidlc-product-agent","support_agents":[],"mode":"subagent","scopes":["classic"],"enabled":true,"produces":[],"consumes":[],"requires_stage":[]},
+  {"slug":"next-stage","number":"1.2","name":"Next Stage","phase":"ideation","execution":"ALWAYS","lead_agent":"product-agent","support_agents":[],"mode":"inline","scopes":["classic"],"enabled":false,"produces":[],"consumes":[],"requires_stage":[]}
+]`
+		writeRunStageFile(t, fixture.stageGraphPath, terminalGraph)
+		statePath := filepath.Join(fixture.identity.ProjectRoot(), "aidlc", "spaces", fixture.identity.Space(), "intents", fixture.identity.Intent(), "aidlc-state.md")
+		stateContent, err := os.ReadFile(statePath)
+		if err != nil {
+			t.Fatalf("ReadFile(%q): %v", statePath, err)
+		}
+		terminalState := strings.Replace(string(stateContent), "- **Next Stage**: next-stage\n", "- **Next Stage**: none\n", 1)
+		if terminalState == string(stateContent) {
+			t.Fatal("terminal fixture did not find next stage field")
+		}
+		writeRunStageFile(t, statePath, terminalState)
+
+		got, err := ComposeRunStage(context.Background(), RunStageInput{
+			Identity:    fixture.identity,
+			ProjectRoot: fixture.projectRoot,
+			RecordRoot:  fixture.recordRoot,
+		})
+		if err != nil {
+			t.Fatalf("ComposeRunStage(terminal optional fields) error = %v, want nil", err)
+		}
+		var wire struct {
+			NextStage json.RawMessage `json:"next_stage"`
+		}
+		if err := json.Unmarshal(got.Wire, &wire); err != nil {
+			t.Fatalf("ComposeRunStage(terminal optional fields) wire unmarshal error = %v", err)
+		}
+		if string(wire.NextStage) != "null" {
+			t.Errorf("ComposeRunStage(terminal optional fields) next_stage = %s, want null", wire.NextStage)
+		}
+	})
+}
+
+func TestRunStageNarrationMatchesCanonicalRolesAndPeopleClause(t *testing.T) {
+	t.Run("specialist roles", func(t *testing.T) {
+		cases := []struct {
+			agent string
+			want  string
+		}{
+			{agent: "aidlc-aws-platform-agent", want: "Bringing in the platform engineer to work on Intent Capture."},
+			{agent: "aidlc-devsecops-agent", want: "Bringing in the security engineer to work on Intent Capture."},
+			{agent: "aidlc-pipeline-deploy-agent", want: "Bringing in the release engineer to work on Intent Capture."},
+			{agent: "aidlc-operations-agent", want: "Bringing in the operations engineer to work on Intent Capture."},
+			{agent: "aidlc-strategy-agent", want: "Bringing in the strategy to work on Intent Capture."},
+		}
+		for _, tc := range cases {
+			t.Run(tc.agent, func(t *testing.T) {
+				got := runStageNarration(recordlock.Identity{}, graph.Stage{
+					Name:      "Intent Capture",
+					Phase:     "ideation",
+					LeadAgent: tc.agent,
+					Mode:      "subagent",
+				}, state.State{}, graph.Snapshot{})
+				if got != tc.want {
+					t.Errorf("runStageNarration(%q) = %q, want %q", tc.agent, got, tc.want)
+				}
+			})
+		}
+	})
+
+	t.Run("later inline and mob people clause", func(t *testing.T) {
+		for _, mode := range []string{"inline", "mob"} {
+			t.Run(mode, func(t *testing.T) {
+				fixture := newRunStageFixture(t)
+				writeRunStageFile(t, fixture.stageGraphPath, runStageNarrationGraphJSON(mode))
+
+				statePath := filepath.Join(fixture.identity.ProjectRoot(), "aidlc", "spaces", fixture.identity.Space(), "intents", fixture.identity.Intent(), "aidlc-state.md")
+				stateContent, err := os.ReadFile(statePath)
+				if err != nil {
+					t.Fatalf("ReadFile(%q): %v", statePath, err)
+				}
+				laterState := strings.Replace(string(stateContent), "- [ ] next-stage — EXECUTE\n", "- [x] next-stage — EXECUTE\n", 1)
+				if laterState == string(stateContent) {
+					t.Fatal("later narration fixture did not find next-stage progress row")
+				}
+				writeRunStageFile(t, statePath, laterState)
+
+				got, err := ComposeRunStage(context.Background(), RunStageInput{
+					Identity:    fixture.identity,
+					ProjectRoot: fixture.projectRoot,
+					RecordRoot:  fixture.recordRoot,
+				})
+				if err != nil {
+					t.Fatalf("ComposeRunStage(%s later narration) error = %v, want nil", mode, err)
+				}
+				var wire struct {
+					Narration string `json:"narration"`
+				}
+				if err := json.Unmarshal(got.Wire, &wire); err != nil {
+					t.Fatalf("ComposeRunStage(%s later narration) wire unmarshal error = %v", mode, err)
+				}
+				want := "Now working on Later Stage, wearing the product manager hat, with the architect and quality engineer on hand."
+				if wire.Narration != want {
+					t.Errorf("ComposeRunStage(%s) narration = %q, want %q", mode, wire.Narration, want)
+				}
+			})
+		}
+	})
+
+	t.Run("canonical product lead role", func(t *testing.T) {
+		got := runStageNarration(recordlock.Identity{}, graph.Stage{
+			Name:      "Intent Capture",
+			Phase:     "ideation",
+			LeadAgent: "aidlc-product-lead-agent",
+			Mode:      "subagent",
+		}, state.State{}, graph.Snapshot{})
+		want := "Bringing in the product lead to work on Intent Capture."
+		if got != want {
+			t.Errorf("runStageNarration(product lead) = %q, want %q", got, want)
+		}
+	})
+}
+
+func runStageNarrationGraphJSON(mode string) string {
+	return `[
+  {"slug":"workspace-scaffold","number":"0.1","name":"Workspace Scaffold","phase":"initialization","execution":"ALWAYS","lead_agent":"orchestrator","support_agents":[],"mode":"inline","scopes":["classic"],"enabled":true,"produces":[],"consumes":[],"requires_stage":[]},
+  {"slug":"intent-capture","number":"1.1","name":"Later Stage","phase":"ideation","execution":"ALWAYS","lead_agent":"aidlc-product-agent","support_agents":["aidlc-architect-agent","aidlc-quality-agent"],"mode":"` + mode + `","scopes":["classic"],"enabled":true,"produces":[],"consumes":[],"requires_stage":[]},
+  {"slug":"next-stage","number":"1.2","name":"Next Stage","phase":"ideation","execution":"ALWAYS","lead_agent":"product-agent","support_agents":[],"mode":"inline","scopes":["classic"],"enabled":true,"produces":[],"consumes":[],"requires_stage":[]}
+]`
 }
 
 func TestComposeRunStageUsesFreshSelectionAndValidatedNext(t *testing.T) {
