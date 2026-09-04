@@ -157,3 +157,66 @@ func TestBuildRosterStandardAndUnknownDepthKeepAllFrameworkKnowledge(t *testing.
 		t.Errorf("unknown-stage BuildRoster() paths = %#v, want all framework knowledge", got.Paths)
 	}
 }
+
+func TestBuildRosterMinimalKeepsPluginKnowledgeOutsideTable(t *testing.T) {
+	tests := []struct {
+		name  string
+		stage string
+		owner string
+	}{
+		{
+			name:  "unknown stage",
+			stage: "future-stage",
+			owner: "aidlc-product-agent",
+		},
+		{
+			name:  "unknown owner in known stage",
+			stage: "intent-capture",
+			owner: "custom-agent",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			framework := fstest.MapFS{
+				"agents/" + tt.owner + ".md": {
+					Data: []byte("persona"),
+				},
+				"knowledge/" + tt.owner + "/plugin-only.md": {
+					Data: []byte("plugin-owned"),
+				},
+				"tools/data/plugin-files-disabled.json": {
+					Data: []byte(`{"schema_version":1,"plugin":"disabled-plugin","knowledge":["` + tt.owner + `/plugin-only.md"]}`),
+				},
+			}
+			got, err := knowledge.BuildRoster(knowledge.RosterInput{
+				Stage: graph.Stage{
+					Slug:      tt.stage,
+					Mode:      "inline",
+					LeadAgent: tt.owner,
+				},
+				Depth: "minimal",
+				Framework: knowledge.Source{
+					FS:            framework,
+					DisplayPrefix: ".codex",
+				},
+				FrameworkDir:   "/project/.codex",
+				EnabledPlugins: []string{},
+			})
+			if err != nil {
+				t.Fatalf("BuildRoster() error = %v, want nil", err)
+			}
+
+			wantPaths := []string{
+				".codex/agents/" + tt.owner + ".md",
+				".codex/knowledge/" + tt.owner + "/plugin-only.md",
+			}
+			if !reflect.DeepEqual(got.Paths, wantPaths) {
+				t.Errorf("BuildRoster() paths = %#v, want plugin knowledge retained outside Minimal table %#v", got.Paths, wantPaths)
+			}
+			if !reflect.DeepEqual(got.Warnings, []string{}) {
+				t.Errorf("BuildRoster() warnings = %#v, want no warnings", got.Warnings)
+			}
+		})
+	}
+}

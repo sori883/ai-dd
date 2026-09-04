@@ -92,6 +92,12 @@ func minimalKnowledgeFile(
 	owners pluginOwners,
 	enabledPlugins []string,
 ) bool {
+	selectedForStage := minimalKnowledge[candidate.stage]
+	selectedForOwner := selectedForStage[candidate.owner]
+	if selectedForOwner == nil {
+		return true
+	}
+
 	pathOwners, hasOwners := owners[candidate.relative]
 	if hasOwners {
 		for plugin := range pathOwners {
@@ -102,15 +108,11 @@ func minimalKnowledgeFile(
 		return false
 	}
 
-	selectedForStage := minimalKnowledge[candidate.stage][candidate.owner]
-	if selectedForStage == nil {
-		return true
-	}
 	shippedForOwner := shippedKnowledge[candidate.owner]
 	if _, shipped := shippedForOwner[candidate.ownerRelative]; !shipped {
 		return true
 	}
-	_, selected := selectedForStage[candidate.ownerRelative]
+	_, selected := selectedForOwner[candidate.ownerRelative]
 	return selected
 }
 
