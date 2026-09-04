@@ -18,7 +18,7 @@ src/internal/state (aidlc-state.mdのtyped read/write)
 
 src/internal/memory (4層Memory sourceのread-only acquisition)
 
-src/internal/steering (required rule reference resolution and content read-only acquisition)
+src/internal/steering (required rule resolution・fresh read・ordered delivery chunking)
 
 src/internal/knowledge (persona・知識のordered rosterとpreflight)
 
@@ -59,7 +59,7 @@ src/internal/workspace
 - `src/internal/scope`: scopes directory基準の`fs.FS`から直下Markdownの狭いfrontmatter metadataを読みます。plugin選択、graph join、state、CLI、write、Root lifecycleは所有しません。
 - `src/internal/state`: 初期stateの構築・永続化と、保存済み`aidlc-state.md`のread-only typed snapshot化を所有します。`ReadDocument`と`Read`はcaller-ownedのrecord `*os.Root`をCloseせず、固定leafをnonblocking descriptorで読み、path・descriptor identityを読取前後に確認します。`Parse`はState Version 8のsection・field・phase・Stage rowを検証します。graph join、state mutation、audit、CLI、Stage実行は所有しません。
 - `src/internal/memory`: Memory root基準の`fs.FS`から`org.md`、`team.md`、`project.md`、`phases/<phase>.md`を固定順で読む4層source acquisitionと、取得済みsourceからsubstantiveなbundleを作る純粋なfilterを所有します。merge・override・frontmatter parseなどのworkflow判断、workspace path解決、Rootのopen/Closeは所有しません。実filesystemの呼出側は`os.Root.FS()`を渡し、readerはRootをCloseしません。
-- `src/internal/steering`: `ResolveRulePaths`でgraphの`rules_in_context`をactive Spaceの表示pathとProject/Memory別のFS相対読込pathへ純粋に解決し、`ReadResolvedRules`でcallerが貸し出す各`fs.FS`へ接続します。readerは順序付きpathを毎回読み、path検証、不正UTF-8のfail-closed、先頭BOM 1個の除去を行い、`memory.BuildBundle`で実質的な本文のないtemplateを除外して`RuleContent`を返します。ルール選択、phase推測、sort、Rootのopen/Close、配信やmergeは所有しません。実filesystemの呼出側は`os.OpenRoot`で開いた`Root.FS()`を渡します。
+- `src/internal/steering`: `ResolveRulePaths`でgraphの`rules_in_context`をactive Spaceの表示pathとProject/Memory別のFS相対読込pathへ純粋に解決し、`ReadResolvedRules`でcallerが貸し出す各`fs.FS`へ接続します。readerは順序付きpathを毎回読み、path検証、不正UTF-8のfail-closed、先頭BOM 1個の除去を行い、`memory.BuildBundle`で実質的な本文のないtemplateを除外して`RuleContent`を返します。`ChunkRules`は取得済み本文を見出しとJSON byte目標に沿う順序付き配信単位へ純粋に分割します。ルール選択、phase推測、sort、Rootのopen/Close、送信tokenや完成directiveの上限検査は所有しません。実filesystemの呼出側は`os.OpenRoot`で開いた`Root.FS()`を渡します。
 - `src/internal/knowledge`: `BuildRoster`はcallerが渡す配置rootの`fs.FS`を借り、inline/mobのlead・supportに対応するpersona、framework共通知識・担当AI別知識、active Space共通知識・担当AI別知識を5群順で列挙します。各directoryはUTF-16 code-unit順の深さ優先で走査し、候補を毎回`fs.ReadFile`でUTF-8 preflightしてからMinimalとplugin metadataの選択、display pathのfirst-wins、JSONサイズ上限を適用します。`FrameworkDir`はplugin warningの表示専用で、rootの探索・open/Close、cwd・環境変数参照、本文の返却・cache・埋込みは行いません。実filesystemの呼出側は`.codex`とactive Space `knowledge`を`os.OpenRoot`で開き、RootのFSだけを渡します。
 - `src/internal/artifact`: Intent record root基準の`fs.FS`から、通常Stageのrequired `Produces` に対応するcanonical pathを`fs.Stat`だけで確認するread-only queryを所有します。空`Produces`のvacuous success、regular fileのany-of判定、固定filename例外、metadata/FS input errorを扱います。per-unit・CodeKB配置、workspace source、state/audit/approval/lock/clock、内容読取り、Root lifecycleは所有しません。
 
@@ -178,6 +178,17 @@ active Spaceと表示用`Path`は`filepath.Localize`相当のnative検証を使�
 FS不要のnon-nil空sliceです。本文の表示pathはtemplate除外後もEntry単位で保持し、read error・不正UTF-8では表示pathと原因を残して
 全結果を破棄します。callerが渡したRootはreaderがcloseせず、呼出しごとにfresh readします。graph、stageplan、orchestratorの
 Stage返却値は`RulesInContext`のsliceを複製し、callerの変更を内部へ共有しません。
+
+`ChunkRules(content []RuleContent) [][]RuleContent`は、readerが検証したUTF-8本文を入力順のまま配信単位へ
+分けるI/Oなしの純粋関数です。先頭1〜6個の`#`とECMAScript whitespaceで始まる行をMarkdown節の境界とし、
+節を保ったままJSON.stringify相当のUTF-8 byte数が20,480以下になるようgreedyに詰めます。1節が大きい場合は
+Unicode code point境界で分け、引用符、backslash、制御文字のJSON escapeも容量へ含めます。ぴったりは同じchunkへ
+入り、後続要素による詰め直しは行いません。
+
+pathだけで目標を超える場合、20 KiBはsoft targetとして最小1 code pointを保持して必ず前進します。本文が空なら
+分割対象がないため、その要素からchunkを作らない固定2.6.123の境界を維持します。返却したouter/inner sliceは
+caller所有で、入力や別の呼出し結果を共有しません。28 KiBの完成directive上限、digest、token、I/O、freshness検査は
+後続のtransport責務です。詳細は[配信用chunkの実装計画](ram/decisions/2026-09-05-steering-chunks-plan.md)を参照してください。
 
 ## Knowledge roster（内部API）
 
