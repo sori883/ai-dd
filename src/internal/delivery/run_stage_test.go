@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/sori883/ai-dd/src/internal/artifact"
 	"github.com/sori883/ai-dd/src/internal/graph"
+	"github.com/sori883/ai-dd/src/internal/knowledge"
 	"github.com/sori883/ai-dd/src/internal/orchestrator"
 	"github.com/sori883/ai-dd/src/internal/recordlock"
 	"github.com/sori883/ai-dd/src/internal/scope"
@@ -183,6 +185,231 @@ func assertRunStageRulesInContext(t *testing.T, label string, data []byte, want 
 	if !reflect.DeepEqual(wire.RulesInContext, want) {
 		t.Errorf("ComposeRunStage(%s) wire rules_in_context = %#v, want %#v", label, wire.RulesInContext, want)
 	}
+}
+
+func TestComposeRunStageBuildsFreshKnowledgeRoster(t *testing.T) {
+	fixture := newRunStageFixture(t)
+	dataDir := filepath.Dir(fixture.stageGraphPath)
+	writeRunStageFile(t, fixture.stageGraphPath, runStageKnowledgeGraphJSON("inline"))
+
+	stateBytes, err := fixture.recordRoot.ReadFile("aidlc-state.md")
+	if err != nil {
+		t.Fatalf("ReadFile(aidlc-state.md): %v", err)
+	}
+	minimalState := strings.Replace(string(stateBytes), "- **Depth**: Standard\n", "- **Depth**: Minimal\n", 1)
+	if minimalState == string(stateBytes) {
+		t.Fatal("fixture state did not contain canonical Standard depth")
+	}
+	writeRunStageFile(t, filepath.Join(fixture.identity.ProjectRoot(), "aidlc", "spaces", fixture.identity.Space(), "intents", fixture.identity.Intent(), "aidlc-state.md"), minimalState)
+
+	projectDir := fixture.identity.ProjectPath()
+	frameworkDir := filepath.Join(projectDir, ".codex")
+	spaceKnowledgeDir := filepath.Join(projectDir, "aidlc", "spaces", fixture.identity.Space(), "knowledge")
+	for _, directory := range []string{
+		filepath.Join(frameworkDir, "agents"),
+		filepath.Join(frameworkDir, "knowledge", "aidlc-shared"),
+		filepath.Join(frameworkDir, "knowledge", "aidlc-product-agent"),
+		filepath.Join(frameworkDir, "knowledge", "aidlc-architect-agent"),
+		filepath.Join(spaceKnowledgeDir, "aidlc-shared"),
+		filepath.Join(spaceKnowledgeDir, "aidlc-product-agent"),
+		filepath.Join(spaceKnowledgeDir, "aidlc-architect-agent"),
+	} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatalf("MkdirAll(%q): %v", directory, err)
+		}
+	}
+	productPersonaPath := filepath.Join(frameworkDir, "agents", "aidlc-product-agent.md")
+	architectPersonaPath := filepath.Join(frameworkDir, "agents", "aidlc-architect-agent.md")
+	writeRunStageFile(t, productPersonaPath, "product persona 日本語\n")
+	if err := os.WriteFile(architectPersonaPath, []byte{0xff}, 0o600); err != nil {
+		t.Fatalf("WriteFile(invalid support persona): %v", err)
+	}
+	writeRunStageFile(t, filepath.Join(frameworkDir, "knowledge", "aidlc-shared", "verification.md"), "verification\n")
+	writeRunStageFile(t, filepath.Join(frameworkDir, "knowledge", "aidlc-shared", "audit-format.md"), "not selected at Minimal depth\n")
+	writeRunStageFile(t, filepath.Join(frameworkDir, "knowledge", "aidlc-product-agent", "requirements-elicitation.md"), "product knowledge\n")
+	writeRunStageFile(t, filepath.Join(frameworkDir, "knowledge", "aidlc-architect-agent", "architecture-guide.md"), "architect knowledge\n")
+	writeRunStageFile(t, filepath.Join(spaceKnowledgeDir, "aidlc-shared", "space.md"), "space shared knowledge 日本語\n")
+	writeRunStageFile(t, filepath.Join(spaceKnowledgeDir, "aidlc-product-agent", "space.md"), "space product knowledge\n")
+	writeRunStageFile(t, filepath.Join(spaceKnowledgeDir, "aidlc-architect-agent", "space.md"), "space architect knowledge\n")
+
+	input := RunStageInput{
+		Identity:       fixture.identity,
+		ProjectRoot:    fixture.projectRoot,
+		RecordRoot:     fixture.recordRoot,
+		EnabledPlugins: []string{"example-plugin"},
+	}
+	depth, err := state.Depth(stateBytesForRunStage(t, fixture.recordRoot))
+	if err != nil {
+		t.Fatalf("state.Depth(fixture): %v", err)
+	}
+	if depth != "Minimal" {
+		t.Fatalf("state.Depth(fixture) = %q, want Minimal", depth)
+	}
+
+	loadStage := func(label string) graph.Stage {
+		t.Helper()
+		catalog, err := graph.Load(os.DirFS(dataDir))
+		if err != nil {
+			t.Fatalf("graph.Load(%s): %v", label, err)
+		}
+		for _, candidate := range catalog.Stages() {
+			if candidate.Slug == "intent-capture" {
+				return candidate
+			}
+		}
+		t.Fatalf("graph.Load(%s) did not return intent-capture", label)
+		return graph.Stage{}
+	}
+	buildWantRoster := func(label string, stage graph.Stage) knowledge.Roster {
+		t.Helper()
+		projectFS := fixture.projectRoot.FS()
+		frameworkFS, err := fs.Sub(projectFS, ".codex")
+		if err != nil {
+			t.Fatalf("fs.Sub(framework, %s): %v", label, err)
+		}
+		spaceFS, err := fs.Sub(projectFS, path.Join("aidlc", "spaces", fixture.identity.Space(), "knowledge"))
+		if err != nil {
+			t.Fatalf("fs.Sub(space knowledge, %s): %v", label, err)
+		}
+		roster, err := knowledge.BuildRoster(knowledge.RosterInput{
+			Stage:        stage,
+			Depth:        depth,
+			Framework:    knowledge.Source{FS: frameworkFS, DisplayPrefix: ".codex"},
+			FrameworkDir: frameworkDir,
+			SpaceKnowledge: &knowledge.Source{
+				FS:            spaceFS,
+				DisplayPrefix: path.Join("aidlc", "spaces", fixture.identity.Space(), "knowledge"),
+			},
+			EnabledPlugins: input.EnabledPlugins,
+		})
+		if err != nil {
+			t.Fatalf("knowledge.BuildRoster(%s): %v", label, err)
+		}
+		return roster
+	}
+	parseWire := func(label string, data []byte) ([]string, []string) {
+		t.Helper()
+		var wire struct {
+			InlineContextPaths []string `json:"inline_context_paths"`
+			ContextWarnings    []string `json:"context_warnings"`
+		}
+		if err := json.Unmarshal(data, &wire); err != nil {
+			t.Errorf("ComposeRunStage(%s) wire unmarshal error = %v", label, err)
+			return nil, nil
+		}
+		return wire.InlineContextPaths, wire.ContextWarnings
+	}
+
+	inlineStage := loadStage("initial inline")
+	initialWant := buildWantRoster("initial inline", inlineStage)
+	if len(initialWant.Warnings) == 0 {
+		t.Fatal("knowledge.BuildRoster(initial inline) warnings = empty, want missing/invalid optional warning")
+	}
+	if len(initialWant.Paths) == 0 {
+		t.Fatal("knowledge.BuildRoster(initial inline) paths = empty, want available knowledge")
+	}
+	if !containsRunStagePath(initialWant.Paths, ".codex/knowledge/aidlc-shared/verification.md") {
+		t.Errorf("Minimal roster paths = %#v, want known shipped verification.md", initialWant.Paths)
+	}
+	if containsRunStagePath(initialWant.Paths, ".codex/knowledge/aidlc-shared/audit-format.md") {
+		t.Errorf("Minimal roster paths = %#v, did not expect audit-format.md", initialWant.Paths)
+	}
+	first, err := ComposeRunStage(context.Background(), input)
+	if err != nil {
+		t.Fatalf("ComposeRunStage(initial knowledge) error = %v, want nil", err)
+	}
+	firstPaths, firstWarnings := parseWire("initial knowledge", first.Wire)
+	if !reflect.DeepEqual(firstPaths, initialWant.Paths) {
+		t.Errorf("ComposeRunStage(initial).inline_context_paths = %#v, want %#v", firstPaths, initialWant.Paths)
+	}
+	if !reflect.DeepEqual(firstWarnings, initialWant.Warnings) {
+		t.Errorf("ComposeRunStage(initial).context_warnings = %#v, want %#v", firstWarnings, initialWant.Warnings)
+	}
+	stageFileIndex := strings.Index(string(first.Wire), `"stage_file"`)
+	warningsIndex := strings.Index(string(first.Wire), `"context_warnings"`)
+	if stageFileIndex < 0 || warningsIndex <= stageFileIndex {
+		t.Errorf("ComposeRunStage(initial) wire warning order = %q, want context_warnings after stage_file", first.Wire)
+	}
+
+	writeRunStageFile(t, architectPersonaPath, "architect persona 日本語\n")
+	writeRunStageFile(t, productPersonaPath, "product persona 更新 🚀\n")
+	secondWant := buildWantRoster("updated inline", inlineStage)
+	if len(secondWant.Warnings) != 0 {
+		t.Fatalf("knowledge.BuildRoster(updated inline) warnings = %#v, want empty", secondWant.Warnings)
+	}
+	second, err := ComposeRunStage(context.Background(), input)
+	if err != nil {
+		t.Fatalf("ComposeRunStage(updated knowledge) error = %v, want nil", err)
+	}
+	secondPaths, secondWarnings := parseWire("updated knowledge", second.Wire)
+	if !reflect.DeepEqual(secondPaths, secondWant.Paths) {
+		t.Errorf("ComposeRunStage(updated).inline_context_paths = %#v, want %#v", secondPaths, secondWant.Paths)
+	}
+	if len(secondWarnings) != 0 {
+		t.Errorf("ComposeRunStage(updated).context_warnings = %#v, want empty", secondWarnings)
+	}
+	if reflect.DeepEqual(firstPaths, secondPaths) || reflect.DeepEqual(firstWarnings, secondWarnings) {
+		t.Error("ComposeRunStage(updated) did not refresh paths and warnings")
+	}
+	if strings.Contains(string(second.Wire), `"context_warnings"`) {
+		t.Errorf("ComposeRunStage(updated) wire = %q, want empty context_warnings field omitted", second.Wire)
+	}
+
+	writeRunStageFile(t, fixture.stageGraphPath, runStageKnowledgeGraphJSON("mob"))
+	mobStage := loadStage("mob")
+	mobWant := buildWantRoster("mob", mobStage)
+	mob, err := ComposeRunStage(context.Background(), input)
+	if err != nil {
+		t.Fatalf("ComposeRunStage(mob knowledge) error = %v, want nil", err)
+	}
+	mobPaths, mobWarnings := parseWire("mob knowledge", mob.Wire)
+	if !reflect.DeepEqual(mobPaths, mobWant.Paths) || len(mobWarnings) != 0 {
+		t.Errorf("ComposeRunStage(mob) roster = paths %#v warnings %#v, want paths %#v warnings %#v", mobPaths, mobWarnings, mobWant.Paths, mobWant.Warnings)
+	}
+	if containsRunStagePath(mobPaths, ".codex/agents/aidlc-architect-agent.md") {
+		t.Errorf("ComposeRunStage(mob) paths = %#v, want lead persona only", mobPaths)
+	}
+
+	writeRunStageFile(t, fixture.stageGraphPath, runStageKnowledgeGraphJSON("subagent"))
+	subagentStage := loadStage("subagent")
+	subagentWant := buildWantRoster("subagent", subagentStage)
+	if len(subagentWant.Paths) != 0 || len(subagentWant.Warnings) != 0 {
+		t.Fatalf("knowledge.BuildRoster(subagent) = %#v, want empty dispatched roster", subagentWant)
+	}
+	subagent, err := ComposeRunStage(context.Background(), input)
+	if err != nil {
+		t.Fatalf("ComposeRunStage(subagent knowledge) error = %v, want nil", err)
+	}
+	subagentPaths, subagentWarnings := parseWire("subagent knowledge", subagent.Wire)
+	if len(subagentPaths) != 0 || len(subagentWarnings) != 0 {
+		t.Errorf("ComposeRunStage(subagent) roster = paths %#v warnings %#v, want empty", subagentPaths, subagentWarnings)
+	}
+}
+
+func runStageKnowledgeGraphJSON(mode string) string {
+	return `[
+  {"slug":"workspace-scaffold","number":"0.1","name":"Workspace Scaffold","phase":"initialization","execution":"ALWAYS","lead_agent":"orchestrator","support_agents":[],"mode":"inline","scopes":["classic"],"enabled":true,"produces":[],"consumes":[],"requires_stage":[]},
+  {"slug":"intent-capture","number":"1.1","name":"Intent Capture","phase":"ideation","execution":"ALWAYS","lead_agent":"aidlc-product-agent","support_agents":["aidlc-architect-agent"],"mode":"` + mode + `","scopes":["classic"],"enabled":true,"produces":[],"consumes":[],"requires_stage":[]},
+  {"slug":"next-stage","number":"1.2","name":"Next Stage","phase":"ideation","execution":"ALWAYS","lead_agent":"product-agent","support_agents":[],"mode":"inline","scopes":["classic"],"enabled":true,"produces":[],"consumes":[],"requires_stage":[]}
+]`
+}
+
+func stateBytesForRunStage(t *testing.T, recordRoot *os.Root) []byte {
+	t.Helper()
+	content, err := recordRoot.ReadFile("aidlc-state.md")
+	if err != nil {
+		t.Fatalf("ReadFile(aidlc-state.md): %v", err)
+	}
+	return content
+}
+
+func containsRunStagePath(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 const runStageArtifactGraphJSON = `[

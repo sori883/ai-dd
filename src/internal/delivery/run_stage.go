@@ -7,19 +7,23 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"path/filepath"
 
 	"github.com/sori883/ai-dd/src/internal/graph"
+	"github.com/sori883/ai-dd/src/internal/knowledge"
 	"github.com/sori883/ai-dd/src/internal/orchestrator"
 	"github.com/sori883/ai-dd/src/internal/recordlock"
+	"github.com/sori883/ai-dd/src/internal/state"
 	"github.com/sori883/ai-dd/src/internal/steering"
 	"github.com/sori883/ai-dd/src/internal/workspace"
 )
 
 // RunStageInput identifies the caller-owned roots used for one composition.
 type RunStageInput struct {
-	Identity    recordlock.Identity
-	ProjectRoot *os.Root
-	RecordRoot  *os.Root
+	Identity       recordlock.Identity
+	ProjectRoot    *os.Root
+	RecordRoot     *os.Root
+	EnabledPlugins []string
 }
 
 // RunStageDirective is the minimal validated routing result exposed by a
@@ -113,6 +117,32 @@ func ComposeRunStage(ctx context.Context, input RunStageInput) (RunStageComposit
 	if !ok {
 		return RunStageComposition{}, fmt.Errorf("compose run-stage: next run-stage has no stage: %w", orchestrator.ErrInvalidNext)
 	}
+	depth, err := state.Depth(next.Content)
+	if err != nil {
+		return RunStageComposition{}, fmt.Errorf("compose run-stage: read knowledge depth: %w", err)
+	}
+	frameworkFS, err := fs.Sub(projectFS, ".codex")
+	if err != nil {
+		return RunStageComposition{}, fmt.Errorf("compose run-stage: open framework knowledge: %w", err)
+	}
+	spaceKnowledgeFS, err := fs.Sub(projectFS, path.Join("aidlc", "spaces", input.Identity.Space(), "knowledge"))
+	if err != nil {
+		return RunStageComposition{}, fmt.Errorf("compose run-stage: open Space knowledge: %w", err)
+	}
+	roster, err := knowledge.BuildRoster(knowledge.RosterInput{
+		Stage:        stage,
+		Depth:        depth,
+		Framework:    knowledge.Source{FS: frameworkFS, DisplayPrefix: ".codex"},
+		FrameworkDir: filepath.Join(input.Identity.ProjectPath(), ".codex"),
+		SpaceKnowledge: &knowledge.Source{
+			FS:            spaceKnowledgeFS,
+			DisplayPrefix: path.Join("aidlc", "spaces", input.Identity.Space(), "knowledge"),
+		},
+		EnabledPlugins: input.EnabledPlugins,
+	})
+	if err != nil {
+		return RunStageComposition{}, fmt.Errorf("compose run-stage: build knowledge roster: %w", err)
+	}
 	resolvedRules, err := steering.ResolveRulePaths(
 		input.Identity.ProjectPath(),
 		input.Identity.Space(),
@@ -135,7 +165,7 @@ func ComposeRunStage(ctx context.Context, input RunStageInput) (RunStageComposit
 		return RunStageComposition{}, fmt.Errorf("compose run-stage: digest rules: %w", err)
 	}
 	chunks := steering.ChunkRules(rules)
-	wire, err := buildRunStageWire(input.Identity, stage, next.State, catalog, input.RecordRoot, rules)
+	wire, err := buildRunStageWire(input.Identity, stage, next.State, catalog, input.RecordRoot, rules, roster)
 	if err != nil {
 		return RunStageComposition{}, fmt.Errorf("compose run-stage: build wire: %w", err)
 	}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/sori883/ai-dd/src/internal/artifact"
 	"github.com/sori883/ai-dd/src/internal/graph"
+	"github.com/sori883/ai-dd/src/internal/knowledge"
 	"github.com/sori883/ai-dd/src/internal/orchestrator"
 	"github.com/sori883/ai-dd/src/internal/recordlock"
 	"github.com/sori883/ai-dd/src/internal/state"
@@ -31,6 +32,7 @@ type runStageWire struct {
 	RulesInContext     []string         `json:"rules_in_context"`
 	SensorsApplicable  []string         `json:"sensors_applicable"`
 	StageFile          string           `json:"stage_file"`
+	ContextWarnings    []string         `json:"context_warnings,omitempty"`
 	ConsumesAbsent     []runStageAbsent `json:"consumes_absent,omitempty"`
 	NextStage          *string          `json:"next_stage"`
 }
@@ -40,7 +42,7 @@ type runStageAbsent struct {
 	Expected bool   `json:"expected"`
 }
 
-func buildRunStageWire(identity recordlock.Identity, stage graph.Stage, current state.State, catalog graph.Snapshot, recordRoot *os.Root, rules []steering.RuleContent) ([]byte, error) {
+func buildRunStageWire(identity recordlock.Identity, stage graph.Stage, current state.State, catalog graph.Snapshot, recordRoot *os.Root, rules []steering.RuleContent, roster knowledge.Roster) ([]byte, error) {
 	nextStage, err := nextStageName(current.NextStage(), catalog)
 	if err != nil {
 		return nil, err
@@ -81,7 +83,7 @@ func buildRunStageWire(identity recordlock.Identity, stage graph.Stage, current 
 		LeadAgent:          stage.LeadAgent,
 		SupportAgents:      nonNilStrings(stage.SupportAgents),
 		Mode:               stage.Mode,
-		InlineContextPaths: []string{},
+		InlineContextPaths: nonNilStrings(roster.Paths),
 		Gate:               true,
 		MemoryPath: path.Join(
 			"aidlc",
@@ -104,8 +106,9 @@ func buildRunStageWire(identity recordlock.Identity, stage graph.Stage, current 
 			stage.Phase,
 			stage.Slug+".md",
 		),
-		ConsumesAbsent: consumesAbsent,
-		NextStage:      nextStage,
+		ContextWarnings: nonNilStrings(roster.Warnings),
+		ConsumesAbsent:  consumesAbsent,
+		NextStage:       nextStage,
 	}
 
 	data, err := json.Marshal(wire)
