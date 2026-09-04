@@ -18,7 +18,7 @@ src/internal/state (aidlc-state.mdのtyped read/write)
 
 src/internal/memory (4層Memory sourceのread-only acquisition)
 
-src/internal/steering (required rule contentのread-only acquisition)
+src/internal/steering (required rule reference resolution and content read-only acquisition)
 
 src/internal/artifact (通常Stageのrequired output presence query)
 
@@ -57,7 +57,7 @@ src/internal/workspace
 - `src/internal/scope`: scopes directory基準の`fs.FS`から直下Markdownの狭いfrontmatter metadataを読みます。plugin選択、graph join、state、CLI、write、Root lifecycleは所有しません。
 - `src/internal/state`: 初期stateの構築・永続化と、保存済み`aidlc-state.md`のread-only typed snapshot化を所有します。`ReadDocument`と`Read`はcaller-ownedのrecord `*os.Root`をCloseせず、固定leafをnonblocking descriptorで読み、path・descriptor identityを読取前後に確認します。`Parse`はState Version 8のsection・field・phase・Stage rowを検証します。graph join、state mutation、audit、CLI、Stage実行は所有しません。
 - `src/internal/memory`: Memory root基準の`fs.FS`から`org.md`、`team.md`、`project.md`、`phases/<phase>.md`を固定順で読む4層source acquisitionと、取得済みsourceからsubstantiveなbundleを作る純粋なfilterを所有します。merge・override・frontmatter parseなどのworkflow判断、workspace path解決、Rootのopen/Closeは所有しません。実filesystemの呼出側は`os.Root.FS()`を渡し、readerはRootをCloseしません。
-- `src/internal/steering`: callerが解決したFS root相対slash pathの順序付き一覧から必須ルール本文を毎回読み、path検証、不正UTF-8のfail-closed、先頭BOM 1個の除去を行い、`memory.BuildBundle`で実質的な本文のないtemplateを除外して`RuleContent`を返します。ルール選択、phase推測、sort、Rootのopen/Close、配信やmergeは所有しません。実filesystemの呼出側は`os.OpenRoot`で開いた`Root.FS()`を渡します。
+- `src/internal/steering`: `ResolveRulePaths`でgraphの`rules_in_context`をactive Spaceの表示pathとProject/Memory別のFS相対読込pathへ純粋に解決し、`ReadResolvedRules`でcallerが貸し出す各`fs.FS`へ接続します。readerは順序付きpathを毎回読み、path検証、不正UTF-8のfail-closed、先頭BOM 1個の除去を行い、`memory.BuildBundle`で実質的な本文のないtemplateを除外して`RuleContent`を返します。ルール選択、phase推測、sort、Rootのopen/Close、配信やmergeは所有しません。実filesystemの呼出側は`os.OpenRoot`で開いた`Root.FS()`を渡します。
 - `src/internal/artifact`: Intent record root基準の`fs.FS`から、通常Stageのrequired `Produces` に対応するcanonical pathを`fs.Stat`だけで確認するread-only queryを所有します。空`Produces`のvacuous success、regular fileのany-of判定、固定filename例外、metadata/FS input errorを扱います。per-unit・CodeKB配置、workspace source、state/audit/approval/lock/clock、内容読取り、Root lifecycleは所有しません。
 
 - `src/internal/recordlock`: canonical project path・space・intentからrecord identityを作り、system temp配下のhashed lock directoryを`mkdir`で有限回取得します。owner token/PID/start時刻を保存し、token一致時だけ自身のlockをreleaseします。`Guard`はidentityとheld状態を束縛し、nested処理へ明示的に渡します。context cancel、owner mismatch、callback/release errorのjoin、panic後のreleaseを扱います。stale ownerの自動reap、workflow判断、Root lifecycleは所有しません。
@@ -158,6 +158,21 @@ Closeしません。Root内の通常fileと相対symlinkは読めますが、roo
 `core/tools/aidlc-steering.ts:85-115`が必須読込、first-wins、fatal UTF-8、全結果破棄、filterの根拠です。
 詳細な承認範囲と残余リスクは[必須ルールreaderの実装計画](ram/decisions/2026-09-04-required-rule-delivery-plan.md)
 を参照してください。
+
+`ResolveRulePaths(projectDir, activeSpace, rulesDir, refs)`は、絶対`projectDir`と1 componentのactive Spaceを
+検証してから、`rulesDir`（空なら`project/aidlc/spaces/<activeSpace>/memory`、相対ならproject基準、絶対なら指定値）を
+Memory配置rootとして返します。各参照に最初の`/memory/`があれば後続をMemory root相対pathへ、なければProject root相対pathへ
+割り当てます。表示用のMemory pathはactive Spaceを使い、物理読込pathと分離します。この関数はFS、環境変数、cwd、Root
+のopen/Closeを参照しません。
+`rulesDir`に明示された相対`../`は配置rootとして許可しますが、graph由来のFS相対`ReadPath`の`../`は拒否します。
+resolverは生成した表示pathと読込pathも同じEntry検証へ通してから返します。
+Windowsのdrive-relativeやdriveなしroot-relativeな`rulesDir`はproject基準へ解釈し直さず拒否します。
+
+`ReadResolvedRules(projectFS, memoryFS, entries)`は全Entryのdisplay/read pathとsourceをI/O前に検証し、display pathのfirst-winsを
+適用した後、実際に使うsourceのFSだけをnil/typed-nil検査して`ReadRules`へ委譲します。未使用sourceのnil FSは許可し、空Entryは
+FS不要のnon-nil空sliceです。本文の表示pathはtemplate除外後もEntry単位で保持し、read error・不正UTF-8では表示pathと原因を残して
+全結果を破棄します。callerが渡したRootはreaderがcloseせず、呼出しごとにfresh readします。graph、stageplan、orchestratorの
+Stage返却値は`RulesInContext`のsliceを複製し、callerの変更を内部へ共有しません。
 
 ## 手動DI
 
@@ -704,6 +719,10 @@ support agents、mode、fallback用scopesを保持します。さらに、Stage�
 `requires_stage`をcompiled metadataとして保持します。完了判定に必要な`for_each`、
 `workspace_requires`、`reviewer`、`summary_confirmation`、`sensors`、`produces_kinds`も保持します。
 `Consume`は`artifact`、`required`、任意の`conditional_on`（`brownfield`または`greenfield`）を値として持ちます。
+
+Stageの任意metadata `rules_in_context` は、必須ルール参照の`path`と宣言scope（`org`、`team`、`project`、`phase`）を
+JSON記述順のまま保持します。参照の重複や順序はgraphで解釈・補完・並べ替えず、後続の`steering.ResolveRulePaths`へ渡します。
+graphの`Snapshot.Stages`、stageplanのaccessor、orchestratorの`Directive.Stage`は、この追加sliceをそれぞれ複製して返します。
 
 `produces`、`consumes`、`requires_stage`はJSON上の必須配列です。欠損・`null`・型不正はLoad
 errorとし、空配列は有効です。`optional_produces`は欠損を許容し、存在する場合は配列として

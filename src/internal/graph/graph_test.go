@@ -130,6 +130,84 @@ func TestLoadPreservesStageArtifactMetadata(t *testing.T) {
 	}
 }
 
+func TestLoadRulesInContext(t *testing.T) {
+	t.Parallel()
+
+	stage := stageFixture("rules", "1.1")
+	stage["rules_in_context"] = []map[string]any{
+		{"path": "/memory/org.md", "scope": "org", "future": true},
+		{"path": "/memory/team.md", "scope": "team"},
+		{"path": "/memory/team.md", "scope": "team"},
+	}
+	empty := stageFixture("empty", "1.2")
+	empty["rules_in_context"] = []map[string]any{}
+	omitted := stageFixture("omitted", "1.3")
+
+	snapshot, err := Load(fixtureFS(t, []any{stage, empty, omitted}, map[string]any{}))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	stages := snapshot.Stages()
+	if got, want := stages[0].RulesInContext, []Rule{
+		{Path: "/memory/org.md", Scope: "org"},
+		{Path: "/memory/team.md", Scope: "team"},
+		{Path: "/memory/team.md", Scope: "team"},
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("RulesInContext = %#v, want %#v", got, want)
+	}
+	if stages[1].RulesInContext == nil {
+		t.Fatal("explicit empty RulesInContext is nil, want non-nil empty slice")
+	}
+	if len(stages[1].RulesInContext) != 0 {
+		t.Fatalf("explicit empty RulesInContext length = %d, want zero", len(stages[1].RulesInContext))
+	}
+	if stages[2].RulesInContext != nil {
+		t.Fatalf("omitted RulesInContext = %#v, want nil", stages[2].RulesInContext)
+	}
+}
+
+func TestLoadRejectsInvalidRulesInContext(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		value any
+		want  string
+	}{
+		{name: "null array", value: nil, want: "rules_in_context"},
+		{name: "object array", value: map[string]any{}, want: "rules_in_context"},
+		{name: "null item", value: []any{nil}, want: "rules_in_context"},
+		{name: "missing path", value: []any{map[string]any{"scope": "org"}}, want: ".path"},
+		{name: "empty path", value: []any{map[string]any{"path": "", "scope": "org"}}, want: ".path"},
+		{name: "missing scope", value: []any{map[string]any{"path": "/memory/org.md"}}, want: ".scope"},
+		{name: "empty scope", value: []any{map[string]any{"path": "/memory/org.md", "scope": ""}}, want: ".scope"},
+		{name: "unknown scope", value: []any{map[string]any{"path": "/memory/org.md", "scope": "ORG"}}, want: "scope"},
+		{name: "wrong path type", value: []any{map[string]any{"path": 1, "scope": "org"}}, want: "rules_in_context"},
+		{name: "wrong scope type", value: []any{map[string]any{"path": "/memory/org.md", "scope": true}}, want: "rules_in_context"},
+		{name: "wrong case fields", value: []any{map[string]any{"Path": "/memory/org.md", "Scope": "org"}}, want: ".path"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			stage := stageFixture("rules", "1.1")
+			stage["rules_in_context"] = tt.value
+			got, err := Load(fixtureFS(t, []any{stage}, map[string]any{}))
+			if err == nil {
+				t.Fatalf("Load() error = nil, snapshot = %#v", got)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("Load() error = %q, want context %q", err, tt.want)
+			}
+			if !reflect.DeepEqual(got, Snapshot{}) {
+				t.Errorf("Load() snapshot on error = %#v, want zero value", got)
+			}
+		})
+	}
+}
+
 func TestLoadPreservesStageCompletionMetadata(t *testing.T) {
 	t.Parallel()
 
@@ -932,6 +1010,7 @@ func TestSnapshotReturnsDefensiveCopies(t *testing.T) {
 	}
 	stage["consumes"] = []map[string]any{{"artifact": "project-description", "required": true}}
 	stage["requires_stage"] = []string{"dependency"}
+	stage["rules_in_context"] = []map[string]any{{"path": "/memory/org.md", "scope": "org"}}
 	dependency := stageFixture("dependency", "1.1")
 	grid := map[string]any{
 		"classic": map[string]any{
@@ -954,6 +1033,7 @@ func TestSnapshotReturnsDefensiveCopies(t *testing.T) {
 	stages[0].OptionalProduces[0] = "changed"
 	stages[0].Consumes[0].Artifact = "changed"
 	stages[0].RequiresStages[0] = "changed"
+	stages[0].RulesInContext[0].Path = "changed"
 	if got, want := snapshot.Stages()[0], (Stage{
 		Slug:             "stage",
 		Number:           "1.2",
@@ -971,6 +1051,7 @@ func TestSnapshotReturnsDefensiveCopies(t *testing.T) {
 		OptionalProduces: []string{"questions"},
 		Consumes:         []Consume{{Artifact: "project-description", Required: true}},
 		RequiresStages:   []string{"dependency"},
+		RulesInContext:   []Rule{{Path: "/memory/org.md", Scope: "org"}},
 	}); !reflect.DeepEqual(got, want) {
 		t.Errorf("Stages() after caller mutation = %#v, want %#v", got, want)
 	}

@@ -218,6 +218,35 @@ func TestPlanAccessorsReturnDeepCopies(t *testing.T) {
 	}
 }
 
+func TestPlanRulesInContextOwnership(t *testing.T) {
+	t.Parallel()
+
+	snapshot := loadTestSnapshot(t, []map[string]any{
+		stageFixture("stage", "1.1", map[string]any{
+			"rules_in_context": []map[string]any{{"path": "/memory/org.md", "scope": "org"}},
+		}),
+	}, map[string]any{
+		"classic": map[string]any{"stages": map[string]any{"stage": "EXECUTE"}},
+	})
+
+	plan, err := Build(Input{Graph: snapshot, Scope: "classic", ProjectType: "Brownfield"})
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	entries := plan.Entries()
+	entries[0].Stage.RulesInContext[0].Path = "changed"
+	if got := plan.Entries()[0].Stage.RulesInContext[0].Path; got != "/memory/org.md" {
+		t.Fatalf("Entries() exposed RulesInContext storage: got %q", got)
+	}
+
+	execute := plan.ExecuteStages()
+	execute[0].Stage.RulesInContext[0].Scope = "changed"
+	if got := plan.ExecuteStages()[0].Stage.RulesInContext[0].Scope; got != "org" {
+		t.Fatalf("ExecuteStages() exposed RulesInContext storage: got %q", got)
+	}
+}
+
 func TestBuildRejectsRequiredArtifactWithoutProducer(t *testing.T) {
 	t.Parallel()
 
