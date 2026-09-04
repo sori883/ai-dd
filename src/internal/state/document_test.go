@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"errors"
 	"io/fs"
 	"strings"
@@ -195,4 +196,91 @@ func TestPatchRevisionCountPreservesUnknownBytes(t *testing.T) {
 
 func withRuntimeState(content, count string) string {
 	return strings.Replace(content, "## Phase Progress\n", "## Runtime State\n- **Revision Count**: "+count+"\n\n## Phase Progress\n", 1)
+}
+
+func TestDepthReadsUniqueCanonicalScopeConfigurationField(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(strings.Replace(
+		canonicalStateContent(),
+		"## Execution Plan Summary\n",
+		"## Unknown\n- **Depth**: decoy\n\n## Scope Configuration\n- **Depth**:\t  Standard  \t\n\n## Execution Plan Summary\n",
+		1,
+	))
+	wantContent := append([]byte(nil), content...)
+
+	got, err := Depth(content)
+	if err != nil {
+		t.Fatalf("Depth() error = %v", err)
+	}
+	if got != "Standard" {
+		t.Fatalf("Depth() = %q, want %q", got, "Standard")
+	}
+	if !bytes.Equal(content, wantContent) {
+		t.Fatalf("Depth() mutated input content")
+	}
+}
+
+func TestDepthRejectsInvalidStateOrAmbiguousField(t *testing.T) {
+	t.Parallel()
+
+	canonicalWithScope := func(depth string) string {
+		return strings.Replace(
+			canonicalStateContent(),
+			"## Execution Plan Summary\n",
+			"## Scope Configuration\n- **Depth**: "+depth+"\n\n## Execution Plan Summary\n",
+			1,
+		)
+	}
+	canonical := canonicalWithScope("Standard")
+
+	tests := []struct {
+		name    string
+		content []byte
+	}{
+		{
+			name:    "missing scope configuration section",
+			content: []byte(canonicalStateContent()),
+		},
+		{
+			name:    "duplicate scope configuration section",
+			content: []byte(canonical + "\n## Scope Configuration\n- **Depth**: Standard\n"),
+		},
+		{
+			name:    "missing depth field",
+			content: []byte(strings.Replace(canonical, "- **Depth**: Standard\n", "", 1)),
+		},
+		{
+			name: "duplicate depth field",
+			content: []byte(strings.Replace(
+				canonical,
+				"- **Depth**: Standard\n",
+				"- **Depth**: Standard\n- **Depth**: Minimal\n",
+				1,
+			)),
+		},
+		{
+			name:    "empty depth field",
+			content: []byte(canonicalWithScope(" \t")),
+		},
+		{
+			name:    "invalid state header",
+			content: []byte(strings.Replace(canonical, "# AI-DLC State Tracking", "# Not AI-DLC State Tracking", 1)),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := Depth(test.content)
+			if got != "" {
+				t.Errorf("Depth() = %q, want empty string", got)
+			}
+			if err == nil {
+				t.Fatalf("Depth() error = nil, want fs.ErrInvalid")
+			}
+			if !errors.Is(err, fs.ErrInvalid) {
+				t.Errorf("Depth() error = %v, want fs.ErrInvalid", err)
+			}
+		})
+	}
 }
