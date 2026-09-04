@@ -18,6 +18,8 @@ src/internal/state (aidlc-state.mdのtyped read/write)
 
 src/internal/memory (4層Memory sourceのread-only acquisition)
 
+src/internal/steering (required rule contentのread-only acquisition)
+
 src/internal/artifact (通常Stageのrequired output presence query)
 
 src/internal/recordlock (record単位のcross-process lockとidentity-bound Guard)
@@ -55,6 +57,7 @@ src/internal/workspace
 - `src/internal/scope`: scopes directory基準の`fs.FS`から直下Markdownの狭いfrontmatter metadataを読みます。plugin選択、graph join、state、CLI、write、Root lifecycleは所有しません。
 - `src/internal/state`: 初期stateの構築・永続化と、保存済み`aidlc-state.md`のread-only typed snapshot化を所有します。`ReadDocument`と`Read`はcaller-ownedのrecord `*os.Root`をCloseせず、固定leafをnonblocking descriptorで読み、path・descriptor identityを読取前後に確認します。`Parse`はState Version 8のsection・field・phase・Stage rowを検証します。graph join、state mutation、audit、CLI、Stage実行は所有しません。
 - `src/internal/memory`: Memory root基準の`fs.FS`から`org.md`、`team.md`、`project.md`、`phases/<phase>.md`を固定順で読む4層source acquisitionと、取得済みsourceからsubstantiveなbundleを作る純粋なfilterを所有します。merge・override・frontmatter parseなどのworkflow判断、workspace path解決、Rootのopen/Closeは所有しません。実filesystemの呼出側は`os.Root.FS()`を渡し、readerはRootをCloseしません。
+- `src/internal/steering`: callerが解決したFS root相対slash pathの順序付き一覧から必須ルール本文を毎回読み、path検証、不正UTF-8のfail-closed、先頭BOM 1個の除去を行い、`memory.BuildBundle`で実質的な本文のないtemplateを除外して`RuleContent`を返します。ルール選択、phase推測、sort、Rootのopen/Close、配信やmergeは所有しません。実filesystemの呼出側は`os.OpenRoot`で開いた`Root.FS()`を渡します。
 - `src/internal/artifact`: Intent record root基準の`fs.FS`から、通常Stageのrequired `Produces` に対応するcanonical pathを`fs.Stat`だけで確認するread-only queryを所有します。空`Produces`のvacuous success、regular fileのany-of判定、固定filename例外、metadata/FS input errorを扱います。per-unit・CodeKB配置、workspace source、state/audit/approval/lock/clock、内容読取り、Root lifecycleは所有しません。
 
 - `src/internal/recordlock`: canonical project path・space・intentからrecord identityを作り、system temp配下のhashed lock directoryを`mkdir`で有限回取得します。owner token/PID/start時刻を保存し、token一致時だけ自身のlockをreleaseします。`Guard`はidentityとheld状態を束縛し、nested処理へ明示的に渡します。context cancel、owner mismatch、callback/release errorのjoin、panic後のreleaseを扱います。stale ownerの自動reap、workflow判断、Root lifecycleは所有しません。
@@ -123,6 +126,38 @@ substantiveです。一般のblockquote、frontmatterのfield、変更済みprea
 ローカルAI-DLC v2.6.123 `core/tools/aidlc-steering.ts:25-53`の文字列と処理を根拠にしており、今回の
 Go移植で新たな利用者向けの意図的差分は採用していません。詳細な比較範囲と未確認事項は[Memory bundle filterの参照契約](ram/research/2026-09-02-memory-bundle-filter-contracts.md)と
 [実装計画](ram/decisions/2026-09-02-memory-bundle-filter-plan.md)を参照してください。
+
+## Required rule reader（内部API）
+
+`steering.ReadRules(rulesFS fs.FS, paths []string) ([]steering.RuleContent, error)`は、callerが
+解決した必須MarkdownのFS root相対slash pathを指定順に受け取り、各pathを毎回`fs.ReadFile`で読む
+read-only readerです。readerはorg/team/project/phaseの選択、sort、root探索を行いません。
+
+```go
+type RuleContent struct {
+    Path string
+    Text string
+}
+
+func ReadRules(rulesFS fs.FS, paths []string) ([]RuleContent, error)
+```
+
+全pathをI/O前に`fs.ValidPath`、`.`、backslashで検証し、不正値は`fs.ErrInvalid`をwrapして拒否します。
+nilまたはtyped-nil FSも同じくfail-closedで、空のpath一覧だけはnon-nil空sliceを返しI/Oを行いません。
+同一pathは最初の出現だけを指定順で読みます。missingを含むread errorと不正UTF-8はpathとcauseを保持して
+nil結果を返し、途中までの本文を返しません。不正UTF-8のcauseは`fs.ErrInvalid`です。
+
+UTF-8検証後、先頭BOMを1個だけ除去します。CRLF、空行、comment、frontmatter、途中や2個目以降のBOMは
+本文から除去しません。読込完了後の本文は`memory.BuildBundle`へ渡し、見出し・comment・ASCII hyphen・
+出荷template preambleだけの本文を除外します。この判定のためのcomment除去は、採用本文のTextへ適用しません。
+結果と入力はcaller-ownedで、cache、埋込み、size capは持ちません。
+
+実filesystemの呼出側はrules directoryを`os.OpenRoot`で開いた`*os.Root`の`FS()`を渡し、readerはRootを
+Closeしません。Root内の通常fileと相対symlinkは読めますが、root外・絶対symlinkは外部bytesを返さずerrorに
+なります。このfilesystem境界は既存Memory readerから継承した承認済みの差分であり、固定AI-DLC 2.6.123の
+`core/tools/aidlc-steering.ts:85-115`が必須読込、first-wins、fatal UTF-8、全結果破棄、filterの根拠です。
+詳細な承認範囲と残余リスクは[必須ルールreaderの実装計画](ram/decisions/2026-09-04-required-rule-delivery-plan.md)
+を参照してください。
 
 ## 手動DI
 

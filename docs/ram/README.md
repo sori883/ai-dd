@@ -82,6 +82,8 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [内部Next・Reportとライフサイクル一周テストの計画](decisions/2026-09-04-next-report-lifecycle-plan.md) | Accepted（Issue #83、薄いライフサイクルPR7、内部入口・一周E2E・CI・Report対象拘束の回帰修正） |
 | 意思決定 | [ルール・知識・工程定義を本文入りの検討用資産として配置する](decisions/2026-09-04-aidlc-content-baseline.md) | Partially Superseded（Issue #85、配置先だけを下記core構成へ置換。原文保持・OKF後段の境界は維持） |
 | 意思決定 | [原稿の配置を本家core構成へ揃える](decisions/2026-09-04-aidlc-core-layout.md) | Accepted（Issue #87、本家準拠を基本とし、140件をsrc/coreへ無変更移動する直接承認） |
+| 意思決定 | [配置Markdownからルールと知識を供給する](decisions/2026-09-04-file-based-knowledge-delivery.md) | Accepted（ファイル供給・埋込み禁止・次回読込みへの編集反映、OKF化しない3段階の直接承認） |
+| 意思決定 | [配置ファイルから必須ルール本文を毎回読み込む](decisions/2026-09-04-required-rule-delivery-plan.md) | Accepted（Issue #89、知識供給の第一slice、必須本文reader） |
 | 調査 | [既存AI-DLCの配布形式](research/2026-08-29-existing-distribution-format.md) | Current for local v2.6.123 snapshot |
 | 調査 | [共通space読み取りの参照契約](research/2026-08-31-space-reading-contracts.md) | Current for local v2.6.123 snapshot |
 | 調査 | [Space作成の参照契約](research/2026-08-31-space-creation-contracts.md) | Current for local v2.6.123 snapshot（U+0130小文字化の追加調査を含む） |
