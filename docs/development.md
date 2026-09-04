@@ -132,6 +132,26 @@ GOTOOLCHAIN=go1.26.8 go test -count=1 -run '^(TestBundleDigest|TestMarshalLoad)'
 field契約、容量境界、TDD記録は[load-steering wireの実装計画](ram/decisions/2026-09-05-steering-load-wire-plan.md)
 を参照してください。
 
+配信を複数partへ継続する場合は、callerが管理するexact 32-byte keyと`steering.ContinuationClaims`を
+`steering.EncodeContinuationToken`へ渡します。受信側は同じproject keyで`DecodeContinuationToken`を呼び、
+改ざん・別key・不正schemaを拒否してから、配置Markdown等を読み直して組み立てた`ContinuationFreshness`と
+freshなchunksを`AdvanceContinuation`へ渡します。
+
+`AdvanceContinuation`はStage、scope、bundle、directive hash、route hashと、state-aware時のstate hashを先に
+照合します。`NextPart < len(chunks)`なら次の1-based partと複製済みrules、次token用claimsを返し、
+`NextPart == len(chunks)`なら最終run-stageを解放できる完了境界を返します。返却sliceとpointer値は入力と共有しません。
+
+このAPIはfilesystem、clock、global stateを使わず、同じtokenを消費もしません。同じ入力は同じ結果になるため、
+`.aidlc-steering-token-key`の安全な作成・読込とactive-directive cursorの原子的な一回限り消費を接続するまでは、
+CLIやCodex receiverへ公開しないでください。targeted確認は次です。
+
+```sh
+GOTOOLCHAIN=go1.26.8 go test -count=1 -run '^(TestContinuationToken|TestAdvanceContinuation)' ./src/internal/steering
+```
+
+token wire、freshness、part進行、後続I/Oとの境界は[継続tokenの実装計画](ram/decisions/2026-09-05-steering-continuation-token-plan.md)
+を参照してください。
+
 ### Knowledge roster（内部API）
 
 `knowledge.BuildRoster`は、callerが用意したframework `.codex` rootとactive Spaceのknowledge rootを借りて、

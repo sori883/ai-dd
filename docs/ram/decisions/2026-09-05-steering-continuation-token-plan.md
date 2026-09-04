@@ -213,3 +213,23 @@ final境界を一度も飛ばさないこと、I/O・global state・既存Next�
 
 cross compileは各OS上で実行した証拠ではない。後続のkey／cursor永続化とCodex受領E2Eで各OS固有I/Oと
 一回限り消費を検証する。
+
+## 実装記録
+
+Issue #105では、計画どおりGo標準libraryだけでversion 1 token codecと純粋な継続判定を実装した。
+
+- fixed-wire REDでは、fixture envelopeの`p`を誤って文字列としていたため、固定本家どおりJSON objectへ修正してから
+  GREENを受け入れた。日本語、emoji、quote、backslash、NUL、newline、U+2028／U+2029とoptional fieldの有無を
+  exact tokenで固定した。
+- schema REDでは、Goの`encoding/json`がnon-nullable string／booleanのJSON nullをzero valueへdecodeする差を検出し、
+  nullを明示的に拒否した。一方、重複field拒否は固定本家の`JSON.parse`がlast-winsとなる契約を強めるため採用せず、
+  途中でtest案から除外した。
+- tampering、途中Markdown変更、同一入力の反復は先行実装で既に通ったため`ALREADY_GREEN`として記録し、人工的な
+  failureは作らなかった。
+- Stage／scope／bundle／directive／route、part進行、state-aware比較はそれぞれ実際の失敗をREDで確認してからGREENにした。
+  part進行をstate比較より先に実施し、state testがpart未実装の失敗を誤検出しない順序へ調整した。
+- 所有権testでは返却`Next`のpointerが入力claimsと共有される失敗を再現し、Unit、UnitKind、NextStage、
+  SwarmSettled、StateHashを深く複製する最小修正を行った。
+
+実装後も純粋APIはtokenを消費しない。exactly-once、private key file、fresh filesystem read、run-stage公開は、
+固定本家のactive-directive cursorを現行Goのrecord identity／lock境界へ接続する後続Issueの責務である。
