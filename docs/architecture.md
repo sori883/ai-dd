@@ -59,7 +59,7 @@ src/internal/workspace
 - `src/internal/scope`: scopes directory基準の`fs.FS`から直下Markdownの狭いfrontmatter metadataを読みます。plugin選択、graph join、state、CLI、write、Root lifecycleは所有しません。
 - `src/internal/state`: 初期stateの構築・永続化と、保存済み`aidlc-state.md`のread-only typed snapshot化を所有します。`ReadDocument`と`Read`はcaller-ownedのrecord `*os.Root`をCloseせず、固定leafをnonblocking descriptorで読み、path・descriptor identityを読取前後に確認します。`Parse`はState Version 8のsection・field・phase・Stage rowを検証します。graph join、state mutation、audit、CLI、Stage実行は所有しません。
 - `src/internal/memory`: Memory root基準の`fs.FS`から`org.md`、`team.md`、`project.md`、`phases/<phase>.md`を固定順で読む4層source acquisitionと、取得済みsourceからsubstantiveなbundleを作る純粋なfilterを所有します。merge・override・frontmatter parseなどのworkflow判断、workspace path解決、Rootのopen/Closeは所有しません。実filesystemの呼出側は`os.Root.FS()`を渡し、readerはRootをCloseしません。
-- `src/internal/steering`: `ResolveRulePaths`でgraphの`rules_in_context`をactive Spaceの表示pathとProject/Memory別のFS相対読込pathへ純粋に解決し、`ReadResolvedRules`でcallerが貸し出す各`fs.FS`へ接続します。readerは順序付きpathを毎回読み、path検証、不正UTF-8のfail-closed、先頭BOM 1個の除去を行い、`memory.BuildBundle`で実質的な本文のないtemplateを除外して`RuleContent`を返します。`ChunkRules`は取得済み本文を見出しとJSON byte目標に沿う順序付き配信単位へ純粋に分割します。ルール選択、phase推測、sort、Rootのopen/Close、送信tokenや完成directiveの上限検査は所有しません。実filesystemの呼出側は`os.OpenRoot`で開いた`Root.FS()`を渡します。
+- `src/internal/steering`: `ResolveRulePaths`でgraphの`rules_in_context`をactive Spaceの表示pathとProject/Memory別のFS相対読込pathへ純粋に解決し、`ReadResolvedRules`でcallerが貸し出す各`fs.FS`へ接続します。readerは順序付きpathを毎回読み、path検証、不正UTF-8のfail-closed、先頭BOM 1個の除去を行い、`memory.BuildBundle`で実質的な本文のないtemplateを除外して`RuleContent`を返します。`ChunkRules`は取得済み本文を順序付き配信単位へ分割し、`BundleDigest`と`MarshalLoad`は全本文のdigestと1 chunk分の`load-steering` JSONを純粋に組み立てます。ルール選択、phase推測、sort、Rootのopen/Close、送信tokenの生成・署名・保存は所有しません。実filesystemの呼出側は`os.OpenRoot`で開いた`Root.FS()`を渡します。
 - `src/internal/knowledge`: `BuildRoster`はcallerが渡す配置rootの`fs.FS`を借り、inline/mobのlead・supportに対応するpersona、framework共通知識・担当AI別知識、active Space共通知識・担当AI別知識を5群順で列挙します。各directoryはUTF-16 code-unit順の深さ優先で走査し、候補を毎回`fs.ReadFile`でUTF-8 preflightしてからMinimalとplugin metadataの選択、display pathのfirst-wins、JSONサイズ上限を適用します。`FrameworkDir`はplugin warningの表示専用で、rootの探索・open/Close、cwd・環境変数参照、本文の返却・cache・埋込みは行いません。実filesystemの呼出側は`.codex`とactive Space `knowledge`を`os.OpenRoot`で開き、RootのFSだけを渡します。
 - `src/internal/artifact`: Intent record root基準の`fs.FS`から、通常Stageのrequired `Produces` に対応するcanonical pathを`fs.Stat`だけで確認するread-only queryを所有します。空`Produces`のvacuous success、regular fileのany-of判定、固定filename例外、metadata/FS input errorを扱います。per-unit・CodeKB配置、workspace source、state/audit/approval/lock/clock、内容読取り、Root lifecycleは所有しません。
 
@@ -187,8 +187,21 @@ Unicode code point境界で分け、引用符、backslash、制御文字のJSON 
 
 pathだけで目標を超える場合、20 KiBはsoft targetとして最小1 code pointを保持して必ず前進します。本文が空なら
 分割対象がないため、その要素からchunkを作らない固定2.6.123の境界を維持します。返却したouter/inner sliceは
-caller所有で、入力や別の呼出し結果を共有しません。28 KiBの完成directive上限、digest、token、I/O、freshness検査は
-後続のtransport責務です。詳細は[配信用chunkの実装計画](ram/decisions/2026-09-05-steering-chunks-plan.md)を参照してください。
+caller所有で、入力や別の呼出し結果を共有しません。`ChunkRules`自体はdigestや完成directive上限を扱わず、
+隣接する以下のwire helperが担当します。token生成、I/O、freshness検査は後続transportの責務です。
+詳細は[配信用chunkの実装計画](ram/decisions/2026-09-05-steering-chunks-plan.md)を参照してください。
+
+`BundleDigest(content)`は分割前の全`RuleContent`を入力順のJSON.stringify相当bytesへencodeし、
+`sha256:<lowercase hex>`を返します。重複pathと空本文を保持し、nil/空sliceは`[]`です。quote、backslash、
+control characterだけをJSON escapeし、HTML文字、U+2028/U+2029、日本語、絵文字はUTF-8 literalのままhashします。
+不正UTF-8は置換せず、digestを返す前にfail-closedです。このdigestは内容同一性の比較材料で、認証や受領証明ではありません。
+
+`MarshalLoad(LoadDirective)`は`kind`、`stage`、`bundle`、`part`、`parts`、`rules_content`、
+`continue_token`の固定順で、1 chunk分の`load-steering` JSONを返します。partは1始まりで総数以内、全文字列は
+有効UTF-8を要求します。nil rule sliceも`[]`です。完成JSONが28,672 bytesぴったりまでは受け入れ、超過時は
+切捨てずnil結果とerrorを返します。tokenは後続が生成したopaque文字列を受け取るだけです。I/O、再読込み、
+state/route freshness、token署名・decodeは行いません。詳細は[load-steering wireの実装計画](ram/decisions/2026-09-05-steering-load-wire-plan.md)
+を参照してください。
 
 ## Knowledge roster（内部API）
 
