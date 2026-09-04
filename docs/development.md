@@ -55,6 +55,26 @@ go test -shuffle=on -coverprofile="$coverage_file" ./...
 go tool cover -func="$coverage_file"
 ```
 
+### 必須ルール本文reader（内部API）
+
+`steering.ReadRules`は、callerが解決したFS root相対slash pathの一覧を指定順に毎回読みます。全pathを
+I/O前に検証し、missing、read error、不正UTF-8では途中結果を返しません。先頭BOM 1個だけを除去し、本文を
+`memory.BuildBundle`へ渡して実質的な本文のないtemplateを除外します。実filesystemではrules directoryを
+`os.OpenRoot`で開いた`Root.FS()`を渡します。Rootはreaderがcloseせず、Root外symlinkから本文を返しません。
+
+この内部APIの実装範囲、固定AI-DLC 2.6.123との比較範囲、Root境界と未保証事項は[必須ルール本文readerの実装計画](ram/decisions/2026-09-04-required-rule-delivery-plan.md)
+と[マイルストーン承認](ram/decisions/2026-09-04-file-based-knowledge-delivery.md)に記録しています。
+loopでは次のtargeted testだけを実行します。
+
+```sh
+GOTOOLCHAIN=go1.26.8 go test -count=1 -run '^TestReadRules' ./src/internal/steering
+GOTOOLCHAIN=go1.26.8 go test -tags=integration -count=1 -run '^TestReadRules' ./src/internal/steering
+```
+
+integration fixtureは通常file、Root内相対symlink、Root外symlink、reader呼出し後のRoot継続利用を確認します。
+Windowsでsymlink作成がpermission・privilege・unsupportedの理由だけで利用できない場合は、そのケースだけを
+理由付きでskipします。複数Markdownの同時編集に対する原子的snapshot、mount/deviceを含む完全sandboxは保証しません。
+
 ### Workspaceのspace・intent readerと接続
 
 内部readerの単体テストと、実filesystemでの統合テストを分けて実行します。
