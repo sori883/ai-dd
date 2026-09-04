@@ -59,7 +59,7 @@ src/internal/workspace
 - `src/internal/scope`: scopes directory基準の`fs.FS`から直下Markdownの狭いfrontmatter metadataを読みます。plugin選択、graph join、state、CLI、write、Root lifecycleは所有しません。
 - `src/internal/state`: 初期stateの構築・永続化と、保存済み`aidlc-state.md`のread-only typed snapshot化を所有します。`ReadDocument`と`Read`はcaller-ownedのrecord `*os.Root`をCloseせず、固定leafをnonblocking descriptorで読み、path・descriptor identityを読取前後に確認します。`Parse`はState Version 8のsection・field・phase・Stage rowを検証します。graph join、state mutation、audit、CLI、Stage実行は所有しません。
 - `src/internal/memory`: Memory root基準の`fs.FS`から`org.md`、`team.md`、`project.md`、`phases/<phase>.md`を固定順で読む4層source acquisitionと、取得済みsourceからsubstantiveなbundleを作る純粋なfilterを所有します。merge・override・frontmatter parseなどのworkflow判断、workspace path解決、Rootのopen/Closeは所有しません。実filesystemの呼出側は`os.Root.FS()`を渡し、readerはRootをCloseしません。
-- `src/internal/steering`: `ResolveRulePaths`でgraphの`rules_in_context`をactive Spaceの表示pathとProject/Memory別のFS相対読込pathへ純粋に解決し、`ReadResolvedRules`でcallerが貸し出す各`fs.FS`へ接続します。readerは順序付きpathを毎回読み、path検証、不正UTF-8のfail-closed、先頭BOM 1個の除去を行い、`memory.BuildBundle`で実質的な本文のないtemplateを除外して`RuleContent`を返します。`ChunkRules`は取得済み本文を順序付き配信単位へ分割し、`BundleDigest`と`MarshalLoad`は全本文のdigestと1 chunk分の`load-steering` JSONを純粋に組み立てます。`EncodeContinuationToken`／`DecodeContinuationToken`はcaller提供の32-byte keyで継続claimsを認証し、`AdvanceContinuation`はcaller提供の現在値を照合して次partまたは完了境界を返します。ルール選択、phase推測、sort、Rootのopen/Close、key／cursorの永続化、tokenの一回限り消費は所有しません。実filesystemの呼出側は`os.OpenRoot`で開いた`Root.FS()`を渡します。
+- `src/internal/steering`: `ResolveRulePaths`でgraphの`rules_in_context`をactive Spaceの表示pathとProject/Memory別のFS相対読込pathへ純粋に解決し、`ReadResolvedRules`でcallerが貸し出す各`fs.FS`へ接続します。readerは順序付きpathを毎回読み、path検証、不正UTF-8のfail-closed、先頭BOM 1個の除去を行い、`memory.BuildBundle`で実質的な本文のないtemplateを除外して`RuleContent`を返します。`ChunkRules`は取得済み本文を順序付き配信単位へ分割し、`BundleDigest`と`MarshalLoad`は全本文のdigestと1 chunk分の`load-steering` JSONを純粋に組み立てます。`ReadOrCreateContinuationKey`はrecordまたはsession領域のprivate keyをfreshにread-or-createし、`EncodeContinuationToken`／`DecodeContinuationToken`はその32-byte keyで継続claimsを認証します。`AdvanceContinuation`はcaller提供の現在値を照合して次partまたは完了境界を返します。ルール選択、phase推測、sort、caller Rootのopen/Close、cursorの永続化、tokenの一回限り消費は所有しません。実filesystemの呼出側は`os.OpenRoot`で開いたRootまたは`Root.FS()`を渡します。
 - `src/internal/knowledge`: `BuildRoster`はcallerが渡す配置rootの`fs.FS`を借り、inline/mobのlead・supportに対応するpersona、framework共通知識・担当AI別知識、active Space共通知識・担当AI別知識を5群順で列挙します。各directoryはUTF-16 code-unit順の深さ優先で走査し、候補を毎回`fs.ReadFile`でUTF-8 preflightしてからMinimalとplugin metadataの選択、display pathのfirst-wins、JSONサイズ上限を適用します。`FrameworkDir`はplugin warningの表示専用で、rootの探索・open/Close、cwd・環境変数参照、本文の返却・cache・埋込みは行いません。実filesystemの呼出側は`.codex`とactive Space `knowledge`を`os.OpenRoot`で開き、RootのFSだけを渡します。
 - `src/internal/artifact`: 通常Stageの成果物語彙をIntent record root相対pathへ解決する純粋なqueryと、record root基準の`fs.FS`からrequired outputの存在を確認するread-only queryを所有します。graph順のproducer解決、orphan fallback、条件付きconsume、宣言順、固定filename例外、metadata/FS input errorを扱います。per-unit・CodeKB配置、record prefix、workspace source、state/audit/approval/lock/clock、成果物の内容読取り、Root lifecycleは所有しません。
 
@@ -210,11 +210,20 @@ escapeを検証します。canonical発行では`z`を常にbooleanで含め、d
 改ざん、別key、不正schemaは`ErrInvalidContinuationToken`としてfail-closedにし、MACは
 `hmac.Equal`で比較します。base64urlは暗号化ではないため、claimsへ本文や秘密情報は格納しません。
 
+`ReadOrCreateContinuationKey(projectRoot, recordRoot)`は、record Root直下にregular `aidlc-state.md`があれば
+同じrecordの`.aidlc-steering-token-key`、なければproject Rootの
+`aidlc/.aidlc-sessions/.aidlc-steering-token-key`を選びます。既存fileはsingle descriptorで4 KiBまで毎回読み、
+ECMAScript whitespaceをtrimしたcanonical unpadded base64urlがexact 32 bytesの場合だけ返します。初回は
+`crypto/rand.Reader`の32 bytesを`O_EXCL`、`0600`で保存し、同時作成のloserはwinner fileを1回再読込します。
+破損、nonregular leaf、root内外のsymlink、random／read／write／Close errorではkeyを返さず、既存fileをrotate、chmod、
+修復、cacheしません。caller所有RootもCloseしません。詳細は[key lifecycleの実装計画](ram/decisions/2026-09-05-steering-token-key-lifecycle-plan.md)
+を参照してください。
+
 `AdvanceContinuation`はStage、scope、bundle、完成形directive hash、route hashと、state-aware時だけstate hashを
 現在値と照合します。一致した場合だけ次chunkのcaller-owned copy、または`NextPart == len(chunks)`の完了境界を
 返します。stale fieldは`StaleContinuationError`で識別でき、存在しないpartは`ErrInvalidContinuationPart`です。
-この純粋関数はtokenを消費しないため、同一入力を再評価すると同じ結果になります。key file、配置Markdown・state・
-routeのfresh read、active-directive cursorによる一回限り消費、run-stage公開は後続compositionがlock下で接続するまで
+この純粋関数はtokenを消費しないため、同一入力を再評価すると同じ結果になります。key fileは上記APIが所有しますが、
+配置Markdown・state・routeのfresh read、active-directive cursorによる一回限り消費、run-stage公開は後続compositionがlock下で接続するまで
 公開経路へ出しません。詳細は[継続tokenの実装計画](ram/decisions/2026-09-05-steering-continuation-token-plan.md)
 を参照してください。
 
