@@ -1,7 +1,9 @@
 package knowledge_test
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"reflect"
 	"strings"
@@ -90,6 +92,7 @@ func TestBuildRosterSelectsAgentsByModeAndDeclarationOrder(t *testing.T) {
 			}
 		})
 	}
+
 }
 
 func TestBuildRosterReturnsEmptyWithoutAgentsOrFilesystemAccess(t *testing.T) {
@@ -295,6 +298,166 @@ func TestBuildRosterReadsFreshContentOnEveryCall(t *testing.T) {
 	}
 	if !reflect.DeepEqual(second.Paths, []string{".codex/agents/lead.md"}) || len(second.Warnings) != 0 {
 		t.Errorf("second BuildRoster() = %#v, want fresh valid read", second)
+	}
+}
+
+func TestBuildRosterWarningsFollowSourceOrder(t *testing.T) {
+	tests := []struct {
+		name      string
+		fileCount int
+		wantPaths []string
+		wantWarns []string
+	}{
+		{
+			name:      "all warnings preserve source order",
+			fileCount: 1,
+			wantPaths: []string{".codex/agents/lead.md"},
+			wantWarns: []string{
+				`Warning: plugin knowledge ownership file "/project/.codex/tools/data/plugin-files-invalid.json" is invalid (expected schema_version 1, plugin, and knowledge[]). Re-run plugin composition before relying on Minimal context pruning.`,
+				`Warning: optional persona/knowledge file ".codex/agents/missing.md" is missing. Restore the file; this stage will continue without that context.`,
+				`Warning: optional persona/knowledge directory ".codex/knowledge/aidlc-shared" is unreadable (framework shared directory). Fix the directory or its permissions; this stage will continue without that context.`,
+				expectedUnreadableFileWarning(".codex/knowledge/lead/broken-000.md", "framework unreadable file"),
+				`Warning: optional persona/knowledge directory "aidlc/spaces/team/knowledge/aidlc-shared" is unreadable (space shared directory). Fix the directory or its permissions; this stage will continue without that context.`,
+				expectedUnreadableFileWarning("aidlc/spaces/team/knowledge/lead/space-broken.md", "space unreadable file"),
+			},
+		},
+		{
+			name:      "cap keeps source-order prefix and omission summary",
+			fileCount: 40,
+			wantPaths: []string{".codex/agents/lead.md"},
+			wantWarns: expectedWarningCapPrefix(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := knowledge.BuildRoster(warningOrderInput(tt.fileCount))
+			if err != nil {
+				t.Fatalf("BuildRoster() error = %v, want nil", err)
+			}
+			if !reflect.DeepEqual(got.Paths, tt.wantPaths) {
+				t.Errorf("BuildRoster() paths = %#v, want %#v", got.Paths, tt.wantPaths)
+			}
+			if !reflect.DeepEqual(got.Warnings, tt.wantWarns) {
+				t.Errorf("BuildRoster() warnings = %#v, want %#v", got.Warnings, tt.wantWarns)
+			}
+			encoded, err := json.Marshal(got.Warnings)
+			if err != nil {
+				t.Fatalf("json.Marshal(warnings): %v", err)
+			}
+			if len(encoded) > 6144 {
+				t.Errorf("JSON warning size = %d, want <= 6144", len(encoded))
+			}
+		})
+	}
+
+	t.Run("group DFS emits file-directory-file warnings", func(t *testing.T) {
+		got, err := knowledge.BuildRoster(warningGroupDFSInput())
+		if err != nil {
+			t.Fatalf("BuildRoster() error = %v, want nil", err)
+		}
+		wantPaths := []string{".codex/agents/lead.md"}
+		if !reflect.DeepEqual(got.Paths, wantPaths) {
+			t.Errorf("BuildRoster() paths = %#v, want %#v", got.Paths, wantPaths)
+		}
+		wantWarnings := []string{
+			expectedUnreadableFileWarning(".codex/knowledge/lead/a.md", "a file"),
+			`Warning: optional persona/knowledge directory ".codex/knowledge/lead/b" is unreadable (b directory). Fix the directory or its permissions; this stage will continue without that context.`,
+			expectedUnreadableFileWarning(".codex/knowledge/lead/c.md", "c file"),
+		}
+		if !reflect.DeepEqual(got.Warnings, wantWarnings) {
+			t.Errorf("BuildRoster() warnings = %#v, want DFS file-directory-file order %#v", got.Warnings, wantWarnings)
+		}
+	})
+}
+
+func warningOrderInput(fileCount int) knowledge.RosterInput {
+	framework := &readErrorFS{
+		base: fstest.MapFS{
+			"agents/lead.md":                       {Data: []byte("lead")},
+			"tools/data/plugin-files-invalid.json": {Data: []byte(`{}`)},
+		},
+		fail: map[string]error{
+			"knowledge/aidlc-shared": errors.New("framework shared directory"),
+		},
+	}
+	for index := 0; index < fileCount; index++ {
+		relative := fmt.Sprintf("knowledge/lead/broken-%03d.md", index)
+		framework.base[relative] = &fstest.MapFile{Data: []byte("framework")}
+		framework.fail[relative] = errors.New("framework unreadable file")
+	}
+
+	space := &readErrorFS{
+		base: fstest.MapFS{
+			"aidlc-shared/space.md": {Data: []byte("space shared")},
+			"lead/space-broken.md":  {Data: []byte("space lead")},
+		},
+		fail: map[string]error{
+			"aidlc-shared":         errors.New("space shared directory"),
+			"lead/space-broken.md": errors.New("space unreadable file"),
+		},
+	}
+
+	return knowledge.RosterInput{
+		Stage: graph.Stage{
+			Mode:          "inline",
+			LeadAgent:     "missing",
+			SupportAgents: []string{"lead"},
+		},
+		Framework: knowledge.Source{
+			FS:            framework,
+			DisplayPrefix: ".codex",
+		},
+		SpaceKnowledge: &knowledge.Source{
+			FS:            space,
+			DisplayPrefix: "aidlc/spaces/team/knowledge",
+		},
+		FrameworkDir: "/project/.codex",
+	}
+}
+
+func expectedUnreadableFileWarning(display, reason string) string {
+	return fmt.Sprintf("Warning: optional persona/knowledge file %q is unreadable or invalid UTF-8 (%s). Fix the file, encoding, or permissions; this stage will continue without that context.", display, reason)
+}
+
+func expectedWarningCapPrefix() []string {
+	warnings := []string{
+		`Warning: plugin knowledge ownership file "/project/.codex/tools/data/plugin-files-invalid.json" is invalid (expected schema_version 1, plugin, and knowledge[]). Re-run plugin composition before relying on Minimal context pruning.`,
+		`Warning: optional persona/knowledge file ".codex/agents/missing.md" is missing. Restore the file; this stage will continue without that context.`,
+		`Warning: optional persona/knowledge directory ".codex/knowledge/aidlc-shared" is unreadable (framework shared directory). Fix the directory or its permissions; this stage will continue without that context.`,
+	}
+	for index := 0; index < 23; index++ {
+		display := fmt.Sprintf(".codex/knowledge/lead/broken-%03d.md", index)
+		warnings = append(warnings, expectedUnreadableFileWarning(display, "framework unreadable file"))
+	}
+	return append(warnings, "Warning: 19 additional optional persona/knowledge warning(s) were omitted from this directive. Inspect the configured context directories and repair missing, unreadable, or invalid UTF-8 files.")
+}
+
+func warningGroupDFSInput() knowledge.RosterInput {
+	framework := &readErrorFS{
+		base: fstest.MapFS{
+			"agents/lead.md":                  {Data: []byte("lead")},
+			"knowledge/lead/a.md":             {Data: []byte("a")},
+			"knowledge/lead/b/placeholder.md": {Data: []byte("b")},
+			"knowledge/lead/c.md":             {Data: []byte("c")},
+		},
+		fail: map[string]error{
+			"knowledge/lead/a.md": errors.New("a file"),
+			"knowledge/lead/b":    errors.New("b directory"),
+			"knowledge/lead/c.md": errors.New("c file"),
+		},
+	}
+
+	return knowledge.RosterInput{
+		Stage: graph.Stage{
+			Mode:      "inline",
+			LeadAgent: "lead",
+		},
+		Framework: knowledge.Source{
+			FS:            framework,
+			DisplayPrefix: ".codex",
+		},
+		FrameworkDir: "/project/.codex",
 	}
 }
 

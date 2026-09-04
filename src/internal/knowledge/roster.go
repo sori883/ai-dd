@@ -57,10 +57,9 @@ func BuildRoster(input RosterInput) (Roster, error) {
 	}
 
 	warnings := []string{}
+	owners := readPluginOwners(input.Framework, input.FrameworkDir, &warnings)
 	candidates, scanWarnings := collectCandidates(input, agents)
 	warnings = append(warnings, scanWarnings...)
-	preflightCandidates(candidates, &warnings)
-	owners := readPluginOwners(input.Framework, input.FrameworkDir, &warnings)
 	selected := selectCandidates(candidates, input.Depth, input.EnabledPlugins, owners)
 	paths := deduplicatePaths(selected)
 	paths, warnings = boundRoster(paths, warnings)

@@ -45,6 +45,7 @@ func collectCandidates(input RosterInput, agents []string) ([]candidate, []strin
 			persona:    true,
 		})
 	}
+	preflightCandidates(candidates, &warnings)
 
 	frameworkGroups := []struct {
 		relative string
@@ -67,8 +68,8 @@ func collectCandidates(input RosterInput, agents []string) ([]candidate, []strin
 			true,
 			input.Stage.Slug,
 		)
-		candidates = append(candidates, found...)
 		warnings = append(warnings, foundWarnings...)
+		candidates = append(candidates, found...)
 	}
 
 	if input.SpaceKnowledge == nil {
@@ -96,8 +97,8 @@ func collectCandidates(input RosterInput, agents []string) ([]candidate, []strin
 			false,
 			input.Stage.Slug,
 		)
-		candidates = append(candidates, found...)
 		warnings = append(warnings, foundWarnings...)
+		candidates = append(candidates, found...)
 	}
 	return candidates, warnings
 }
@@ -185,6 +186,7 @@ func walkMarkdownDirectory(
 			ownerRelative: ownerRelative,
 			sourceKind:    sourceKind,
 		})
+		preflightCandidates((*candidates)[len(*candidates)-1:], warnings)
 	}
 }
 
