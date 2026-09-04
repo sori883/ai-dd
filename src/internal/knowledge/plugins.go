@@ -135,9 +135,9 @@ func validPluginKnowledgePath(value string) bool {
 }
 
 func unreadablePluginDirectoryWarning(display string, err error) string {
-	return fmt.Sprintf("Warning: plugin knowledge ownership data %q is unreadable (%v). Minimal context will continue without plugin provenance.", display, err)
+	return fmt.Sprintf("Warning: plugin knowledge ownership data \"%s\" is unreadable (%v). Minimal context will continue without plugin provenance.", display, err)
 }
 
 func invalidPluginManifestWarning(display string, err error) string {
-	return fmt.Sprintf("Warning: plugin knowledge ownership file %q is invalid (%v). Re-run plugin composition before relying on Minimal context pruning.", display, err)
+	return fmt.Sprintf("Warning: plugin knowledge ownership file \"%s\" is invalid (%v). Re-run plugin composition before relying on Minimal context pruning.", display, err)
 }

@@ -164,13 +164,13 @@ func joinDisplay(prefix, relative string) string {
 }
 
 func missingPersonaWarning(display string) string {
-	return fmt.Sprintf("Warning: optional persona/knowledge file %q is missing. Restore the file; this stage will continue without that context.", display)
+	return fmt.Sprintf("Warning: optional persona/knowledge file \"%s\" is missing. Restore the file; this stage will continue without that context.", display)
 }
 
 func unreadableWarning(display string, err error) string {
-	return fmt.Sprintf("Warning: optional persona/knowledge file %q is unreadable or invalid UTF-8 (%v). Fix the file, encoding, or permissions; this stage will continue without that context.", display, err)
+	return fmt.Sprintf("Warning: optional persona/knowledge file \"%s\" is unreadable or invalid UTF-8 (%v). Fix the file, encoding, or permissions; this stage will continue without that context.", display, err)
 }
 
 func invalidUTF8Warning(display string) string {
-	return fmt.Sprintf("Warning: optional persona/knowledge file %q is unreadable or invalid UTF-8 (invalid UTF-8). Fix the file, encoding, or permissions; this stage will continue without that context.", display)
+	return fmt.Sprintf("Warning: optional persona/knowledge file \"%s\" is unreadable or invalid UTF-8 (invalid UTF-8). Fix the file, encoding, or permissions; this stage will continue without that context.", display)
 }

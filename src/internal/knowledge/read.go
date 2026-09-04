@@ -243,5 +243,5 @@ func compareUTF16(left, right string) int {
 }
 
 func unreadableDirectoryWarning(display string, err error) string {
-	return fmt.Sprintf("Warning: optional persona/knowledge directory %q is unreadable (%v). Fix the directory or its permissions; this stage will continue without that context.", display, err)
+	return fmt.Sprintf("Warning: optional persona/knowledge directory \"%s\" is unreadable (%v). Fix the directory or its permissions; this stage will continue without that context.", display, err)
 }

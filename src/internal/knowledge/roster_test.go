@@ -371,6 +371,120 @@ func TestBuildRosterWarningsFollowSourceOrder(t *testing.T) {
 	})
 }
 
+func TestBuildRosterWarningPathsPreserveLiteralCharacters(t *testing.T) {
+	const displayPrefix = "display-\"-\\-\b-\f-\n-\r-\t-\x01-\x02-\x1f-<>&-\u2028-\u2029-日本語-😀"
+	frameworkDir := "/project/" + displayPrefix
+
+	validPersona := displayPrefix + "/agents/lead.md"
+	tests := []struct {
+		name         string
+		stage        graph.Stage
+		base         fstest.MapFS
+		fail         map[string]error
+		wantPaths    []string
+		wantWarnings []string
+	}{
+		{
+			name:      "missing persona",
+			stage:     graph.Stage{Mode: "inline", LeadAgent: "missing"},
+			wantPaths: []string{},
+			wantWarnings: []string{
+				`Warning: optional persona/knowledge file "` + displayPrefix + `/agents/missing.md" is missing. Restore the file; this stage will continue without that context.`,
+			},
+		},
+		{
+			name:  "unreadable knowledge file",
+			stage: graph.Stage{Mode: "inline", LeadAgent: "lead"},
+			base: fstest.MapFS{
+				"agents/lead.md":                   {Data: []byte("lead")},
+				"knowledge/aidlc-shared/broken.md": {Data: []byte("broken")},
+			},
+			fail: map[string]error{
+				"knowledge/aidlc-shared/broken.md": errors.New("file unreadable"),
+			},
+			wantPaths: []string{validPersona},
+			wantWarnings: []string{
+				`Warning: optional persona/knowledge file "` + displayPrefix + `/knowledge/aidlc-shared/broken.md" is unreadable or invalid UTF-8 (file unreadable). Fix the file, encoding, or permissions; this stage will continue without that context.`,
+			},
+		},
+		{
+			name:  "invalid utf-8 knowledge file",
+			stage: graph.Stage{Mode: "inline", LeadAgent: "lead"},
+			base: fstest.MapFS{
+				"agents/lead.md":                {Data: []byte("lead")},
+				"knowledge/aidlc-shared/bad.md": {Data: []byte{0xff}},
+			},
+			wantPaths: []string{validPersona},
+			wantWarnings: []string{
+				`Warning: optional persona/knowledge file "` + displayPrefix + `/knowledge/aidlc-shared/bad.md" is unreadable or invalid UTF-8 (invalid UTF-8). Fix the file, encoding, or permissions; this stage will continue without that context.`,
+			},
+		},
+		{
+			name:  "unreadable knowledge directory",
+			stage: graph.Stage{Mode: "inline", LeadAgent: "lead"},
+			base: fstest.MapFS{
+				"agents/lead.md": {Data: []byte("lead")},
+			},
+			fail: map[string]error{
+				"knowledge/aidlc-shared": errors.New("knowledge directory"),
+			},
+			wantPaths: []string{validPersona},
+			wantWarnings: []string{
+				`Warning: optional persona/knowledge directory "` + displayPrefix + `/knowledge/aidlc-shared" is unreadable (knowledge directory). Fix the directory or its permissions; this stage will continue without that context.`,
+			},
+		},
+		{
+			name:  "unreadable plugin data directory",
+			stage: graph.Stage{Mode: "inline", LeadAgent: "lead"},
+			base: fstest.MapFS{
+				"agents/lead.md": {Data: []byte("lead")},
+			},
+			fail: map[string]error{
+				"tools/data": errors.New("plugin data directory"),
+			},
+			wantPaths: []string{validPersona},
+			wantWarnings: []string{
+				`Warning: plugin knowledge ownership data "` + frameworkDir + `/tools/data" is unreadable (plugin data directory). Minimal context will continue without plugin provenance.`,
+			},
+		},
+		{
+			name:  "invalid plugin manifest",
+			stage: graph.Stage{Mode: "inline", LeadAgent: "lead"},
+			base: fstest.MapFS{
+				"agents/lead.md":                       {Data: []byte("lead")},
+				"tools/data/plugin-files-invalid.json": {Data: []byte(`{}`)},
+			},
+			wantPaths: []string{validPersona},
+			wantWarnings: []string{
+				`Warning: plugin knowledge ownership file "` + frameworkDir + `/tools/data/plugin-files-invalid.json" is invalid (expected schema_version 1, plugin, and knowledge[]). Re-run plugin composition before relying on Minimal context pruning.`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := knowledge.RosterInput{
+				Stage: tt.stage,
+				Framework: knowledge.Source{
+					FS:            &readErrorFS{base: tt.base, fail: tt.fail},
+					DisplayPrefix: displayPrefix,
+				},
+				FrameworkDir: frameworkDir,
+			}
+			got, err := knowledge.BuildRoster(input)
+			if err != nil {
+				t.Fatalf("BuildRoster() error = %v, want nil", err)
+			}
+			if !reflect.DeepEqual(got.Paths, tt.wantPaths) {
+				t.Errorf("BuildRoster() paths = %#v, want %#v", got.Paths, tt.wantPaths)
+			}
+			if !reflect.DeepEqual(got.Warnings, tt.wantWarnings) {
+				t.Errorf("BuildRoster() warnings = %#v, want %#v", got.Warnings, tt.wantWarnings)
+			}
+		})
+	}
+}
+
 func warningOrderInput(fileCount int) knowledge.RosterInput {
 	framework := &readErrorFS{
 		base: fstest.MapFS{
