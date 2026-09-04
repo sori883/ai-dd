@@ -88,6 +88,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [必須ルール本文を配信用のまとまりへ分割する](decisions/2026-09-05-steering-chunks-plan.md) | Accepted（純粋なChunkRules、見出し優先・JSON容量・日本語保持・path超過境界、知識供給の包括承認内） |
 | 意思決定 | [必須ルールbundleのdigestとload-steering JSONを組み立てる](decisions/2026-09-05-steering-load-wire-plan.md) | Accepted（ordered digest、JSON.stringify互換wire、28 KiB境界、知識供給の包括承認内） |
 | 意思決定 | [状態Markdownから工程のDepth設定を厳密に読み取る](decisions/2026-09-05-state-depth-reader-plan.md) | Accepted（Issue #101、保存済みstateのScope Configurationから一意なDepthを取得、知識供給の包括承認内） |
+| 意思決定 | [工程の成果物名をIntent record相対pathへ解決する](decisions/2026-09-05-artifact-path-resolver-plan.md) | Accepted（Issue #103、通常Stageのconsume／produce path、知識供給の包括承認内） |
 | 意思決定 | [配置ファイルから必須ルール本文を毎回読み込む](decisions/2026-09-04-required-rule-delivery-plan.md) | Accepted（Issue #89、知識供給の第一slice、必須本文reader） |
 | 意思決定 | [工程の必須ルール参照を配置ファイルへ解決する](decisions/2026-09-04-stage-rule-path-resolution-plan.md) | Accepted（Issue #91、graph参照の保持・active Space/配置先解決・毎回読込みの内部接続） |
 | 意思決定 | [利用先の配置Markdownと知識の固定順を採用する](decisions/2026-09-04-installed-context-source-and-order.md) | Accepted（利用先配置からの読込み・UTF-16固定順と上限への影響を直接承認） |
