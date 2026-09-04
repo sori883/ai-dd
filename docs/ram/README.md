@@ -86,6 +86,11 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [配置Markdownからルールと知識を供給する](decisions/2026-09-04-file-based-knowledge-delivery.md) | Accepted（ファイル供給・埋込み禁止・次回読込みへの編集反映、OKF化しない3段階の直接承認） |
 | 意思決定 | [配置ファイルから必須ルール本文を毎回読み込む](decisions/2026-09-04-required-rule-delivery-plan.md) | Accepted（Issue #89、知識供給の第一slice、必須本文reader） |
 | 意思決定 | [工程の必須ルール参照を配置ファイルへ解決する](decisions/2026-09-04-stage-rule-path-resolution-plan.md) | Accepted（Issue #91、graph参照の保持・active Space/配置先解決・毎回読込みの内部接続） |
+| 意思決定 | [利用先の配置Markdownと知識の固定順を採用する](decisions/2026-09-04-installed-context-source-and-order.md) | Accepted（利用先配置からの読込み・UTF-16固定順と上限への影響を直接承認） |
+| 意思決定 | [工程・担当AIに応じて配置知識ファイルを選択する](decisions/2026-09-04-knowledge-roster-plan.md) | Accepted（配置knowledge roster・Minimal/plugin選択・固定順・容量制限） |
+| 意思決定 | [知識一覧実装の手順不備と回復方針](decisions/2026-09-04-knowledge-roster-tdd-recovery.md) | Superseded（履歴は保持。採用確認待ちは下記の直接承認で解消） |
+| 意思決定 | [知識一覧の既存実装を補強して採用する](decisions/2026-09-05-knowledge-roster-recovery-approved.md) | Accepted（Issue #93、直接承認に基づく段階別修正・補足test・再review・検証。警告pathの二重escape補修を含む） |
+| 意思決定 | [知識供給の容量・日本語・開発OSと配布OSの検証方針](decisions/2026-09-04-knowledge-validation-scope.md) | Accepted（容量は機械的処理、日本語利用、Mac/Linux開発testと3OS配布対応を分離。TDD原因も記録） |
 | 調査 | [既存AI-DLCの配布形式](research/2026-08-29-existing-distribution-format.md) | Current for local v2.6.123 snapshot |
 | 調査 | [共通space読み取りの参照契約](research/2026-08-31-space-reading-contracts.md) | Current for local v2.6.123 snapshot |
 | 調査 | [Space作成の参照契約](research/2026-08-31-space-creation-contracts.md) | Current for local v2.6.123 snapshot（U+0130小文字化の追加調査を含む） |
