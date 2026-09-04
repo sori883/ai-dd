@@ -88,6 +88,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [利用先の配置Markdownと知識の固定順を採用する](decisions/2026-09-04-installed-context-source-and-order.md) | Accepted（利用先配置からの読込み・UTF-16固定順と上限への影響を直接承認） |
 | 意思決定 | [工程・担当AIに応じて配置知識ファイルを選択する](decisions/2026-09-04-knowledge-roster-plan.md) | Accepted（配置knowledge roster・Minimal/plugin選択・固定順・容量制限） |
 | 意思決定 | [知識一覧実装の手順不備と回復方針](decisions/2026-09-04-knowledge-roster-tdd-recovery.md) | Proposed（TDD手順不備、独立reviewの修正点、現実装の補強・採用は確認待ち） |
+| 意思決定 | [知識供給の容量・日本語・開発OSと配布OSの検証方針](decisions/2026-09-04-knowledge-validation-scope.md) | Accepted（容量は機械的処理、日本語利用、Mac/Linux開発testと3OS配布対応を分離。TDD原因も記録） |
 | 調査 | [既存AI-DLCの配布形式](research/2026-08-29-existing-distribution-format.md) | Current for local v2.6.123 snapshot |
 | 調査 | [共通space読み取りの参照契約](research/2026-08-31-space-reading-contracts.md) | Current for local v2.6.123 snapshot |
 | 調査 | [Space作成の参照契約](research/2026-08-31-space-creation-contracts.md) | Current for local v2.6.123 snapshot（U+0130小文字化の追加調査を含む） |
