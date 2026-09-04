@@ -98,6 +98,22 @@ GOTOOLCHAIN=go1.26.8 go test -count=1 -run 'TestResolveRulePaths|TestReadResolve
 GOTOOLCHAIN=go1.26.8 go test -tags=integration -count=1 -run '^TestReadResolvedRules' ./src/internal/steering
 ```
 
+取得済みの`[]steering.RuleContent`をAIへ順番に渡せる単位へ分ける場合は、I/Oを追加せず
+`steering.ChunkRules`を呼びます。関数はMarkdown見出しを先に区切り、JSON.stringify相当の容量を
+20,480 bytesの目標へgreedyに詰め、大きな節だけをUnicode code point境界で分割します。入力順、path、
+本文を保持し、返却sliceは各呼出しが所有します。完成した送信命令の28 KiB上限はこの関数ではなく、
+後続transportで検査してください。
+
+通常の容量境界に加え、pathだけで目標を超えても1文字を捨てずに前進すること、分割対象本文が空なら
+0 chunkとなる固定2.6.123の特殊境界をtestしています。chunk処理だけを確認するloop commandは次です。
+
+```sh
+GOTOOLCHAIN=go1.26.8 go test -count=1 -run '^TestChunkRules' ./src/internal/steering
+```
+
+契約、TDD記録、後続transportとの境界は[配信用chunkの実装計画](ram/decisions/2026-09-05-steering-chunks-plan.md)
+を参照してください。
+
 ### Knowledge roster（内部API）
 
 `knowledge.BuildRoster`は、callerが用意したframework `.codex` rootとactive Spaceのknowledge rootを借りて、
