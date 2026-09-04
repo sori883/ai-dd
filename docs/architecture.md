@@ -216,7 +216,9 @@ framework共通→framework担当AI別→Space共通→Space担当AI別の5群�
 DepthがMinimalのときだけ、本家2.6.123の`intent-capture`と`requirements-analysis`のframework既知文書表を
 適用します。persona、Space知識、再帰directoryの未知文書は維持します。`tools/data/plugin-files-*.json`は
 毎回metadataだけを読み、schema・plugin・knowledgeの完全一致を検証して所有pluginの和集合を選択します。
-metadata由来のPathは開きません。EnabledPluginsがnilなら全plugin、明示空sliceなら全plugin無効です。
+metadata由来のPathは開きません。Minimalの対象表があるframework知識では、EnabledPluginsがnilなら
+全plugin、明示空sliceなら全plugin無効です。対象表がない工程・担当AIにはこの絞込みを適用しません。
+警告はplugin metadata→persona→各directoryの深さ優先読込の発生順を保ち、表示pathを再escapeしません。
 最後にJSON.stringify相当のUTF-8 bytesでPath 8 KiB、warning 6 KiBへ先頭から制限します。
 
 実filesystemではcallerが`os.OpenRoot`の`Root.FS()`を渡します。readerはRootをcloseせず、編集は次回呼出しへ

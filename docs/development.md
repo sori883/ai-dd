@@ -110,17 +110,18 @@ code-unit順の深さ優先でexact `.md` regular file/symlinkを列挙し、Min
 `fs.ReadFile`とUTF-8検査を行います。欠落・読取失敗・不正UTF-8はwarning、省略、空・見出しだけの文書は保持です。
 Minimalは本家2.6.123の`intent-capture`と`requirements-analysis`のframework既知文書表だけを使い、
 persona・Space知識・未知文書を除外しません。plugin metadataは照合だけで、metadataが指す本文を開きません。
-nilの`EnabledPlugins`は全plugin、明示した空sliceは全plugin無効です。
+Minimalの対象表があるframework知識では、nilの`EnabledPlugins`は全plugin、明示した空sliceは全plugin無効です。
+対象表がない工程・担当AIの知識には、この絞込みを適用しません。
 
 実filesystemはcallerが`.codex`と`aidlc/spaces/<space>/knowledge`を`os.OpenRoot`で開き、`Root.FS()`を渡します。
 Rootはreaderがcloseせず、同じRoot上の編集は次の呼出しで反映されます。表示pathはJSON.stringify相当のUTF-8
 bytesで8,192、warningは6,144を上限とし、最初に超過したpathから後続を詰め直しません。
 
-loopでのtargeted確認は次のとおりです。
+loopでは[段階別handoff](tdd-handoff.md)に従い、当該sliceのtest名1件だけを指定します。次は指定例です。
 
 ```sh
-GOTOOLCHAIN=go1.26.8 go test -count=1 -run '^TestBuildRoster' ./src/internal/knowledge
-GOTOOLCHAIN=go1.26.8 go test -tags=integration -count=1 -run '^TestBuildRosterIntegration' ./src/internal/knowledge
+GOTOOLCHAIN=go1.26.8 go test -count=1 -run '^TestBuildRosterReturnsInlineLeadPersona$' ./src/internal/knowledge
+GOTOOLCHAIN=go1.26.8 go test -tags=integration -count=1 -run '^TestBuildRosterIntegrationRefreshesJapaneseSpaceKnowledge$' ./src/internal/knowledge
 ```
 
 計画と承認済みのUTF-16順・本家上限との差分、未保証事項は[knowledge rosterの実装計画](ram/decisions/2026-09-04-knowledge-roster-plan.md)を参照してください。
