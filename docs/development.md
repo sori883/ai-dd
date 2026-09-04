@@ -832,6 +832,27 @@ go test -count=1 ./src/internal/artifact
 固定AI-DLC `2.6.123`の参照範囲と段階的境界は[参照契約](ram/research/2026-09-03-stage-artifact-presence-contracts.md)、
 実装許可・TDD slice・残余riskは[実装計画](ram/decisions/2026-09-03-stage-artifact-presence-plan.md)を参照してください。
 
+### Stage artifact path resolver（内部API）
+
+`artifact.ResolvePaths(stage, catalog, projectType)`は、通常Stageの成果物名からIntent record root相対pathを作ります。
+outputは`Produces`の後に`OptionalProduces`を宣言順で並べます。consumeはcatalogのgraph順で最初のproducerを探し、
+producerがなければconsumer Stage自身をownerにします。既知のBrownfield／Greenfieldでは`ConditionalOn`が異なるconsumeを
+除外し、空または未知のproject typeでは除外しません。返却値は入力sliceと共有されず、重複と`Required`も保持されます。
+
+pathは`<owner-phase>/<owner-slug>/<canonical-filename>`で、`artifact.Filename`の固定例外を共有します。
+不正metadataでは`ErrInvalidMetadata`、per-unit・CodeKB・`produces_kinds`では`ErrUnsupportedPlacement`を
+`errors.Is`で判定できます。error時はzero `artifact.Paths{}`です。このAPIはfilesystemへアクセスせず、
+`aidlc/spaces/<space>/intents/<intent>/`のprefix前置と成果物の存在確認は呼出側が担当します。
+
+loopでresolver全体を確認するcommandは次です。
+
+```sh
+GOTOOLCHAIN=go1.26.8 go test -count=1 -run '^TestResolvePaths' ./src/internal/artifact
+```
+
+固定AI-DLC `2.6.123`のfirst-producer／orphan fallback根拠、実装許可、TDD単位は
+[実装計画](ram/decisions/2026-09-05-artifact-path-resolver-plan.md)を参照してください。
+
 ### Stage完了可否のread-only判定（内部API）
 
 `orchestrator.EvaluateStageCompletion(input CompletionInput) CompletionDecision`は、現在Stageとgraph Stageの整合、

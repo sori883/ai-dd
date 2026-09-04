@@ -22,7 +22,7 @@ src/internal/steering (required rule resolution・fresh read・ordered delivery 
 
 src/internal/knowledge (persona・知識のordered rosterとpreflight)
 
-src/internal/artifact (通常Stageのrequired output presence query)
+src/internal/artifact (通常Stageのartifact path解決とrequired output presence query)
 
 src/internal/recordlock (record単位のcross-process lockとidentity-bound Guard)
 
@@ -61,7 +61,7 @@ src/internal/workspace
 - `src/internal/memory`: Memory root基準の`fs.FS`から`org.md`、`team.md`、`project.md`、`phases/<phase>.md`を固定順で読む4層source acquisitionと、取得済みsourceからsubstantiveなbundleを作る純粋なfilterを所有します。merge・override・frontmatter parseなどのworkflow判断、workspace path解決、Rootのopen/Closeは所有しません。実filesystemの呼出側は`os.Root.FS()`を渡し、readerはRootをCloseしません。
 - `src/internal/steering`: `ResolveRulePaths`でgraphの`rules_in_context`をactive Spaceの表示pathとProject/Memory別のFS相対読込pathへ純粋に解決し、`ReadResolvedRules`でcallerが貸し出す各`fs.FS`へ接続します。readerは順序付きpathを毎回読み、path検証、不正UTF-8のfail-closed、先頭BOM 1個の除去を行い、`memory.BuildBundle`で実質的な本文のないtemplateを除外して`RuleContent`を返します。`ChunkRules`は取得済み本文を順序付き配信単位へ分割し、`BundleDigest`と`MarshalLoad`は全本文のdigestと1 chunk分の`load-steering` JSONを純粋に組み立てます。ルール選択、phase推測、sort、Rootのopen/Close、送信tokenの生成・署名・保存は所有しません。実filesystemの呼出側は`os.OpenRoot`で開いた`Root.FS()`を渡します。
 - `src/internal/knowledge`: `BuildRoster`はcallerが渡す配置rootの`fs.FS`を借り、inline/mobのlead・supportに対応するpersona、framework共通知識・担当AI別知識、active Space共通知識・担当AI別知識を5群順で列挙します。各directoryはUTF-16 code-unit順の深さ優先で走査し、候補を毎回`fs.ReadFile`でUTF-8 preflightしてからMinimalとplugin metadataの選択、display pathのfirst-wins、JSONサイズ上限を適用します。`FrameworkDir`はplugin warningの表示専用で、rootの探索・open/Close、cwd・環境変数参照、本文の返却・cache・埋込みは行いません。実filesystemの呼出側は`.codex`とactive Space `knowledge`を`os.OpenRoot`で開き、RootのFSだけを渡します。
-- `src/internal/artifact`: Intent record root基準の`fs.FS`から、通常Stageのrequired `Produces` に対応するcanonical pathを`fs.Stat`だけで確認するread-only queryを所有します。空`Produces`のvacuous success、regular fileのany-of判定、固定filename例外、metadata/FS input errorを扱います。per-unit・CodeKB配置、workspace source、state/audit/approval/lock/clock、内容読取り、Root lifecycleは所有しません。
+- `src/internal/artifact`: 通常Stageの成果物語彙をIntent record root相対pathへ解決する純粋なqueryと、record root基準の`fs.FS`からrequired outputの存在を確認するread-only queryを所有します。graph順のproducer解決、orphan fallback、条件付きconsume、宣言順、固定filename例外、metadata/FS input errorを扱います。per-unit・CodeKB配置、record prefix、workspace source、state/audit/approval/lock/clock、成果物の内容読取り、Root lifecycleは所有しません。
 
 - `src/internal/recordlock`: canonical project path・space・intentからrecord identityを作り、system temp配下のhashed lock directoryを`mkdir`で有限回取得します。owner token/PID/start時刻を保存し、token一致時だけ自身のlockをreleaseします。`Guard`はidentityとheld状態を束縛し、nested処理へ明示的に渡します。context cancel、owner mismatch、callback/release errorのjoin、panic後のreleaseを扱います。stale ownerの自動reap、workflow判断、Root lifecycleは所有しません。
 
@@ -1137,6 +1137,24 @@ FIFOなどのnon-regularだけならfalseを返します。内容は読まず、
 対象Stageの選択はcallerが所有します。固定AI-DLC `2.6.123`の確認範囲、filename語彙、未確認事項は
 [Stage completion artifact presenceの参照契約](ram/research/2026-09-03-stage-artifact-presence-contracts.md)、
 実装許可とTDD・検証手順は[実装計画](ram/decisions/2026-09-03-stage-artifact-presence-plan.md)を参照してください。
+
+## Stage artifact path resolver（内部API）
+
+`artifact.ResolvePaths(stage graph.Stage, catalog graph.Snapshot, projectType string) (artifact.Paths, error)`は、
+通常Stageの`Produces`、`OptionalProduces`、`Consumes`をIntent record root相対pathへ解決する純粋なqueryです。
+outputはrequired、optionalの宣言順、consumeは宣言順と`Required`を保ちます。consumeのownerはcatalogをgraph順に走査し、
+同じartifactをrequiredまたはoptional outputとして宣言する最初のStageです。producerがなければ固定本家2.6.123と同じく
+consumer Stage自身へfallbackします。重複は除去しません。
+
+pathは`<owner-phase>/<owner-slug>/<canonical-filename>`です。filenameは存在判定と同じ`artifact.Filename`を使うため、
+`traceability.json`と2種類の`test-results.md`例外も一致します。`projectType`が既知のBrownfieldまたはGreenfieldなら、
+一致しない`ConditionalOn`を除外します。空または未知のproject typeでは条件付きconsumeを含む全候補を保持します。
+
+current Stageと実際に選ばれたproducerのunsafe metadataはpath構築前に拒否します。per-unit、CodeKB、
+`produces_kinds`は特殊配置未対応として`ErrUnsupportedPlacement`、不正なphase・slug・artifact・conditionは
+`ErrInvalidMetadata`を返します。error時は途中結果を公開せずzero `Paths{}`です。filesystem I/O、record prefixの前置、
+成果物の存在確認、state/audit/approval/lockの変更は行いません。固定版の根拠、実装許可、TDD記録は
+[実装計画](ram/decisions/2026-09-05-artifact-path-resolver-plan.md)を参照してください。
 
 ## Stage completion decision（内部API）
 

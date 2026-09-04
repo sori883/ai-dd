@@ -146,3 +146,17 @@ path安全性、condition、順序・所有権、回帰testを確認する。blo
 
 cross compileは各OS上の実行証拠とはしない。final後に対象fileが変われば証拠はstaleとし、loopと再review後にfinalをやり直す。
 
+## 実装記録
+
+- `artifact-produce-paths`: compile-only stubに対してREDを確認後、required→optional順、canonical filename、
+  duplicate保持、empty non-nilをGREENにした。
+- `artifact-consume-paths`: 空consume結果のREDを確認後、graph順first producer、optional producer、
+  orphanのconsumer fallback、`Required`と順序の保持をGREENにした。
+- `artifact-conditional-consumes`: 既知project typeで全候補が残るREDを確認後、case-insensitiveな
+  Brownfield／Greenfield filterと空・未知値のno-filterをGREENにした。
+- `artifact-invalid-unsupported`: 15件のinvalid／unsupported caseがerrorなしまたはpartial pathを返すREDを確認後、
+  current／選択producerの事前検証とerror時zero `Paths{}`をGREENにした。
+- `artifact-result-ownership`: current Stage、catalog、1回目と2回目の返却値の独立性testを追加し、
+  production変更なしの`ALREADY_GREEN`として受理した。
+
+各GREEN／`ALREADY_GREEN`後に親エージェントがexact targeted commandと対象file hashを再確認した。
