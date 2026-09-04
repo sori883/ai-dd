@@ -46,6 +46,119 @@ func TestBuildRosterStopsAtFirstPathThatExceedsJSONSizeCap(t *testing.T) {
 	}
 }
 
+func TestBuildRosterPathBudgetExactBoundary(t *testing.T) {
+	const maxJSONPathBytes = 8192
+
+	persona := budgetPathWire{
+		relative: "agents/lead.md",
+		display:  ".codex/agents/lead.md",
+		wire:     `".codex/agents/lead.md"`,
+	}
+	baseSpecial := specialBudgetPath(0)
+	exactPadding := maxJSONPathBytes - explicitJSONPathArraySize(persona, baseSpecial)
+	if exactPadding < 0 {
+		t.Fatalf("special path base exceeds test budget: padding=%d", exactPadding)
+	}
+	exact := specialBudgetPath(exactPadding)
+	over := specialBudgetPath(exactPadding + 1)
+
+	const onePathOmissionWarning = "Warning: 1 optional persona/knowledge path(s) were omitted because there was no room to pass them all " +
+		"(inline_context_paths is capped at 8192 bytes). Configure fewer knowledge files if this matters; the stage runs without the omitted optional context."
+	const twoPathOmissionWarning = "Warning: 2 optional persona/knowledge path(s) were omitted because there was no room to pass them all " +
+		"(inline_context_paths is capped at 8192 bytes). Configure fewer knowledge files if this matters; the stage runs without the omitted optional context."
+	tests := []struct {
+		name          string
+		special       budgetPathWire
+		includeLater  bool
+		expectedBytes int
+		wantPaths     []string
+		wantWarnings  []string
+	}{
+		{
+			name:          "exact cap retains all paths",
+			special:       exact,
+			includeLater:  true,
+			expectedBytes: maxJSONPathBytes,
+			wantPaths:     []string{persona.display, exact.display},
+			wantWarnings:  []string{onePathOmissionWarning},
+		},
+		{
+			name:          "one byte over stops without later refill",
+			special:       over,
+			includeLater:  true,
+			expectedBytes: maxJSONPathBytes + 1,
+			wantPaths:     []string{persona.display},
+			wantWarnings:  []string{twoPathOmissionWarning},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := explicitJSONPathArraySize(persona, tt.special); got != tt.expectedBytes {
+				t.Fatalf("independent JSON wire size = %d, want %d", got, tt.expectedBytes)
+			}
+
+			got, err := knowledge.BuildRoster(pathBudgetInput(tt.special, tt.includeLater))
+			if err != nil {
+				t.Fatalf("BuildRoster() error = %v, want nil", err)
+			}
+			if !reflect.DeepEqual(got.Paths, tt.wantPaths) {
+				t.Errorf("BuildRoster() paths = %#v, want %#v", got.Paths, tt.wantPaths)
+			}
+			if !reflect.DeepEqual(got.Warnings, tt.wantWarnings) {
+				t.Errorf("BuildRoster() warnings = %#v, want %#v", got.Warnings, tt.wantWarnings)
+			}
+		})
+	}
+}
+
+type budgetPathWire struct {
+	relative string
+	display  string
+	wire     string
+}
+
+const specialBudgetRawPrefix = "special-\"-\\-\b-\f-\n-\r-\t-\x01-\x02-\x1f-<>&-\u2028-\u2029-日本語-😀-"
+
+const specialBudgetWirePrefix = `special-\"-\\-\b-\f-\n-\r-\t-\u0001-\u0002-\u001f-<>&-` + "\u2028-\u2029-日本語-😀-"
+
+func specialBudgetPath(padding int) budgetPathWire {
+	paddingValue := strings.Repeat("p", padding)
+	const relativePrefix = "knowledge/aidlc-shared/"
+	const displayPrefix = ".codex/knowledge/aidlc-shared/"
+	return budgetPathWire{
+		relative: relativePrefix + specialBudgetRawPrefix + paddingValue + ".md",
+		display:  displayPrefix + specialBudgetRawPrefix + paddingValue + ".md",
+		wire:     `"` + displayPrefix + specialBudgetWirePrefix + paddingValue + `.md"`,
+	}
+}
+
+func pathBudgetInput(special budgetPathWire, includeLater bool) knowledge.RosterInput {
+	files := fstest.MapFS{
+		"agents/lead.md": {Data: []byte("persona")},
+		special.relative: {Data: []byte("special")},
+	}
+	if includeLater {
+		files["knowledge/aidlc-shared/zz-later.md"] = &fstest.MapFile{Data: []byte("later")}
+	}
+	return knowledge.RosterInput{
+		Stage: graph.Stage{Mode: "inline", LeadAgent: "lead"},
+		Framework: knowledge.Source{
+			FS:            files,
+			DisplayPrefix: ".codex",
+		},
+		FrameworkDir: "/project/.codex",
+	}
+}
+
+func explicitJSONPathArraySize(paths ...budgetPathWire) int {
+	wireValues := make([]string, 0, len(paths))
+	for _, path := range paths {
+		wireValues = append(wireValues, path.wire)
+	}
+	return len([]byte("[" + strings.Join(wireValues, ",") + "]"))
+}
+
 func TestBuildRosterBoundsWarningsWithReservedSummary(t *testing.T) {
 	files := fstest.MapFS{
 		"agents/lead.md": {Data: []byte("persona")},
