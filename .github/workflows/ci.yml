@@ -45,7 +45,7 @@ jobs:
       - name: Test state filesystem integration
         run: go test -tags=integration -count=1 ./src/internal/state
       - name: Test memory and steering filesystem integration
-        run: go test -tags=integration -count=1 ./src/internal/memory ./src/internal/steering
+        run: go test -tags=integration -count=1 ./src/internal/memory ./src/internal/steering ./src/internal/knowledge
       - name: Test audit, record lock, and orchestrator integration
         run: go test -tags=integration -race -count=1 -shuffle=on ./src/internal/audit ./src/internal/recordlock ./src/internal/orchestrator
       - name: Check module metadata

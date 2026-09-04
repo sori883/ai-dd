@@ -20,6 +20,8 @@ src/internal/memory (4層Memory sourceのread-only acquisition)
 
 src/internal/steering (required rule reference resolution and content read-only acquisition)
 
+src/internal/knowledge (persona・知識のordered rosterとpreflight)
+
 src/internal/artifact (通常Stageのrequired output presence query)
 
 src/internal/recordlock (record単位のcross-process lockとidentity-bound Guard)
@@ -58,6 +60,7 @@ src/internal/workspace
 - `src/internal/state`: 初期stateの構築・永続化と、保存済み`aidlc-state.md`のread-only typed snapshot化を所有します。`ReadDocument`と`Read`はcaller-ownedのrecord `*os.Root`をCloseせず、固定leafをnonblocking descriptorで読み、path・descriptor identityを読取前後に確認します。`Parse`はState Version 8のsection・field・phase・Stage rowを検証します。graph join、state mutation、audit、CLI、Stage実行は所有しません。
 - `src/internal/memory`: Memory root基準の`fs.FS`から`org.md`、`team.md`、`project.md`、`phases/<phase>.md`を固定順で読む4層source acquisitionと、取得済みsourceからsubstantiveなbundleを作る純粋なfilterを所有します。merge・override・frontmatter parseなどのworkflow判断、workspace path解決、Rootのopen/Closeは所有しません。実filesystemの呼出側は`os.Root.FS()`を渡し、readerはRootをCloseしません。
 - `src/internal/steering`: `ResolveRulePaths`でgraphの`rules_in_context`をactive Spaceの表示pathとProject/Memory別のFS相対読込pathへ純粋に解決し、`ReadResolvedRules`でcallerが貸し出す各`fs.FS`へ接続します。readerは順序付きpathを毎回読み、path検証、不正UTF-8のfail-closed、先頭BOM 1個の除去を行い、`memory.BuildBundle`で実質的な本文のないtemplateを除外して`RuleContent`を返します。ルール選択、phase推測、sort、Rootのopen/Close、配信やmergeは所有しません。実filesystemの呼出側は`os.OpenRoot`で開いた`Root.FS()`を渡します。
+- `src/internal/knowledge`: `BuildRoster`はcallerが渡す配置rootの`fs.FS`を借り、inline/mobのlead・supportに対応するpersona、framework共通知識・担当AI別知識、active Space共通知識・担当AI別知識を5群順で列挙します。各directoryはUTF-16 code-unit順の深さ優先で走査し、候補を毎回`fs.ReadFile`でUTF-8 preflightしてからMinimalとplugin metadataの選択、display pathのfirst-wins、JSONサイズ上限を適用します。`FrameworkDir`はplugin warningの表示専用で、rootの探索・open/Close、cwd・環境変数参照、本文の返却・cache・埋込みは行いません。実filesystemの呼出側は`.codex`とactive Space `knowledge`を`os.OpenRoot`で開き、RootのFSだけを渡します。
 - `src/internal/artifact`: Intent record root基準の`fs.FS`から、通常Stageのrequired `Produces` に対応するcanonical pathを`fs.Stat`だけで確認するread-only queryを所有します。空`Produces`のvacuous success、regular fileのany-of判定、固定filename例外、metadata/FS input errorを扱います。per-unit・CodeKB配置、workspace source、state/audit/approval/lock/clock、内容読取り、Root lifecycleは所有しません。
 
 - `src/internal/recordlock`: canonical project path・space・intentからrecord identityを作り、system temp配下のhashed lock directoryを`mkdir`で有限回取得します。owner token/PID/start時刻を保存し、token一致時だけ自身のlockをreleaseします。`Guard`はidentityとheld状態を束縛し、nested処理へ明示的に渡します。context cancel、owner mismatch、callback/release errorのjoin、panic後のreleaseを扱います。stale ownerの自動reap、workflow判断、Root lifecycleは所有しません。
@@ -175,6 +178,50 @@ active Spaceと表示用`Path`は`filepath.Localize`相当のnative検証を使�
 FS不要のnon-nil空sliceです。本文の表示pathはtemplate除外後もEntry単位で保持し、read error・不正UTF-8では表示pathと原因を残して
 全結果を破棄します。callerが渡したRootはreaderがcloseせず、呼出しごとにfresh readします。graph、stageplan、orchestratorの
 Stage返却値は`RulesInContext`のsliceを複製し、callerの変更を内部へ共有しません。
+
+## Knowledge roster（内部API）
+
+`knowledge.BuildRoster`は、callerがroot化したframework `.codex`とactive Spaceの
+`aidlc/spaces/<space>/knowledge`を`knowledge.Source`として借用し、工程の担当AIへ渡す表示pathの一覧を
+毎回構築します。APIはrootを開閉せず、`FrameworkDir`もplugin warningの絶対表示pathにだけ使います。
+
+```go
+type Source struct {
+    FS            fs.FS
+    DisplayPrefix string
+}
+
+type RosterInput struct {
+    Stage          graph.Stage
+    Depth          string
+    Framework      Source
+    FrameworkDir   string
+    SpaceKnowledge *Source
+    EnabledPlugins []string
+}
+
+type Roster struct {
+    Paths    []string
+    Warnings []string
+}
+
+func BuildRoster(input RosterInput) (Roster, error)
+```
+
+inlineはlead→supports、mobはleadだけを対象にし、orchestratorとその他のmodeは除外します。persona→
+framework共通→framework担当AI別→Space共通→Space担当AI別の5群を、各階層UTF-16 code-unit順の深さ優先で
+列挙します。exact `.md`のregular fileとsymlinkを毎回preflightし、欠落・読取失敗・不正UTF-8はwarningとして
+候補から省きます。空本文・見出しだけの本文も候補として保持し、本文そのものは返却・保持しません。
+
+DepthがMinimalのときだけ、本家2.6.123の`intent-capture`と`requirements-analysis`のframework既知文書表を
+適用します。persona、Space知識、再帰directoryの未知文書は維持します。`tools/data/plugin-files-*.json`は
+毎回metadataだけを読み、schema・plugin・knowledgeの完全一致を検証して所有pluginの和集合を選択します。
+metadata由来のPathは開きません。EnabledPluginsがnilなら全plugin、明示空sliceなら全plugin無効です。
+最後にJSON.stringify相当のUTF-8 bytesでPath 8 KiB、warning 6 KiBへ先頭から制限します。
+
+実filesystemではcallerが`os.OpenRoot`の`Root.FS()`を渡します。readerはRootをcloseせず、編集は次回呼出しへ
+反映します。開発用`src/core/`やRAMは実行時のfallback・直接参照先ではありません。固定AI-DLC 2.6.123との
+比較範囲、UTF-16順の承認済み差分、残余リスクは[工程・担当AIに応じて配置知識ファイルを選択する計画](ram/decisions/2026-09-04-knowledge-roster-plan.md)を参照してください。
 
 ## 手動DI
 
