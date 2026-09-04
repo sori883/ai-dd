@@ -41,6 +41,7 @@ Goはgo_tdd_implementerが単独writerとなる。各行は1つの振る舞い�
 | minimal-table-boundary | 対象表なしのstage/ownerでは無効plugin知識も保持。TestBuildRosterMinimalKeepsPluginKnowledgeOutsideTable | minimal_test.go | minimal.go |
 | warning-source-order | plugin→persona→DFSの警告順と容量内に残る先頭。TestBuildRosterWarningsFollowSourceOrder | roster_test.go | roster.go、read.go |
 | path-budget-boundary | 8,192 bytes一致・1 byte超過、特殊文字、正確な省略件数、後続の詰め直しなし。TestBuildRosterPathBudgetExactBoundary | budget_test.go | budget.go（失敗時のみ） |
+| warning-path-text | 警告の表示pathは特殊文字を二重escapeせず本家と同じ生文字列を保持。TestBuildRosterWarningPathsPreserveLiteralCharacters | roster_test.go | roster.go、read.go、plugins.go |
 | warning-budget-boundary | 6,144 bytes一致・1 byte超過、要約予約・省略件数、特殊文字。TestBuildRosterWarningBudgetExactBoundary | budget_test.go | budget.go（失敗時のみ） |
 | space-fresh-read | 同じ借用Framework/Space Rootで日本語文書の本文編集・追加・削除を次回へ反映。TestBuildRosterIntegrationRefreshesJapaneseSpaceKnowledge | read_integration_test.go | read.go（失敗時のみ） |
 
@@ -63,3 +64,13 @@ go mod tidy -diff、format check、git diff --check、変更Go fileのgopls chec
 現headのGitHub push/PR全16checks成功後にmergeし、main反映・Issue closeを確認する。
 新しい不一致は承認済み契約内で1件ずつRED/GREENへ戻す。新しい仕様や権限の選択は停止する。
 永続data移行はなく、問題時は通常の修正PRで戻せる。過去の手順不備と今回の実測証拠は区別してPRに残す。
+
+## 同じ承認範囲内で判明した警告表示の補修
+
+固定head 094fec0の独立した限定reviewで、6箇所のwarningが表示pathをGoの`%q`で再escapeする
+不具合を確認した。本家2.6.123はaidlc-orchestrate.ts:2760,2779,2899,2935,2993,3002で
+二重引用符内にpathを生補間する。引用符、backslash、制御文字、U+2028/U+2029で返却文字列と
+6 KiBに収まる警告が変わるため、warning容量testの前に独立したwarning-path-textを追加する。
+公開BuildRoster経由の6種類の警告を完全一致でRED確認し、外側の引用符を保つ文字列補間へ直す。
+validation、path変換、error本文、容量algorithmは変更しない。元計画の「本家形式の警告」と
+特殊文字の容量契約を満たす通常bug修正であり、新しい意図的差分や追加承認を要する設計変更ではない。
