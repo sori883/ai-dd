@@ -1377,7 +1377,9 @@ marker reader/writerはcaller-owned Rootをcloseしません。
 space/intentからidentity、project Root、record Rootを安全に解決します。`src/internal/cli`の
 `next`/`continue`はsyntax errorをstderr/exit 2、internal/I/O failureをstdout空・stderr/exit 1、
 invalid/stale workflowを改行付き単一`{"kind":"error","message":"..."}` stdout/exit 0へ分類します。
-この公開経路は通常の単一built binaryからも利用できます。
+`read-context`は`continue <opaque read token>`だけを受け付け、callerのpath／slot／part指定を拒否します。
+成功はcanonical context JSON一行、syntax errorはstdout空・stderr/exit 2、reader不整合やroot cleanup failureはstdout空・
+stderr/exit 1です。この公開経路は通常の単一built binaryからも利用できます。
 
 ## Codex receiverによる配信本文の読込
 
@@ -1386,17 +1388,29 @@ rootでは`.agents/skills/aidlc/SKILL.md`へ明示配置します。一般instal
 receiverはPATH上の単一built binaryへ`aidlc next --project-dir .`を呼び、`load-steering`の全`rules_content`を配列順に
 保持して、各`continue_token`を一つのopaque引数として直ちに継続します。rule途中の進捗・reportは返しません。
 
-`run-stage`では`context_warnings`を表示してもreadを省略せず、全`inline_context_paths`を最初に本文まで読み切ってから
-`stage_file`、最後に存在する全`consumes`を配列順に本文まで読みます。通常呼出しで全readが成功したときのreceiver応答は
-`context ready`だけです。callerが検証目的でmachine-readableなread receiptの要求とoutput schemaを明示した場合に限り、
-そのschemaが要求するreceiptだけを返して停止します。どちらの場合もStage実行、成果物、review・sensor、report、人間承認へ
-進みません。unknown directive、malformed directive、path外参照、read failureはfail-closedで停止します。
+`run-stage`の本文は、callerがdirectiveのpathを直接openせず、公開`aidlc read-context --project-dir .`へ委譲します。
+継続は直前の成功応答にあるopaqueな`read_continue_token`を`aidlc read-context continue "<opaque read token>" --project-dir .`
+へそのまま渡します。Go readerは全`inline_context_paths`、`stage_file`、存在する全`consumes`をこの順に全文読込し、8192 bytes以内の
+canonical JSON chunk、UTF-8 rune境界、content SHA-256、active run-stage markerのwire digest/revision、record private keyの
+domain-separated HMAC tokenを検証します。`consumes_absent[].expected:false`、markerの消費済み／superseded状態、token改ざん／stale、
+symlink・special file・path/content race・不正UTF-8は全file open前または対象fileの境界で拒否します。成功・失敗ともstate、audit、
+artifact、markerを変更せず、同じtokenの再送は同じchunkを返します。通常呼出しで全readが成功したときのreceiver応答は`context ready`
+だけです。callerが検証目的でmachine-readableなread receiptの要求とoutput schemaを明示した場合に限り、そのschemaが要求する
+receiptだけを返して停止します。どちらの場合もStage実行、成果物、review・sensor、report、人間承認へ進みません。unknown directive、
+malformed directive、path外参照、read failureはfail-closedで停止します。
+
+verification receiptのschema意味はskillが定義し、`rules`は受領順の各`rules_content` entryの末尾非空行、
+`inline_context`はinline fileごとの全chunk連結本文、`stage_file`はstage fileの全chunk連結本文、`consumes`はconsume fileごとの
+全chunk連結本文を表します。file本文は`slot/index/part`順で連結し、末尾改行を保持します。read token keyは既存steering lifecycleの
+4 KiB+1 bounded readとECMAScript whitespace canonicalizationを共有するread-only APIから取得し、read-contextはkeyやsession directoryを変更しません。
 
 通常の構造testはfrontmatter、PATH command、directive順序、opaque token、context-only境界を検査します。repository外のfresh
 sandbox testはsource skillのbyte-identical配置、複数rule chunkからの複数continue、rule本文の全文と順序、inline→stage→consumeのsentinel順を検査します。
 live `codex exec --ephemeral` receipt testは`AIDLC_CODEX_EXEC_LIVE=1`のときだけ実行する設計であり、専用temporary fileへ
 `--output-last-message`で保存したreceiptを検査します。receiptの`rules`は各`rules_content`の最後の非空行だけを順序どおり照合し、
-inline／stage／consumeは全本文を照合します。stdout/stderrは失敗診断に限ります。通常CIでは明示skipを維持し、ユーザーが
-許可した2026-09-05の1回のlive実行では全receiptが一致しました。詳細な証拠、promptへ期待値・pathを渡さない制約、credentialを
-扱わない境界、Stage実行を後続へ残す理由は[Codex receiverで配信本文を実読込する計画](ram/decisions/2026-09-05-codex-receiver-read-plan.md)
-を参照してください。
+inline／stage／consumeは全本文を照合します。stdout/stderrは失敗診断に限ります。live promptはskill invocationとverification
+receipt/schema要求だけに限定し、routing、読込順、stop、canaryを含めません。fresh fixtureのstage・consumeは予測不能なBEGIN/MIDDLE/ENDを
+持ち、stage本文は実行時だけrandom sentinelをproject rootの`stage-execution-canary.txt`へ書く指示を含みます。live前後はdirectory mtimeを
+除外してregular fileのmode/bodyを比較し、transportに必要な`.aidlc-active-directive.json`と`.aidlc-steering-token-key`だけを除外します。
+通常CIでは明示skipを維持し、このrepair後のlive実行は未実施です。詳細な証拠、credentialを扱わない境界、Stage実行を後続へ残す理由は
+[Codex receiverで配信本文を実読込する計画](ram/decisions/2026-09-05-codex-receiver-read-plan.md)を参照してください。

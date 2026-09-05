@@ -26,8 +26,12 @@ func TestSkillDefinesReceiverContract(t *testing.T) {
 	for _, phrase := range []string{
 		"aidlc next --project-dir .",
 		"aidlc continue \"<opaque token>\" --project-dir .",
+		"aidlc read-context --project-dir .",
+		"aidlc read-context continue \"<opaque read token>\" --project-dir .",
 		"rules_content",
 		"continue_token",
+		"read_continue_token",
+		"complete:true",
 		"context_warnings",
 		"inline_context_paths",
 		"stage_file",
@@ -66,6 +70,9 @@ func TestSkillPreservesDirectiveOrderAndFailClosedRules(t *testing.T) {
 		"inline_context_paths",
 		"stage_file",
 		"consumes",
+		"read-context",
+		"read_continue_token",
+		"complete:true",
 	}
 	last := -1
 	for _, phrase := range orderedPhrases {
@@ -93,32 +100,26 @@ func TestSkillPreservesDirectiveOrderAndFailClosedRules(t *testing.T) {
 	}
 }
 
-func TestSkillDefinesSafeShellBoundary(t *testing.T) {
+func TestSkillUsesSafeGoReadContextBoundary(t *testing.T) {
 	data, err := os.ReadFile("SKILL.md")
 	if err != nil {
 		t.Fatalf("ReadFile(SKILL.md): %v", err)
 	}
 	body := strings.Join(strings.Fields(strings.ToLower(string(data))), " ")
-	for _, phrase := range []string{
-		"shell tool",
-		"commands above",
-		"explicitly declared path",
-		"read in full",
-		"search",
-		"glob",
-		"directory listing",
-	} {
+	for _, phrase := range []string{"opaque read token", "read-context", "complete:true", "stop on any error"} {
 		if !strings.Contains(body, phrase) {
-			t.Errorf("skill body does not define shell boundary phrase %q", phrase)
+			t.Errorf("skill body does not define read-context boundary phrase %q", phrase)
 		}
 	}
 	for _, forbidden := range []string{
-		"never use a shell",
-		"exact aidlc command above",
-		"search the workspace for replacement context",
+		"shell tool",
+		"direct reads",
+		"explicitly declared path",
+		"resolve relative paths",
+		"directory listing",
 	} {
 		if strings.Contains(body, forbidden) {
-			t.Errorf("skill body retains contradictory shell boundary %q", forbidden)
+			t.Errorf("skill body retains raw path read boundary %q", forbidden)
 		}
 	}
 }
@@ -148,6 +149,26 @@ func TestSkillLimitsReadReceiptException(t *testing.T) {
 	}
 	if strings.Contains(body, "do not send a progress or result message") {
 		t.Error("skill body retains wording that can prohibit the requested context-ready or verification receipt")
+	}
+}
+
+func TestSkillDefinesVerificationReceiptFieldSemantics(t *testing.T) {
+	data, err := os.ReadFile("SKILL.md")
+	if err != nil {
+		t.Fatalf("ReadFile(SKILL.md): %v", err)
+	}
+	body := strings.Join(strings.Fields(strings.ToLower(string(data))), " ")
+	body = strings.ReplaceAll(body, "`", "")
+	for _, phrase := range []string{
+		"rules contains the last non-empty line of each received rules_content entry, in received order",
+		"inline_context contains each inline file's full text after concatenating its chunks",
+		"stage_file contains the full text after concatenating its chunks",
+		"consumes contains each consume file's full text after concatenating its chunks",
+		"slot/index/part order",
+	} {
+		if !strings.Contains(body, phrase) {
+			t.Errorf("skill body does not define verification receipt field semantics %q", phrase)
+		}
 	}
 }
 

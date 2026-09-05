@@ -35,6 +35,16 @@ func main() {
 				os.Getenv,
 				deliverypkg.Continue,
 			),
+			ReadContext: deliveryReadContext(
+				os.Getwd,
+				os.Getenv,
+				deliverypkg.ReadContext,
+			),
+			ContinueContext: deliveryContinueContext(
+				os.Getwd,
+				os.Getenv,
+				deliverypkg.ContinueContext,
+			),
 			PrepareOutput: func() {
 				// Recognized workspace commands promise exit 1 for writes to closed stdout or stderr pipes.
 				signal.Ignore(syscall.SIGPIPE)

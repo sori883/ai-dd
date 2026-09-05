@@ -1,7 +1,7 @@
 # Codexのcontext読込をGoの安全境界へ移す
 
 - 日付: 2026-09-05（Asia/Tokyo）
-- 状態: Accepted（ユーザーが直接承認。Issue #115の独立review修正）
+- 状態: Implemented（ユーザーが直接承認。Issue #115の独立review修正）
 - 対応Issue: [#115 Codex receiverで配信本文を実読込する](https://github.com/sori883/ai-dd/issues/115)
 - 置換対象: [Codex receiverで配信本文を実読込する](2026-09-05-codex-receiver-read-plan.md)のshell直接読込、
   live prompt、短いfixtureに関する設計
@@ -209,3 +209,55 @@ live E2Eで抑える。bind mountと複数file全体のatomic snapshotは明示�
 
 問題時は本Issueのsafe reader、CLI wiring、skill／testを同じPR単位でrevertできる。PR #114の配信cursorや
 state schema migrationは不要で、既存の`next`／`continue`契約を壊さない。
+
+## 実装証拠（Issue #115）
+
+承認済み契約を`work_unit_id=codex-safe-context-read`の一つのloop work unitとして実装した。新規publicationは
+`.aidlc-active-directive.json`のsettled attemptへcanonical run-stage wireの`result_sha256`と`result_revision`を保存し、
+`ReadContext`／`ContinueContext`はfresh composition、issued／delivered marker、revision、wire digest、state、identityを同じ
+record lock内で再検証する。digestなしmarker、consumed／superseded marker、改ざん・stale tokenは拒否し、次回`next`でfresh回復する。
+
+readerは全`consumes_absent`をfile open前にpreflightし、`expected:false`を拒否、`expected:true`を読込対象から除外する。inline、
+stage、consumeをこの順に全文読込し、UTF-8 rune境界のbounded chunkをcanonical JSON（改行込み8192 bytes以下）へ返す。record private
+keyのdomain-separated HMAC tokenはproject、space、intent、marker revision、wire digest、stage、slot、file、part、content
+digestを拘束し、同じtokenのreplayはread-only同値となる。`os.Root`相対のregular non-symlinkだけを許可し、ancestor／leaf symlink、
+FIFO・special file、不正UTF-8、descriptor/path/content raceをfail-closedにし、Unixではnonblocking openを使う。
+
+公開CLIは`aidlc read-context [continue <opaque-token>] [--project-dir <path>]`を実装し、path／slot／partをcallerへ公開しない。
+成功はstdout canonical JSON一行、syntax errorはstdout空・stderr・exit 2、reader／I/O／root cleanup failureはstdout空・stderr・exit 1。
+receiver skillはshellによるraw path readを削除し、`read-context`を`complete:true`まで反復する。fresh non-live journeyはrepository外
+projectへskillをbyte-identical配置し、予測不能で複数chunkのcontext本文、inline→stage→consume順、read前後snapshot不変、Stage canary
+不在を確認する。live Codex testは`AIDLC_CODEX_EXEC_LIVE=1`が外部で設定された場合だけ実行し、test自身は設定しない。
+
+親reviewの追加repair work unit `codex-safe-context-read-parent-repair`では、verification-only receiptのschema意味をskillへ固定した。
+`rules`は受領順の各`rules_content` entryの末尾非空行、`inline_context`／`stage_file`／`consumes`はそれぞれslot/index/part順で
+各fileの全chunkを連結した全文を表す。live promptはskill invocationと定義済みreceipt/schema要求だけへ縮小し、routing、読込順、stop、
+canaryの指示を重ねない。fixtureのstage・consumeは予測不能なBEGIN/MIDDLE/ENDを持ち、stage実行時だけproject rootの
+`stage-execution-canary.txt`へrandom sentinelを書き込む明示指示を含めた。live前後snapshotはdirectory mtimeを無視してregular fileの
+mode/bodyだけを比較し、transport上必要な`.aidlc-active-directive.json`と`.aidlc-steering-token-key`だけを除外する。Codex liveはこのrepair後
+未実施で、環境変数なしのintegration testはskipする。
+
+また、read-contextのcontinuation key取得は新設したread-only `steering.ReadContinuationKey`へ統合した。既存key lifecycleと同じ
+4 KiB+1 bounded read、regular non-symlink、UTF-8、ECMAScript whitespace trim、canonical unpadded base64url、exact 32-byte検証を再利用し、
+read-context中のkey／session directory作成・変更を許可しない。
+
+loop targeted evidence:
+
+```text
+go test -count=1 -run 'Test(Next|Continue|ReadContext).*' ./src/internal/delivery
+go test -count=1 -run 'TestReadContext.*Absent' ./src/internal/delivery
+go test -count=1 -run 'TestReadContext.*(Order|Chunk|Token|Replay|Change)' ./src/internal/delivery
+go test -count=1 -run 'TestReadContext.*(File|Symlink|Race|FIFO|UTF)' ./src/internal/delivery
+go test -count=1 -run 'Test.*ReadContext' ./src/internal/cli ./src/cmd/aidlc
+go test -count=1 ./src/harness/codex/skills/aidlc
+go test -tags=integration -count=1 -run '^TestCodexReceiver(FreshPlacementJourney|ReadsDeliveredContext)$' ./src/cmd/aidlc
+go test -count=1 -run 'TestReadContext.*Key' ./src/internal/delivery
+go test -count=1 -run '^TestReadContinuationKeyIsReadOnlyAndUsesCanonicalBounds$' ./src/internal/steering
+env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run 'TestCodexReceiver(LivePrompt|LiveCommand).*' ./src/cmd/aidlc
+env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run '^TestCodexReceiver(FreshPlacementJourney|Fixture.*|StableSnapshot.*|ReadsDeliveredContext)$' ./src/cmd/aidlc
+go test -count=20 -run '^TestReadContextTokenTamperReplayAndContentChange$' ./src/internal/delivery
+```
+
+本家固定snapshot AI-DLC 2.6.123はdirective pathをCodex file／shell toolから直接読む。本実装は承認済み意図的差分として、同じ本文を
+active directiveへ拘束されたGo `read-context`からのみ返す。理由は必須入力欠落、symlink escape、読込中差替えをLLMへの注意書きでなく
+決定論的に拒否するためで、利用者は任意pathを指定できず、Stage本文と順序は維持される。

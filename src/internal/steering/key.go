@@ -55,30 +55,9 @@ func ReadOrCreateContinuationKey(projectRoot *os.Root, recordRoot *os.Root) ([]b
 }
 
 func readOrCreateContinuationKey(projectRoot *os.Root, recordRoot *os.Root, ops continuationKeyOps) ([]byte, error) {
-	if projectRoot == nil {
-		return nil, fmt.Errorf("project root is required: %w", ErrInvalidContinuationKeyFile)
-	}
-
-	keyRoot := projectRoot
-	keyPath := "aidlc/.aidlc-sessions/.aidlc-steering-token-key"
-	if recordRoot != nil {
-		stateInfo, err := ops.lstat(recordRoot, "aidlc-state.md")
-		switch {
-		case err == nil:
-			if !stateInfo.Mode().IsRegular() {
-				return nil, fmt.Errorf("record state is not regular: %w", ErrInvalidContinuationKeyFile)
-			}
-			keyRoot = recordRoot
-			keyPath = ".aidlc-steering-token-key"
-		case errors.Is(err, fs.ErrNotExist):
-			if err := ops.mkdirAll(projectRoot, "aidlc/.aidlc-sessions", 0o777); err != nil {
-				return nil, fmt.Errorf("create session directory: %w", err)
-			}
-		default:
-			return nil, fmt.Errorf("inspect record state: %w: %w", ErrInvalidContinuationKeyFile, err)
-		}
-	} else if err := ops.mkdirAll(projectRoot, "aidlc/.aidlc-sessions", 0o777); err != nil {
-		return nil, fmt.Errorf("create session directory: %w", err)
+	keyRoot, keyPath, err := continuationKeyLocation(projectRoot, recordRoot, ops, true)
+	if err != nil {
+		return nil, err
 	}
 
 	if key, found, err := readContinuationKey(keyRoot, keyPath, ops); err != nil {
@@ -87,6 +66,61 @@ func readOrCreateContinuationKey(projectRoot *os.Root, recordRoot *os.Root, ops 
 		return key, nil
 	}
 	return createContinuationKey(keyRoot, keyPath, ops)
+}
+
+// ReadContinuationKey reads the existing private continuation key without
+// creating a session directory or changing the key file. It uses the same
+// bounded, canonical file contract as ReadOrCreateContinuationKey.
+func ReadContinuationKey(projectRoot *os.Root, recordRoot *os.Root) ([]byte, error) {
+	return readContinuationKeyOnly(projectRoot, recordRoot, continuationKeyOperations())
+}
+
+func readContinuationKeyOnly(projectRoot *os.Root, recordRoot *os.Root, ops continuationKeyOps) ([]byte, error) {
+	keyRoot, keyPath, err := continuationKeyLocation(projectRoot, recordRoot, ops, false)
+	if err != nil {
+		return nil, err
+	}
+	key, found, err := readContinuationKey(keyRoot, keyPath, ops)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("continuation key file is absent: %w", ErrInvalidContinuationKeyFile)
+	}
+	return key, nil
+}
+
+func continuationKeyLocation(projectRoot *os.Root, recordRoot *os.Root, ops continuationKeyOps, createSessionDirectory bool) (*os.Root, string, error) {
+	if projectRoot == nil {
+		return nil, "", fmt.Errorf("project root is required: %w", ErrInvalidContinuationKeyFile)
+	}
+
+	keyRoot := projectRoot
+	keyPath := "aidlc/.aidlc-sessions/.aidlc-steering-token-key"
+	if recordRoot != nil {
+		stateInfo, err := ops.lstat(recordRoot, "aidlc-state.md")
+		switch {
+		case err == nil:
+			if stateInfo == nil || !stateInfo.Mode().IsRegular() {
+				return nil, "", fmt.Errorf("record state is not regular: %w", ErrInvalidContinuationKeyFile)
+			}
+			keyRoot = recordRoot
+			keyPath = ".aidlc-steering-token-key"
+		case errors.Is(err, fs.ErrNotExist):
+			if createSessionDirectory {
+				if err := ops.mkdirAll(projectRoot, "aidlc/.aidlc-sessions", 0o777); err != nil {
+					return nil, "", fmt.Errorf("create session directory: %w", err)
+				}
+			}
+		default:
+			return nil, "", fmt.Errorf("inspect record state: %w: %w", ErrInvalidContinuationKeyFile, err)
+		}
+	} else if createSessionDirectory {
+		if err := ops.mkdirAll(projectRoot, "aidlc/.aidlc-sessions", 0o777); err != nil {
+			return nil, "", fmt.Errorf("create session directory: %w", err)
+		}
+	}
+	return keyRoot, keyPath, nil
 }
 
 func readContinuationKey(root *os.Root, path string, ops continuationKeyOps) ([]byte, bool, error) {

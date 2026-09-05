@@ -118,6 +118,66 @@ func TestReadOrCreateContinuationKeyReusesFreshCanonicalFile(t *testing.T) {
 	}
 }
 
+func TestReadContinuationKeyIsReadOnlyAndUsesCanonicalBounds(t *testing.T) {
+	root := t.TempDir()
+	projectPath := filepath.Join(root, "project")
+	recordPath := filepath.Join(root, "record")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("create project directory: %v", err)
+	}
+	if err := os.MkdirAll(recordPath, 0o755); err != nil {
+		t.Fatalf("create record directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(recordPath, "aidlc-state.md"), []byte("# state\n"), 0o644); err != nil {
+		t.Fatalf("create state file: %v", err)
+	}
+	projectRoot, err := os.OpenRoot(projectPath)
+	if err != nil {
+		t.Fatalf("open project root: %v", err)
+	}
+	defer projectRoot.Close()
+	recordRoot, err := os.OpenRoot(recordPath)
+	if err != nil {
+		t.Fatalf("open record root: %v", err)
+	}
+	defer recordRoot.Close()
+
+	key := bytes.Repeat([]byte{0x42}, 32)
+	canonical := []byte(base64.RawURLEncoding.EncodeToString(key) + "\n")
+	wrapped := append([]byte("\u2003"), canonical...)
+	wrapped = append(wrapped, []byte("\u2003")...)
+	keyPath := filepath.Join(recordPath, ".aidlc-steering-token-key")
+	if err := os.WriteFile(keyPath, wrapped, 0o640); err != nil {
+		t.Fatalf("write wrapped key: %v", err)
+	}
+
+	got, err := ReadContinuationKey(projectRoot, recordRoot)
+	if err != nil {
+		t.Fatalf("ReadContinuationKey() error = %v", err)
+	}
+	if !bytes.Equal(got, key) {
+		t.Fatalf("ReadContinuationKey() = %x, want %x", got, key)
+	}
+	got[0] ^= 0xff
+	fileBytes, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("read key after returned slice mutation: %v", err)
+	}
+	if !bytes.Equal(fileBytes, wrapped) {
+		t.Errorf("read-only key file changed = %q, want %q", fileBytes, wrapped)
+	}
+	if _, err := os.Stat(filepath.Join(projectPath, "aidlc", ".aidlc-sessions")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("read-only session directory stat error = %v, want os.ErrNotExist", err)
+	}
+
+	if err := os.WriteFile(keyPath, bytes.Repeat([]byte{'A'}, continuationKeyFileMaxSize+1), 0o640); err != nil {
+		t.Fatalf("write oversize key: %v", err)
+	}
+	if _, err := ReadContinuationKey(projectRoot, recordRoot); err == nil || !errors.Is(err, ErrInvalidContinuationKeyFile) {
+		t.Fatalf("ReadContinuationKey(oversize) error = %v, want ErrInvalidContinuationKeyFile", err)
+	}
+}
+
 func TestReadOrCreateContinuationKeyRejectsCorruptFile(t *testing.T) {
 	validKey := bytes.Repeat([]byte{0x42}, 32)
 	validText := base64.RawURLEncoding.EncodeToString(validKey)

@@ -244,19 +244,23 @@ commit、Go/OS/architecture、sandbox、binary size・SHA-256、各commandのexi
 
 repository外のfresh sandboxへ、配布用`SKILL.md`を`.agents/skills/aidlc/SKILL.md`としてbyte-identicalに配置し、single built
 `aidlc`を一時PATHへ加える。テストは`crypto/rand`でrule、lead／support persona、stage file、consume本文のsentinelを生成し、
-複数partの`load-steering`を全てcontinueしてから`run-stage`を受け取る。directiveに宣言されたinline pathを全件先に読み、次に
-stage file、最後にexisting consumeを本文まで読む順序と、rule本文のpart順復元を検査する。Stage実行や成果物作成は行わない。
+複数partの`load-steering`を全てcontinueしてから`run-stage`を受け取る。以後は`read-context`とopaque
+`read_continue_token`だけを反復し、inline context全件、stage file、existing consumeの順序、UTF-8 chunk境界、8192 bytes制限、
+全本文の復元を検査する。stage・consume本文にも予測不能なBEGIN/MIDDLE/ENDを含め、stage本文には実行時だけ
+project rootの`stage-execution-canary.txt`へrandom sentinelを書く明示指示を置く。read-context前後はdirectory mtimeを無視して
+regular fileのmode/bodyをsnapshot比較し、transportに必要な`.aidlc-active-directive.json`と`.aidlc-steering-token-key`だけを除外する。
+state、audit、artifact、新規canaryが変わらず、Stage実行や成果物作成へ進まないことを確認する。
 
 ```sh
 go test -count=1 ./src/harness/codex/skills/aidlc
-go test -tags=integration -count=1 -run '^TestCodexReceiverFreshPlacementJourney$' ./src/cmd/aidlc
-go test -tags=integration -count=1 -run '^TestCodexReceiverReadsDeliveredContext$' ./src/cmd/aidlc
+go test -count=1 -run 'Test.*ReadContext' ./src/internal/cli ./src/cmd/aidlc
+go test -tags=integration -count=1 -run '^TestCodexReceiver(FreshPlacementJourney|ReadsDeliveredContext)$' ./src/cmd/aidlc
 ```
 
 `TestCodexReceiverReadsDeliveredContext`は`AIDLC_CODEX_EXEC_LIVE=1`がない通常loopで明示skipする。通常呼出しの成功応答は
 `context ready`だが、live testは検証用machine-readable read receiptの要求とoutput schemaを明示したcallerとして、live時だけ
 `codex exec --ephemeral`を一度だけ起動し、`--output-last-message`の専用temporary receipt fileからJSON receiptを読み、各`rules_content`の最後の非空行を順番どおり照合し、inline／stage／consumeは全本文と順序を厳密照合する。stdout/stderrは失敗診断に限る。どちらの応答形式でも
-Stage実行や成果物作成へ進まない。通常CIではliveをskipし、ユーザーが許可した2026-09-05の1回のlive実行では全receiptが一致した。
-promptにsentinelやpathを埋め込まず、
-credentialを読み取らず、unknown directive・read failureではfail-closedで止める。installer/update、review・sensor、report、人間承認、
+Stage実行や成果物作成へ進まない。live promptはskill invocationと定義済みreceipt/schema要求だけを含み、routing・読込順・stop・canaryを
+補いません。通常CIではliveをskipし、このrepair後のlive実行は未実施です。promptにsentinelやpathを埋め込まず、credentialを読み取らず、
+unknown directive・read failureではfail-closedで止めます。installer/update、review・sensor、report、人間承認、
 full lifecycleはこのscenarioの対象外である。

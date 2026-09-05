@@ -98,6 +98,12 @@ func nextWithGuard(ctx context.Context, guard *recordlock.Guard, input RunStageI
 		return DeliveryResult{}, fmt.Errorf("delivery next: compose run-stage: %w", err)
 	}
 	if len(composition.Chunks) == 0 {
+		// read-context is a read-only operation. Provision its HMAC key while
+		// publishing the directive so a later context read never mutates the
+		// record transaction.
+		if _, err := steering.ReadOrCreateContinuationKey(input.ProjectRoot, input.RecordRoot); err != nil {
+			return DeliveryResult{}, fmt.Errorf("delivery next: read continuation key: %w", err)
+		}
 		marker := activeDirectiveMarkerForComposition(input, composition, ActiveDirectiveKindRunStage, ActiveDirectiveCommandNext, composition.Wire, "", 0, 0)
 		if err := activeDirectiveMarkerCommit(input.RecordRoot, marker); err != nil {
 			return DeliveryResult{}, fmt.Errorf("delivery next: commit run-stage marker: %w", err)
@@ -415,6 +421,8 @@ func activeDirectiveAttemptForPublication(
 		OwnerEpoch:        base.OwnerEpoch,
 		ContextEpoch:      base.ContextEpoch,
 		Status:            ActiveDirectiveAttemptSettled,
+		ResultSHA256:      sha256Hex(string(wire)),
+		ResultRevision:    base.Revision,
 	}
 	if !baseValid || base.ActiveAttempt == nil {
 		return fresh
@@ -434,9 +442,10 @@ func activeDirectiveAttemptForPublication(
 		fresh.Extra = cloneActiveDirectiveRawMap(attempt.Extra)
 		return fresh
 	}
-	if attempt.ResultSHA256 != "" {
-		attempt.ResultRevision = base.Revision
+	if attempt.ResultSHA256 == "" {
+		attempt.ResultSHA256 = fresh.ResultSHA256
 	}
+	attempt.ResultRevision = base.Revision
 	return &attempt
 }
 
