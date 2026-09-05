@@ -65,6 +65,7 @@ Go版には、現在工程を選ぶread-onlyな`orchestrator.Next`、配置Markd
 - `src/internal/delivery/run_stage.go`, `run_stage_test.go`: fresh sourceの選択とread-only composition。
 - `src/internal/delivery/wire.go`, `wire_test.go`: canonical `run-stage` wireとhash。
 - `src/internal/delivery/*_integration_test.go`: 利用先配置、編集反映、非変更のnative filesystem検証。
+- `.github/workflows/ci.yml`: 既存filesystem integration stepへ`delivery` packageを接続する。
 
 親agentは本RAMと索引、Issue、独立review、final、PR、merge gateを所有する。implementerはIssue、PR、
 本RAM、利用者所有の未追跡fileを変更しない。
@@ -299,6 +300,9 @@ canonicalizerへ置換した。固定2.6.123 goldenとgraph package testも維�
 旧実装で両方が失敗する回帰testを先に確認してから、UTF-16 code unitを保持するparserとproperty orderingを
 実装した。これは[Go TDDを意味のある実装作業単位で連続実行する](2026-09-05-tdd-work-unit-handoff.md)へ移行後の
 運用に従い、項目ごとの親子往復を行わず一括で修正した。
+
+新しい`delivery` filesystem integration testは、既存CIのcontent integration stepへ接続した。これにより、
+ローカルfinalだけでなく、後続変更のGitHub checksでも配置Markdownのfresh readとread-only境界を継続確認する。
 
 最後のfilesystem freshness testは、テスト追加前のproduction実装ですでに成功したため`ALREADY_GREEN`として
 受理した。同じcaller Rootを使ってrule本文、knowledge一覧、raw graph、valid state bytesを順に変更し、次回の
