@@ -2,19 +2,25 @@ package delivery
 
 import (
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/sori883/ai-dd/src/internal/recordlock"
 	"github.com/sori883/ai-dd/src/internal/steering"
 )
 
 var (
-	ErrInvalidDelivery          = errors.New("delivery: invalid request")
-	ErrDeliveryWorkflow         = errors.New("delivery: workflow continuation rejected")
-	activeDirectiveMarkerCommit = WriteActiveDirectiveMarker
+	ErrInvalidDelivery                    = errors.New("delivery: invalid request")
+	ErrDeliveryWorkflow                   = errors.New("delivery: workflow continuation rejected")
+	activeDirectiveMarkerCommit           = WriteActiveDirectiveMarker
+	activeDirectiveRandomReader io.Reader = cryptorand.Reader
 )
+
+const activeDirectiveGenerationBytes = 32
 
 // WorkflowError marks a validly parsed request whose requested workflow
 // continuation is no longer admissible. The CLI renders it as a terminal
@@ -98,7 +104,16 @@ func nextWithGuard(ctx context.Context, guard *recordlock.Guard, input RunStageI
 		return DeliveryResult{}, fmt.Errorf("delivery next: compose run-stage: %w", err)
 	}
 	if len(composition.Chunks) == 0 {
-		marker := activeDirectiveMarkerForComposition(input, composition, ActiveDirectiveKindRunStage, ActiveDirectiveCommandNext, composition.Wire, "", 0, 0)
+		// read-context is a read-only operation. Provision its HMAC key while
+		// publishing the directive so a later context read never mutates the
+		// record transaction.
+		if _, err := steering.ReadOrCreateContinuationKey(input.ProjectRoot, input.RecordRoot); err != nil {
+			return DeliveryResult{}, fmt.Errorf("delivery next: read continuation key: %w", err)
+		}
+		marker, err := activeDirectiveMarkerForComposition(input, composition, ActiveDirectiveKindRunStage, ActiveDirectiveCommandNext, composition.Wire, "", 0, 0)
+		if err != nil {
+			return DeliveryResult{}, fmt.Errorf("delivery next: generate run-stage publication: %w", err)
+		}
 		if err := activeDirectiveMarkerCommit(input.RecordRoot, marker); err != nil {
 			return DeliveryResult{}, fmt.Errorf("delivery next: commit run-stage marker: %w", err)
 		}
@@ -129,7 +144,10 @@ func nextWithGuard(ctx context.Context, guard *recordlock.Guard, input RunStageI
 	if err != nil {
 		return DeliveryResult{}, fmt.Errorf("delivery next: marshal load-steering: %w", err)
 	}
-	marker := activeDirectiveMarkerForComposition(input, composition, ActiveDirectiveKindLoadSteering, ActiveDirectiveCommandNext, loadWire, token, part, len(composition.Chunks))
+	marker, err := activeDirectiveMarkerForComposition(input, composition, ActiveDirectiveKindLoadSteering, ActiveDirectiveCommandNext, loadWire, token, part, len(composition.Chunks))
+	if err != nil {
+		return DeliveryResult{}, fmt.Errorf("delivery next: generate load-steering publication: %w", err)
+	}
 	if err := activeDirectiveMarkerCommit(input.RecordRoot, marker); err != nil {
 		return DeliveryResult{}, fmt.Errorf("delivery next: commit load-steering marker: %w", err)
 	}
@@ -177,7 +195,10 @@ func continueWithGuard(ctx context.Context, guard *recordlock.Guard, input RunSt
 		return DeliveryResult{}, newWorkflowError("continuation is stale or invalid", err)
 	}
 	if step.Complete {
-		finalMarker := activeDirectiveMarkerForComposition(input, composition, ActiveDirectiveKindRunStage, ActiveDirectiveCommandContinue, composition.Wire, "", 0, 0)
+		finalMarker, err := activeDirectiveMarkerForComposition(input, composition, ActiveDirectiveKindRunStage, ActiveDirectiveCommandContinue, composition.Wire, "", 0, 0)
+		if err != nil {
+			return DeliveryResult{}, fmt.Errorf("delivery continue: generate run-stage publication: %w", err)
+		}
 		if err := activeDirectiveMarkerCommit(input.RecordRoot, finalMarker); err != nil {
 			return DeliveryResult{}, fmt.Errorf("delivery continue: commit run-stage marker: %w", err)
 		}
@@ -202,7 +223,10 @@ func continueWithGuard(ctx context.Context, guard *recordlock.Guard, input RunSt
 	if err != nil {
 		return DeliveryResult{}, fmt.Errorf("delivery continue: marshal successor load-steering: %w", err)
 	}
-	nextMarker := activeDirectiveMarkerForComposition(input, composition, ActiveDirectiveKindLoadSteering, ActiveDirectiveCommandContinue, loadWire, nextToken, step.Part, step.Parts)
+	nextMarker, err := activeDirectiveMarkerForComposition(input, composition, ActiveDirectiveKindLoadSteering, ActiveDirectiveCommandContinue, loadWire, nextToken, step.Part, step.Parts)
+	if err != nil {
+		return DeliveryResult{}, fmt.Errorf("delivery continue: generate load-steering publication: %w", err)
+	}
 	if err := activeDirectiveMarkerCommit(input.RecordRoot, nextMarker); err != nil {
 		return DeliveryResult{}, fmt.Errorf("delivery continue: commit successor marker: %w", err)
 	}
@@ -291,7 +315,7 @@ func activeDirectiveMarkerForComposition(
 	wire []byte,
 	token string,
 	part, parts int,
-) ActiveDirectiveMarker {
+) (ActiveDirectiveMarker, error) {
 	stateHash := ""
 	if composition.Freshness.StateHash != nil {
 		stateHash = *composition.Freshness.StateHash
@@ -351,8 +375,12 @@ func activeDirectiveMarkerForComposition(
 		delete(base.present, "continue_token")
 		delete(base.present, "continue_token_sha256")
 	}
-	base.ActiveAttempt = activeDirectiveAttemptForPublication(base, baseValid, stateHash, ownerSession, wire, token)
-	return base
+	attempt, err := activeDirectiveAttemptForPublication(base, baseValid, stateHash, ownerSession, wire, token)
+	if err != nil {
+		return ActiveDirectiveMarker{}, err
+	}
+	base.ActiveAttempt = attempt
+	return base, nil
 }
 
 func activeDirectiveIdentityMatches(marker ActiveDirectiveMarker, context ActiveDirectiveContext) bool {
@@ -405,9 +433,13 @@ func activeDirectiveAttemptForPublication(
 	stateHash, ownerSession string,
 	wire []byte,
 	token string,
-) *ActiveDirectiveAttempt {
+) (*ActiveDirectiveAttempt, error) {
+	generationID, err := newActiveDirectiveGenerationID()
+	if err != nil {
+		return nil, err
+	}
 	fresh := &ActiveDirectiveAttempt{
-		ID:                "sessionless",
+		ID:                generationID,
 		CommandKind:       ActiveDirectiveCommandNext,
 		CommandSHA256:     stateHash,
 		IssuedStateSHA256: stateHash,
@@ -415,29 +447,41 @@ func activeDirectiveAttemptForPublication(
 		OwnerEpoch:        base.OwnerEpoch,
 		ContextEpoch:      base.ContextEpoch,
 		Status:            ActiveDirectiveAttemptSettled,
+		ResultSHA256:      sha256Hex(string(wire)),
+		ResultRevision:    base.Revision,
 	}
 	if !baseValid || base.ActiveAttempt == nil {
-		return fresh
+		return fresh, nil
 	}
 	attempt := cloneActiveDirectiveAttempt(*base.ActiveAttempt)
 	if attempt.IssuedStateSHA256 != stateHash || attempt.SessionID != ownerSession ||
 		attempt.OwnerEpoch != base.OwnerEpoch || attempt.ContextEpoch != base.ContextEpoch ||
 		attempt.Status != ActiveDirectiveAttemptSettled {
 		fresh.Extra = cloneActiveDirectiveRawMap(base.ActiveAttempt.Extra)
-		return fresh
+		return fresh, nil
 	}
 	if attempt.CursorInputSHA256 != "" && !activeDirectiveSHA256Equal(attempt.CursorInputSHA256, token) {
 		fresh.Extra = cloneActiveDirectiveRawMap(attempt.Extra)
-		return fresh
+		return fresh, nil
 	}
 	if attempt.ResultSHA256 != "" && !activeDirectiveSHA256Equal(attempt.ResultSHA256, string(wire)) {
 		fresh.Extra = cloneActiveDirectiveRawMap(attempt.Extra)
-		return fresh
+		return fresh, nil
 	}
-	if attempt.ResultSHA256 != "" {
-		attempt.ResultRevision = base.Revision
+	attempt.ID = generationID
+	if attempt.ResultSHA256 == "" {
+		attempt.ResultSHA256 = fresh.ResultSHA256
 	}
-	return &attempt
+	attempt.ResultRevision = base.Revision
+	return &attempt, nil
+}
+
+func newActiveDirectiveGenerationID() (string, error) {
+	raw := make([]byte, activeDirectiveGenerationBytes)
+	if _, err := io.ReadFull(activeDirectiveRandomReader, raw); err != nil {
+		return "", fmt.Errorf("generate publication generation: %w", err)
+	}
+	return hex.EncodeToString(raw), nil
 }
 
 func cloneActiveDirectiveMarker(marker ActiveDirectiveMarker) ActiveDirectiveMarker {

@@ -17,6 +17,7 @@ Usage:
   aidlc <command>
   aidlc next [--project-dir <path>]
   aidlc continue <token> [--project-dir <path>]
+  aidlc read-context [continue <opaque-token>] [--project-dir <path>]
   aidlc space create <name> [--project-dir <path>]
   aidlc space list [--json] [--project-dir <path>]
   aidlc space switch <name> [--project-dir <path>]
@@ -31,6 +32,7 @@ Commands:
   version    Show version information
   next       Compose and publish the next directive
   continue   Continue a published directive
+  read-context  Read the active run-stage context
   space create  Create a new space
   space list    List spaces (space is an alias)
   space switch  Select an existing space
@@ -54,6 +56,8 @@ type Dependencies struct {
 	SwitchIntent     func(target, explicitDir string) (workspace.IntentSelection, error)
 	NextDelivery     func(explicitDir string) ([]byte, error)
 	ContinueDelivery func(token, explicitDir string) ([]byte, error)
+	ReadContext      func(explicitDir string) ([]byte, error)
+	ContinueContext  func(token, explicitDir string) ([]byte, error)
 	PrepareOutput    func()
 }
 
@@ -96,6 +100,19 @@ func Run(
 			return runDeliveryNext(command, explicitDir, stdout, stderr, dependencies.NextDelivery)
 		}
 		return runDeliveryContinue(command, explicitDir, stdout, stderr, dependencies.ContinueDelivery)
+	}
+	if isContextReadCommand(args) {
+		if dependencies.PrepareOutput != nil {
+			dependencies.PrepareOutput()
+		}
+		command, explicitDir, err := contextReadArguments(args)
+		if err != nil {
+			return writeDeliverySyntaxError(stderr, err)
+		}
+		if len(command) == 1 {
+			return runContextReadStart(command, explicitDir, stdout, stderr, dependencies.ReadContext)
+		}
+		return runContextReadContinue(command, explicitDir, stdout, stderr, dependencies.ContinueContext)
 	}
 	command, explicitDir, _, err := workspaceArguments(args, false)
 	hasSpaceSubcommand := len(command) >= 2 && command[0] == "space"

@@ -15,6 +15,65 @@ func isDeliveryCommand(args []string) bool {
 	return len(args) > 0 && (args[0] == "next" || args[0] == "continue")
 }
 
+func isContextReadCommand(args []string) bool {
+	return len(args) > 0 && args[0] == "read-context"
+}
+
+// contextReadArguments parses the public read-context grammar. A continuation
+// token is secured as one opaque argument before flags are parsed; callers
+// cannot select a path, slot, or part.
+func contextReadArguments(args []string) (command []string, explicitDir string, err error) {
+	if len(args) == 0 || !isContextReadCommand(args) {
+		return nil, "", errors.New("read-context command is required")
+	}
+	command = []string{args[0]}
+	projectDirSeen := false
+	recordError := func(argumentErr error) {
+		if err == nil {
+			err = argumentErr
+		}
+	}
+	argumentStart := 1
+	if len(args) > argumentStart && args[argumentStart] == "continue" {
+		command = append(command, args[argumentStart])
+		argumentStart++
+		if argumentStart == len(args) {
+			return command, "", errors.New("read-context continue requires exactly one token")
+		}
+		command = append(command, args[argumentStart])
+		argumentStart++
+	}
+	for i := argumentStart; i < len(args); i++ {
+		arg := args[i]
+		value, equalsForm := strings.CutPrefix(arg, "--project-dir=")
+		if arg == "--project-dir" || equalsForm {
+			if projectDirSeen {
+				recordError(errors.New("duplicate --project-dir"))
+			}
+			projectDirSeen = true
+			if !equalsForm {
+				if i+1 == len(args) || strings.HasPrefix(args[i+1], "-") {
+					recordError(errors.New("--project-dir requires a nonempty path"))
+					continue
+				}
+				i++
+				value = args[i]
+			}
+			if value == "" {
+				recordError(errors.New("--project-dir requires a nonempty path"))
+			}
+			explicitDir = value
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			recordError(fmt.Errorf("unknown flag %q", arg))
+			continue
+		}
+		recordError(fmt.Errorf("read-context does not accept positional argument %q", arg))
+	}
+	return command, explicitDir, err
+}
+
 // deliveryArguments parses the delivery grammar while leaving the
 // continuation token opaque. In particular, a malformed token may begin with
 // a dash; it must reach the delivery callback so that it can be reported as a
@@ -106,6 +165,53 @@ func runDeliveryContinue(
 		return writeDeliveryResultError(stdout, stderr, err)
 	}
 	return writeDeliveryWire(stdout, stderr, wire)
+}
+
+func writeContextReadWire(stdout, stderr io.Writer, wire []byte) int {
+	if !bytes.Equal(bytes.TrimSpace(wire), wire) {
+		return writeCommandError(stderr, errors.New("context read callback returned non-canonical JSON whitespace"))
+	}
+	return writeDeliveryWire(stdout, stderr, wire)
+}
+
+func runContextReadStart(
+	command []string,
+	explicitDir string,
+	stdout io.Writer,
+	stderr io.Writer,
+	callback func(string) ([]byte, error),
+) int {
+	if len(command) != 1 {
+		return writeDeliverySyntaxError(stderr, errors.New("read-context does not accept positional arguments"))
+	}
+	if callback == nil {
+		return writeCommandError(stderr, errors.New("read-context callback is unavailable"))
+	}
+	wire, err := callback(explicitDir)
+	if err != nil {
+		return writeCommandError(stderr, err)
+	}
+	return writeContextReadWire(stdout, stderr, wire)
+}
+
+func runContextReadContinue(
+	command []string,
+	explicitDir string,
+	stdout io.Writer,
+	stderr io.Writer,
+	callback func(string, string) ([]byte, error),
+) int {
+	if len(command) != 3 || command[1] != "continue" || command[2] == "" {
+		return writeDeliverySyntaxError(stderr, errors.New("read-context continue requires exactly one token"))
+	}
+	if callback == nil {
+		return writeCommandError(stderr, errors.New("read-context continuation callback is unavailable"))
+	}
+	wire, err := callback(command[2], explicitDir)
+	if err != nil {
+		return writeCommandError(stderr, err)
+	}
+	return writeContextReadWire(stdout, stderr, wire)
 }
 
 func writeDeliveryResultError(stdout, stderr io.Writer, err error) int {

@@ -101,6 +101,30 @@ func TestDeliveryNextWithoutChunksCommitsAndReturnsRunStage(t *testing.T) {
 	}
 }
 
+func TestNextRunStagePublicationBindsWireDigestAndRevision(t *testing.T) {
+	fixture := newRunStageFixture(t)
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+
+	result, err := Next(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Next() error = %v", err)
+	}
+	if result.Kind != ActiveDirectiveKindRunStage {
+		t.Fatalf("Next().Kind = %q, want run-stage", result.Kind)
+	}
+	marker, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
+	if err != nil || !found || marker.ActiveAttempt == nil {
+		t.Fatalf("ReadActiveDirectiveMarker() = found %v, error %v, marker %#v", found, err, marker)
+	}
+	wantDigest := sha256Hex(string(result.Wire))
+	if marker.ActiveAttempt.ResultSHA256 != wantDigest {
+		t.Errorf("marker active attempt result_sha256 = %q, want %q", marker.ActiveAttempt.ResultSHA256, wantDigest)
+	}
+	if marker.ActiveAttempt.ResultRevision != marker.Revision {
+		t.Errorf("marker active attempt result_revision = %d, want marker revision %d", marker.ActiveAttempt.ResultRevision, marker.Revision)
+	}
+}
+
 func TestDeliveryNextRejectsInvalidInput(t *testing.T) {
 	_, err := Next(context.Background(), RunStageInput{})
 	if err == nil {
@@ -114,7 +138,8 @@ func TestDeliveryNextRejectsInvalidInput(t *testing.T) {
 func TestDeliveryNextStartsPublicationAtRevisionOneWithFreshAttempt(t *testing.T) {
 	fixture := newChunkedDeliveryFixture(t)
 	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
-	if _, err := Next(context.Background(), input); err != nil {
+	result, err := Next(context.Background(), input)
+	if err != nil {
 		t.Fatalf("Next() error = %v", err)
 	}
 	marker, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
@@ -124,10 +149,51 @@ func TestDeliveryNextStartsPublicationAtRevisionOneWithFreshAttempt(t *testing.T
 	if marker.Revision != 1 {
 		t.Errorf("initial marker revision = %d, want 1", marker.Revision)
 	}
-	if marker.ActiveAttempt.ID != "sessionless" || marker.ActiveAttempt.CommandKind != ActiveDirectiveCommandNext ||
+	if marker.ActiveAttempt.ID == "" || marker.ActiveAttempt.CommandKind != ActiveDirectiveCommandNext ||
 		marker.ActiveAttempt.CommandSHA256 != marker.StateSHA256 || marker.ActiveAttempt.CursorInputSHA256 != "" ||
-		marker.ActiveAttempt.ResultSHA256 != "" || marker.ActiveAttempt.ResultRevision != 0 {
-		t.Errorf("initial active attempt = %#v, want fixed generic fresh attempt", marker.ActiveAttempt)
+		marker.ActiveAttempt.ResultSHA256 != sha256Hex(string(result.Wire)) || marker.ActiveAttempt.ResultRevision != marker.Revision {
+		t.Errorf("initial active attempt = %#v, want publication-bound attempt", marker.ActiveAttempt)
+	}
+}
+
+func TestDeliveryNextGenerationFailureReturnsNoDirective(t *testing.T) {
+	fixture := newRunStageFixture(t)
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+	previousRandom := activeDirectiveRandomReader
+	activeDirectiveRandomReader = strings.NewReader("")
+	t.Cleanup(func() { activeDirectiveRandomReader = previousRandom })
+
+	result, err := Next(context.Background(), input)
+	if err == nil {
+		t.Fatal("Next() error = nil, want generation failure")
+	}
+	if !reflect.DeepEqual(result, DeliveryResult{}) {
+		t.Fatalf("Next() result = %#v, want no directive on generation failure", result)
+	}
+	if _, found, readErr := ReadActiveDirectiveMarker(fixture.recordRoot); readErr != nil || found {
+		t.Fatalf("ReadActiveDirectiveMarker() = found %v, error %v; want no committed marker", found, readErr)
+	}
+}
+
+func TestDeliveryNextUsesDistinctPublicationGenerations(t *testing.T) {
+	fixture := newRunStageFixture(t)
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+	if _, err := Next(context.Background(), input); err != nil {
+		t.Fatalf("Next(first) error = %v", err)
+	}
+	first, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
+	if err != nil || !found || first.ActiveAttempt == nil {
+		t.Fatalf("ReadActiveDirectiveMarker(first) = found %v, error %v, marker %#v", found, err, first)
+	}
+	if _, err := Next(context.Background(), input); err != nil {
+		t.Fatalf("Next(second) error = %v", err)
+	}
+	second, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
+	if err != nil || !found || second.ActiveAttempt == nil {
+		t.Fatalf("ReadActiveDirectiveMarker(second) = found %v, error %v, marker %#v", found, err, second)
+	}
+	if first.ActiveAttempt.ID == "" || second.ActiveAttempt.ID == "" || first.ActiveAttempt.ID == second.ActiveAttempt.ID {
+		t.Fatalf("publication generations = %q and %q, want distinct nonempty IDs", first.ActiveAttempt.ID, second.ActiveAttempt.ID)
 	}
 }
 
@@ -706,5 +772,8 @@ func TestDeliveryPublishesRunStageWireAfterFinalPart(t *testing.T) {
 	}
 	if marker.Kind != ActiveDirectiveKindRunStage || marker.ContinueToken != "" {
 		t.Errorf("final marker = %#v, want run-stage without token", marker)
+	}
+	if marker.ActiveAttempt == nil || marker.ActiveAttempt.ResultSHA256 != sha256Hex(string(current.Wire)) || marker.ActiveAttempt.ResultRevision != marker.Revision {
+		t.Errorf("final active attempt = %#v, want publication-bound result", marker.ActiveAttempt)
 	}
 }

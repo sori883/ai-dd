@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -39,6 +40,77 @@ func deliveryContinue(
 			return continueDelivery(ctx, input, token)
 		})
 	}
+}
+
+func deliveryReadContext(
+	getwd func() (string, error),
+	getenv func(string) string,
+	read func(context.Context, deliverypkg.RunStageInput) (deliverypkg.ContextReadResult, error),
+) func(string) ([]byte, error) {
+	return func(explicitDir string) ([]byte, error) {
+		return runContextReadOperation(getwd, getenv, explicitDir, func(ctx context.Context, input deliverypkg.RunStageInput) ([]byte, error) {
+			result, err := read(ctx, input)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(result)
+		})
+	}
+}
+
+func deliveryContinueContext(
+	getwd func() (string, error),
+	getenv func(string) string,
+	continueRead func(context.Context, deliverypkg.RunStageInput, string) (deliverypkg.ContextReadResult, error),
+) func(string, string) ([]byte, error) {
+	return func(token, explicitDir string) ([]byte, error) {
+		return runContextReadOperation(getwd, getenv, explicitDir, func(ctx context.Context, input deliverypkg.RunStageInput) ([]byte, error) {
+			result, err := continueRead(ctx, input, token)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(result)
+		})
+	}
+}
+
+func runContextReadOperation(
+	getwd func() (string, error),
+	getenv func(string) string,
+	explicitDir string,
+	operation func(context.Context, deliverypkg.RunStageInput) ([]byte, error),
+) (wire []byte, err error) {
+	input, projectRoot, recordRoot, err := deliveryInputResolver(getwd, getenv, explicitDir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		recordCloseErr := deliveryRootCloser(recordRoot)
+		projectCloseErr := deliveryRootCloser(projectRoot)
+		closeErr := errors.Join(
+			wrapDeliveryRootCloseError("record", recordCloseErr),
+			wrapDeliveryRootCloseError("project", projectCloseErr),
+		)
+		if closeErr != nil {
+			wire = nil
+			if err == nil {
+				err = closeErr
+			} else {
+				err = fmt.Errorf("context read operation failed during root cleanup: %v; %w", err, closeErr)
+			}
+		}
+	}()
+	if operation == nil {
+		return nil, errors.New("context read operation is unavailable")
+	}
+	wire, err = operation(context.Background(), input)
+	if err != nil {
+		return nil, err
+	}
+	if len(wire) == 0 || !json.Valid(wire) {
+		return nil, errors.New("context read operation returned invalid JSON")
+	}
+	return append([]byte(nil), wire...), nil
 }
 
 func runDeliveryOperation(

@@ -239,3 +239,37 @@ commit、Go/OS/architecture、sandbox、binary size・SHA-256、各commandのexi
 `go test -count=1 -run '^TestDelivery(Next|Continue|RejectsStale|PublishesRunStage)' ./src/internal/delivery`、
 `go test -count=1 -run '^TestRun(Next|Continue)' ./src/internal/cli`、
 `go test -tags=integration -count=1 -run '^TestDeliveryJourney$' ./src/cmd/aidlc`で再現できる。
+
+## Codex receiver context-read scenario
+
+repository外のfresh sandboxへ、配布用`SKILL.md`を`.agents/skills/aidlc/SKILL.md`としてbyte-identicalに配置し、single built
+`aidlc`を一時PATHへ加える。テストは`crypto/rand`でrule、lead／support persona、stage file、consume本文のsentinelを生成し、
+複数partの`load-steering`を全てcontinueしてから`run-stage`を受け取る。以後は`read-context`とopaque
+`read_continue_token`だけを反復し、inline context全件、stage file、existing consumeの順序、UTF-8 chunk境界、8192 bytes制限、
+全本文の復元を検査する。stage・consume本文にも予測不能なBEGIN/MIDDLE/ENDを含め、stage本文には実行時だけ
+project rootの`stage-execution-canary.txt`へrandom sentinelを書く明示指示を置く。source fileには新しい公開size capを設けず、open直後sizeを上限とする
+固定512-byte bufferの2-pass streamでdigest、UTF-8、実part数、要求partだけを計算する。全targetのslot／index／path／digest／parts／size／mtimeを
+plan-wide commitmentへ含め、boundary tokenの継続時に再計算して将来fileの差し替えrebaseを拒否する。read-context前後はdirectory mtimeを無視して
+regular fileのmode/bodyをsnapshot比較し、non-live fresh journeyはtransport fileを含め、live transport比較だけはrecord-rootの正確な
+`.aidlc-active-directive.json`と`.aidlc-steering-token-key`の2 slash pathを除外する。
+state、audit、artifact、新規canaryが変わらず、Stage実行や成果物作成へ進まないことを確認する。verification schemaが`files`を要求する場合、
+live receiptは各fileを`slot`、`index`、`parts`、`content_sha256`、`first_non_empty_line`、`middle_marker_line`、
+`last_non_empty_line`のcompact proofで順序どおり照合する。`parts`、digest、3つのlineの意味はskillの定義に従う。
+従来schemaの`inline_context`、`stage_file`、`consumes`は各fileの全chunk連結本文を照合するため、互換性を保つ。
+
+```sh
+go test -count=1 ./src/harness/codex/skills/aidlc
+go test -count=1 -run 'Test.*ReadContext' ./src/internal/cli ./src/cmd/aidlc
+env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run '^TestCodexReceiver(FreshPlacementJourney|ReadsDeliveredContext)$' ./src/cmd/aidlc
+```
+
+`TestCodexReceiverReadsDeliveredContext`は`AIDLC_CODEX_EXEC_LIVE=1`がない通常loopで明示skipする。通常呼出しの成功応答は
+`context ready`だが、live testは検証用machine-readable read receiptの要求とoutput schemaを明示したcallerとして、live時だけ
+`codex exec --ephemeral`を一度だけ起動し、`--output-last-message`の専用temporary receipt fileからJSON receiptを読み、各`rules_content`の最後の非空行を順番どおり照合し、compact `files` schemaでは7項目のproofを、従来schemaではinline／stage／consumeの全本文を順序どおり厳密照合する。stdout/stderrは失敗診断に限る。どちらの応答形式でも
+Stage実行や成果物作成へ進まない。live promptはskill invocationと定義済みreceipt/schema要求だけを含み、routing・読込順・stop・canaryを
+補いません。live harnessは任意のtest-only環境変数`AIDLC_CODEX_EXEC_MODEL`を受け付け、空／unsetなら`--model`を省略し、非空ならtrimした値を
+単一argvとして`--model`直後へ渡します。model名はhardcodeせず、製品read-contextやCodex clientは変更しません。通常CIではliveをskipします。
+2026-09-06に`codex-cli 0.153.4`と一回限りの`gpt-5.6-luna` overrideでlive再実行し、compact proof、配信順、
+snapshot不変、Stage canary不在を確認して成功しました。promptにsentinelやpathを埋め込まず、credentialを読み取らず、
+unknown directive・read failureではfail-closedで止めます。installer/update、review・sensor、report、人間承認、
+full lifecycleはこのscenarioの対象外である。

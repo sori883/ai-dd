@@ -3,6 +3,7 @@ package cli_test
 import (
 	"bytes"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/sori883/ai-dd/src/internal/buildinfo"
@@ -215,5 +216,97 @@ func TestRunDeliveryShortStdoutWriteFails(t *testing.T) {
 	}
 	if stderr.Len() == 0 {
 		t.Error("stderr is empty, want short-write diagnostic")
+	}
+}
+
+func TestRunReadContextPublishesBoundedJSON(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	var callbackCalls int
+	dependencies := cli.Dependencies{
+		ReadContext: func(explicitDir string) ([]byte, error) {
+			callbackCalls++
+			if explicitDir != "/tmp/project" {
+				t.Errorf("ReadContext explicitDir = %q, want /tmp/project", explicitDir)
+			}
+			return []byte(`{"kind":"context-chunk","complete":true}`), nil
+		},
+	}
+	if got := cli.Run([]string{"read-context", "--project-dir", "/tmp/project"}, &stdout, &stderr, buildinfo.Info{}, dependencies); got != 0 {
+		t.Fatalf("Run(read-context) exit = %d, want 0", got)
+	}
+	if stdout.String() != "{\"kind\":\"context-chunk\",\"complete\":true}\n" {
+		t.Errorf("stdout = %q, want canonical JSON line", stdout.String())
+	}
+	if stderr.Len() != 0 || callbackCalls != 1 {
+		t.Errorf("stderr/callbacks = %q/%d, want empty/1", stderr.String(), callbackCalls)
+	}
+}
+
+func TestRunReadContextContinueKeepsOpaqueToken(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	var callbackToken string
+	dependencies := cli.Dependencies{
+		ContinueContext: func(token, explicitDir string) ([]byte, error) {
+			callbackToken = token
+			if explicitDir != "/tmp/project" {
+				t.Errorf("ContinueContext explicitDir = %q, want /tmp/project", explicitDir)
+			}
+			return []byte(`{"kind":"context-chunk","complete":true}`), nil
+		},
+	}
+	if got := cli.Run([]string{"read-context", "continue", "opaque-token", "--project-dir", "/tmp/project"}, &stdout, &stderr, buildinfo.Info{}, dependencies); got != 0 {
+		t.Fatalf("Run(read-context continue) exit = %d, want 0", got)
+	}
+	if callbackToken != "opaque-token" {
+		t.Errorf("ContinueContext token = %q, want opaque-token", callbackToken)
+	}
+	if stdout.String() != "{\"kind\":\"context-chunk\",\"complete\":true}\n" || stderr.Len() != 0 {
+		t.Errorf("stdout/stderr = %q/%q, want JSON/empty", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunReadContextRejectsCallerSelectedPathOrSlot(t *testing.T) {
+	for _, args := range [][]string{
+		{"read-context", "path"},
+		{"read-context", "--slot", "stage-file"},
+		{"read-context", "continue", "token", "--part", "2"},
+	} {
+		t.Run(strings.Join(args, "-"), func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			callbackCalls := 0
+			dependencies := cli.Dependencies{
+				ReadContext: func(string) ([]byte, error) {
+					callbackCalls++
+					return []byte(`{"kind":"context-chunk"}`), nil
+				},
+				ContinueContext: func(string, string) ([]byte, error) {
+					callbackCalls++
+					return []byte(`{"kind":"context-chunk"}`), nil
+				},
+			}
+			if got := cli.Run(args, &stdout, &stderr, buildinfo.Info{}, dependencies); got != 2 {
+				t.Fatalf("Run(%v) exit = %d, want 2", args, got)
+			}
+			if stdout.Len() != 0 || stderr.Len() == 0 || callbackCalls != 0 {
+				t.Errorf("stdout/stderr/callbacks = %q/%q/%d, want empty/diagnostic/0", stdout.String(), stderr.String(), callbackCalls)
+			}
+		})
+	}
+}
+
+func TestRunReadContextRuntimeErrorHasNoStdout(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	dependencies := cli.Dependencies{
+		ReadContext: func(string) ([]byte, error) { return nil, errors.New("unsafe context") },
+	}
+	if got := cli.Run([]string{"read-context"}, &stdout, &stderr, buildinfo.Info{}, dependencies); got != 1 {
+		t.Fatalf("Run(read-context error) exit = %d, want 1", got)
+	}
+	if stdout.Len() != 0 || stderr.Len() == 0 {
+		t.Errorf("stdout/stderr = %q/%q, want empty/diagnostic", stdout.String(), stderr.String())
 	}
 }
