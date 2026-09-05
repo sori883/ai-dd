@@ -247,14 +247,16 @@ repository外のfresh sandboxへ、配布用`SKILL.md`を`.agents/skills/aidlc/S
 複数partの`load-steering`を全てcontinueしてから`run-stage`を受け取る。以後は`read-context`とopaque
 `read_continue_token`だけを反復し、inline context全件、stage file、existing consumeの順序、UTF-8 chunk境界、8192 bytes制限、
 全本文の復元を検査する。stage・consume本文にも予測不能なBEGIN/MIDDLE/ENDを含め、stage本文には実行時だけ
-project rootの`stage-execution-canary.txt`へrandom sentinelを書く明示指示を置く。read-context前後はdirectory mtimeを無視して
-regular fileのmode/bodyをsnapshot比較し、transportに必要な`.aidlc-active-directive.json`と`.aidlc-steering-token-key`だけを除外する。
+project rootの`stage-execution-canary.txt`へrandom sentinelを書く明示指示を置く。source fileには新しい公開size capを設けず、open直後sizeを上限とする
+固定512-byte bufferの2-pass streamでdigest、UTF-8、実part数、要求partだけを計算する。read-context前後はdirectory mtimeを無視して
+regular fileのmode/bodyをsnapshot比較し、non-live fresh journeyはtransport fileを含め、live transport比較だけはrecord-rootの正確な
+`.aidlc-active-directive.json`と`.aidlc-steering-token-key`の2 slash pathを除外する。
 state、audit、artifact、新規canaryが変わらず、Stage実行や成果物作成へ進まないことを確認する。
 
 ```sh
 go test -count=1 ./src/harness/codex/skills/aidlc
 go test -count=1 -run 'Test.*ReadContext' ./src/internal/cli ./src/cmd/aidlc
-go test -tags=integration -count=1 -run '^TestCodexReceiver(FreshPlacementJourney|ReadsDeliveredContext)$' ./src/cmd/aidlc
+env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run '^TestCodexReceiver(FreshPlacementJourney|ReadsDeliveredContext)$' ./src/cmd/aidlc
 ```
 
 `TestCodexReceiverReadsDeliveredContext`は`AIDLC_CODEX_EXEC_LIVE=1`がない通常loopで明示skipする。通常呼出しの成功応答は

@@ -95,7 +95,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [配置済み情報からcanonical run-stageをread-only構成する](decisions/2026-09-05-run-stage-composition-plan.md) | Implemented（Issue #109、fresh配置読込・canonical wire・route/state/rule freshness、知識供給の包括承認内） |
 | 意思決定 | [Codex向け配信transactionと公開next／continueを接続する](decisions/2026-09-05-delivery-publication-plan.md) | Implemented（Issue #113、active-directive v2、same-token exactly-once、公開CLIと配布journey、temporaryのidentity/content snapshot検証。破損markerは`next`がfresh recovery、`continue`はtyped error） |
 | 意思決定 | [Codex receiverで配信本文を実読込する](decisions/2026-09-05-codex-receiver-read-plan.md) | Partially Superseded（旧skillのlive実読込は履歴として保持。shell直接読込とtest設計は下記契約で置換） |
-| 意思決定 | [Codexのcontext読込をGoの安全境界へ移す](decisions/2026-09-05-codex-safe-context-read-contract.md) | Implemented（Issue #115。公開`read-context`、active binding、ordered bounded chunk、opaque HMAC token、Root confined reader、CLI、receiver skill、receipt semantics・stable snapshot・read-only bounded key修正、fresh journey） |
+| 意思決定 | [Codexのcontext読込をGoの安全境界へ移す](decisions/2026-09-05-codex-safe-context-read-contract.md) | In Progress（Issue #115。実装・独立review修正中、未merge／live未実施。publication generation、cross-file digest、bounded streaming、canonical token、read-only snapshotを含む） |
 | 意思決定 | [配置ファイルから必須ルール本文を毎回読み込む](decisions/2026-09-04-required-rule-delivery-plan.md) | Accepted（Issue #89、知識供給の第一slice、必須本文reader） |
 | 意思決定 | [工程の必須ルール参照を配置ファイルへ解決する](decisions/2026-09-04-stage-rule-path-resolution-plan.md) | Accepted（Issue #91、graph参照の保持・active Space/配置先解決・毎回読込みの内部接続） |
 | 意思決定 | [利用先の配置Markdownと知識の固定順を採用する](decisions/2026-09-04-installed-context-source-and-order.md) | Accepted（利用先配置からの読込み・UTF-16固定順と上限への影響を直接承認） |

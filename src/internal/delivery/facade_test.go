@@ -149,10 +149,51 @@ func TestDeliveryNextStartsPublicationAtRevisionOneWithFreshAttempt(t *testing.T
 	if marker.Revision != 1 {
 		t.Errorf("initial marker revision = %d, want 1", marker.Revision)
 	}
-	if marker.ActiveAttempt.ID != "sessionless" || marker.ActiveAttempt.CommandKind != ActiveDirectiveCommandNext ||
+	if marker.ActiveAttempt.ID == "" || marker.ActiveAttempt.CommandKind != ActiveDirectiveCommandNext ||
 		marker.ActiveAttempt.CommandSHA256 != marker.StateSHA256 || marker.ActiveAttempt.CursorInputSHA256 != "" ||
 		marker.ActiveAttempt.ResultSHA256 != sha256Hex(string(result.Wire)) || marker.ActiveAttempt.ResultRevision != marker.Revision {
 		t.Errorf("initial active attempt = %#v, want publication-bound attempt", marker.ActiveAttempt)
+	}
+}
+
+func TestDeliveryNextGenerationFailureReturnsNoDirective(t *testing.T) {
+	fixture := newRunStageFixture(t)
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+	previousRandom := activeDirectiveRandomReader
+	activeDirectiveRandomReader = strings.NewReader("")
+	t.Cleanup(func() { activeDirectiveRandomReader = previousRandom })
+
+	result, err := Next(context.Background(), input)
+	if err == nil {
+		t.Fatal("Next() error = nil, want generation failure")
+	}
+	if !reflect.DeepEqual(result, DeliveryResult{}) {
+		t.Fatalf("Next() result = %#v, want no directive on generation failure", result)
+	}
+	if _, found, readErr := ReadActiveDirectiveMarker(fixture.recordRoot); readErr != nil || found {
+		t.Fatalf("ReadActiveDirectiveMarker() = found %v, error %v; want no committed marker", found, readErr)
+	}
+}
+
+func TestDeliveryNextUsesDistinctPublicationGenerations(t *testing.T) {
+	fixture := newRunStageFixture(t)
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+	if _, err := Next(context.Background(), input); err != nil {
+		t.Fatalf("Next(first) error = %v", err)
+	}
+	first, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
+	if err != nil || !found || first.ActiveAttempt == nil {
+		t.Fatalf("ReadActiveDirectiveMarker(first) = found %v, error %v, marker %#v", found, err, first)
+	}
+	if _, err := Next(context.Background(), input); err != nil {
+		t.Fatalf("Next(second) error = %v", err)
+	}
+	second, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
+	if err != nil || !found || second.ActiveAttempt == nil {
+		t.Fatalf("ReadActiveDirectiveMarker(second) = found %v, error %v, marker %#v", found, err, second)
+	}
+	if first.ActiveAttempt.ID == "" || second.ActiveAttempt.ID == "" || first.ActiveAttempt.ID == second.ActiveAttempt.ID {
+		t.Fatalf("publication generations = %q and %q, want distinct nonempty IDs", first.ActiveAttempt.ID, second.ActiveAttempt.ID)
 	}
 }
 

@@ -1391,7 +1391,7 @@ receiverはPATH上の単一built binaryへ`aidlc next --project-dir .`を呼び�
 `run-stage`の本文は、callerがdirectiveのpathを直接openせず、公開`aidlc read-context --project-dir .`へ委譲します。
 継続は直前の成功応答にあるopaqueな`read_continue_token`を`aidlc read-context continue "<opaque read token>" --project-dir .`
 へそのまま渡します。Go readerは全`inline_context_paths`、`stage_file`、存在する全`consumes`をこの順に全文読込し、8192 bytes以内の
-canonical JSON chunk、UTF-8 rune境界、content SHA-256、active run-stage markerのwire digest/revision、record private keyの
+canonical JSON chunk、UTF-8 rune境界、content SHA-256、active run-stage markerのwire digest/revision/publication generation、record private keyの
 domain-separated HMAC tokenを検証します。`consumes_absent[].expected:false`、markerの消費済み／superseded状態、token改ざん／stale、
 symlink・special file・path/content race・不正UTF-8は全file open前または対象fileの境界で拒否します。成功・失敗ともstate、audit、
 artifact、markerを変更せず、同じtokenの再送は同じchunkを返します。通常呼出しで全readが成功したときのreceiver応答は`context ready`
@@ -1401,8 +1401,10 @@ malformed directive、path外参照、read failureはfail-closedで停止しま�
 
 verification receiptのschema意味はskillが定義し、`rules`は受領順の各`rules_content` entryの末尾非空行、
 `inline_context`はinline fileごとの全chunk連結本文、`stage_file`はstage fileの全chunk連結本文、`consumes`はconsume fileごとの
-全chunk連結本文を表します。file本文は`slot/index/part`順で連結し、末尾改行を保持します。read token keyは既存steering lifecycleの
-4 KiB+1 bounded readとECMAScript whitespace canonicalizationを共有するread-only APIから取得し、read-contextはkeyやsession directoryを変更しません。
+全chunk連結本文を表します。file本文は`slot/index/part`順で連結し、末尾改行を保持します。source fileは新しい公開size capなしで、open直後sizeを
+上限とする固定512-byte bufferの2-pass streamからdigest、UTF-8、実part数、要求partだけを計算し、cross-file content／metadataをtokenへbindします。
+token envelope／claimsはcanonical再encodeとのbyte一致も要求します。read token keyは既存steering lifecycleの4 KiB+1 bounded readと
+ECMAScript whitespace canonicalizationを共有するread-only APIから取得し、read-contextはkeyやsession directoryを変更しません。
 
 通常の構造testはfrontmatter、PATH command、directive順序、opaque token、context-only境界を検査します。repository外のfresh
 sandbox testはsource skillのbyte-identical配置、複数rule chunkからの複数continue、rule本文の全文と順序、inline→stage→consumeのsentinel順を検査します。
@@ -1411,6 +1413,7 @@ live `codex exec --ephemeral` receipt testは`AIDLC_CODEX_EXEC_LIVE=1`のとき�
 inline／stage／consumeは全本文を照合します。stdout/stderrは失敗診断に限ります。live promptはskill invocationとverification
 receipt/schema要求だけに限定し、routing、読込順、stop、canaryを含めません。fresh fixtureのstage・consumeは予測不能なBEGIN/MIDDLE/ENDを
 持ち、stage本文は実行時だけrandom sentinelをproject rootの`stage-execution-canary.txt`へ書く指示を含みます。live前後はdirectory mtimeを
-除外してregular fileのmode/bodyを比較し、transportに必要な`.aidlc-active-directive.json`と`.aidlc-steering-token-key`だけを除外します。
+除外してregular fileのmode/bodyを比較します。non-live fresh journeyはtransport fileを含め、live transport比較だけはrecord-rootの正確な
+`.aidlc-active-directive.json`と`.aidlc-steering-token-key`の2 slash pathだけを除外します。
 通常CIでは明示skipを維持し、このrepair後のlive実行は未実施です。詳細な証拠、credentialを扱わない境界、Stage実行を後続へ残す理由は
 [Codex receiverで配信本文を実読込する計画](ram/decisions/2026-09-05-codex-receiver-read-plan.md)を参照してください。

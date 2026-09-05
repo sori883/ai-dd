@@ -31,6 +31,8 @@ const maxContextReadResponseBytes = 8192
 
 const contextReadChunkBytes = 512
 
+const contextReadStreamBufferBytes = contextReadChunkBytes
+
 const contextReadTokenDomain = "ai-dd/read-context/v1\x00"
 
 // ContextReadSlot identifies the source group of a context file.
@@ -67,8 +69,17 @@ var (
 	ErrContextReadToken         = errors.New("delivery: invalid context read token")
 	ErrContextReadAbsent        = errors.New("delivery: required context input is unexpectedly absent")
 	ErrContextReadNoActiveStage = errors.New("delivery: no active run-stage context")
-	contextReadOpen             = openContextReadFile
+	contextReadOpen             = func(root *os.Root, name string) (contextReadFile, error) {
+		return openContextReadFile(root, name)
+	}
 )
+
+type contextReadFile interface {
+	io.Reader
+	io.Seeker
+	Stat() (fs.FileInfo, error)
+	Close() error
+}
 
 type contextRunStageWire struct {
 	Kind               string              `json:"kind"`
@@ -96,6 +107,7 @@ type contextReadPlan struct {
 	Stage          string
 	WireSHA256     string
 	MarkerRevision int
+	GenerationID   string
 	ProjectSHA256  string
 	StateSHA256    string
 	Targets        []contextReadTarget
@@ -104,12 +116,14 @@ type contextReadPlan struct {
 type contextReadSnapshot struct {
 	Data    []byte
 	Digest  string
+	Parts   int
 	Size    int64
 	ModTime time.Time
 }
 
 type contextReadTokenClaims struct {
 	Version        int    `json:"v"`
+	GenerationID   string `json:"a"`
 	ProjectSHA256  string `json:"p"`
 	Space          string `json:"s"`
 	Intent         string `json:"i"`
@@ -197,7 +211,7 @@ func readContextWithGuard(ctx context.Context, guard *recordlock.Guard, input Ru
 	if err != nil {
 		return ContextReadResult{}, err
 	}
-	return readContextAt(ctx, input, plan, 0, 1, nil, "", 0, 0)
+	return readContextAt(ctx, input, plan, 0, 1, nil, "", 0, 0, 0)
 }
 
 func continueContextWithGuard(ctx context.Context, guard *recordlock.Guard, input RunStageInput, token string) (ContextReadResult, error) {
@@ -244,7 +258,7 @@ func continueContextWithGuard(ctx context.Context, guard *recordlock.Guard, inpu
 	if targetIndex < 0 {
 		return ContextReadResult{}, fmt.Errorf("continue context: token target is not in current plan: %w", ErrContextReadToken)
 	}
-	return readContextAt(ctx, input, plan, targetIndex, claims.Part, key, claims.ContentSHA256, claims.Size, claims.ModTimeUnix)
+	return readContextAt(ctx, input, plan, targetIndex, claims.Part, key, claims.ContentSHA256, claims.Size, claims.ModTimeUnix, claims.Parts)
 }
 
 func preflightContextAbsent(absents []contextReadAbsent) error {
@@ -261,6 +275,7 @@ func buildContextReadPlan(input RunStageInput, marker ActiveDirectiveMarker, com
 		Stage:          wire.Stage,
 		WireSHA256:     sha256Hex(string(composition.Wire)),
 		MarkerRevision: marker.Revision,
+		GenerationID:   marker.ActiveAttempt.ID,
 		ProjectSHA256:  sha256Hex(input.Identity.ProjectPath()),
 	}
 	if composition.Freshness.StateHash != nil {
@@ -304,7 +319,7 @@ func addContextReadTarget(plan *contextReadPlan, slot ContextReadSlot, index int
 	return nil
 }
 
-func readContextAt(ctx context.Context, input RunStageInput, plan contextReadPlan, targetIndex, part int, key []byte, expectedDigest string, expectedSize, expectedModTime int64) (ContextReadResult, error) {
+func readContextAt(ctx context.Context, input RunStageInput, plan contextReadPlan, targetIndex, part int, key []byte, expectedDigest string, expectedSize, expectedModTime int64, expectedParts int) (ContextReadResult, error) {
 	if err := contextReadContext(ctx); err != nil {
 		return ContextReadResult{}, err
 	}
@@ -321,18 +336,17 @@ func readContextAt(ctx context.Context, input RunStageInput, plan contextReadPla
 			return ContextReadResult{}, fmt.Errorf("read context: %s %q changed before read: %w", target.Slot, target.Path, ErrContextReadFileChanged)
 		}
 	}
-	snapshot, err := readContextSnapshot(target.Root, target.RelativePath)
+	snapshot, err := readContextSnapshot(ctx, target.Root, target.RelativePath, part)
 	if err != nil {
 		return ContextReadResult{}, fmt.Errorf("read context: %s %q: %w", target.Slot, target.Path, err)
 	}
-	if expectedDigest != "" && expectedDigest != snapshot.Digest {
-		return ContextReadResult{}, fmt.Errorf("read context: %s %q content changed: %w", target.Slot, target.Path, ErrContextReadFileChanged)
+	if expectedDigest != "" && (expectedDigest != snapshot.Digest || expectedSize != snapshot.Size || expectedModTime != snapshot.ModTime.UnixNano() || expectedParts != snapshot.Parts) {
+		return ContextReadResult{}, fmt.Errorf("read context: %s %q content or metadata changed: %w", target.Slot, target.Path, ErrContextReadFileChanged)
 	}
-	chunks := splitContextReadChunks(snapshot.Data)
-	if part > len(chunks) {
-		return ContextReadResult{}, fmt.Errorf("read context: part %d exceeds %d for %q: %w", part, len(chunks), target.Path, ErrContextReadToken)
+	if part > snapshot.Parts {
+		return ContextReadResult{}, fmt.Errorf("read context: part %d exceeds %d for %q: %w", part, snapshot.Parts, target.Path, ErrContextReadToken)
 	}
-	nextTargetIndex, nextPart := nextContextCursor(plan.Targets, targetIndex, part, len(chunks))
+	nextTargetIndex, nextPart := nextContextCursor(plan.Targets, targetIndex, part, snapshot.Parts)
 	continueToken := ""
 	if nextTargetIndex >= 0 {
 		if len(key) == 0 {
@@ -341,7 +355,7 @@ func readContextAt(ctx context.Context, input RunStageInput, plan contextReadPla
 				return ContextReadResult{}, err
 			}
 		}
-		claims, err := contextReadTokenForNext(plan, input, target, snapshot, nextTargetIndex, nextPart)
+		claims, err := contextReadTokenForNext(ctx, plan, input, target, snapshot, nextTargetIndex, nextPart)
 		if err != nil {
 			return ContextReadResult{}, err
 		}
@@ -356,9 +370,9 @@ func readContextAt(ctx context.Context, input RunStageInput, plan contextReadPla
 		Slot:              target.Slot,
 		Index:             target.Index,
 		Part:              part,
-		Parts:             len(chunks),
+		Parts:             snapshot.Parts,
 		ContentSHA256:     snapshot.Digest,
-		Text:              string(chunks[part-1]),
+		Text:              string(snapshot.Data),
 		ReadContinueToken: continueToken,
 		Complete:          nextTargetIndex < 0,
 	}
@@ -393,7 +407,7 @@ func contextReadTargetIndex(targets []contextReadTarget, slot string, index int)
 func validateContextRunStageMarker(marker ActiveDirectiveMarker, input RunStageInput, composition RunStageComposition) error {
 	if marker.Kind != ActiveDirectiveKindRunStage || marker.CursorHarness != "codex" ||
 		(marker.Delivery != ActiveDirectiveDeliveryIssued && marker.Delivery != ActiveDirectiveDeliveryDelivered) ||
-		marker.NeedsRehydrate || marker.ContinueToken != "" || marker.Revision < 1 || marker.ActiveAttempt == nil ||
+		marker.NeedsRehydrate || marker.ContinueToken != "" || marker.Revision < 1 || marker.ActiveAttempt == nil || marker.ActiveAttempt.ID == "" ||
 		marker.ActiveAttempt.Status != ActiveDirectiveAttemptSettled || marker.ActiveAttempt.ResultSHA256 == "" ||
 		marker.ActiveAttempt.ResultRevision != marker.Revision ||
 		!activeDirectiveSHA256Equal(marker.ActiveAttempt.ResultSHA256, string(composition.Wire)) {
@@ -446,86 +460,178 @@ func readContextContinuationKey(projectRoot, recordRoot *os.Root) ([]byte, error
 	return key, nil
 }
 
-func readContextFileBytes(root *os.Root, name string) ([]byte, contextReadSnapshot, error) {
+type contextReadStreamPass struct {
+	Data   []byte
+	Digest string
+	Parts  int
+	Size   int64
+}
+
+const maxContextReadFileSize = int64(1<<63 - 1)
+
+func readContextSnapshot(ctx context.Context, root *os.Root, name string, requestedPart int) (contextReadSnapshot, error) {
 	if root == nil || !validContextRelativePath(name) {
-		return nil, contextReadSnapshot{}, fmt.Errorf("path %q: %w", name, ErrContextReadUnsafePath)
+		return contextReadSnapshot{}, fmt.Errorf("path %q: %w", name, ErrContextReadUnsafePath)
 	}
 	if err := validateContextPathAncestors(root, name); err != nil {
-		return nil, contextReadSnapshot{}, err
+		return contextReadSnapshot{}, err
 	}
 	info, err := root.Lstat(name)
 	if err != nil {
-		return nil, contextReadSnapshot{}, fmt.Errorf("inspect path: %w", err)
+		return contextReadSnapshot{}, fmt.Errorf("inspect path: %w", err)
 	}
 	if info == nil || info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return nil, contextReadSnapshot{}, fmt.Errorf("path %q is not a regular file: %w", name, ErrContextReadUnsafePath)
+		return contextReadSnapshot{}, fmt.Errorf("path %q is not a regular file: %w", name, ErrContextReadUnsafePath)
 	}
 	file, err := contextReadOpen(root, name)
 	if err != nil {
-		return nil, contextReadSnapshot{}, fmt.Errorf("open: %w", err)
+		return contextReadSnapshot{}, fmt.Errorf("open: %w", err)
 	}
 	if file == nil {
-		return nil, contextReadSnapshot{}, fmt.Errorf("open returned nil file: %w", ErrContextRead)
+		return contextReadSnapshot{}, fmt.Errorf("open returned nil file: %w", ErrContextRead)
 	}
+	closed := false
+	defer func() {
+		if !closed {
+			_ = file.Close()
+		}
+	}()
 	opened, statErr := file.Stat()
 	if statErr != nil {
-		_ = file.Close()
-		return nil, contextReadSnapshot{}, fmt.Errorf("stat opened file: %w", statErr)
+		return contextReadSnapshot{}, fmt.Errorf("stat opened file: %w", statErr)
 	}
-	if opened == nil || opened.Mode()&fs.ModeSymlink != 0 || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
-		_ = file.Close()
-		return nil, contextReadSnapshot{}, fmt.Errorf("path %q changed identity: %w", name, ErrContextReadFileChanged)
+	if opened == nil || opened.Mode()&fs.ModeSymlink != 0 || !opened.Mode().IsRegular() || !os.SameFile(info, opened) || opened.Size() != info.Size() || !opened.ModTime().Equal(info.ModTime()) {
+		return contextReadSnapshot{}, fmt.Errorf("path %q changed identity: %w", name, ErrContextReadFileChanged)
 	}
-	data, readErr := io.ReadAll(file)
-	if readErr == nil {
-		if _, seekErr := file.Seek(0, io.SeekStart); seekErr != nil {
-			readErr = seekErr
-		} else {
-			second, secondErr := io.ReadAll(file)
-			if secondErr != nil {
-				readErr = secondErr
-			} else if !bytes.Equal(data, second) {
-				readErr = ErrContextReadFileChanged
-			}
-		}
+	if info.Size() == maxContextReadFileSize {
+		return contextReadSnapshot{}, fmt.Errorf("path %q is too large to check for growth: %w", name, ErrContextReadFileChanged)
 	}
-	closeErr := file.Close()
-	if readErr != nil {
-		return nil, contextReadSnapshot{}, fmt.Errorf("read: %w", readErr)
+	passLimit := info.Size() + 1
+	first, err := readContextStreamPass(ctx, file, 0, passLimit)
+	if err != nil {
+		return contextReadSnapshot{}, err
 	}
-	if closeErr != nil {
-		return nil, contextReadSnapshot{}, fmt.Errorf("close: %w", closeErr)
+	if first.Size != info.Size() {
+		return contextReadSnapshot{}, fmt.Errorf("path %q grew or shrank during read: %w", name, ErrContextReadFileChanged)
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return contextReadSnapshot{}, fmt.Errorf("rewind: %w", err)
+	}
+	second, err := readContextStreamPass(ctx, file, requestedPart, passLimit)
+	if err != nil {
+		return contextReadSnapshot{}, err
+	}
+	if second.Size != info.Size() || first.Size != second.Size || first.Parts != second.Parts || first.Digest != second.Digest {
+		return contextReadSnapshot{}, fmt.Errorf("path %q changed during repeated read: %w", name, ErrContextReadFileChanged)
+	}
+	openedFinal, statErr := file.Stat()
+	if statErr != nil {
+		return contextReadSnapshot{}, fmt.Errorf("stat after read: %w", statErr)
+	}
+	if openedFinal == nil || !openedFinal.Mode().IsRegular() || !os.SameFile(info, openedFinal) || openedFinal.Size() != info.Size() || !openedFinal.ModTime().Equal(info.ModTime()) {
+		return contextReadSnapshot{}, fmt.Errorf("path %q changed after read: %w", name, ErrContextReadFileChanged)
 	}
 	if err := validateContextPathAncestors(root, name); err != nil {
-		return nil, contextReadSnapshot{}, err
+		return contextReadSnapshot{}, err
 	}
 	final, statErr := root.Lstat(name)
 	if statErr != nil {
-		return nil, contextReadSnapshot{}, fmt.Errorf("verify path after read: %w", statErr)
+		return contextReadSnapshot{}, fmt.Errorf("verify path after read: %w", statErr)
 	}
-	if final == nil || final.Mode()&fs.ModeSymlink != 0 || !final.Mode().IsRegular() || !os.SameFile(info, final) ||
-		final.Size() != info.Size() || !final.ModTime().Equal(info.ModTime()) {
-		return nil, contextReadSnapshot{}, fmt.Errorf("path %q changed after read: %w", name, ErrContextReadFileChanged)
+	if final == nil || final.Mode()&fs.ModeSymlink != 0 || !final.Mode().IsRegular() || !os.SameFile(info, final) || final.Size() != info.Size() || !final.ModTime().Equal(info.ModTime()) {
+		return contextReadSnapshot{}, fmt.Errorf("path %q changed after read: %w", name, ErrContextReadFileChanged)
 	}
-	if !utf8.Valid(data) {
-		return nil, contextReadSnapshot{}, fmt.Errorf("path %q: %w", name, ErrContextReadInvalidUTF8)
+	closeErr := file.Close()
+	closed = true
+	if closeErr != nil {
+		return contextReadSnapshot{}, fmt.Errorf("close: %w", closeErr)
 	}
-	digest := sha256.Sum256(data)
-	snapshot := contextReadSnapshot{Data: append([]byte(nil), data...), Digest: hex.EncodeToString(digest[:]), Size: int64(len(data)), ModTime: final.ModTime()}
-	return data, snapshot, nil
+	return contextReadSnapshot{Data: second.Data, Digest: second.Digest, Parts: second.Parts, Size: second.Size, ModTime: final.ModTime()}, nil
 }
 
-func readContextSnapshot(root *os.Root, name string) (contextReadSnapshot, error) {
-	_, snapshot, err := readContextFileBytes(root, name)
-	return snapshot, err
+func readContextStreamPass(ctx context.Context, file contextReadFile, requestedPart int, limit int64) (contextReadStreamPass, error) {
+	hash := sha256.New()
+	buffer := make([]byte, contextReadStreamBufferBytes)
+	pending := make([]byte, 0, utf8.UTFMax)
+	chunk := make([]byte, 0, contextReadChunkBytes)
+	var result contextReadStreamPass
+	part := 0
+	for {
+		if err := contextReadContext(ctx); err != nil {
+			return contextReadStreamPass{}, err
+		}
+		remaining := limit - result.Size
+		if remaining <= 0 {
+			return contextReadStreamPass{}, ErrContextReadFileChanged
+		}
+		readBuffer := buffer
+		if int64(len(readBuffer)) > remaining {
+			readBuffer = readBuffer[:int(remaining)]
+		}
+		n, readErr := file.Read(readBuffer)
+		if n < 0 || n > len(readBuffer) {
+			return contextReadStreamPass{}, fmt.Errorf("read returned invalid byte count %d: %w", n, ErrContextRead)
+		}
+		if n > 0 {
+			_, _ = hash.Write(readBuffer[:n])
+			result.Size += int64(n)
+			pending = append(pending, readBuffer[:n]...)
+			if result.Size > limit-1 {
+				return contextReadStreamPass{}, ErrContextReadFileChanged
+			}
+			for len(pending) > 0 {
+				if !utf8.FullRune(pending) {
+					break
+				}
+				runeValue, runeBytes := utf8.DecodeRune(pending)
+				if runeValue == utf8.RuneError && runeBytes == 1 {
+					return contextReadStreamPass{}, ErrContextReadInvalidUTF8
+				}
+				if len(chunk) > 0 && len(chunk)+runeBytes > contextReadChunkBytes {
+					if err := incrementContextReadPart(&part); err != nil {
+						return contextReadStreamPass{}, err
+					}
+					if part == requestedPart {
+						result.Data = append([]byte(nil), chunk...)
+					}
+					chunk = chunk[:0]
+				}
+				chunk = append(chunk, pending[:runeBytes]...)
+				pending = pending[runeBytes:]
+			}
+		}
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				break
+			}
+			return contextReadStreamPass{}, fmt.Errorf("read: %w", readErr)
+		}
+		if n == 0 {
+			return contextReadStreamPass{}, fmt.Errorf("read made no progress: %w", io.ErrNoProgress)
+		}
+	}
+	if len(pending) != 0 {
+		return contextReadStreamPass{}, ErrContextReadInvalidUTF8
+	}
+	if len(chunk) > 0 || result.Size == 0 {
+		if err := incrementContextReadPart(&part); err != nil {
+			return contextReadStreamPass{}, err
+		}
+		if part == requestedPart {
+			result.Data = append([]byte(nil), chunk...)
+		}
+	}
+	result.Parts = part
+	result.Digest = hex.EncodeToString(hash.Sum(nil))
+	return result, nil
 }
 
-func readContextFile(root *os.Root, name string) (string, string, error) {
-	data, snapshot, err := readContextFileBytes(root, name)
-	if err != nil {
-		return "", "", err
+func incrementContextReadPart(part *int) error {
+	if part == nil || *part == int(^uint(0)>>1) {
+		return fmt.Errorf("read context: chunk count overflow: %w", ErrContextRead)
 	}
-	return string(data), snapshot.Digest, nil
+	*part = *part + 1
+	return nil
 }
 
 func validateContextPathAncestors(root *os.Root, name string) error {
@@ -547,26 +653,6 @@ func validContextRelativePath(name string) bool {
 	return name != "" && name != "." && fs.ValidPath(name) && path.Clean(name) == name
 }
 
-func splitContextReadChunks(data []byte) [][]byte {
-	if len(data) == 0 {
-		return [][]byte{{}}
-	}
-	chunks := make([][]byte, 0, (len(data)+contextReadChunkBytes-1)/contextReadChunkBytes)
-	for len(data) > contextReadChunkBytes {
-		end := contextReadChunkBytes
-		for end > 0 && end < len(data) && !utf8.RuneStart(data[end]) {
-			end--
-		}
-		if end == 0 {
-			end = contextReadChunkBytes
-		}
-		chunks = append(chunks, append([]byte(nil), data[:end]...))
-		data = data[end:]
-	}
-	chunks = append(chunks, append([]byte(nil), data...))
-	return chunks
-}
-
 func marshalContextReadResult(result ContextReadResult) ([]byte, error) {
 	data, err := json.Marshal(result)
 	if err != nil {
@@ -578,7 +664,7 @@ func marshalContextReadResult(result ContextReadResult) ([]byte, error) {
 	return data, nil
 }
 
-func contextReadTokenForNext(plan contextReadPlan, input RunStageInput, current contextReadTarget, snapshot contextReadSnapshot, targetIndex, part int) (contextReadTokenClaims, error) {
+func contextReadTokenForNext(ctx context.Context, plan contextReadPlan, input RunStageInput, current contextReadTarget, snapshot contextReadSnapshot, targetIndex, part int) (contextReadTokenClaims, error) {
 	if targetIndex < 0 || targetIndex >= len(plan.Targets) {
 		return contextReadTokenClaims{}, fmt.Errorf("read context: next target is invalid: %w", ErrContextReadToken)
 	}
@@ -589,6 +675,7 @@ func contextReadTokenForNext(plan contextReadPlan, input RunStageInput, current 
 		Space:          input.Identity.Space(),
 		Intent:         input.Identity.Intent(),
 		MarkerRevision: plan.MarkerRevision,
+		GenerationID:   plan.GenerationID,
 		WireSHA256:     plan.WireSHA256,
 		Stage:          plan.Stage,
 		Slot:           string(target.Slot),
@@ -597,22 +684,20 @@ func contextReadTokenForNext(plan contextReadPlan, input RunStageInput, current 
 		Path:           target.Path,
 	}
 	if targetIndex == contextReadTargetIndex(plan.Targets, string(current.Slot), current.Index) {
-		claims.Parts = len(splitContextReadChunks(snapshot.Data))
+		claims.Parts = snapshot.Parts
 		claims.ContentSHA256 = snapshot.Digest
 		claims.Size = snapshot.Size
 		claims.ModTimeUnix = snapshot.ModTime.UnixNano()
 		return claims, nil
 	}
-	info, err := contextReadPathInfo(target.Root, target.RelativePath)
+	nextSnapshot, err := readContextSnapshot(ctx, target.Root, target.RelativePath, 0)
 	if err != nil {
-		return contextReadTokenClaims{}, fmt.Errorf("read context: inspect next path %q: %w", target.Path, err)
+		return contextReadTokenClaims{}, fmt.Errorf("read context: snapshot next path %q: %w", target.Path, err)
 	}
-	// The next file is deliberately not opened until its turn. The token binds
-	// the first part and the path metadata; the actual part count is validated
-	// when that file is read.
-	claims.Parts = 1
-	claims.Size = info.Size()
-	claims.ModTimeUnix = info.ModTime().UnixNano()
+	claims.Parts = nextSnapshot.Parts
+	claims.ContentSHA256 = nextSnapshot.Digest
+	claims.Size = nextSnapshot.Size
+	claims.ModTimeUnix = nextSnapshot.ModTime.UnixNano()
 	return claims, nil
 }
 
@@ -659,12 +744,19 @@ func decodeContextReadToken(key []byte, token string) (contextReadTokenClaims, e
 	if err != nil {
 		return contextReadTokenClaims{}, fmt.Errorf("read context: decode token: %w: %w", ErrContextReadToken, err)
 	}
+	if base64.RawURLEncoding.EncodeToString(data) != token {
+		return contextReadTokenClaims{}, fmt.Errorf("read context: token encoding is not canonical: %w", ErrContextReadToken)
+	}
 	var envelope contextReadTokenEnvelope
 	if err := json.Unmarshal(data, &envelope); err != nil || len(envelope.Payload) == 0 {
 		return contextReadTokenClaims{}, fmt.Errorf("read context: token envelope is invalid: %w", ErrContextReadToken)
 	}
+	canonicalEnvelope, err := json.Marshal(envelope)
+	if err != nil || !bytes.Equal(data, canonicalEnvelope) {
+		return contextReadTokenClaims{}, fmt.Errorf("read context: token envelope is not canonical: %w", ErrContextReadToken)
+	}
 	macBytes, err := base64.RawURLEncoding.DecodeString(envelope.MAC)
-	if err != nil {
+	if err != nil || len(macBytes) != sha256.Size || base64.RawURLEncoding.EncodeToString(macBytes) != envelope.MAC {
 		return contextReadTokenClaims{}, fmt.Errorf("read context: token MAC is invalid: %w", ErrContextReadToken)
 	}
 	mac := hmac.New(sha256.New, key)
@@ -677,14 +769,18 @@ func decodeContextReadToken(key []byte, token string) (contextReadTokenClaims, e
 	if err := json.Unmarshal(envelope.Payload, &claims); err != nil {
 		return contextReadTokenClaims{}, fmt.Errorf("read context: token claims are invalid: %w", ErrContextReadToken)
 	}
+	canonicalPayload, err := json.Marshal(claims)
+	if err != nil || !bytes.Equal(envelope.Payload, canonicalPayload) {
+		return contextReadTokenClaims{}, fmt.Errorf("read context: token claims are not canonical: %w", ErrContextReadToken)
+	}
 	return claims, nil
 }
 
 func validateContextReadToken(claims contextReadTokenClaims, input RunStageInput, plan contextReadPlan) error {
-	if claims.Version != 1 || claims.ProjectSHA256 != plan.ProjectSHA256 || claims.Space != input.Identity.Space() ||
+	if claims.Version != 1 || claims.GenerationID == "" || claims.GenerationID != plan.GenerationID || claims.ProjectSHA256 != plan.ProjectSHA256 || claims.Space != input.Identity.Space() ||
 		claims.Intent != input.Identity.Intent() || claims.MarkerRevision != plan.MarkerRevision ||
 		claims.WireSHA256 != plan.WireSHA256 || claims.Stage != plan.Stage || claims.Part < 1 || claims.Parts < 1 ||
-		claims.Index < 1 || claims.Path == "" {
+		claims.Index < 1 || claims.Path == "" || claims.ContentSHA256 == "" {
 		return fmt.Errorf("continue context: token binding mismatch: %w", ErrContextReadToken)
 	}
 	targetIndex := contextReadTargetIndex(plan.Targets, claims.Slot, claims.Index)
@@ -700,7 +796,7 @@ func verifyContextReadMarker(input RunStageInput, plan contextReadPlan) error {
 		return fmt.Errorf("read context: verify active marker: %w", err)
 	}
 	if !found || marker.Revision != plan.MarkerRevision || marker.Kind != ActiveDirectiveKindRunStage ||
-		marker.ActiveAttempt == nil || marker.ActiveAttempt.ResultSHA256 != plan.WireSHA256 ||
+		marker.ActiveAttempt == nil || marker.ActiveAttempt.ID == "" || marker.ActiveAttempt.ID != plan.GenerationID || marker.ActiveAttempt.ResultSHA256 != plan.WireSHA256 ||
 		marker.ActiveAttempt.ResultRevision != plan.MarkerRevision ||
 		(marker.Delivery != ActiveDirectiveDeliveryIssued && marker.Delivery != ActiveDirectiveDeliveryDelivered) ||
 		marker.CursorHarness != "codex" || marker.NeedsRehydrate || marker.ContinueToken != "" {

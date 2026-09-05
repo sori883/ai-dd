@@ -1272,7 +1272,7 @@ opaque tokenで直ちにcontinueします。
 `aidlc read-context --project-dir .`、続きは直前の成功応答にあるopaqueな`read_continue_token`をそのまま
 `aidlc read-context continue "<opaque read token>" --project-dir .`へ渡します。Go readerが全
 `inline_context_paths`、`stage_file`、存在する全`consumes`をこの順序で本文chunkへ分けます。responseはcanonicalな一行JSONで、
-各chunkのUTF-8境界、content digest、active marker、record private HMAC tokenを検証し、改ざん・stale・内容変更・symlink・
+各chunkのUTF-8境界、content digest、active marker、publication generation、record private HMAC tokenを検証し、改ざん・stale・内容変更・symlink・
 non-regular file・不正UTF-8・予想外の必須入力欠落をfail-closedにします。成功・失敗ともstate、audit、artifact、markerを変更せず、
 通常呼出しで全chunkを受け取ったときは`context ready`だけを返します。callerが検証用machine-readable read receiptの要求と
 output schemaを明示した場合だけ、そのschemaに従うreceiptを返して停止します。どちらでもStage実行、成果物作成、review・sensor、
@@ -1281,15 +1281,18 @@ report、人間承認は行いません。unknown directive、read failure、pat
 検証receiptのfield意味はskill側で固定します。`rules`は受領順の各`rules_content` entryの末尾非空行、
 `inline_context`はinline fileごとの全chunk連結本文、`stage_file`はstage fileの全chunk連結本文、
 `consumes`はconsume fileごとの全chunk連結本文です。file本文は`slot/index/part`順で連結し、末尾改行を省略しません。
-継続token用keyは`steering.ReadContinuationKey`のread-only APIで毎回読み、既存lifecycleと同じ4 KiB+1 bounded read、
-canonical base64url、ECMAScript whitespace、regular non-symlink境界を共有します。read-contextはkeyやsession directoryを作成・変更しません。
+source fileは新しい公開size capなしで、open直後sizeを上限とする固定512-byte bufferの2-pass streamからdigest、UTF-8、実part数、要求partだけを計算し、
+pass間digest／size／part数とdescriptor／最終pathのidentity・size・mtimeを照合します。token envelope／claimsはcanonical再encodeとのbyte一致も要求します。
+Unix nonblocking openの対象build tagはAIX、Android、Darwin、DragonFly、FreeBSD、Illumos、iOS、Linux、NetBSD、OpenBSD、Solarisです。
+継続token用keyは`steering.ReadContinuationKey`のread-only APIで毎回読み、既存lifecycleと同じ4 KiB+1 bounded read、canonical base64url、
+ECMAScript whitespace、regular non-symlink境界を共有します。read-contextはkeyやsession directoryを作成・変更しません。
 
 通常のloopで使用する確認は次のとおりです。
 
 ```sh
 go test -count=1 ./src/harness/codex/skills/aidlc
 go test -count=1 -run 'Test.*ReadContext' ./src/internal/cli ./src/cmd/aidlc
-go test -tags=integration -count=1 -run '^TestCodexReceiver(FreshPlacementJourney|ReadsDeliveredContext)$' ./src/cmd/aidlc
+env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run '^TestCodexReceiver(FreshPlacementJourney|ReadsDeliveredContext)$' ./src/cmd/aidlc
 ```
 
 最後のtestは`AIDLC_CODEX_EXEC_LIVE=1`がない場合に明示skipします。live `codex exec`は外部model利用とcredential境界を伴うため、
@@ -1298,7 +1301,8 @@ go test -tags=integration -count=1 -run '^TestCodexReceiver(FreshPlacementJourne
 live promptはskill invocationとこのverification receipt/schema要求だけに限定し、routing、読込順、stop、canaryの指示を重ねません。
 fixtureは予測不能なBEGIN/MIDDLE/ENDをstage・consumeにも含め、stage本文の実行指示だけがproject rootの
 `stage-execution-canary.txt`へrandom sentinelを書けるようにします。liveの前後snapshotはdirectory mtimeを無視して
-regular fileのmode/bodyだけを比較し、transport上必要な`.aidlc-active-directive.json`と`.aidlc-steering-token-key`だけを除外します。
+regular fileのmode/bodyだけを比較します。non-live fresh journeyはtransport fileを含め、live transport比較だけはrecord-rootの正確な
+`.aidlc-active-directive.json`と`.aidlc-steering-token-key`の2 slash pathだけを除外します。
 このrepair後のlive実行は未実施であり、環境変数なしの通常loopでは明示skipします。実装・受入条件・後続Stage境界は
 [Codex receiverの計画](ram/decisions/2026-09-05-codex-receiver-read-plan.md)と[安全なcontext読込契約](ram/decisions/2026-09-05-codex-safe-context-read-contract.md)
 を参照してください。

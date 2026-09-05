@@ -1,7 +1,7 @@
 # Codexのcontext読込をGoの安全境界へ移す
 
 - 日付: 2026-09-05（Asia/Tokyo）
-- 状態: Implemented（ユーザーが直接承認。Issue #115の独立review修正）
+- 状態: In Progress（実装済み・独立review修正中。未merge／live未実施）
 - 対応Issue: [#115 Codex receiverで配信本文を実読込する](https://github.com/sori883/ai-dd/issues/115)
 - 置換対象: [Codex receiverで配信本文を実読込する](2026-09-05-codex-receiver-read-plan.md)のshell直接読込、
   live prompt、短いfixtureに関する設計
@@ -86,14 +86,20 @@ canonical wireのdigestとresult revisionを記録する。既存のdigestなし
 改めて`aidlc next`を呼ぶとfresh markerへ更新できる。schema fieldは既存なので永続形式のversion migrationは行わない。
 
 read tokenは既存record private keyからdomain-separated HMACで認証し、project、space、intent、marker revision、
-wire digest、Stage、次slot／file／part、同じfileの`content_sha256`を拘束する。tokenはopaqueで永続化しない。
+wire digest、publicationごとの`ActiveAttempt.ID` generation、Stage、次slot／file／part、対象fileのcontent digest、実part数、
+size、mtimeを拘束する。publication generationはmarker schemaを拡張せず、crypto/randの32 bytesをhex化して新規publicationごとに
+更新する。token envelopeとclaimsはdecode/auth後にcanonical再encodeとのbyte一致を要求し、unknown／duplicate／非canonical表現を拒否する。
+tokenはopaqueで永続化しない。
 
 ## file安全性
 
 - project root相対の通常fileだけを許可し、absolute path、`..`、directory、device、FIFO、socketを拒否する。
 - `os.Root`でancestor symlinkを含むproject外escapeを拒否し、leaf symlinkも明示的に拒否する。
-- confined openの前後でpath情報と開いたdescriptorを照合し、読込中の差替えやfile内容変更を拒否する。
-- UnixではFIFO等によるblockを避けるためnonblocking openを使い、Windows／その他の対象OSはbuild-tag別の
+- confined openの前後でpath情報と開いたdescriptorを照合し、読込中の差替えやfile内容変更を拒否する。source fileには公開size capを
+  設けず、open直後のregular-file sizeを上限として固定512-byte bufferの2-pass streamでdigest、UTF-8、part数、要求partだけを計算する。
+  pass間のdigest／size／part数、最終path identity／size／mtimeが一致しない場合は拒否する。
+- UnixではFIFO等によるblockを避けるためnonblocking openを使い、AIX、Android、Darwin、DragonFly、FreeBSD、Illumos、iOS、Linux、
+  NetBSD、OpenBSD、Solarisを対象とし、Windows／その他の対象OSはbuild-tag別の
   標準ライブラリ実装にする。
 - bind mountは`os.Root`だけでは防げないため、利用者が管理するproject mountを信頼境界とする。
 - 複数file全体のatomic snapshotは作らない。各chunkでfresh directiveを再検証し、同一fileの複数chunkは
@@ -109,8 +115,9 @@ live promptは「このprojectで`$aidlc` skillを明示利用し、skillが定�
 という要求だけにし、読込順、反復、path処理を重ねて教えない。
 
 fixtureは予測不能なbegin／middle／endを持つ長い複数sectionとし、少なくとも一fileを複数context chunkへ分割する。
-Stage本文には、実行されれば検出できるcanaryを置く。実行前後でstate、audit、artifactをsnapshotし、配信で必要な
-key／active marker以外が変わらず、canary出力が存在しないことを確認する。
+Stage本文には、実行されれば検出できるcanaryを置く。実行前後でstate、audit、artifact、marker、keyを含むregular fileの
+mode／bodyをsnapshotし、non-live fresh journeyではtransport fileも含めて変更がなく、live transport比較だけは正確なrecord-rootの
+`.aidlc-active-directive.json`と`.aidlc-steering-token-key`の2 slash pathを除外する。canary出力が存在しないことも確認する。
 
 最初のlive成功は旧skill／prompt／fixtureに対する履歴として保持するが、本変更後の完了証拠には使わない。
 non-live修正、独立review、対象差分の安定後、Codex account利用量を消費し得るlive commandを再実行する直前に、
@@ -168,7 +175,7 @@ testが参照する型、constant、function signatureだけのcompile-only scaf
 7. `fresh-receiver-journey`
    - fresh projectの長い多section本文、複数chunk、最小live prompt、Stage canary、state／audit／artifact不変を検証する。
    - test: `src/cmd/aidlc/codex_receiver_integration_test.go`
-   - command: `go test -tags=integration -count=1 -run '^TestCodexReceiver(FreshPlacementJourney|ReadsDeliveredContext)$' ./src/cmd/aidlc`
+   - command: `env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run '^TestCodexReceiver(FreshPlacementJourney|ReadsDeliveredContext)$' ./src/cmd/aidlc`
 
 work unit末尾では上記non-live command、影響4 packageのtest、変更Go fileの`gofmt`、skill validator、
 `git diff --check`を実行する。loop中に全package、race、vet、cross compile、live Codexを実行しない。
@@ -219,9 +226,14 @@ record lock内で再検証する。digestなしmarker、consumed／superseded ma
 
 readerは全`consumes_absent`をfile open前にpreflightし、`expected:false`を拒否、`expected:true`を読込対象から除外する。inline、
 stage、consumeをこの順に全文読込し、UTF-8 rune境界のbounded chunkをcanonical JSON（改行込み8192 bytes以下）へ返す。record private
-keyのdomain-separated HMAC tokenはproject、space、intent、marker revision、wire digest、stage、slot、file、part、content
-digestを拘束し、同じtokenのreplayはread-only同値となる。`os.Root`相対のregular non-symlinkだけを許可し、ancestor／leaf symlink、
+keyのdomain-separated HMAC tokenはproject、space、intent、marker revision、publication generation、wire digest、stage、slot、file、part、content
+digest、実part数、size、mtimeを拘束し、同じtokenのreplayはread-only同値となる。`os.Root`相対のregular non-symlinkだけを許可し、ancestor／leaf symlink、
 FIFO・special file、不正UTF-8、descriptor/path/content raceをfail-closedにし、Unixではnonblocking openを使う。
+
+source file全体を`io.ReadAll`で保持せず、open直後のsizeを上限として固定512-byte bufferの2-pass streamを使う。各passでdigest、
+UTF-8妥当性、rune-safeなpart数を計算し、2回目だけ要求part（最大512 bytes）を保持する。pass間のdigest／size／part数、descriptorと
+最終pathのidentity、size、mtimeを照合するため、同じsizeとmtimeへ戻された別本文も次fileのtoken境界で拒否する。source fileに新しい
+公開size capは導入しない。
 
 公開CLIは`aidlc read-context [continue <opaque-token>] [--project-dir <path>]`を実装し、path／slot／partをcallerへ公開しない。
 成功はstdout canonical JSON一行、syntax errorはstdout空・stderr・exit 2、reader／I/O／root cleanup failureはstdout空・stderr・exit 1。
@@ -250,7 +262,7 @@ go test -count=1 -run 'TestReadContext.*(Order|Chunk|Token|Replay|Change)' ./src
 go test -count=1 -run 'TestReadContext.*(File|Symlink|Race|FIFO|UTF)' ./src/internal/delivery
 go test -count=1 -run 'Test.*ReadContext' ./src/internal/cli ./src/cmd/aidlc
 go test -count=1 ./src/harness/codex/skills/aidlc
-go test -tags=integration -count=1 -run '^TestCodexReceiver(FreshPlacementJourney|ReadsDeliveredContext)$' ./src/cmd/aidlc
+env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run '^TestCodexReceiver(FreshPlacementJourney|ReadsDeliveredContext)$' ./src/cmd/aidlc
 go test -count=1 -run 'TestReadContext.*Key' ./src/internal/delivery
 go test -count=1 -run '^TestReadContinuationKeyIsReadOnlyAndUsesCanonicalBounds$' ./src/internal/steering
 env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run 'TestCodexReceiver(LivePrompt|LiveCommand).*' ./src/cmd/aidlc
@@ -261,3 +273,17 @@ go test -count=20 -run '^TestReadContextTokenTamperReplayAndContentChange$' ./sr
 本家固定snapshot AI-DLC 2.6.123はdirective pathをCodex file／shell toolから直接読む。本実装は承認済み意図的差分として、同じ本文を
 active directiveへ拘束されたGo `read-context`からのみ返す。理由は必須入力欠落、symlink escape、読込中差替えをLLMへの注意書きでなく
 決定論的に拒否するためで、利用者は任意pathを指定できず、Stage本文と順序は維持される。
+
+## 独立review修正の実装証拠（未merge・live未実施）
+
+`work_unit_id=codex-safe-context-read-review-repair`では、次fileのtokenにも実本文のSHA-256、実part数、size、mtimeを保存し、継続時に
+照合した。固定512-byte bufferの2-pass streamへ移行し、要求partだけを保持してsource file全体の複製を廃止した。publicationごとに
+crypto/rand 32-byteの`ActiveAttempt.ID`を更新し、read plan／token／開始・継続・出力直前marker検証へbindした。token envelopeとclaimsの
+canonical再encode一致によりunknown／duplicate／whitespace／非canonical base64表現をfail-closedにした。
+
+read-context成功と代表的失敗は、marker／keyを含むproject regular fileのmodeとbody snapshotでread-onlyを直接観測する。non-live fresh journeyも
+transport 2 fileをsnapshotへ含め、live比較だけは正確なrecord-rootの2 slash pathを除外する。Unix nonblocking build tagはAIX、Android、Darwin、
+DragonFly、FreeBSD、Illumos、iOS、Linux、NetBSD、OpenBSD、Solarisへ拡張し、既存FIFO拒否テストはALREADY_GREENだった。
+
+CLI sliceの初回compile errorはrunnableな挙動差を示さないprocess caveatであり、RED証拠として数えていない。Issue／PR mergeと承認済みlive
+Codex実行は親の後続gateであり、このloop work unitでは未実施である。

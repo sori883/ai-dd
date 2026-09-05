@@ -88,6 +88,11 @@ func TestCodexReceiverFreshPlacementJourney(t *testing.T) {
 	}
 
 	beforeRead := receiverTreeSnapshot(t, project)
+	for _, transportPath := range []string{receiverActiveDirectiveTransportPath, receiverSteeringKeyTransportPath} {
+		if _, ok := beforeRead[transportPath]; !ok {
+			t.Fatalf("fresh journey snapshot omitted existing transport file %q", transportPath)
+		}
+	}
 	chunks := runCodexReceiverContext(t, binaryPath, project)
 	assertCodexReceiverContextOrder(t, chunks, wire.InlineContextPaths, wire.StageFile, wire.Consumes)
 	contextByTarget := concatenateCodexReceiverContext(chunks)
@@ -189,7 +194,7 @@ func TestCodexReceiverFixtureDefinesObservableStageCanary(t *testing.T) {
 
 func TestCodexReceiverStableSnapshotIgnoresTransportAndDetectsFiles(t *testing.T) {
 	fixture := newCodexReceiverJourneyProject(t, deliveryModuleRoot(t))
-	before := receiverTreeSnapshot(t, fixture.Project)
+	before := receiverTreeSnapshotIgnoringTransport(t, fixture.Project)
 	for _, slashPath := range []string{
 		"aidlc/spaces/team/intents/build/.aidlc-active-directive.json",
 		"aidlc/spaces/team/intents/build/.aidlc-steering-token-key",
@@ -199,7 +204,7 @@ func TestCodexReceiverStableSnapshotIgnoresTransportAndDetectsFiles(t *testing.T
 	if err := os.Chtimes(filepath.Join(fixture.Project, ".codex"), time.Unix(10, 0), time.Unix(20, 0)); err != nil {
 		t.Fatalf("Chtimes(directory): %v", err)
 	}
-	if afterTransport := receiverTreeSnapshot(t, fixture.Project); !reflect.DeepEqual(before, afterTransport) {
+	if afterTransport := receiverTreeSnapshotIgnoringTransport(t, fixture.Project); !reflect.DeepEqual(before, afterTransport) {
 		t.Fatal("transport files or directory mtime changed the stable snapshot")
 	}
 	unexpectedTransportPath := filepath.Join(fixture.Project, "unexpected", ".aidlc-active-directive.json")
@@ -207,15 +212,15 @@ func TestCodexReceiverStableSnapshotIgnoresTransportAndDetectsFiles(t *testing.T
 		t.Fatalf("MkdirAll(unexpected transport): %v", err)
 	}
 	writeDeliveryJourneyFile(t, unexpectedTransportPath, "unexpected-transport\n")
-	if afterUnexpected := receiverTreeSnapshot(t, fixture.Project); reflect.DeepEqual(before, afterUnexpected) {
+	if afterUnexpected := receiverTreeSnapshotIgnoringTransport(t, fixture.Project); reflect.DeepEqual(before, afterUnexpected) {
 		t.Fatal("same-basename transport file outside the record path was not detected")
 	}
 
 	stablePath := filepath.Join(fixture.Project, "stable-snapshot-check.md")
 	writeDeliveryJourneyFile(t, stablePath, "before\n")
-	beforeStableChange := receiverTreeSnapshot(t, fixture.Project)
+	beforeStableChange := receiverTreeSnapshotIgnoringTransport(t, fixture.Project)
 	writeDeliveryJourneyFile(t, stablePath, "after\n")
-	if afterStableChange := receiverTreeSnapshot(t, fixture.Project); reflect.DeepEqual(beforeStableChange, afterStableChange) {
+	if afterStableChange := receiverTreeSnapshotIgnoringTransport(t, fixture.Project); reflect.DeepEqual(beforeStableChange, afterStableChange) {
 		t.Fatal("regular file body change was not detected by the stable snapshot")
 	}
 }
@@ -314,14 +319,14 @@ func TestCodexReceiverReadsDeliveredContext(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
-	beforeExec := receiverTreeSnapshot(t, fixture.Project)
+	beforeExec := receiverTreeSnapshotIgnoringTransport(t, fixture.Project)
 	if err := command.Run(); err != nil {
 		if ctx.Err() != nil {
 			t.Fatalf("codex exec timed out: %v", ctx.Err())
 		}
 		t.Fatalf("codex exec: %v\nstdout=%s\nstderr=%s", err, stdout.Bytes(), stderr.Bytes())
 	}
-	if afterExec := receiverTreeSnapshot(t, fixture.Project); !reflect.DeepEqual(beforeExec, afterExec) {
+	if afterExec := receiverTreeSnapshotIgnoringTransport(t, fixture.Project); !reflect.DeepEqual(beforeExec, afterExec) {
 		t.Fatal("live Codex receiver changed project state, audit, artifact, canary, or another stable file")
 	}
 	if _, err := os.Stat(filepath.Join(fixture.Project, "stage-execution-canary.txt")); err == nil || !os.IsNotExist(err) {
@@ -652,6 +657,14 @@ const (
 )
 
 func receiverTreeSnapshot(t *testing.T, directory string) map[string]receiverTreeEntry {
+	return receiverTreeSnapshotWithTransport(t, directory, false)
+}
+
+func receiverTreeSnapshotIgnoringTransport(t *testing.T, directory string) map[string]receiverTreeEntry {
+	return receiverTreeSnapshotWithTransport(t, directory, true)
+}
+
+func receiverTreeSnapshotWithTransport(t *testing.T, directory string, ignoreTransport bool) map[string]receiverTreeEntry {
 	t.Helper()
 	root := os.DirFS(directory)
 	entries := map[string]receiverTreeEntry{}
@@ -662,7 +675,7 @@ func receiverTreeSnapshot(t *testing.T, directory string) map[string]receiverTre
 		if path == "." || !entry.Type().IsRegular() {
 			return nil
 		}
-		if path == receiverActiveDirectiveTransportPath || path == receiverSteeringKeyTransportPath {
+		if ignoreTransport && (path == receiverActiveDirectiveTransportPath || path == receiverSteeringKeyTransportPath) {
 			return nil
 		}
 		info, err := entry.Info()

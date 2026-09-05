@@ -3,8 +3,10 @@ package delivery
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -91,7 +93,7 @@ func TestReadContextAbsentExpectedFalsePreflightsBeforeOpeningFiles(t *testing.T
 
 	var opens int
 	previousOpen := contextReadOpen
-	contextReadOpen = func(root *os.Root, name string) (*os.File, error) {
+	contextReadOpen = func(root *os.Root, name string) (contextReadFile, error) {
 		opens++
 		return previousOpen(root, name)
 	}
@@ -114,7 +116,7 @@ func TestReadContextAbsentExpectedTrueContinues(t *testing.T) {
 
 	var opens int
 	previousOpen := contextReadOpen
-	contextReadOpen = func(root *os.Root, name string) (*os.File, error) {
+	contextReadOpen = func(root *os.Root, name string) (contextReadFile, error) {
 		opens++
 		return previousOpen(root, name)
 	}
@@ -279,6 +281,279 @@ func TestReadContextTokenTamperReplayAndContentChange(t *testing.T) {
 	}
 }
 
+func TestReadContextRejectsCrossFileContentChangeWithRestoredMetadata(t *testing.T) {
+	fixture, _ := newOrderedContextFixture(t)
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+	if _, err := Next(context.Background(), input); err != nil {
+		t.Fatalf("Next() error = %v", err)
+	}
+
+	result, err := ReadContext(context.Background(), input)
+	if err != nil {
+		t.Fatalf("ReadContext() error = %v", err)
+	}
+	for result.Slot != ContextReadSlotInline || result.Index != 1 || result.Part != result.Parts {
+		if result.Complete {
+			t.Fatal("context stream completed before issuing the next-file token")
+		}
+		if result.ReadContinueToken == "" {
+			t.Fatal("incomplete context result has no continuation token")
+		}
+		result, err = ContinueContext(context.Background(), input, result.ReadContinueToken)
+		if err != nil {
+			t.Fatalf("ContinueContext() while locating file-boundary token: %v", err)
+		}
+	}
+	if result.ReadContinueToken == "" {
+		t.Fatal("last chunk of the first file has no continuation token")
+	}
+
+	supportPath := filepath.Join(fixture.identity.ProjectPath(), ".codex", "agents", "aidlc-architect-agent.md")
+	original, err := os.ReadFile(supportPath)
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", supportPath, err)
+	}
+	info, err := os.Stat(supportPath)
+	if err != nil {
+		t.Fatalf("Stat(%q): %v", supportPath, err)
+	}
+	replacement := bytes.Repeat([]byte{'x'}, len(original))
+	if bytes.Equal(replacement, original) {
+		replacement[0] = 'y'
+	}
+	if err := os.WriteFile(supportPath, replacement, info.Mode().Perm()); err != nil {
+		t.Fatalf("WriteFile(%q): %v", supportPath, err)
+	}
+	if err := os.Chtimes(supportPath, info.ModTime(), info.ModTime()); err != nil {
+		t.Fatalf("Chtimes(%q): %v", supportPath, err)
+	}
+
+	if _, err := ContinueContext(context.Background(), input, result.ReadContinueToken); err == nil || !errors.Is(err, ErrContextReadFileChanged) {
+		t.Fatalf("ContinueContext(cross-file same metadata) error = %v, want ErrContextReadFileChanged", err)
+	}
+}
+
+type boundedContextReadFile struct {
+	contextReadFile
+	maximum int
+}
+
+func (file boundedContextReadFile) Read(buffer []byte) (int, error) {
+	if len(buffer) > file.maximum {
+		return 0, errors.New("test reader received an oversized buffer")
+	}
+	return file.contextReadFile.Read(buffer)
+}
+
+func TestReadContextUsesBoundedStreamingReads(t *testing.T) {
+	fixture, _ := newOrderedContextFixture(t)
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+	if _, err := Next(context.Background(), input); err != nil {
+		t.Fatalf("Next() error = %v", err)
+	}
+
+	previousOpen := contextReadOpen
+	contextReadOpen = func(root *os.Root, name string) (contextReadFile, error) {
+		file, err := previousOpen(root, name)
+		if err != nil {
+			return nil, err
+		}
+		return boundedContextReadFile{contextReadFile: file, maximum: contextReadStreamBufferBytes}, nil
+	}
+	t.Cleanup(func() { contextReadOpen = previousOpen })
+
+	if _, err := ReadContext(context.Background(), input); err != nil {
+		t.Fatalf("ReadContext() error = %v, want bounded streaming to succeed", err)
+	}
+}
+
+type growingContextReadFile struct {
+	contextReadFile
+	path  string
+	grown bool
+	reads int
+}
+
+func (file *growingContextReadFile) Read(buffer []byte) (int, error) {
+	if !file.grown {
+		appendFile, err := os.OpenFile(file.path, os.O_WRONLY|os.O_APPEND, 0)
+		if err != nil {
+			return 0, err
+		}
+		_, writeErr := appendFile.Write(bytes.Repeat([]byte("growth\n"), 1024))
+		closeErr := appendFile.Close()
+		if writeErr != nil {
+			return 0, writeErr
+		}
+		if closeErr != nil {
+			return 0, closeErr
+		}
+		file.grown = true
+	}
+	if file.reads > 0 {
+		return 0, errors.New("test growth stream was read past the initial size bound")
+	}
+	file.reads++
+	return file.contextReadFile.Read(buffer)
+}
+
+func TestReadContextStopsAtInitialSizeWhenFileGrows(t *testing.T) {
+	fixture := newContextReadFixture(t)
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+	if _, err := Next(context.Background(), input); err != nil {
+		t.Fatalf("Next() error = %v", err)
+	}
+	stagePath := filepath.Join(fixture.identity.ProjectPath(), ".codex", "aidlc-common", "stages", "ideation", "intent-capture.md")
+	previousOpen := contextReadOpen
+	contextReadOpen = func(root *os.Root, name string) (contextReadFile, error) {
+		file, err := previousOpen(root, name)
+		if err != nil {
+			return nil, err
+		}
+		if name == ".codex/aidlc-common/stages/ideation/intent-capture.md" {
+			return &growingContextReadFile{contextReadFile: file, path: stagePath}, nil
+		}
+		return file, nil
+	}
+	t.Cleanup(func() { contextReadOpen = previousOpen })
+
+	if _, err := ReadContext(context.Background(), input); err == nil || !errors.Is(err, ErrContextReadFileChanged) {
+		t.Fatalf("ReadContext(growing file) error = %v, want ErrContextReadFileChanged before reading past size+1", err)
+	}
+}
+
+func TestReadContextRejectsTokenAfterMarkerRecoveryAtSameRevision(t *testing.T) {
+	fixture, _ := newOrderedContextFixture(t)
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+	if _, err := Next(context.Background(), input); err != nil {
+		t.Fatalf("Next() error = %v", err)
+	}
+	first, err := ReadContext(context.Background(), input)
+	if err != nil {
+		t.Fatalf("ReadContext() error = %v", err)
+	}
+	if first.ReadContinueToken == "" {
+		t.Fatal("ReadContext() token is empty, want continuation token")
+	}
+	originalMarker, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
+	if err != nil || !found || originalMarker.ActiveAttempt == nil || originalMarker.ActiveAttempt.ID == "" {
+		t.Fatalf("ReadActiveDirectiveMarker(original) = found %v, error %v, marker %#v", found, err, originalMarker)
+	}
+	markerPath := filepath.Join(fixture.identity.ProjectPath(), "aidlc", "spaces", fixture.identity.Space(), "intents", fixture.identity.Intent(), activeDirectiveMarkerName)
+	if err := os.Remove(markerPath); err != nil {
+		t.Fatalf("Remove(active marker): %v", err)
+	}
+	if _, err := Next(context.Background(), input); err != nil {
+		t.Fatalf("Next() recovery error = %v", err)
+	}
+	recovered, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
+	if err != nil || !found || recovered.Revision != 1 || recovered.ActiveAttempt == nil {
+		t.Fatalf("recovered marker = found %v, error %v, marker %#v; want fresh revision 1", found, err, recovered)
+	}
+	if recovered.ActiveAttempt.ID == originalMarker.ActiveAttempt.ID {
+		t.Fatalf("recovered publication generation = %q, want a new generation after marker recovery", recovered.ActiveAttempt.ID)
+	}
+	if _, err := ContinueContext(context.Background(), input, first.ReadContinueToken); err == nil || (!errors.Is(err, ErrContextReadToken) && !errors.Is(err, ErrContextReadBinding)) {
+		t.Fatalf("ContinueContext(token from removed marker) error = %v, want token or binding rejection", err)
+	}
+}
+
+func TestReadContextRejectsNonCanonicalTokenEnvelope(t *testing.T) {
+	fixture, _ := newOrderedContextFixture(t)
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+	if _, err := Next(context.Background(), input); err != nil {
+		t.Fatalf("Next() error = %v", err)
+	}
+	first, err := ReadContext(context.Background(), input)
+	if err != nil {
+		t.Fatalf("ReadContext() error = %v", err)
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(first.ReadContinueToken)
+	if err != nil {
+		t.Fatalf("DecodeString(read token): %v", err)
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		t.Fatalf("json.Unmarshal(read envelope): %v", err)
+	}
+	envelope["unknown"] = json.RawMessage(`"unexpected"`)
+	withUnknown, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatalf("json.Marshal(unknown envelope): %v", err)
+	}
+	withUnknownToken := base64.RawURLEncoding.EncodeToString(withUnknown)
+	if _, err := ContinueContext(context.Background(), input, withUnknownToken); err == nil || !errors.Is(err, ErrContextReadToken) {
+		t.Fatalf("ContinueContext(unknown outer field) error = %v, want ErrContextReadToken", err)
+	}
+	withWhitespace := append([]byte{' '}, raw...)
+	withWhitespace = append(withWhitespace, '\n')
+	withWhitespaceToken := base64.RawURLEncoding.EncodeToString(withWhitespace)
+	if _, err := ContinueContext(context.Background(), input, withWhitespaceToken); err == nil || !errors.Is(err, ErrContextReadToken) {
+		t.Fatalf("ContinueContext(noncanonical outer whitespace) error = %v, want ErrContextReadToken", err)
+	}
+}
+
+type contextReadTreeEntry struct {
+	Mode fs.FileMode
+	Body string
+}
+
+func snapshotContextReadTree(t *testing.T, project string) map[string]contextReadTreeEntry {
+	t.Helper()
+	root := os.DirFS(project)
+	entries := map[string]contextReadTreeEntry{}
+	if err := fs.WalkDir(root, ".", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == "." || !entry.Type().IsRegular() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		body, err := fs.ReadFile(root, path)
+		if err != nil {
+			return err
+		}
+		entries[path] = contextReadTreeEntry{Mode: info.Mode(), Body: string(body)}
+		return nil
+	}); err != nil {
+		t.Fatalf("snapshot project tree: %v", err)
+	}
+	return entries
+}
+
+func TestReadContextSuccessAndFailureAreReadOnly(t *testing.T) {
+	fixture, _ := newOrderedContextFixture(t)
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+	if _, err := Next(context.Background(), input); err != nil {
+		t.Fatalf("Next() error = %v", err)
+	}
+
+	beforeSuccess := snapshotContextReadTree(t, fixture.identity.ProjectPath())
+	first, err := ReadContext(context.Background(), input)
+	if err != nil {
+		t.Fatalf("ReadContext() error = %v", err)
+	}
+	if afterSuccess := snapshotContextReadTree(t, fixture.identity.ProjectPath()); !reflect.DeepEqual(beforeSuccess, afterSuccess) {
+		t.Fatal("successful ReadContext changed project files, marker, key, state, audit, artifact, or session data")
+	}
+
+	beforeFailure := snapshotContextReadTree(t, fixture.identity.ProjectPath())
+	tampered := first.ReadContinueToken[:len(first.ReadContinueToken)-1] + "A"
+	if tampered == first.ReadContinueToken {
+		tampered = first.ReadContinueToken[:len(first.ReadContinueToken)-1] + "B"
+	}
+	if _, err := ContinueContext(context.Background(), input, tampered); err == nil {
+		t.Fatal("ContinueContext(tampered token) error = nil, want rejection")
+	}
+	if afterFailure := snapshotContextReadTree(t, fixture.identity.ProjectPath()); !reflect.DeepEqual(beforeFailure, afterFailure) {
+		t.Fatal("failed ContinueContext changed project files, marker, key, state, audit, artifact, or session data")
+	}
+}
+
 func TestReadContextRejectsStaleTokenAfterFreshPublication(t *testing.T) {
 	fixture, _ := newOrderedContextFixture(t)
 	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
@@ -368,7 +643,7 @@ func TestReadContextRejectsPathContentRace(t *testing.T) {
 		t.Fatalf("Next() error = %v", err)
 	}
 	previousOpen := contextReadOpen
-	contextReadOpen = func(root *os.Root, name string) (*os.File, error) {
+	contextReadOpen = func(root *os.Root, name string) (contextReadFile, error) {
 		file, err := previousOpen(root, name)
 		if err == nil && name == ".codex/aidlc-common/stages/ideation/intent-capture.md" {
 			if writeErr := os.WriteFile(stagePath, []byte("replacement after open\n"), 0o600); writeErr != nil {
