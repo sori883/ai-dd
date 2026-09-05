@@ -107,6 +107,42 @@ func TestSwitchIntentWithWorkspaceLockZeroesResultOnLockFailure(t *testing.T) {
 	}
 }
 
+func TestSwitchIntentPublicWaitsForContendedWorkspaceLock(t *testing.T) {
+	project := t.TempDir()
+	intentsPath := filepath.Join(project, "aidlc", "spaces", "team", "intents")
+	if err := os.MkdirAll(filepath.Join(intentsPath, "build"), 0o700); err != nil {
+		t.Fatalf("MkdirAll(intent): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(intentsPath, "build", "aidlc-state.md"), []byte("state\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(intent state): %v", err)
+	}
+	for name, content := range map[string]string{
+		filepath.Join(project, "aidlc", "active-space"): "team\n",
+		filepath.Join(intentsPath, "intents.json"):      `[{"uuid":"build","slug":"build","status":"planning","dirName":"build"}]`,
+	} {
+		if err := os.MkdirAll(filepath.Dir(name), 0o700); err != nil {
+			t.Fatalf("MkdirAll(%q): %v", name, err)
+		}
+		if err := os.WriteFile(name, []byte(content), 0o600); err != nil {
+			t.Fatalf("WriteFile(%q): %v", name, err)
+		}
+	}
+	var selection IntentSelection
+	assertPublicWorkspaceLockContention(t, project, func() error {
+		var err error
+		selection, err = SwitchIntent(RootInput{ExplicitDir: project}, "build")
+		return err
+	})
+	want := IntentSelection{SpaceName: "team", DirName: "build"}
+	if selection != want {
+		t.Fatalf("SwitchIntent() selection = %+v, want %+v", selection, want)
+	}
+	data, err := os.ReadFile(filepath.Join(intentsPath, "active-intent"))
+	if err != nil || string(data) != "build\n" {
+		t.Errorf("active-intent = (%q, %v), want build", data, err)
+	}
+}
+
 func TestSwitchIntentSelectsExactDirectory(t *testing.T) {
 	t.Parallel()
 

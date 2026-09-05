@@ -153,6 +153,26 @@ func TestSwitchSpaceWithWorkspaceLockZeroesResultOnLockFailure(t *testing.T) {
 	}
 }
 
+func TestSwitchSpacePublicWaitsForContendedWorkspaceLock(t *testing.T) {
+	project := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(project, "aidlc", "spaces", "team"), 0o700); err != nil {
+		t.Fatalf("MkdirAll(space): %v", err)
+	}
+	var name string
+	assertPublicWorkspaceLockContention(t, project, func() error {
+		var err error
+		name, err = SwitchSpace(RootInput{ExplicitDir: project}, "team")
+		return err
+	})
+	if name != "team" {
+		t.Fatalf("SwitchSpace() name = %q, want team", name)
+	}
+	data, err := os.ReadFile(filepath.Join(project, "aidlc", "active-space"))
+	if err != nil || string(data) != "team\n" {
+		t.Errorf("active-space = (%q, %v), want team", data, err)
+	}
+}
+
 func TestSwitchSpaceProjectOpenError(t *testing.T) {
 	t.Parallel()
 

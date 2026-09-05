@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/sori883/ai-dd/src/internal/pathnorm"
@@ -156,6 +157,7 @@ func acquireWorkspaceLock(
 				fs.ErrExist,
 			)
 		}
+		observeWorkspaceLockContention(path)
 		if err := ops.wait(ctx, settings.retryInterval); err != nil {
 			return workspaceLockReceipt{}, fmt.Errorf("wait for workspace lock %q: %w", path, err)
 		}
@@ -270,6 +272,32 @@ func releaseWorkspaceLock(receipt workspaceLockReceipt, ops workspaceLockOps) er
 		}
 	}
 	return nil
+}
+
+var workspaceLockContentionObserver struct {
+	mu sync.RWMutex
+	fn func(string)
+}
+
+func setWorkspaceLockContentionObserver(fn func(string)) func() {
+	workspaceLockContentionObserver.mu.Lock()
+	previous := workspaceLockContentionObserver.fn
+	workspaceLockContentionObserver.fn = fn
+	workspaceLockContentionObserver.mu.Unlock()
+	return func() {
+		workspaceLockContentionObserver.mu.Lock()
+		workspaceLockContentionObserver.fn = previous
+		workspaceLockContentionObserver.mu.Unlock()
+	}
+}
+
+func observeWorkspaceLockContention(path string) {
+	workspaceLockContentionObserver.mu.RLock()
+	fn := workspaceLockContentionObserver.fn
+	workspaceLockContentionObserver.mu.RUnlock()
+	if fn != nil {
+		fn(path)
+	}
 }
 
 // WithLock runs fn while holding the shared workspace lock for projectPath.

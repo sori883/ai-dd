@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode"
@@ -706,5 +707,68 @@ func TestWithWorkspaceLockReleasesBeforeRepanic(t *testing.T) {
 	}
 	if !released {
 		t.Fatal("withWorkspaceLock() did not release before re-panic")
+	}
+}
+
+func assertPublicWorkspaceLockContention(t *testing.T, project string, switchFn func() error) {
+	t.Helper()
+	lockPath := workspaceLockPath(project, os.TempDir(), filepath.EvalSymlinks)
+	contention := make(chan struct{})
+	var contentionOnce sync.Once
+	restoreObserver := setWorkspaceLockContentionObserver(func(path string) {
+		if path == lockPath {
+			contentionOnce.Do(func() { close(contention) })
+		}
+	})
+	defer restoreObserver()
+
+	holderReady := make(chan struct{})
+	releaseHolder := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseHolder) }) }
+	holderDone := make(chan error, 1)
+	go func() {
+		holderDone <- WithLock(context.Background(), project, func() error {
+			close(holderReady)
+			<-releaseHolder
+			return nil
+		})
+	}()
+	defer release()
+	select {
+	case <-holderReady:
+	case <-time.After(2 * time.Second):
+		t.Fatal("workspace lock holder did not acquire lock")
+	}
+
+	switchDone := make(chan error, 1)
+	go func() { switchDone <- switchFn() }()
+	select {
+	case <-contention:
+	case <-time.After(2 * time.Second):
+		t.Fatal("public switch did not reach workspace-lock contention")
+	}
+	select {
+	case err := <-switchDone:
+		t.Fatalf("public switch completed while holder retained workspace lock: %v", err)
+	default:
+	}
+
+	release()
+	select {
+	case err := <-holderDone:
+		if err != nil {
+			t.Fatalf("workspace lock holder error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("workspace lock holder did not release")
+	}
+	select {
+	case err := <-switchDone:
+		if err != nil {
+			t.Fatalf("public switch error after workspace lock release: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("public switch did not complete after workspace lock release")
 	}
 }
