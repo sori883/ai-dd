@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -84,6 +85,44 @@ func TestSnapshotRouteHashBindsCanonicalNodeAndScopeStages(t *testing.T) {
 		}
 		if changed == base {
 			t.Errorf("RouteHash() unchanged after scope EXECUTE route changed: %q", changed)
+		}
+	})
+
+	t.Run("unicode escape spelling does not alter hash", func(t *testing.T) {
+		unicodeEscapedNode := strings.Replace(routeTargetNodeJSON, `"Raw Stage"`, `"\u0052aw Stage"`, 1)
+		unicodeEscapedSnapshot, err := Load(routeFixtureFS(unicodeEscapedNode, routeScopeGridJSON))
+		if err != nil {
+			t.Fatalf("Load(unicode-escaped node) error = %v", err)
+		}
+		got, err := unicodeEscapedSnapshot.RouteHash("raw-stage", "mvp")
+		if err != nil {
+			t.Fatalf("RouteHash(unicode-escaped node) error = %v", err)
+		}
+		base, err := snapshot.RouteHash("raw-stage", "mvp")
+		if err != nil {
+			t.Fatalf("RouteHash(base) error = %v", err)
+		}
+		if got != base {
+			t.Errorf("RouteHash() differs only by Unicode escape spelling: got %q, base %q", got, base)
+		}
+	})
+
+	t.Run("duplicate name uses JSON parse last value", func(t *testing.T) {
+		duplicateNameNode := strings.Replace(routeTargetNodeJSON, `"name":"Raw Stage"`, `"name":"Decoy","name":"Raw Stage"`, 1)
+		duplicateNameSnapshot, err := Load(routeFixtureFS(duplicateNameNode, routeScopeGridJSON))
+		if err != nil {
+			t.Fatalf("Load(duplicate-name node) error = %v", err)
+		}
+		got, err := duplicateNameSnapshot.RouteHash("raw-stage", "mvp")
+		if err != nil {
+			t.Fatalf("RouteHash(duplicate-name node) error = %v", err)
+		}
+		base, err := snapshot.RouteHash("raw-stage", "mvp")
+		if err != nil {
+			t.Fatalf("RouteHash(base) error = %v", err)
+		}
+		if got != base {
+			t.Errorf("RouteHash() differs only by duplicate last-wins name: got %q, base %q", got, base)
 		}
 	})
 }

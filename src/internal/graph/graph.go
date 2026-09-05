@@ -246,11 +246,11 @@ func decodeStageDocument(data []byte) (stageDocument, error) {
 	}
 
 	var stage stageDocument
-	var compact bytes.Buffer
-	if err := json.Compact(&compact, data); err != nil {
-		return stageDocument{}, fmt.Errorf("compact route node: %w", err)
+	canonicalNode, err := canonicalizeJSON(data)
+	if err != nil {
+		return stageDocument{}, fmt.Errorf("canonicalize route node: %w", err)
 	}
-	stage.RouteNode = slices.Clone(compact.Bytes())
+	stage.RouteNode = canonicalNode
 	stageFields := []struct {
 		name   string
 		target any
