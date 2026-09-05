@@ -1,7 +1,8 @@
 # Codex receiverで配信本文を実読込する
 
 - 日付: 2026-09-05（Asia/Tokyo）
-- 状態: Implemented（live実読込receipt成功、独立review・final検証待ち。Issue #115）
+- 状態: Partially Superseded（旧skillのlive実読込receiptは成功。独立reviewで安全性不足を確認し、
+  [Go安全読込契約](2026-09-05-codex-safe-context-read-contract.md)がshell直接読込とtest設計を置換）
 - 対応Issue: [#115 Codex receiverで配信本文を実読込する](https://github.com/sori883/ai-dd/issues/115)
 - 実装許可: [ルール・知識のAI供給を個別承認なしで完了まで進める](2026-09-05-context-delivery-autonomous-authorization.md)
 - 前提: [Codex向け配信transactionと公開next／continueを接続する](2026-09-05-delivery-publication-plan.md)
