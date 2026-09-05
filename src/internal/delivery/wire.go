@@ -1,10 +1,10 @@
 package delivery
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path"
+	"strings"
 
 	"github.com/sori883/ai-dd/src/internal/artifact"
 	"github.com/sori883/ai-dd/src/internal/graph"
@@ -118,11 +118,122 @@ func buildRunStageWire(identity recordlock.Identity, stage graph.Stage, current 
 		Narration:        presentation.Narration,
 	}
 
-	data, err := json.Marshal(wire)
-	if err != nil {
-		return nil, fmt.Errorf("marshal required wire: %w", err)
+	return marshalRunStageWire(wire)
+}
+
+func marshalRunStageWire(wire runStageWire) ([]byte, error) {
+	var builder strings.Builder
+	builder.WriteString(`{"kind":`)
+	appendRunStageJSONString(&builder, wire.Kind)
+	builder.WriteString(`,"stage":`)
+	appendRunStageJSONString(&builder, wire.Stage)
+	builder.WriteString(`,"phase":`)
+	appendRunStageJSONString(&builder, wire.Phase)
+	builder.WriteString(`,"lead_agent":`)
+	appendRunStageJSONString(&builder, wire.LeadAgent)
+	builder.WriteString(`,"support_agents":`)
+	appendRunStageStringArray(&builder, wire.SupportAgents)
+	builder.WriteString(`,"mode":`)
+	appendRunStageJSONString(&builder, wire.Mode)
+	builder.WriteString(`,"inline_context_paths":`)
+	appendRunStageStringArray(&builder, wire.InlineContextPaths)
+	builder.WriteString(`,"gate":true`)
+	builder.WriteString(`,"memory_path":`)
+	appendRunStageJSONString(&builder, wire.MemoryPath)
+	builder.WriteString(`,"consumes":`)
+	appendRunStageStringArray(&builder, wire.Consumes)
+	builder.WriteString(`,"produces":`)
+	appendRunStageStringArray(&builder, wire.Produces)
+	builder.WriteString(`,"rules_in_context":`)
+	appendRunStageStringArray(&builder, wire.RulesInContext)
+	builder.WriteString(`,"sensors_applicable":`)
+	appendRunStageStringArray(&builder, wire.SensorsApplicable)
+	builder.WriteString(`,"stage_file":`)
+	appendRunStageJSONString(&builder, wire.StageFile)
+	if len(wire.ContextWarnings) != 0 {
+		builder.WriteString(`,"context_warnings":`)
+		appendRunStageStringArray(&builder, wire.ContextWarnings)
 	}
-	return data, nil
+	if len(wire.ConsumesAbsent) != 0 {
+		builder.WriteString(`,"consumes_absent":[`)
+		for index, absent := range wire.ConsumesAbsent {
+			if index != 0 {
+				builder.WriteByte(',')
+			}
+			builder.WriteString(`{"path":`)
+			appendRunStageJSONString(&builder, absent.Path)
+			builder.WriteString(`,"expected":`)
+			if absent.Expected {
+				builder.WriteString("true")
+			} else {
+				builder.WriteString("false")
+			}
+			builder.WriteByte('}')
+		}
+		builder.WriteByte(']')
+	}
+	builder.WriteString(`,"next_stage":`)
+	if wire.NextStage == nil {
+		builder.WriteString("null")
+	} else {
+		appendRunStageJSONString(&builder, *wire.NextStage)
+	}
+	if len(wire.ProtocolModules) != 0 {
+		builder.WriteString(`,"protocol_modules":`)
+		appendRunStageStringArray(&builder, wire.ProtocolModules)
+	}
+	if wire.ConductorPersona != nil {
+		builder.WriteString(`,"conductor_persona":`)
+		appendRunStageJSONString(&builder, *wire.ConductorPersona)
+	}
+	builder.WriteString(`,"narration":`)
+	appendRunStageJSONString(&builder, wire.Narration)
+	builder.WriteByte('}')
+	return []byte(builder.String()), nil
+}
+
+func appendRunStageStringArray(builder *strings.Builder, values []string) {
+	builder.WriteByte('[')
+	for index, value := range values {
+		if index != 0 {
+			builder.WriteByte(',')
+		}
+		appendRunStageJSONString(builder, value)
+	}
+	builder.WriteByte(']')
+}
+
+func appendRunStageJSONString(builder *strings.Builder, value string) {
+	const hexDigits = "0123456789abcdef"
+
+	builder.WriteByte('"')
+	for index := 0; index < len(value); index++ {
+		switch value[index] {
+		case '"':
+			builder.WriteString(`\"`)
+		case '\\':
+			builder.WriteString(`\\`)
+		case '\b':
+			builder.WriteString(`\b`)
+		case '\f':
+			builder.WriteString(`\f`)
+		case '\n':
+			builder.WriteString(`\n`)
+		case '\r':
+			builder.WriteString(`\r`)
+		case '\t':
+			builder.WriteString(`\t`)
+		default:
+			if value[index] < 0x20 {
+				builder.WriteString(`\u00`)
+				builder.WriteByte(hexDigits[value[index]>>4])
+				builder.WriteByte(hexDigits[value[index]&0x0f])
+				continue
+			}
+			builder.WriteByte(value[index])
+		}
+	}
+	builder.WriteByte('"')
 }
 
 func regularRecordFile(recordRoot *os.Root, name string) bool {

@@ -1,7 +1,10 @@
 package delivery
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -676,6 +679,257 @@ func TestComposeRunStageBuildsSupportedOptionalFields(t *testing.T) {
 			t.Errorf("ComposeRunStage(terminal optional fields) next_stage = %s, want null", wire.NextStage)
 		}
 	})
+}
+
+func TestComposeRunStageBindsCanonicalHashesAndOwnsResult(t *testing.T) {
+	t.Run("canonical hashes and ownership", func(t *testing.T) {
+		fixture := newRunStageFixture(t)
+		writeRunStageFile(t, fixture.stageGraphPath, runStageRulesGraphJSON)
+
+		memoryDir := filepath.Join(fixture.identity.ProjectPath(), "aidlc", "spaces", fixture.identity.Space(), "memory")
+		if err := os.MkdirAll(memoryDir, 0o700); err != nil {
+			t.Fatalf("MkdirAll(%q): %v", memoryDir, err)
+		}
+		alphaText := "組織ルール 🚀\n"
+		projectRuleText := "プロジェクト rule\n"
+		betaText := "空間ルール 日本語\n"
+		writeRunStageFile(t, filepath.Join(memoryDir, "alpha.md"), alphaText)
+		writeRunStageFile(t, filepath.Join(fixture.identity.ProjectPath(), "project-rule.md"), projectRuleText)
+		writeRunStageFile(t, filepath.Join(memoryDir, "beta.md"), betaText)
+
+		conductorPath := filepath.Join(fixture.identity.ProjectPath(), ".codex", "aidlc-common", "conductor.md")
+		if err := os.MkdirAll(filepath.Dir(conductorPath), 0o700); err != nil {
+			t.Fatalf("MkdirAll(%q): %v", filepath.Dir(conductorPath), err)
+		}
+		conductorText := "司令塔 <>&" + string(rune(0x2028)) + string(rune(0x2029)) + "\"\\\x00\v\b\f\n\r\t"
+		writeRunStageFile(t, conductorPath, conductorText)
+		conductorJSON := "司令塔 <>&" + string(rune(0x2028)) + string(rune(0x2029)) + `\"\\\u0000\u000b\b\f\n\r\t`
+
+		dataDir := filepath.Dir(fixture.stageGraphPath)
+		catalog, err := graph.Load(os.DirFS(dataDir))
+		if err != nil {
+			t.Fatalf("graph.Load(hashes fixture): %v", err)
+		}
+		var stage graph.Stage
+		for _, candidate := range catalog.Stages() {
+			if candidate.Slug == "intent-capture" {
+				stage = candidate
+				break
+			}
+		}
+		if stage.Slug == "" {
+			t.Fatal("hashes fixture current stage is absent")
+		}
+		resolvedRules, err := steering.ResolveRulePaths(
+			fixture.identity.ProjectPath(),
+			fixture.identity.Space(),
+			"",
+			stage.RulesInContext,
+		)
+		if err != nil {
+			t.Fatalf("steering.ResolveRulePaths(hashes fixture): %v", err)
+		}
+		wantRules := []steering.RuleContent{
+			{Path: resolvedRules.Entries[0].Path, Text: alphaText},
+			{Path: resolvedRules.Entries[1].Path, Text: projectRuleText},
+			{Path: resolvedRules.Entries[2].Path, Text: betaText},
+		}
+		wantBundle, err := steering.BundleDigest(wantRules)
+		if err != nil {
+			t.Fatalf("steering.BundleDigest(hashes fixture): %v", err)
+		}
+		wantChunks := steering.ChunkRules(wantRules)
+
+		wireWant := `{"kind":"run-stage","stage":"intent-capture","phase":"ideation","lead_agent":"orchestrator","support_agents":[],"mode":"inline","inline_context_paths":[],"gate":true,"memory_path":"aidlc/spaces/team/intents/build/ideation/intent-capture/memory.md","consumes":[],"produces":[],"rules_in_context":["aidlc/spaces/team/memory/alpha.md","project-rule.md","aidlc/spaces/team/memory/beta.md"],"sensors_applicable":[],"stage_file":".codex/aidlc-common/stages/ideation/intent-capture.md","next_stage":"Next Stage","conductor_persona":"` + conductorJSON + `","narration":"Starting the classic plan for this project. First step is Intent Capture, and I will stop for your review before anything is final."}`
+		directiveDigest := sha256.Sum256([]byte(wireWant))
+		directiveHash := hex.EncodeToString(directiveDigest[:])
+		stateBytesBefore := stateBytesForRunStage(t, fixture.recordRoot)
+		stateDigest := sha256.Sum256(stateBytesBefore)
+		stateHash := hex.EncodeToString(stateDigest[:])
+		routeHash, err := catalog.RouteHash(stage.Slug, "classic")
+		if err != nil {
+			t.Fatalf("catalog.RouteHash(hashes fixture): %v", err)
+		}
+		freshStateHash := stateHash
+		claimStateHash := stateHash
+		nextStage := "Next Stage"
+		swarmSettled := false
+		wantFreshness := steering.ContinuationFreshness{
+			Stage:         stage.Slug,
+			Scope:         "classic",
+			Bundle:        wantBundle,
+			DirectiveHash: directiveHash,
+			RouteHash:     routeHash,
+			StateHash:     &freshStateHash,
+		}
+		wantClaims := steering.ContinuationClaims{
+			Version:       1,
+			Stage:         stage.Slug,
+			Scope:         "classic",
+			NextPart:      1,
+			Bundle:        wantBundle,
+			DirectiveHash: directiveHash,
+			RouteHash:     routeHash,
+			StateAware:    true,
+			Gate:          steering.GateTrue,
+			NextStage:     steering.OptionalNullableString{Present: true, Value: &nextStage},
+			SwarmSettled:  &swarmSettled,
+			StateHash:     &claimStateHash,
+		}
+		input := RunStageInput{
+			Identity:    fixture.identity,
+			ProjectRoot: fixture.projectRoot,
+			RecordRoot:  fixture.recordRoot,
+		}
+
+		first, err := ComposeRunStage(context.Background(), input)
+		if err != nil {
+			t.Fatalf("ComposeRunStage(first hashes fixture) error = %v, want nil", err)
+		}
+		second, err := ComposeRunStage(context.Background(), input)
+		if err != nil {
+			t.Fatalf("ComposeRunStage(second hashes fixture) error = %v, want nil", err)
+		}
+		assertRunStageHashComposition(t, "first", first, stage, wireWant, wantRules, wantChunks, wantBundle, wantFreshness, wantClaims)
+		assertRunStageHashComposition(t, "second", second, stage, wireWant, wantRules, wantChunks, wantBundle, wantFreshness, wantClaims)
+		if first.Freshness.StateHash == first.Claims.StateHash {
+			t.Errorf("ComposeRunStage(first) Freshness.StateHash and Claims.StateHash share a pointer")
+		}
+
+		if len(first.Wire) != 0 {
+			first.Wire[0] = 'X'
+		}
+		if len(first.Directive.Stage.SupportAgents) != 0 {
+			first.Directive.Stage.SupportAgents[0] = "mutated-support"
+		}
+		if len(first.Directive.Stage.RulesInContext) != 0 {
+			first.Directive.Stage.RulesInContext[0].Path = "mutated-rule-path"
+		}
+		if first.Directive.Stage.ProducesKinds != nil {
+			first.Directive.Stage.ProducesKinds["mutated"] = []string{"mutated"}
+		}
+		if len(first.Rules) != 0 {
+			first.Rules[0].Text = "mutated-rule-text"
+		}
+		if len(first.Chunks) != 0 && len(first.Chunks[0]) != 0 {
+			first.Chunks[0][0].Text = "mutated-chunk-text"
+		}
+		if first.Freshness.StateHash != nil {
+			*first.Freshness.StateHash = "mutated-freshness-state"
+		} else {
+			t.Errorf("ComposeRunStage(first).Freshness.StateHash = nil, want owned state hash")
+		}
+		if first.Claims.StateHash != nil {
+			*first.Claims.StateHash = "mutated-claims-state"
+		} else {
+			t.Errorf("ComposeRunStage(first).Claims.StateHash = nil, want owned state hash")
+		}
+		if first.Claims.NextStage.Value != nil {
+			*first.Claims.NextStage.Value = "mutated-next-stage"
+		} else {
+			t.Errorf("ComposeRunStage(first).Claims.NextStage.Value = nil, want Next Stage")
+		}
+		if first.Claims.SwarmSettled != nil {
+			*first.Claims.SwarmSettled = true
+		} else {
+			t.Errorf("ComposeRunStage(first).Claims.SwarmSettled = nil, want owned false")
+		}
+		assertRunStageHashComposition(t, "second after first mutation", second, stage, wireWant, wantRules, wantChunks, wantBundle, wantFreshness, wantClaims)
+
+		if len(second.Wire) != 0 {
+			second.Wire[0] = 'Y'
+		}
+		if len(second.Rules) != 0 {
+			second.Rules[0].Path = "second-mutated-rule"
+		}
+		if len(second.Chunks) != 0 && len(second.Chunks[0]) != 0 {
+			second.Chunks[0][0].Path = "second-mutated-chunk"
+		}
+		third, err := ComposeRunStage(context.Background(), input)
+		if err != nil {
+			t.Fatalf("ComposeRunStage(third hashes fixture) error = %v, want nil", err)
+		}
+		assertRunStageHashComposition(t, "third after result mutations", third, stage, wireWant, wantRules, wantChunks, wantBundle, wantFreshness, wantClaims)
+		stateBytesAfter := stateBytesForRunStage(t, fixture.recordRoot)
+		if !bytes.Equal(stateBytesAfter, stateBytesBefore) {
+			t.Errorf("ComposeRunStage changed aidlc-state.md bytes")
+		}
+	})
+
+	t.Run("directive byte cap", func(t *testing.T) {
+		fixture := newRunStageFixture(t)
+		conductorPath := filepath.Join(fixture.identity.ProjectPath(), ".codex", "aidlc-common", "conductor.md")
+		if err := os.MkdirAll(filepath.Dir(conductorPath), 0o700); err != nil {
+			t.Fatalf("MkdirAll(%q): %v", filepath.Dir(conductorPath), err)
+		}
+		writeRunStageFile(t, conductorPath, "")
+		input := RunStageInput{
+			Identity:    fixture.identity,
+			ProjectRoot: fixture.projectRoot,
+			RecordRoot:  fixture.recordRoot,
+		}
+		base, err := ComposeRunStage(context.Background(), input)
+		if err != nil {
+			t.Fatalf("ComposeRunStage(empty conductor) error = %v, want nil", err)
+		}
+		if len(base.Wire) >= 28*1024 {
+			t.Fatalf("empty conductor wire length = %d, want below 28 KiB", len(base.Wire))
+		}
+		exactText := strings.Repeat("p", 28*1024-len(base.Wire))
+		writeRunStageFile(t, conductorPath, exactText)
+		exact, err := ComposeRunStage(context.Background(), input)
+		if err != nil {
+			t.Errorf("ComposeRunStage(exact cap) error = %v, want nil", err)
+		}
+		if len(exact.Wire) != 28*1024 {
+			t.Errorf("ComposeRunStage(exact cap) wire length = %d, want %d", len(exact.Wire), 28*1024)
+		}
+
+		writeRunStageFile(t, conductorPath, exactText+"p")
+		over, err := ComposeRunStage(context.Background(), input)
+		if err == nil {
+			t.Error("ComposeRunStage(over cap) error = nil, want ErrDirectiveTooLarge")
+		} else if !errors.Is(err, ErrDirectiveTooLarge) {
+			t.Errorf("ComposeRunStage(over cap) error = %v, want ErrDirectiveTooLarge", err)
+		}
+		assertZeroRunStageComposition(t, "over directive byte cap", over)
+	})
+}
+
+func assertRunStageHashComposition(
+	t *testing.T,
+	label string,
+	got RunStageComposition,
+	wantStage graph.Stage,
+	wantWire string,
+	wantRules []steering.RuleContent,
+	wantChunks [][]steering.RuleContent,
+	wantBundle string,
+	wantFreshness steering.ContinuationFreshness,
+	wantClaims steering.ContinuationClaims,
+) {
+	t.Helper()
+	if string(got.Wire) != wantWire {
+		t.Errorf("ComposeRunStage(%s).Wire = %q, want canonical JSON wire %q", label, got.Wire, wantWire)
+	}
+	if !reflect.DeepEqual(got.Directive.Stage, wantStage) {
+		t.Errorf("ComposeRunStage(%s).Directive.Stage = %#v, want %#v", label, got.Directive.Stage, wantStage)
+	}
+	if !reflect.DeepEqual(got.Rules, wantRules) {
+		t.Errorf("ComposeRunStage(%s).Rules = %#v, want %#v", label, got.Rules, wantRules)
+	}
+	if !reflect.DeepEqual(got.Chunks, wantChunks) {
+		t.Errorf("ComposeRunStage(%s).Chunks = %#v, want %#v", label, got.Chunks, wantChunks)
+	}
+	if got.Bundle != wantBundle {
+		t.Errorf("ComposeRunStage(%s).Bundle = %q, want %q", label, got.Bundle, wantBundle)
+	}
+	if !reflect.DeepEqual(got.Freshness, wantFreshness) {
+		t.Errorf("ComposeRunStage(%s).Freshness = %#v, want %#v", label, got.Freshness, wantFreshness)
+	}
+	if !reflect.DeepEqual(got.Claims, wantClaims) {
+		t.Errorf("ComposeRunStage(%s).Claims = %#v, want %#v", label, got.Claims, wantClaims)
+	}
 }
 
 func TestRunStageNarrationMatchesCanonicalRolesAndPeopleClause(t *testing.T) {

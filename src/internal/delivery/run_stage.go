@@ -2,6 +2,8 @@ package delivery
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -42,6 +44,10 @@ type RunStageComposition struct {
 	Rules  []steering.RuleContent
 	Chunks [][]steering.RuleContent
 	Bundle string
+	// Freshness binds the returned directive and rule bundle to the fresh inputs.
+	Freshness steering.ContinuationFreshness
+	// Claims contains the initial continuation claims when rules require chunks.
+	Claims steering.ContinuationClaims
 }
 
 var (
@@ -51,7 +57,11 @@ var (
 	// ErrUnsupportedConsumeProvenance indicates that a missing required input
 	// cannot be explained by an auditable conditional skip.
 	ErrUnsupportedConsumeProvenance = errors.New("delivery: unsupported consume provenance")
+	// ErrDirectiveTooLarge indicates that the complete directive exceeds the wire cap.
+	ErrDirectiveTooLarge = errors.New("delivery: directive exceeds byte limit")
 )
+
+const maxRunStageDirectiveBytes = 28 * 1024
 
 // ComposeRunStage reads the active selection and graph for one identity-bound
 // run-stage composition. Caller-owned roots remain open and are never closed.
@@ -169,11 +179,73 @@ func ComposeRunStage(ctx context.Context, input RunStageInput) (RunStageComposit
 	if err != nil {
 		return RunStageComposition{}, fmt.Errorf("compose run-stage: build wire: %w", err)
 	}
+	if len(wire) > maxRunStageDirectiveBytes {
+		return RunStageComposition{}, fmt.Errorf(
+			"compose run-stage: directive is %d bytes, limit is %d: %w",
+			len(wire),
+			maxRunStageDirectiveBytes,
+			ErrDirectiveTooLarge,
+		)
+	}
+	routeHash, err := catalog.RouteHash(stage.Slug, next.State.Scope())
+	if err != nil {
+		return RunStageComposition{}, fmt.Errorf("compose run-stage: hash route: %w", err)
+	}
+	directiveDigest := sha256.Sum256(wire)
+	directiveHash := hex.EncodeToString(directiveDigest[:])
+	stateDigest := sha256.Sum256(next.Content)
+	stateHash := hex.EncodeToString(stateDigest[:])
+	freshnessStateHash := stateHash
+	freshness := steering.ContinuationFreshness{
+		Stage:         stage.Slug,
+		Scope:         next.State.Scope(),
+		Bundle:        bundle,
+		DirectiveHash: directiveHash,
+		RouteHash:     routeHash,
+		StateHash:     &freshnessStateHash,
+	}
+	claims := steering.ContinuationClaims{}
+	if len(chunks) != 0 {
+		nextStage, err := nextStageName(next.State.NextStage(), catalog)
+		if err != nil {
+			return RunStageComposition{}, fmt.Errorf("compose run-stage: resolve continuation next stage: %w", err)
+		}
+		claimStateHash := stateHash
+		claimNextStage := cloneRunStageString(nextStage)
+		swarmSettled := false
+		claims = steering.ContinuationClaims{
+			Version:       1,
+			Stage:         stage.Slug,
+			Scope:         next.State.Scope(),
+			NextPart:      1,
+			Bundle:        bundle,
+			DirectiveHash: directiveHash,
+			RouteHash:     routeHash,
+			StateAware:    true,
+			Gate:          steering.GateTrue,
+			NextStage: steering.OptionalNullableString{
+				Present: true,
+				Value:   claimNextStage,
+			},
+			SwarmSettled: &swarmSettled,
+			StateHash:    &claimStateHash,
+		}
+	}
 	return RunStageComposition{
 		Directive: RunStageDirective{Kind: next.Kind(), Stage: stage},
 		Wire:      wire,
 		Rules:     rules,
 		Chunks:    chunks,
 		Bundle:    bundle,
+		Freshness: freshness,
+		Claims:    claims,
 	}, nil
+}
+
+func cloneRunStageString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
