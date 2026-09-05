@@ -1,7 +1,7 @@
 # 配置済み情報からcanonical run-stageをread-only構成する
 
 - 日付: 2026-09-05（Asia/Tokyo）
-- 状態: Accepted（知識供給の包括承認内）
+- 状態: Implemented（知識供給の包括承認内、Issue #109）
 - Issue: [#109](https://github.com/sori883/ai-dd/issues/109)
 - 実装許可: [ルール・知識のAI供給を個別承認なしで完了まで進める](2026-09-05-context-delivery-autonomous-authorization.md)
 - 基準: リポジトリ固定AI-DLC 2.6.123
@@ -278,3 +278,17 @@ first `load-steering`、継続ごとのfresh再構成、active-directive cursor 
 - 外部module、追加権限、新しい永続schema、新しい意図的差分が必要になる。
 
 通常のtest failure、実装bug、review findingは包括承認内で範囲を広げず修正する。
+
+## 実装記録
+
+2026-09-05に、計画したsliceを1振る舞いずつRED／GREENで実装した。固定AI-DLC 2.6.123のraw graph nodeと
+scope stage列からroute hashを作り、`delivery.ComposeRunStage`でfresh selection、既存`orchestrator.Next`、
+artifact分類、配置rule本文、knowledge roster、任意presentation、canonical wire、28 KiB上限、
+directive／route／state hash、deep ownershipを接続した。外部Go moduleと新しい意図的差分は追加していない。
+
+最後のfilesystem freshness testは、テスト追加前のproduction実装ですでに成功したため`ALREADY_GREEN`として
+受理した。同じcaller Rootを使ってrule本文、knowledge一覧、raw graph、valid state bytesを順に変更し、次回の
+構成結果へ反映されること、構成前後で対象入力の内容とmodeが変わらないこと、Rootがcloseされないことを確認した。
+
+この記録はcomposer内部APIの実装完了を示す。公開配信facade、継続tokenの一回限り消費、全rule受領後の
+`run-stage`公開、Codex receiverの実読込は、上記「後続Issueへ残す境界」に従い次のIssueで接続する。

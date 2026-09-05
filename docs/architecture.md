@@ -22,6 +22,8 @@ src/internal/steering (required rule resolution・fresh read・ordered delivery 
 
 src/internal/knowledge (persona・知識のordered rosterとpreflight)
 
+src/internal/delivery (配置済み情報からcanonical run-stageとfreshnessをread-only構成)
+
 src/internal/artifact (通常Stageのartifact path解決とrequired output presence query)
 
 src/internal/recordlock (record単位のcross-process lockとidentity-bound Guard)
@@ -61,6 +63,7 @@ src/internal/workspace
 - `src/internal/memory`: Memory root基準の`fs.FS`から`org.md`、`team.md`、`project.md`、`phases/<phase>.md`を固定順で読む4層source acquisitionと、取得済みsourceからsubstantiveなbundleを作る純粋なfilterを所有します。merge・override・frontmatter parseなどのworkflow判断、workspace path解決、Rootのopen/Closeは所有しません。実filesystemの呼出側は`os.Root.FS()`を渡し、readerはRootをCloseしません。
 - `src/internal/steering`: `ResolveRulePaths`でgraphの`rules_in_context`をactive Spaceの表示pathとProject/Memory別のFS相対読込pathへ純粋に解決し、`ReadResolvedRules`でcallerが貸し出す各`fs.FS`へ接続します。readerは順序付きpathを毎回読み、path検証、不正UTF-8のfail-closed、先頭BOM 1個の除去を行い、`memory.BuildBundle`で実質的な本文のないtemplateを除外して`RuleContent`を返します。`ChunkRules`は取得済み本文を順序付き配信単位へ分割し、`BundleDigest`と`MarshalLoad`は全本文のdigestと1 chunk分の`load-steering` JSONを純粋に組み立てます。`ReadOrCreateContinuationKey`はrecordまたはsession領域のprivate keyをfreshにread-or-createし、`EncodeContinuationToken`／`DecodeContinuationToken`はその32-byte keyで継続claimsを認証します。`AdvanceContinuation`はcaller提供の現在値を照合して次partまたは完了境界を返します。ルール選択、phase推測、sort、caller Rootのopen/Close、cursorの永続化、tokenの一回限り消費は所有しません。実filesystemの呼出側は`os.OpenRoot`で開いたRootまたは`Root.FS()`を渡します。
 - `src/internal/knowledge`: `BuildRoster`はcallerが渡す配置rootの`fs.FS`を借り、inline/mobのlead・supportに対応するpersona、framework共通知識・担当AI別知識、active Space共通知識・担当AI別知識を5群順で列挙します。各directoryはUTF-16 code-unit順の深さ優先で走査し、候補を毎回`fs.ReadFile`でUTF-8 preflightしてからMinimalとplugin metadataの選択、display pathのfirst-wins、JSONサイズ上限を適用します。`FrameworkDir`はplugin warningの表示専用で、rootの探索・open/Close、cwd・環境変数参照、本文の返却・cache・埋込みは行いません。実filesystemの呼出側は`.codex`とactive Space `knowledge`を`os.OpenRoot`で開き、RootのFSだけを渡します。
+- `src/internal/delivery`: `ComposeRunStage`はidentity-boundなproject／record Rootを借り、active Space・Intent、配置graph、保存state、artifact、knowledge roster、必須rule、任意のconductor personaを呼出しごとに読みます。既存`orchestrator.Next`が許可した通常Stageだけを、固定field順のcanonical `run-stage` JSON、rule chunks、bundle、directive／route／state hashと継続claimsへまとめます。28 KiB超過、selection不一致、必須rule異常、説明不能な欠落consumeはzero resultで停止します。Rootや配置fileを変更・closeせず、token署名、cursor、publication、receiverによる本文読込、Stage実行は所有しません。
 - `src/internal/artifact`: 通常Stageの成果物語彙をIntent record root相対pathへ解決する純粋なqueryと、record root基準の`fs.FS`からrequired outputの存在を確認するread-only queryを所有します。graph順のproducer解決、orphan fallback、条件付きconsume、宣言順、固定filename例外、metadata/FS input errorを扱います。per-unit・CodeKB配置、record prefix、workspace source、state/audit/approval/lock/clock、成果物の内容読取り、Root lifecycleは所有しません。
 
 - `src/internal/recordlock`: canonical project path・space・intentからrecord identityを作り、system temp配下のhashed lock directoryを`mkdir`で有限回取得します。owner token/PID/start時刻を保存し、token一致時だけ自身のlockをreleaseします。`Guard`はidentityとheld状態を束縛し、nested処理へ明示的に渡します。context cancel、owner mismatch、callback/release errorのjoin、panic後のreleaseを扱います。stale ownerの自動reap、workflow判断、Root lifecycleは所有しません。
@@ -272,6 +275,29 @@ metadata由来のPathは開きません。Minimalの対象表があるframework�
 実filesystemではcallerが`os.OpenRoot`の`Root.FS()`を渡します。readerはRootをcloseせず、編集は次回呼出しへ
 反映します。開発用`src/core/`やRAMは実行時のfallback・直接参照先ではありません。固定AI-DLC 2.6.123との
 比較範囲、UTF-16順の承認済み差分、残余リスクは[工程・担当AIに応じて配置知識ファイルを選択する計画](ram/decisions/2026-09-04-knowledge-roster-plan.md)を参照してください。
+
+## Run-stage composition（内部API）
+
+`delivery.ComposeRunStage`は、既存のread-only部品を一つのAI向け工程指示へ接続します。入力は現在の
+project／recordを表すidentityとcaller-owned Rootです。実装は利用先の`.codex/`、
+`aidlc/spaces/<active>/`、record内の`aidlc-state.md`だけを呼出しごとに読み、開発用`src/core/`、
+埋込み本文、永続cacheへfallbackしません。
+
+```text
+active Space・Intent ─┐
+配置graph・scope grid ├─ ComposeRunStage ─┬─ canonical run-stage JSON
+保存state・artifacts ┤                    ├─ rule本文のchunksとbundle
+配置rules・knowledge ┘                    └─ directive／route／state freshness
+```
+
+`run-stage` JSONは工程、担当agent、knowledge・工程手順・成果物・ruleの表示pathと、本家2.6.123で
+必要な補助fieldを固定順で持ちます。knowledge本文、工程Markdown本文、成果物本文は埋め込まず、最終receiverが
+配置信頼境界から読むためのpathだけを渡します。必須rule本文は先行する`load-steering`用chunksに保持します。
+
+rule本文の変更はbundleを、knowledge一覧の変更はdirective hashを、raw graphの変更はroute hashを、保存stateの
+byte変更はstate hashを変えます。複数fileをまたぐ原子的snapshotは保証せず、後続の継続処理が再構成後のhashを
+照合して途中変更を拒否します。composer自体はkey、cursor、state、audit、配置Markdownを作成・更新しません。
+詳細なfield、容量、失敗条件と本家確認範囲は[run-stage composition計画](ram/decisions/2026-09-05-run-stage-composition-plan.md)を参照してください。
 
 ## 手動DI
 
