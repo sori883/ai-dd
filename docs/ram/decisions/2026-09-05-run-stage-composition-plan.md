@@ -304,6 +304,11 @@ canonicalizerへ置換した。固定2.6.123 goldenとgraph package testも維�
 新しい`delivery` filesystem integration testは、既存CIのcontent integration stepへ接続した。これにより、
 ローカルfinalだけでなく、後続変更のGitHub checksでも配置Markdownのfresh readとread-only境界を継続確認する。
 
+最初のGitHub push checkでは、固定distribution golden testがgit管理外のローカル`docs/配布_ai-dlc/`を
+直接読んでいたため、fresh checkoutで失敗した。production codeは変更せず、固定2.6.123の対象nodeと
+`mvp`実行routeだけを`route_test.go`内の自己完結fixtureへ移し、同じ独立goldenと失敗時shuffle seedで
+再確認した。このfixtureはtest binaryだけに入り、runtimeが利用先配置を毎回読む境界は変更しない。
+
 最後のfilesystem freshness testは、テスト追加前のproduction実装ですでに成功したため`ALREADY_GREEN`として
 受理した。同じcaller Rootを使ってrule本文、knowledge一覧、raw graph、valid state bytesを順に変更し、次回の
 構成結果へ反映されること、構成前後で対象入力の内容とmodeが変わらないこと、Rootがcloseされないことを確認した。

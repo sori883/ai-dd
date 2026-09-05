@@ -1,9 +1,7 @@
 package graph
 
 import (
-	"os"
-	"path/filepath"
-	"runtime"
+	"encoding/json"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -20,6 +18,37 @@ const routeScopeGridJSON = `{"mvp":{"stages":{"raw-stage":"EXECUTE","later-stage
 const routeScopeGridChangedJSON = `{"mvp":{"stages":{"raw-stage":"EXECUTE","later-stage":"SKIP"}}}`
 const routeScopeGridWithDisabledJSON = `{"mvp":{"stages":{"raw-stage":"EXECUTE","later-stage":"EXECUTE","disabled-stage":"EXECUTE"}}}`
 
+const fixedIntentCaptureNodeJSON = `{"slug":"intent-capture","number":"1.1","name":"Intent Capture & Framing","phase":"ideation","execution":"ALWAYS","condition":"First stage of every workflow — establishes the initiative's foundation","lead_agent":"aidlc-product-agent","support_agents":["aidlc-architect-agent"],"mode":"inline","produces":["intent-statement","stakeholder-map","intent-capture-questions"],"consumes":[],"requires_stage":[],"sensors":["claim-sources","required-sections","upstream-coverage"],"scopes":["enterprise","feature","mvp","poc"],"reviewer":"aidlc-product-lead-agent","review_artifact":"intent-statement","reviewer_max_iterations":2,"review_class":"advisory","summary_confirmation":"required","inputs":"Authoritative project description (project-description utility), scope selection","outputs":"intent-statement.md, stakeholder-map.md, intent-capture-questions.md (under this stage's record dir, engine-resolved)","rules_in_context":[{"path":"aidlc/spaces/default/memory/org.md","scope":"org"},{"path":"aidlc/spaces/default/memory/team.md","scope":"team"},{"path":"aidlc/spaces/default/memory/project.md","scope":"project"},{"path":"aidlc/spaces/default/memory/phases/ideation.md","scope":"phase"}],"sensors_applicable":[{"id":"claim-sources","path":".codex/sensors/aidlc-claim-sources.md","fire_on":"gate","default_severity":"advisory","category":"document-provenance","matches":"**/{aidlc-docs,intents}/**"},{"id":"required-sections","path":".codex/sensors/aidlc-required-sections.md","fire_on":"gate","default_severity":"advisory","category":"document-shape","matches":"**/{aidlc-docs,intents}/**"},{"id":"upstream-coverage","path":".codex/sensors/aidlc-upstream-coverage.md","fire_on":"gate","default_severity":"advisory","category":"document-shape","matches":"**/{aidlc-docs,intents}/**"}]}`
+
+var fixedDistributionRouteStages = []struct {
+	number string
+	slug   string
+}{
+	{number: "0.1", slug: "workspace-scaffold"},
+	{number: "0.2", slug: "workspace-detection"},
+	{number: "0.3", slug: "state-init"},
+	{number: "1.1", slug: "intent-capture"},
+	{number: "1.3", slug: "feasibility"},
+	{number: "1.4", slug: "scope-definition"},
+	{number: "1.6", slug: "rough-mockups"},
+	{number: "2.1", slug: "reverse-engineering"},
+	{number: "2.2", slug: "practices-discovery"},
+	{number: "2.3", slug: "requirements-analysis"},
+	{number: "2.4", slug: "user-stories"},
+	{number: "2.5", slug: "refined-mockups"},
+	{number: "2.6", slug: "domain-design"},
+	{number: "2.7", slug: "units-generation"},
+	{number: "2.8", slug: "contract-design"},
+	{number: "2.9", slug: "delivery-planning"},
+	{number: "3.1", slug: "functional-design"},
+	{number: "3.2", slug: "nfr-requirements"},
+	{number: "3.3", slug: "nfr-design"},
+	{number: "3.4", slug: "infrastructure-design"},
+	{number: "3.5", slug: "code-generation"},
+	{number: "3.6", slug: "build-and-test"},
+	{number: "3.7", slug: "ci-pipeline"},
+}
+
 func routeFixtureFS(stageNode, scopeGrid string) fstest.MapFS {
 	return fstest.MapFS{
 		"stage-graph.json": {Data: []byte("[" + stageNode + "," + routeLaterNodeJSON + "]")},
@@ -31,6 +60,68 @@ func routeFixtureWithDisabledStageFS() fstest.MapFS {
 	return fstest.MapFS{
 		"stage-graph.json": {Data: []byte("[" + routeTargetNodeJSON + "," + routeLaterNodeJSON + "," + routeDisabledNodeJSON + "]")},
 		"scope-grid.json":  {Data: []byte(routeScopeGridWithDisabledJSON)},
+	}
+}
+
+func fixedDistributionRouteFS(t *testing.T) fstest.MapFS {
+	t.Helper()
+	type fixtureStage struct {
+		Slug           string    `json:"slug"`
+		Number         string    `json:"number"`
+		Name           string    `json:"name"`
+		Phase          string    `json:"phase"`
+		Execution      string    `json:"execution"`
+		LeadAgent      string    `json:"lead_agent"`
+		SupportAgents  []string  `json:"support_agents"`
+		Mode           string    `json:"mode"`
+		Produces       []string  `json:"produces"`
+		Consumes       []Consume `json:"consumes"`
+		RequiresStages []string  `json:"requires_stage"`
+	}
+	type fixtureScope struct {
+		Stages map[string]Action `json:"stages"`
+	}
+
+	nodes := make([]json.RawMessage, 0, len(fixedDistributionRouteStages))
+	actions := make(map[string]Action, len(fixedDistributionRouteStages))
+	for _, stage := range fixedDistributionRouteStages {
+		actions[stage.slug] = ActionExecute
+		if stage.slug == "intent-capture" {
+			nodes = append(nodes, json.RawMessage(fixedIntentCaptureNodeJSON))
+			continue
+		}
+		node, err := json.Marshal(fixtureStage{
+			Slug:           stage.slug,
+			Number:         stage.number,
+			Name:           stage.slug,
+			Phase:          "fixture",
+			Execution:      "ALWAYS",
+			LeadAgent:      "fixture-agent",
+			SupportAgents:  []string{},
+			Mode:           "inline",
+			Produces:       []string{},
+			Consumes:       []Consume{},
+			RequiresStages: []string{},
+		})
+		if err != nil {
+			t.Fatalf("json.Marshal(fixed stage %q) error = %v", stage.slug, err)
+		}
+		nodes = append(nodes, node)
+	}
+
+	stageGraph, err := json.Marshal(nodes)
+	if err != nil {
+		t.Fatalf("json.Marshal(fixed stage graph) error = %v", err)
+	}
+	scopeGrid, err := json.Marshal(map[string]fixtureScope{
+		"mvp": {Stages: actions},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal(fixed scope grid) error = %v", err)
+	}
+	return fstest.MapFS{
+		"stage-graph.json": {Data: stageGraph},
+		"scope-grid.json":  {Data: scopeGrid},
 	}
 }
 
@@ -215,12 +306,7 @@ func TestSnapshotRouteHashRejectsUnknownRoute(t *testing.T) {
 	t.Run("fixed distribution golden", func(t *testing.T) {
 		const want = "b2b7deca926d64c0e55225db06e10e202c06ac6f0c26f759070f825146525d23"
 
-		_, filename, _, ok := runtime.Caller(0)
-		if !ok {
-			t.Fatal("runtime.Caller(0) failed")
-		}
-		dataRoot := filepath.Join(filepath.Dir(filename), "..", "..", "..", "docs", "配布_ai-dlc", ".codex", "tools", "data")
-		fixedSnapshot, err := Load(os.DirFS(dataRoot))
+		fixedSnapshot, err := Load(fixedDistributionRouteFS(t))
 		if err != nil {
 			t.Fatalf("Load(fixed distribution) error = %v", err)
 		}
