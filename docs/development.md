@@ -1260,3 +1260,29 @@ go test -count=1 -run '^TestDelivery(Next|Continue|RejectsStale|PublishesRunStag
 go test -count=1 -run '^TestRun(Next|Continue)' ./src/internal/cli
 go test -tags=integration -count=1 -run '^TestDeliveryJourney$' ./src/cmd/aidlc
 ```
+
+## Codex receiver context reader
+
+配布用receiverの正本は`src/harness/codex/skills/aidlc/SKILL.md`です。fresh projectでは、これを
+`.agents/skills/aidlc/SKILL.md`へbyte-identicalに配置し、同じsandboxを`--project-dir`へ渡せる単一built `aidlc`をPATHの先頭へ
+一時的に置きます。receiverは`aidlc next --project-dir .`から開始し、`load-steering`の全`rules_content`を順序どおりに保持して
+opaque tokenで直ちにcontinueします。
+
+`run-stage`を受けた後のread順は、全`inline_context_paths`、`stage_file`、存在する全`consumes`です。各pathは一覧や存在確認で
+代用せず、本文全体を読みます。`context_warnings`は表示しても対象pathを省略しません。通常呼出しで全readが成功したときは
+`context ready`だけを返します。callerが検証用machine-readable read receiptの要求とoutput schemaを明示した場合だけ、
+そのschemaに従うreceiptだけを返して停止します。どちらでもStage実行、成果物作成、review・sensor、report、人間承認は行いません。
+unknown directive、read failure、path境界違反はfail-closedで停止します。
+
+通常のloopで使用する確認は次のとおりです。
+
+```sh
+go test -count=1 ./src/harness/codex/skills/aidlc
+go test -tags=integration -count=1 -run '^TestCodexReceiverFreshPlacementJourney$' ./src/cmd/aidlc
+go test -tags=integration -count=1 -run '^TestCodexReceiverReadsDeliveredContext$' ./src/cmd/aidlc
+```
+
+最後のtestは`AIDLC_CODEX_EXEC_LIVE=1`がない場合に明示skipします。live `codex exec`は外部model利用とcredential境界を伴うため、
+環境変数なしのloopでは実行せず、receipt成功を記録しません。live時のreceiptは`--output-last-message`で専用temporary fileから読み、
+`rules`では各`rules_content`の最後の非空行を順序どおり、`inline_context`／`stage_file`／`consumes`では全本文を照合します。stdout/stderrは失敗診断に限ります。
+実装・受入条件・後続Stage境界は[Codex receiverの計画](ram/decisions/2026-09-05-codex-receiver-read-plan.md)を参照してください。

@@ -1378,3 +1378,25 @@ space/intentからidentity、project Root、record Rootを安全に解決しま�
 `next`/`continue`はsyntax errorをstderr/exit 2、internal/I/O failureをstdout空・stderr/exit 1、
 invalid/stale workflowを改行付き単一`{"kind":"error","message":"..."}` stdout/exit 0へ分類します。
 この公開経路は通常の単一built binaryからも利用できます。
+
+## Codex receiverによる配信本文の読込
+
+Issue #115の配布用receiver sourceは`src/harness/codex/skills/aidlc/SKILL.md`に置き、利用先のrepository
+rootでは`.agents/skills/aidlc/SKILL.md`へ明示配置します。一般installerや既存環境の更新はこの段階に含めません。
+receiverはPATH上の単一built binaryへ`aidlc next --project-dir .`を呼び、`load-steering`の全`rules_content`を配列順に
+保持して、各`continue_token`を一つのopaque引数として直ちに継続します。rule途中の進捗・reportは返しません。
+
+`run-stage`では`context_warnings`を表示してもreadを省略せず、全`inline_context_paths`を最初に本文まで読み切ってから
+`stage_file`、最後に存在する全`consumes`を配列順に本文まで読みます。通常呼出しで全readが成功したときのreceiver応答は
+`context ready`だけです。callerが検証目的でmachine-readableなread receiptの要求とoutput schemaを明示した場合に限り、
+そのschemaが要求するreceiptだけを返して停止します。どちらの場合もStage実行、成果物、review・sensor、report、人間承認へ
+進みません。unknown directive、malformed directive、path外参照、read failureはfail-closedで停止します。
+
+通常の構造testはfrontmatter、PATH command、directive順序、opaque token、context-only境界を検査します。repository外のfresh
+sandbox testはsource skillのbyte-identical配置、複数rule chunkからの複数continue、rule本文の全文と順序、inline→stage→consumeのsentinel順を検査します。
+live `codex exec --ephemeral` receipt testは`AIDLC_CODEX_EXEC_LIVE=1`のときだけ実行する設計であり、専用temporary fileへ
+`--output-last-message`で保存したreceiptを検査します。receiptの`rules`は各`rules_content`の最後の非空行だけを順序どおり照合し、
+inline／stage／consumeは全本文を照合します。stdout/stderrは失敗診断に限ります。現在のnon-live loopでは明示skipとなるため、
+live receiptの成否を実装済みとは扱いません。詳細な受入条件、promptへ期待値・pathを渡さない制約、credentialを
+扱わない境界、Stage実行を後続へ残す理由は[Codex receiverで配信本文を実読込する計画](ram/decisions/2026-09-05-codex-receiver-read-plan.md)
+を参照してください。

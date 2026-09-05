@@ -239,3 +239,23 @@ commit、Go/OS/architecture、sandbox、binary size・SHA-256、各commandのexi
 `go test -count=1 -run '^TestDelivery(Next|Continue|RejectsStale|PublishesRunStage)' ./src/internal/delivery`、
 `go test -count=1 -run '^TestRun(Next|Continue)' ./src/internal/cli`、
 `go test -tags=integration -count=1 -run '^TestDeliveryJourney$' ./src/cmd/aidlc`で再現できる。
+
+## Codex receiver context-read scenario
+
+repository外のfresh sandboxへ、配布用`SKILL.md`を`.agents/skills/aidlc/SKILL.md`としてbyte-identicalに配置し、single built
+`aidlc`を一時PATHへ加える。テストは`crypto/rand`でrule、lead／support persona、stage file、consume本文のsentinelを生成し、
+複数partの`load-steering`を全てcontinueしてから`run-stage`を受け取る。directiveに宣言されたinline pathを全件先に読み、次に
+stage file、最後にexisting consumeを本文まで読む順序と、rule本文のpart順復元を検査する。Stage実行や成果物作成は行わない。
+
+```sh
+go test -count=1 ./src/harness/codex/skills/aidlc
+go test -tags=integration -count=1 -run '^TestCodexReceiverFreshPlacementJourney$' ./src/cmd/aidlc
+go test -tags=integration -count=1 -run '^TestCodexReceiverReadsDeliveredContext$' ./src/cmd/aidlc
+```
+
+`TestCodexReceiverReadsDeliveredContext`は`AIDLC_CODEX_EXEC_LIVE=1`がない通常loopで明示skipする。通常呼出しの成功応答は
+`context ready`だが、live testは検証用machine-readable read receiptの要求とoutput schemaを明示したcallerとして、live時だけ
+`codex exec --ephemeral`を一度だけ起動し、`--output-last-message`の専用temporary receipt fileからJSON receiptを読み、各`rules_content`の最後の非空行を順番どおり照合し、inline／stage／consumeは全本文と順序を厳密照合する。stdout/stderrは失敗診断に限る。どちらの応答形式でも
+Stage実行や成果物作成へ進まない。live commandを実行していない状態では成功とは記録しない。promptにsentinelやpathを埋め込まず、
+credentialを読み取らず、unknown directive・read failureではfail-closedで止める。installer/update、review・sensor、report、人間承認、
+full lifecycleはこのscenarioの対象外である。

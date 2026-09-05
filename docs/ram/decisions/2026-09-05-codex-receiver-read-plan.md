@@ -1,7 +1,7 @@
 # Codex receiverで配信本文を実読込する
 
 - 日付: 2026-09-05（Asia/Tokyo）
-- 状態: Accepted（知識供給の包括承認内、Issue #115）
+- 状態: Accepted（non-live実装・loop検証済み、live receipt・独立review・final検証待ち。Issue #115）
 - 対応Issue: [#115 Codex receiverで配信本文を実読込する](https://github.com/sori883/ai-dd/issues/115)
 - 実装許可: [ルール・知識のAI供給を個別承認なしで完了まで進める](2026-09-05-context-delivery-autonomous-authorization.md)
 - 前提: [Codex向け配信transactionと公開next／continueを接続する](2026-09-05-delivery-publication-plan.md)
@@ -17,8 +17,8 @@ PR #114で、Go単一binaryの`aidlc next`／`aidlc continue <token>`が、必�
 本Issueでは、Codexがrepoから発見できる`aidlc` skillの配布用sourceを追加する。fresh projectへ
 Go binaryとskillを明示配置したとき、Codexは全rule chunkを蓄積してから、`run-stage`が示す
 `inline_context_paths`を全て先に読み切り、その後に`stage_file`と存在する全`consumes`を本文まで読む。
-これにより、ファイル名の列挙ではなく、予測不能な本文sentinelをCodexの最終応答で再現できるところまでを
-「Codexへの配信・実読込」の完了条件とする。
+これにより、ファイル名の列挙ではなく、予測不能なrule本文の最後の非空行sentinelと、inline／stage／consume本文をCodexの
+最終応答で再現できるところまでを「Codexへの配信・実読込」の完了条件とする。
 
 ## 実装許可と作業順から決まる境界
 
@@ -41,7 +41,7 @@ Stage完了を装わず停止する。これは段階的実装の境界であり
   `stage_file`と`consumes`を読む。pathの存在確認や一覧取得は本文読込の代わりにならない。
 - OpenAI Docsは、Codexがrepository rootの`.agents/skills`を走査し、`SKILL.md`の`name`と`description`で
   明示・暗黙にskillを選び、選択後に本文全体を読むことを定める。
-- `codex exec`は非対話実行で最終agent messageをstdoutへ出せるため、fresh projectでの実読込証拠を自動検査できる。
+- `codex exec`は非対話実行で`--output-last-message`へ最終agent messageを書けるため、fresh projectでの実読込証拠を専用receipt fileから自動検査できる。stdout/stderrは失敗診断に限る。
 
 ## 設計
 
@@ -65,8 +65,10 @@ fresh E2Eではbuild済みbinaryを一時projectの専用`bin`へ置き、その
 2. `error`はmessageを示して停止し、fresh `next`等をreceiver判断で自動再試行しない。
 3. `run-stage`は、全`inline_context_paths`を最初のfile read群として本文まで読み、全結果を待つ。
 4. inline読込完了後だけ`stage_file`を本文まで読み、続いて`consumes`を配列順で全て本文まで読む。
-5. いずれかの必須readが失敗したら停止し、Stage実行・artifact生成・reportを行わない。全read成功時も
-   context readyだけを報告し、Stage完了や人間承認を主張しない。
+5. いずれかの必須readが失敗したら停止し、Stage実行・artifact生成・reportを行わない。通常呼出しの全read成功時は
+   `context ready`だけを報告し、Stage完了や人間承認を主張しない。callerが検証用machine-readable read receiptの要求と
+   output schemaを明示した場合だけ、そのschemaが要求するreceiptだけを返して停止する。この例外もStage実行・artifact生成・
+   report・review・人間承認へ進む許可にはならない。
 6. 未対応directive kindを推測で実行せず、安全に停止する。
 
 `context_warnings`は読込前に利用者へ示すが、warningだけを理由にpathを省略しない。保持したrule本文は、
@@ -82,9 +84,11 @@ integration testはrepository外のfresh projectを作り、source skillを正�
 実行ごとに`crypto/rand`で作る別々のsentinelを置き、公開CLIがそれらのpathだけを順序付きで返すことを検査する。
 
 live test `TestCodexReceiverReadsDeliveredContext`は`AIDLC_CODEX_EXEC_LIVE=1`のときだけ、既存の
-`codex exec --ephemeral`を1回起動する。promptにはexpected sentinel値やfile pathを渡さず、repo skillとdirectiveに
-従って得た本文だけから、rule／inline／stage／consume別のJSON receiptを返させる。全sentinelの完全一致で、
-Codexが本文を実際に読んだ証拠とする。環境変数がない通常CIでは明示skipし、credentialを読取・複製しない。
+`codex exec --ephemeral`を1回起動する。live promptは検証用machine-readable read receiptの要求とoutput schemaを明示するため、
+通常の`context ready`ではなくschemaに従うreceiptだけを返させる。promptにはexpected sentinel値やfile pathを渡さず、repo skillとdirectiveに
+従って得た本文だけから、`rules`には各ruleの最後の非空行を順序どおり、`inline_context`／`stage_file`／`consumes`には全本文を含むJSON
+receiptを返させ、`--output-last-message`で専用temporary receipt fileへ保存する。rule sentinelと全context本文の順序・完全一致で、Codexが
+本文を実際に読んだ証拠とする。環境変数がない通常CIでは明示skipし、credentialを読取・複製しない。
 
 `codex exec`は外部model利用量を消費し得るため、包括承認から認証情報・有料serviceの許可を推測しない。
 実装と非live検証を完了した後、live commandを実行する直前にユーザーへ1回だけ明示確認する。
@@ -114,12 +118,26 @@ Codexが本文を実際に読んだ証拠とする。環境変数がない通常
      directiveの全context pathを順序付きsentinelへ解決できることを確認する。
    - `go test -tags=integration -count=1 -run '^TestCodexReceiverFreshPlacementJourney$' ./src/cmd/aidlc`
 3. `live-gated-read-receipt`
-   - 環境変数なしでは明示skipし、環境変数ありでは`codex exec` 1回から全sentinel一致receiptを得る。
+   - 環境変数なしでは明示skipし、環境変数ありでは`codex exec` 1回からrule sentinelと全context本文の順序一致receiptを得る。
    - 非live loop: `go test -tags=integration -count=1 -run '^TestCodexReceiverReadsDeliveredContext$' ./src/cmd/aidlc`
    - live gate承認後: `AIDLC_CODEX_EXEC_LIVE=1 go test -tags=integration -count=1 -run '^TestCodexReceiverReadsDeliveredContext$' ./src/cmd/aidlc`
 
 work unit末尾では上記non-live test、影響package test、変更Go fileの`gofmt`、skill validator、
 `git diff --check`を実行する。loop中に全package、race、vet、cross compileを繰り返さない。
+
+## 実装記録（work unit loop）
+
+`work_unit_id=codex-receiver-context-read`の3 sliceを、単独writerで順番に実装した。`receiver-skill-contract`では未配置
+`SKILL.md`を読むtestがREDとなり、frontmatter、PATH command、rule順序、opaque token、run-stageのread順、fail-closed、
+context-only境界を定めたsource追加後にGREENとなった。`fresh-placement-journey`ではrepository外fresh projectへsourceを
+byte-identical配置し、`crypto/rand` sentinel付きの複数rule chunkをcontinueして、inline persona全件→stage file→consumeの
+順で本文を照合するtestがGREENとなった。rule本文は全文をfresh journeyで照合し、live receiptでは各ruleの最後の非空行sentinelだけを返す。
+
+`live-gated-read-receipt`では、外部model利用とcredential境界を越えないため、`AIDLC_CODEX_EXEC_LIVE`が`1`でない場合に
+明示skipするtestだけを追加した。通常呼出しは全read後に`context ready`だけを返し、live promptのようにcallerが検証用receiptと
+schemaを明示した場合だけschemaに従うreceiptを返す限定例外をSKILLへ記録した。loop実行はskipでexit 0となり、実際の`codex exec`は
+実行していない。したがってlive receiptの成功、Codexが本文を実読込したこと、Stage実行の成功は本記録では主張しない。live実行は
+計画記載の明示確認後に別途行う。
 
 ## 独立reviewとfinal検証
 
@@ -144,7 +162,7 @@ final後に対象fileが変わった場合は証拠をstaleとし、targeted loo
 - 配布用sourceが公式・固定本家と同じrepo discovery先へ配置でき、一般installerなしのfresh projectで発見される。
 - Codexが全`load-steering`本文をpart順に保持し、最終partまで`run-stage`処理を始めない。
 - Codexが全inline contextを先に、次にstage file、最後に全existing consumeを本文まで読む。
-- file名だけでなく、promptから予測不能なrule／inline／stage／consume sentinelをlive receiptが完全一致で返す。
+- file名だけでなく、promptから予測不能なruleの最後の非空行sentinelを順序どおり、inline／stage／consume本文を完全一致でlive receiptが返す。
 - 読込・directive failureではStage実行、artifact生成、report、approvalへ進まず、成功時もStage完了を主張しない。
 - user環境、credential、既存skillを変更せず、外部Go moduleと新しい意図的な本家差分を追加しない。
 - 独立review、fresh final、現在headのGitHub checks後にmergeし、Issueをcloseする。
@@ -152,5 +170,5 @@ final後に対象fileが変わった場合は証拠をstaleとし、targeted loo
 ## リスクとrollback
 
 最大のリスクは、skillがpath一覧を読込済みと誤認すること、rule途中でStage処理へ進むこと、未対応Stage実行を
-有効化することである。本文sentinelのlive receipt、blockingな二段階read順、未知kind／read failure停止で抑える。
+有効化することである。rule sentinelとcontext本文のlive receipt、blockingな二段階read順、未知kind／read failure停止で抑える。
 問題時はreceiver sourceと専用test／docsをrevertでき、PR #114のGo配信facadeや永続cursor migrationは不要である。
