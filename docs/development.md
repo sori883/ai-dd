@@ -1282,7 +1282,9 @@ report、人間承認は行いません。unknown directive、read failure、pat
 `inline_context`はinline fileごとの全chunk連結本文、`stage_file`はstage fileの全chunk連結本文、
 `consumes`はconsume fileごとの全chunk連結本文です。file本文は`slot/index/part`順で連結し、末尾改行を省略しません。
 source fileは新しい公開size capなしで、open直後sizeを上限とする固定512-byte bufferの2-pass streamからdigest、UTF-8、実part数、要求partだけを計算し、
-pass間digest／size／part数とdescriptor／最終pathのidentity・size・mtimeを照合します。token envelope／claimsはcanonical再encodeとのbyte一致も要求します。
+pass間digest／size／part数とdescriptor／最終pathのidentity・size・mtimeを照合します。全targetのslot／index／path／digest／parts／size／mtimeも
+domain-separated plan-wide commitmentへ含め、各開始／継続で再計算するため、境界tokenから将来fileを差し替えたsuccessorを再発行しません。
+token envelope／claimsはcanonical再encodeとのbyte一致も要求します。
 Unix nonblocking openの対象build tagはAIX、Android、Darwin、DragonFly、FreeBSD、Illumos、iOS、Linux、NetBSD、OpenBSD、Solarisです。
 継続token用keyは`steering.ReadContinuationKey`のread-only APIで毎回読み、既存lifecycleと同じ4 KiB+1 bounded read、canonical base64url、
 ECMAScript whitespace、regular non-symlink境界を共有します。read-contextはkeyやsession directoryを作成・変更しません。

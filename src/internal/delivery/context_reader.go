@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -34,6 +35,8 @@ const contextReadChunkBytes = 512
 const contextReadStreamBufferBytes = contextReadChunkBytes
 
 const contextReadTokenDomain = "ai-dd/read-context/v1\x00"
+
+const contextReadPlanCommitmentDomain = "ai-dd/read-context-plan/v1\x00"
 
 // ContextReadSlot identifies the source group of a context file.
 type ContextReadSlot string
@@ -121,6 +124,22 @@ type contextReadSnapshot struct {
 	ModTime time.Time
 }
 
+type contextReadPlanRecord struct {
+	Slot          ContextReadSlot `json:"slot"`
+	Index         int             `json:"index"`
+	Path          string          `json:"path"`
+	ContentSHA256 string          `json:"content_sha256"`
+	Parts         int             `json:"parts"`
+	Size          int64           `json:"size"`
+	ModTimeUnix   int64           `json:"mod_time_unix"`
+}
+
+type contextReadPlanSnapshot struct {
+	Current    contextReadSnapshot
+	Records    []contextReadPlanRecord
+	Commitment string
+}
+
 type contextReadTokenClaims struct {
 	Version        int    `json:"v"`
 	GenerationID   string `json:"a"`
@@ -138,6 +157,7 @@ type contextReadTokenClaims struct {
 	ContentSHA256  string `json:"c"`
 	Size           int64  `json:"z"`
 	ModTimeUnix    int64  `json:"m"`
+	PlanCommitment string `json:"q"`
 }
 
 type contextReadTokenEnvelope struct {
@@ -211,7 +231,7 @@ func readContextWithGuard(ctx context.Context, guard *recordlock.Guard, input Ru
 	if err != nil {
 		return ContextReadResult{}, err
 	}
-	return readContextAt(ctx, input, plan, 0, 1, nil, "", 0, 0, 0)
+	return readContextAt(ctx, input, plan, 0, 1, nil, "", "", 0, 0, 0)
 }
 
 func continueContextWithGuard(ctx context.Context, guard *recordlock.Guard, input RunStageInput, token string) (ContextReadResult, error) {
@@ -258,7 +278,7 @@ func continueContextWithGuard(ctx context.Context, guard *recordlock.Guard, inpu
 	if targetIndex < 0 {
 		return ContextReadResult{}, fmt.Errorf("continue context: token target is not in current plan: %w", ErrContextReadToken)
 	}
-	return readContextAt(ctx, input, plan, targetIndex, claims.Part, key, claims.ContentSHA256, claims.Size, claims.ModTimeUnix, claims.Parts)
+	return readContextAt(ctx, input, plan, targetIndex, claims.Part, key, claims.PlanCommitment, claims.ContentSHA256, claims.Size, claims.ModTimeUnix, claims.Parts)
 }
 
 func preflightContextAbsent(absents []contextReadAbsent) error {
@@ -319,7 +339,7 @@ func addContextReadTarget(plan *contextReadPlan, slot ContextReadSlot, index int
 	return nil
 }
 
-func readContextAt(ctx context.Context, input RunStageInput, plan contextReadPlan, targetIndex, part int, key []byte, expectedDigest string, expectedSize, expectedModTime int64, expectedParts int) (ContextReadResult, error) {
+func readContextAt(ctx context.Context, input RunStageInput, plan contextReadPlan, targetIndex, part int, key []byte, expectedPlanCommitment, expectedDigest string, expectedSize, expectedModTime int64, expectedParts int) (ContextReadResult, error) {
 	if err := contextReadContext(ctx); err != nil {
 		return ContextReadResult{}, err
 	}
@@ -336,9 +356,13 @@ func readContextAt(ctx context.Context, input RunStageInput, plan contextReadPla
 			return ContextReadResult{}, fmt.Errorf("read context: %s %q changed before read: %w", target.Slot, target.Path, ErrContextReadFileChanged)
 		}
 	}
-	snapshot, err := readContextSnapshot(ctx, target.Root, target.RelativePath, part)
+	planSnapshot, err := readContextPlanSnapshot(ctx, plan, targetIndex, part)
 	if err != nil {
-		return ContextReadResult{}, fmt.Errorf("read context: %s %q: %w", target.Slot, target.Path, err)
+		return ContextReadResult{}, err
+	}
+	snapshot := planSnapshot.Current
+	if expectedPlanCommitment != "" && expectedPlanCommitment != planSnapshot.Commitment {
+		return ContextReadResult{}, fmt.Errorf("read context: plan content or metadata changed: %w", ErrContextReadFileChanged)
 	}
 	if expectedDigest != "" && (expectedDigest != snapshot.Digest || expectedSize != snapshot.Size || expectedModTime != snapshot.ModTime.UnixNano() || expectedParts != snapshot.Parts) {
 		return ContextReadResult{}, fmt.Errorf("read context: %s %q content or metadata changed: %w", target.Slot, target.Path, ErrContextReadFileChanged)
@@ -355,7 +379,7 @@ func readContextAt(ctx context.Context, input RunStageInput, plan contextReadPla
 				return ContextReadResult{}, err
 			}
 		}
-		claims, err := contextReadTokenForNext(ctx, plan, input, target, snapshot, nextTargetIndex, nextPart)
+		claims, err := contextReadTokenForNext(plan, input, planSnapshot, nextTargetIndex, nextPart)
 		if err != nil {
 			return ContextReadResult{}, err
 		}
@@ -458,6 +482,58 @@ func readContextContinuationKey(projectRoot, recordRoot *os.Root) ([]byte, error
 		return nil, fmt.Errorf("read context: continuation key: %w: %w", ErrContextReadToken, err)
 	}
 	return key, nil
+}
+
+func readContextPlanSnapshot(ctx context.Context, plan contextReadPlan, currentIndex, currentPart int) (contextReadPlanSnapshot, error) {
+	if currentIndex < 0 || currentIndex >= len(plan.Targets) || currentPart < 1 {
+		return contextReadPlanSnapshot{}, fmt.Errorf("read context: plan cursor is invalid: %w", ErrContextReadToken)
+	}
+	if err := contextReadContext(ctx); err != nil {
+		return contextReadPlanSnapshot{}, err
+	}
+	commitment := sha256.New()
+	_, _ = commitment.Write([]byte(contextReadPlanCommitmentDomain))
+	records := make([]contextReadPlanRecord, 0, len(plan.Targets))
+	var current contextReadSnapshot
+	for index, target := range plan.Targets {
+		if err := contextReadContext(ctx); err != nil {
+			return contextReadPlanSnapshot{}, err
+		}
+		requestedPart := 0
+		if index == currentIndex {
+			requestedPart = currentPart
+		}
+		snapshot, err := readContextSnapshot(ctx, target.Root, target.RelativePath, requestedPart)
+		if err != nil {
+			return contextReadPlanSnapshot{}, fmt.Errorf("read context: %s %q: %w", target.Slot, target.Path, err)
+		}
+		record := contextReadPlanRecord{
+			Slot:          target.Slot,
+			Index:         target.Index,
+			Path:          target.Path,
+			ContentSHA256: snapshot.Digest,
+			Parts:         snapshot.Parts,
+			Size:          snapshot.Size,
+			ModTimeUnix:   snapshot.ModTime.UnixNano(),
+		}
+		recordBytes, err := json.Marshal(record)
+		if err != nil {
+			return contextReadPlanSnapshot{}, fmt.Errorf("read context: marshal plan record: %w", err)
+		}
+		var recordLength [8]byte
+		binary.BigEndian.PutUint64(recordLength[:], uint64(len(recordBytes)))
+		_, _ = commitment.Write(recordLength[:])
+		_, _ = commitment.Write(recordBytes)
+		records = append(records, record)
+		if index == currentIndex {
+			current = snapshot
+		}
+	}
+	return contextReadPlanSnapshot{
+		Current:    current,
+		Records:    records,
+		Commitment: hex.EncodeToString(commitment.Sum(nil)),
+	}, nil
 }
 
 type contextReadStreamPass struct {
@@ -664,11 +740,15 @@ func marshalContextReadResult(result ContextReadResult) ([]byte, error) {
 	return data, nil
 }
 
-func contextReadTokenForNext(ctx context.Context, plan contextReadPlan, input RunStageInput, current contextReadTarget, snapshot contextReadSnapshot, targetIndex, part int) (contextReadTokenClaims, error) {
-	if targetIndex < 0 || targetIndex >= len(plan.Targets) {
+func contextReadTokenForNext(plan contextReadPlan, input RunStageInput, planSnapshot contextReadPlanSnapshot, targetIndex, part int) (contextReadTokenClaims, error) {
+	if targetIndex < 0 || targetIndex >= len(plan.Targets) || targetIndex >= len(planSnapshot.Records) {
 		return contextReadTokenClaims{}, fmt.Errorf("read context: next target is invalid: %w", ErrContextReadToken)
 	}
 	target := plan.Targets[targetIndex]
+	record := planSnapshot.Records[targetIndex]
+	if record.Slot != target.Slot || record.Index != target.Index || record.Path != target.Path || record.Parts < 1 || record.ContentSHA256 == "" || planSnapshot.Commitment == "" {
+		return contextReadTokenClaims{}, fmt.Errorf("read context: next target snapshot is invalid: %w", ErrContextReadToken)
+	}
 	claims := contextReadTokenClaims{
 		Version:        1,
 		ProjectSHA256:  plan.ProjectSHA256,
@@ -682,22 +762,12 @@ func contextReadTokenForNext(ctx context.Context, plan contextReadPlan, input Ru
 		Index:          target.Index,
 		Part:           part,
 		Path:           target.Path,
+		PlanCommitment: planSnapshot.Commitment,
+		Parts:          record.Parts,
+		ContentSHA256:  record.ContentSHA256,
+		Size:           record.Size,
+		ModTimeUnix:    record.ModTimeUnix,
 	}
-	if targetIndex == contextReadTargetIndex(plan.Targets, string(current.Slot), current.Index) {
-		claims.Parts = snapshot.Parts
-		claims.ContentSHA256 = snapshot.Digest
-		claims.Size = snapshot.Size
-		claims.ModTimeUnix = snapshot.ModTime.UnixNano()
-		return claims, nil
-	}
-	nextSnapshot, err := readContextSnapshot(ctx, target.Root, target.RelativePath, 0)
-	if err != nil {
-		return contextReadTokenClaims{}, fmt.Errorf("read context: snapshot next path %q: %w", target.Path, err)
-	}
-	claims.Parts = nextSnapshot.Parts
-	claims.ContentSHA256 = nextSnapshot.Digest
-	claims.Size = nextSnapshot.Size
-	claims.ModTimeUnix = nextSnapshot.ModTime.UnixNano()
 	return claims, nil
 }
 
@@ -780,7 +850,7 @@ func validateContextReadToken(claims contextReadTokenClaims, input RunStageInput
 	if claims.Version != 1 || claims.GenerationID == "" || claims.GenerationID != plan.GenerationID || claims.ProjectSHA256 != plan.ProjectSHA256 || claims.Space != input.Identity.Space() ||
 		claims.Intent != input.Identity.Intent() || claims.MarkerRevision != plan.MarkerRevision ||
 		claims.WireSHA256 != plan.WireSHA256 || claims.Stage != plan.Stage || claims.Part < 1 || claims.Parts < 1 ||
-		claims.Index < 1 || claims.Path == "" || claims.ContentSHA256 == "" {
+		claims.Index < 1 || claims.Path == "" || claims.ContentSHA256 == "" || claims.PlanCommitment == "" {
 		return fmt.Errorf("continue context: token binding mismatch: %w", ErrContextReadToken)
 	}
 	targetIndex := contextReadTargetIndex(plan.Targets, claims.Slot, claims.Index)

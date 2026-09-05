@@ -1402,8 +1402,9 @@ malformed directive、path外参照、read failureはfail-closedで停止しま�
 verification receiptのschema意味はskillが定義し、`rules`は受領順の各`rules_content` entryの末尾非空行、
 `inline_context`はinline fileごとの全chunk連結本文、`stage_file`はstage fileの全chunk連結本文、`consumes`はconsume fileごとの
 全chunk連結本文を表します。file本文は`slot/index/part`順で連結し、末尾改行を保持します。source fileは新しい公開size capなしで、open直後sizeを
-上限とする固定512-byte bufferの2-pass streamからdigest、UTF-8、実part数、要求partだけを計算し、cross-file content／metadataをtokenへbindします。
-token envelope／claimsはcanonical再encodeとのbyte一致も要求します。read token keyは既存steering lifecycleの4 KiB+1 bounded readと
+上限とする固定512-byte bufferの2-pass streamからdigest、UTF-8、実part数、要求partだけを計算し、全targetのslot／index／path／digest／parts／size／mtimeを
+domain-separated plan-wide commitmentとしてtokenへbindします。各開始／継続で同じcommitmentを再計算するため、境界tokenから将来fileを差し替えた
+successorを再発行せず、source本文全体は保持しません。token envelope／claimsはcanonical再encodeとのbyte一致も要求します。read token keyは既存steering lifecycleの4 KiB+1 bounded readと
 ECMAScript whitespace canonicalizationを共有するread-only APIから取得し、read-contextはkeyやsession directoryを変更しません。
 
 通常の構造testはfrontmatter、PATH command、directive順序、opaque token、context-only境界を検査します。repository外のfresh

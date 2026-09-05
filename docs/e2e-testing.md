@@ -248,7 +248,8 @@ repository外のfresh sandboxへ、配布用`SKILL.md`を`.agents/skills/aidlc/S
 `read_continue_token`だけを反復し、inline context全件、stage file、existing consumeの順序、UTF-8 chunk境界、8192 bytes制限、
 全本文の復元を検査する。stage・consume本文にも予測不能なBEGIN/MIDDLE/ENDを含め、stage本文には実行時だけ
 project rootの`stage-execution-canary.txt`へrandom sentinelを書く明示指示を置く。source fileには新しい公開size capを設けず、open直後sizeを上限とする
-固定512-byte bufferの2-pass streamでdigest、UTF-8、実part数、要求partだけを計算する。read-context前後はdirectory mtimeを無視して
+固定512-byte bufferの2-pass streamでdigest、UTF-8、実part数、要求partだけを計算する。全targetのslot／index／path／digest／parts／size／mtimeを
+plan-wide commitmentへ含め、boundary tokenの継続時に再計算して将来fileの差し替えrebaseを拒否する。read-context前後はdirectory mtimeを無視して
 regular fileのmode/bodyをsnapshot比較し、non-live fresh journeyはtransport fileを含め、live transport比較だけはrecord-rootの正確な
 `.aidlc-active-directive.json`と`.aidlc-steering-token-key`の2 slash pathを除外する。
 state、audit、artifact、新規canaryが変わらず、Stage実行や成果物作成へ進まないことを確認する。

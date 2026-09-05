@@ -3,6 +3,8 @@ package delivery
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -333,6 +335,121 @@ func TestReadContextRejectsCrossFileContentChangeWithRestoredMetadata(t *testing
 	}
 }
 
+func TestReadContextBoundaryTokenDoesNotRebaseAfterFutureChanges(t *testing.T) {
+	t.Run("unchanged replay is identical", func(t *testing.T) {
+		fixture, _ := newOrderedContextFixture(t)
+		input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+		if _, err := Next(context.Background(), input); err != nil {
+			t.Fatalf("Next() error = %v", err)
+		}
+		boundary := readContextFirstFilePreFinalToken(t, input)
+		first, err := ContinueContext(context.Background(), input, boundary)
+		if err != nil {
+			t.Fatalf("ContinueContext(boundary token) error = %v", err)
+		}
+		replay, err := ContinueContext(context.Background(), input, boundary)
+		if err != nil {
+			t.Fatalf("ContinueContext(replayed boundary token) error = %v", err)
+		}
+		if !reflect.DeepEqual(first, replay) {
+			t.Fatalf("same boundary-token replay = %#v, want %#v", replay, first)
+		}
+	})
+
+	t.Run("next target change is rejected", func(t *testing.T) {
+		fixture, _ := newOrderedContextFixture(t)
+		input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+		if _, err := Next(context.Background(), input); err != nil {
+			t.Fatalf("Next() error = %v", err)
+		}
+		boundary := readContextFirstFilePreFinalToken(t, input)
+		if _, err := ContinueContext(context.Background(), input, boundary); err != nil {
+			t.Fatalf("ContinueContext(first boundary replay) error = %v", err)
+		}
+		supportPath := filepath.Join(fixture.identity.ProjectPath(), ".codex", "agents", "aidlc-architect-agent.md")
+		replaceContextReadFilePreservingMetadata(t, supportPath, []byte("changed support\n"))
+		if _, err := ContinueContext(context.Background(), input, boundary); err == nil || !errors.Is(err, ErrContextReadFileChanged) {
+			t.Fatalf("ContinueContext(next target changed) error = %v, want ErrContextReadFileChanged", err)
+		}
+	})
+
+	t.Run("third target change cannot rebase from earlier boundary", func(t *testing.T) {
+		fixture, _ := newOrderedContextFixture(t)
+		input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+		if _, err := Next(context.Background(), input); err != nil {
+			t.Fatalf("Next() error = %v", err)
+		}
+		boundary := readContextFirstFilePreFinalToken(t, input)
+		middle, err := ContinueContext(context.Background(), input, boundary)
+		if err != nil {
+			t.Fatalf("ContinueContext(boundary token) error = %v", err)
+		}
+		if middle.Slot != ContextReadSlotInline || middle.Index != 1 || middle.Part != middle.Parts || middle.ReadContinueToken == "" {
+			t.Fatalf("boundary result = %#v, want final first inline chunk with successor token", middle)
+		}
+		middleToken := middle.ReadContinueToken
+		if _, err := ContinueContext(context.Background(), input, middleToken); err != nil {
+			t.Fatalf("ContinueContext(middle successor) error = %v", err)
+		}
+		stagePath := filepath.Join(fixture.identity.ProjectPath(), ".codex", "aidlc-common", "stages", "ideation", "intent-capture.md")
+		replaceContextReadFilePreservingMetadata(t, stagePath, []byte("changed stage\n"))
+		if _, err := ContinueContext(context.Background(), input, middleToken); err == nil || !errors.Is(err, ErrContextReadFileChanged) {
+			t.Fatalf("ContinueContext(successor token after third target change) error = %v, want ErrContextReadFileChanged", err)
+		}
+	})
+}
+
+func readContextFirstFilePreFinalToken(t *testing.T, input RunStageInput) string {
+	t.Helper()
+	result, err := ReadContext(context.Background(), input)
+	if err != nil {
+		t.Fatalf("ReadContext() error = %v", err)
+	}
+	if result.Parts < 2 {
+		t.Fatalf("first inline file parts = %d, want at least two for boundary replay test", result.Parts)
+	}
+	for result.Slot != ContextReadSlotInline || result.Index != 1 || result.Part != result.Parts-1 {
+		if result.Complete {
+			t.Fatal("context stream completed before issuing the first-file pre-final token")
+		}
+		if result.ReadContinueToken == "" {
+			t.Fatal("incomplete context result has no continuation token")
+		}
+		result, err = ContinueContext(context.Background(), input, result.ReadContinueToken)
+		if err != nil {
+			t.Fatalf("ContinueContext() while locating first-file boundary token: %v", err)
+		}
+	}
+	if result.ReadContinueToken == "" {
+		t.Fatal("pre-final chunk of the first file has no continuation token")
+	}
+	return result.ReadContinueToken
+}
+
+func replaceContextReadFilePreservingMetadata(t *testing.T, name string, replacement []byte) {
+	t.Helper()
+	original, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", name, err)
+	}
+	if len(original) != len(replacement) {
+		t.Fatalf("replacement size = %d, want %d for %q", len(replacement), len(original), name)
+	}
+	if bytes.Equal(original, replacement) {
+		t.Fatalf("replacement for %q unexpectedly matches original", name)
+	}
+	info, err := os.Stat(name)
+	if err != nil {
+		t.Fatalf("Stat(%q): %v", name, err)
+	}
+	if err := os.WriteFile(name, replacement, info.Mode().Perm()); err != nil {
+		t.Fatalf("WriteFile(%q): %v", name, err)
+	}
+	if err := os.Chtimes(name, info.ModTime(), info.ModTime()); err != nil {
+		t.Fatalf("Chtimes(%q): %v", name, err)
+	}
+}
+
 type boundedContextReadFile struct {
 	contextReadFile
 	maximum int
@@ -472,25 +589,136 @@ func TestReadContextRejectsNonCanonicalTokenEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeString(read token): %v", err)
 	}
-	var envelope map[string]json.RawMessage
+	var envelope contextReadTokenEnvelope
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		t.Fatalf("json.Unmarshal(read envelope): %v", err)
 	}
-	envelope["unknown"] = json.RawMessage(`"unexpected"`)
-	withUnknown, err := json.Marshal(envelope)
+	key, err := readContextContinuationKey(fixture.projectRoot, fixture.recordRoot)
 	if err != nil {
-		t.Fatalf("json.Marshal(unknown envelope): %v", err)
+		t.Fatalf("readContextContinuationKey(): %v", err)
 	}
-	withUnknownToken := base64.RawURLEncoding.EncodeToString(withUnknown)
-	if _, err := ContinueContext(context.Background(), input, withUnknownToken); err == nil || !errors.Is(err, ErrContextReadToken) {
-		t.Fatalf("ContinueContext(unknown outer field) error = %v, want ErrContextReadToken", err)
+
+	cases := []struct {
+		name  string
+		build func() string
+	}{
+		{
+			name: "unknown outer field",
+			build: func() string {
+				modified := map[string]json.RawMessage{
+					"p":       envelope.Payload,
+					"m":       json.RawMessage(quoteJSONForTest(t, envelope.MAC)),
+					"unknown": json.RawMessage(`"unexpected"`),
+				}
+				return encodeContextReadTokenEnvelopeForTest(t, modified)
+			},
+		},
+		{
+			name: "duplicate outer field",
+			build: func() string {
+				duplicate := append([]byte(`{"p":`), envelope.Payload...)
+				duplicate = append(duplicate, []byte(`,"m":`)...)
+				macJSON, _ := json.Marshal(envelope.MAC)
+				duplicate = append(duplicate, macJSON...)
+				duplicate = append(duplicate, []byte(`,"m":`)...)
+				duplicate = append(duplicate, macJSON...)
+				duplicate = append(duplicate, '}')
+				return base64.RawURLEncoding.EncodeToString(duplicate)
+			},
+		},
+		{
+			name: "unknown claims field with valid MAC",
+			build: func() string {
+				payload := appendJSONField(t, envelope.Payload, `,"unknown":true`)
+				return signContextReadPayloadForTest(t, key, payload)
+			},
+		},
+		{
+			name: "duplicate claims field with valid MAC",
+			build: func() string {
+				payload := appendJSONField(t, envelope.Payload, `,"v":1`)
+				return signContextReadPayloadForTest(t, key, payload)
+			},
+		},
+		{
+			name: "noncanonical outer base64",
+			build: func() string {
+				return base64.RawURLEncoding.EncodeToString(raw) + "="
+			},
+		},
+		{
+			name: "noncanonical MAC base64",
+			build: func() string {
+				macBytes, err := base64.RawURLEncoding.DecodeString(envelope.MAC)
+				if err != nil {
+					t.Fatalf("DecodeString(MAC): %v", err)
+				}
+				modified := contextReadTokenEnvelope{Payload: envelope.Payload, MAC: base64.URLEncoding.EncodeToString(macBytes)}
+				encoded, err := json.Marshal(modified)
+				if err != nil {
+					t.Fatalf("json.Marshal(noncanonical MAC envelope): %v", err)
+				}
+				return base64.RawURLEncoding.EncodeToString(encoded)
+			},
+		},
+		{
+			name: "outer whitespace",
+			build: func() string {
+				withWhitespace := append([]byte{' '}, raw...)
+				withWhitespace = append(withWhitespace, '\n')
+				return base64.RawURLEncoding.EncodeToString(withWhitespace)
+			},
+		},
 	}
-	withWhitespace := append([]byte{' '}, raw...)
-	withWhitespace = append(withWhitespace, '\n')
-	withWhitespaceToken := base64.RawURLEncoding.EncodeToString(withWhitespace)
-	if _, err := ContinueContext(context.Background(), input, withWhitespaceToken); err == nil || !errors.Is(err, ErrContextReadToken) {
-		t.Fatalf("ContinueContext(noncanonical outer whitespace) error = %v, want ErrContextReadToken", err)
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if _, err := ContinueContext(context.Background(), input, testCase.build()); err == nil || !errors.Is(err, ErrContextReadToken) {
+				t.Fatalf("ContinueContext(%s) error = %v, want ErrContextReadToken", testCase.name, err)
+			}
+		})
 	}
+}
+
+func quoteJSONForTest(t *testing.T, value string) []byte {
+	t.Helper()
+	quoted, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("json.Marshal(%q): %v", value, err)
+	}
+	return quoted
+}
+
+func encodeContextReadTokenEnvelopeForTest(t *testing.T, envelope map[string]json.RawMessage) string {
+	t.Helper()
+	encoded, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatalf("json.Marshal(token envelope): %v", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(encoded)
+}
+
+func appendJSONField(t *testing.T, payload []byte, field string) []byte {
+	t.Helper()
+	if len(payload) == 0 || payload[len(payload)-1] != '}' {
+		t.Fatalf("token payload = %q, want JSON object", payload)
+	}
+	modified := append([]byte(nil), payload[:len(payload)-1]...)
+	modified = append(modified, field...)
+	modified = append(modified, '}')
+	return modified
+}
+
+func signContextReadPayloadForTest(t *testing.T, key, payload []byte) string {
+	t.Helper()
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write([]byte(contextReadTokenDomain))
+	_, _ = mac.Write(payload)
+	envelope := contextReadTokenEnvelope{Payload: payload, MAC: base64.RawURLEncoding.EncodeToString(mac.Sum(nil))}
+	encoded, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatalf("json.Marshal(signed token envelope): %v", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(encoded)
 }
 
 type contextReadTreeEntry struct {

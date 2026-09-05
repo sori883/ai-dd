@@ -78,7 +78,7 @@ live E2Eで切捨てなく全partを受け取れることを検証する。よ�
 3. project、space、intent、state、marker revision、現在のwire digestをmarkerへ照合する。
 4. 全fileを開く前に`consumes_absent`を検査する。`expected:false`が一つでもあれば停止し、
    `expected:true`は予定された不在として読込対象から外す。
-5. Go側がtokenに拘束された次のslot／file／partを一つだけ選び、安全に全文を読む。
+5. Go側がtokenに拘束された次のslot／file／partを一つだけ出力対象として選び、全targetを安全に再検証しつつ要求chunkだけを保持する。
 6. 出力直前にmarkerを再読し、revision、kind、wire digestが変わっていないことを確認する。
 
 現在の新規active markerは`ResultSHA256`を省略する場合があるため、配信facadeは新規／継続いずれのpublicationでも
@@ -87,9 +87,12 @@ canonical wireのdigestとresult revisionを記録する。既存のdigestなし
 
 read tokenは既存record private keyからdomain-separated HMACで認証し、project、space、intent、marker revision、
 wire digest、publicationごとの`ActiveAttempt.ID` generation、Stage、次slot／file／part、対象fileのcontent digest、実part数、
-size、mtimeを拘束する。publication generationはmarker schemaを拡張せず、crypto/randの32 bytesをhex化して新規publicationごとに
-更新する。token envelopeとclaimsはdecode/auth後にcanonical再encodeとのbyte一致を要求し、unknown／duplicate／非canonical表現を拒否する。
-tokenはopaqueで永続化しない。
+size、mtimeを拘束する。さらに全targetを順序どおりに表すdomain-separated plan-wide content／metadata commitment（token claimsの`q`）を
+伝播する。各開始／継続では全targetを2-pass streamで再検証し、slot、index、path、digest、parts、size、mtimeから同じcommitmentを
+再計算するため、file境界の旧tokenから将来targetを差し替えたsuccessorを再発行できない。同一tokenの無変更replayだけが同じchunkと
+successorを返す。source本文や全file snapshotは保持せず、要求中の最大512 bytesだけを保持し、複数file全体のatomic snapshotは主張しない。
+publication generationはmarker schemaを拡張せず、crypto/randの32 bytesをhex化して新規publicationごとに更新する。token envelopeとclaimsは
+decode/auth後にcanonical再encodeとのbyte一致を要求し、unknown／duplicate／非canonical表現を拒否する。tokenはopaqueで永続化しない。
 
 ## file安全性
 
@@ -102,8 +105,9 @@ tokenはopaqueで永続化しない。
   NetBSD、OpenBSD、Solarisを対象とし、Windows／その他の対象OSはbuild-tag別の
   標準ライブラリ実装にする。
 - bind mountは`os.Root`だけでは防げないため、利用者が管理するproject mountを信頼境界とする。
-- 複数file全体のatomic snapshotは作らない。各chunkでfresh directiveを再検証し、同一fileの複数chunkは
-  content digestで変更を検出する。
+- 複数file全体のatomic snapshotは作らない。各chunkでfresh directiveを再検証し、各targetを2-pass streamで走査して
+  slot／index／path／content digest／parts／size／mtimeのplan-wide commitmentを再計算する。tokenのcommitmentと一致しない
+  将来fileの変更も、境界tokenのsuccessorを発行する前に拒否する。本文全体は保持せず、要求chunkだけを保持する。
 
 ## skillとE2Eの修正
 
@@ -130,6 +134,9 @@ non-live修正、独立review、対象差分の安定後、Codex account利用�
 - 理由: 必須入力欠落、symlink escape、読込中の差替えをLLMへの注意書きではなく決定論的に拒否するため。
 - 影響: Codexは任意pathを読めず、bounded JSONをtokenで反復する。Stage内容や順序は変えず、より厳しく停止する。
 - 確認範囲: リポジトリ固定snapshot 2.6.123の配置済みCodex skillと分析索引。最新upstreamとの一致は未確認。
+- marker generationの意図的差分（本家比較）: 固定本家AI-DLC 2.6.123はsessionless publicationを`id:"sessionless"`で生成し、generic publicationではsettled attemptを保持する。
+- 採用する挙動: 本実装は既存`ActiveAttempt.ID` fieldをpublicationごとの`crypto/rand` opaque generationとして更新し、read plan／tokenへbindする。理由は、同じrevisionでmarkerを削除してfresh recoveryした際に旧read tokenを復活させないためである。
+- 影響と互換性: marker observerはIDからsessionやownerを推測せず、opaqueなpublication generationとして扱う。marker schemaのfield追加やmigrationは行わない。
 
 ## 単独writer所有権
 
@@ -260,6 +267,7 @@ go test -count=1 -run 'Test(Next|Continue|ReadContext).*' ./src/internal/deliver
 go test -count=1 -run 'TestReadContext.*Absent' ./src/internal/delivery
 go test -count=1 -run 'TestReadContext.*(Order|Chunk|Token|Replay|Change)' ./src/internal/delivery
 go test -count=1 -run 'TestReadContext.*(File|Symlink|Race|FIFO|UTF)' ./src/internal/delivery
+go test -count=1 -run '^TestReadContextBoundaryTokenDoesNotRebaseAfterFutureChanges$' ./src/internal/delivery
 go test -count=1 -run 'Test.*ReadContext' ./src/internal/cli ./src/cmd/aidlc
 go test -count=1 ./src/harness/codex/skills/aidlc
 env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run '^TestCodexReceiver(FreshPlacementJourney|ReadsDeliveredContext)$' ./src/cmd/aidlc
@@ -280,6 +288,13 @@ active directiveへ拘束されたGo `read-context`からのみ返す。理由�
 照合した。固定512-byte bufferの2-pass streamへ移行し、要求partだけを保持してsource file全体の複製を廃止した。publicationごとに
 crypto/rand 32-byteの`ActiveAttempt.ID`を更新し、read plan／token／開始・継続・出力直前marker検証へbindした。token envelopeとclaimsの
 canonical再encode一致によりunknown／duplicate／whitespace／非canonical base64表現をfail-closedにした。
+
+再レビュー修正`work_unit_id=codex-safe-context-read-boundary-replay-repair`では、file A最終partの境界tokenを同じ入力でreplayして
+応答とsuccessorの完全同値を確認し、次fileまたは第三targetを同size／mtimeへ戻した別本文へ差し替えた場合は
+`ErrContextReadFileChanged`となる回帰testを先行して追加し、実装前は第三target変更subtestが`nil`を返す意図したREDを確認した。readerは各開始／継続で全targetをbounded 2-pass streamし、本文を保持せず
+slot／index／path／digest／parts／size／mtimeのplan-wide commitmentをHMAC tokenへ伝播して比較する。これにより一file lookaheadの
+再帰的なrebase経路を閉じ、同一tokenの無変更replayだけを許可する。canonical token testはouter／claimsのunknown・duplicate field、
+outer／MACの非canonical base64、outer whitespaceをtableで直接検査し、production変更なしでALREADY_GREENを確認した。
 
 read-context成功と代表的失敗は、marker／keyを含むproject regular fileのmodeとbody snapshotでread-onlyを直接観測する。non-live fresh journeyも
 transport 2 fileをsnapshotへ含め、live比較だけは正確なrecord-rootの2 slash pathを除外する。Unix nonblocking build tagはAIX、Android、Darwin、
