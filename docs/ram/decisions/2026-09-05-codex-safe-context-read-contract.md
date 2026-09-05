@@ -1,7 +1,7 @@
 # Codexのcontext読込をGoの安全境界へ移す
 
 - 日付: 2026-09-05（Asia/Tokyo）
-- 状態: In Progress（実装済み・独立review修正中。未merge／compact receipt repair後live未実施）
+- 状態: In Progress（実装済み・独立review修正中。未merge／互換modelでのlive再実行未実施）
 - 対応Issue: [#115 Codex receiverで配信本文を実読込する](https://github.com/sori883/ai-dd/issues/115)
 - 置換対象: [Codex receiverで配信本文を実読込する](2026-09-05-codex-receiver-read-plan.md)のshell直接読込、
   live prompt、短いfixtureに関する設計
@@ -253,8 +253,8 @@ projectへskillをbyte-identical配置し、予測不能で複数chunkのcontext
 各fileの全chunkを連結した全文を表す。live promptはskill invocationと定義済みreceipt/schema要求だけへ縮小し、routing、読込順、stop、
 canaryの指示を重ねない。fixtureのstage・consumeは予測不能なBEGIN/MIDDLE/ENDを持ち、stage実行時だけproject rootの
 `stage-execution-canary.txt`へrandom sentinelを書き込む明示指示を含めた。live前後snapshotはdirectory mtimeを無視してregular fileの
-mode/bodyだけを比較し、transport上必要な`.aidlc-active-directive.json`と`.aidlc-steering-token-key`だけを除外する。Codex liveはこのrepair後
-未実施で、環境変数なしのintegration testはskipする。
+mode/bodyだけを比較し、transport上必要な`.aidlc-active-directive.json`と`.aidlc-steering-token-key`だけを除外する。この時点ではCodex liveは
+未実施で、環境変数なしのintegration testはskipしていた。
 
 追加repair `work_unit_id=codex-live-compact-receipt-repair`では、長大な本文をCodexの生成出力へ再掲させないため、verification-only schemaが
 `files`をrequiredにした場合のcompact proofを定義した。配信順の各fileは`slot`、`index`、`parts`、`content_sha256`、
@@ -266,8 +266,19 @@ mode/bodyだけを比較し、transport上必要な`.aidlc-active-directive.json
 2026-09-06（HEAD `1b09812c71ba392a00da91bca6d638c8e4b3da16`）に、承認済みのlive commandを1回だけ実行した。約265秒後、schema decode、
 rule sentinel照合、live前後のregular-file snapshot不変、`stage-execution-canary.txt`不在は成功したが、約22.6 KiBの全context本文をreceiptへ
 再掲させる旧exact comparisonのうち、約16.2 KiBのinline本文比較が失敗し、stage／consume assertionへは到達しなかった。non-live fresh journeyは同じ`read-context`出力を
-全byte復元して既に成功していたため、reader本体ではなくlive oracleの長大出力が不安定だったと判断した。追加live実行は行わず、compact
-proofへ修正して環境変数unsetのskip可能なintegration testで検証する。
+全byte復元して既に成功していたため、reader本体ではなくlive oracleの長大出力が不安定だったと判断した。この時点では追加live実行を行わず、
+compact proofへ修正して環境変数unsetのskip可能なintegration testで検証した。
+
+その後、2026-09-06（HEAD `b5fbe7ce0f12810f61ef31f6f360212fc960d347`）に承認済みの2回目のlive attemptを、model overrideなしの旧commandで
+1回だけ実行した。実行argvは次の旧command（`<schemaPath>`と`<receiptPath>`だけはtemporary path）で、`--model`は含まない。
+`codex exec --ephemeral --skip-git-repo-check --sandbox workspace-write -c 'approval_policy="never"' --output-schema <schemaPath> --output-last-message <receiptPath> 'Use the $aidlc skill explicitly in the current project. Return only the verification read receipt defined by that skill, matching the supplied output schema.'`
+所要時間は4.39秒で、local `codex-cli 0.145.0`が設定model `gpt-6-astra`を未知としてfallback metadataへ渡し、APIから
+`gpt-6-astra requires a newer version of Codex`の400を返された。receipt decode、read assertion、regular-file snapshot、canary assertionへは
+到達せず、自動retryも行っていない。互換modelを実際に選ぶ判断と次のlive実行は親の別途確認に残す。
+
+このclient incompatibilityを回避するtest-only harness設定として、`AIDLC_CODEX_EXEC_MODEL`が空またはunsetなら従来どおり`--model`を付けず、
+非空ならtrimした値を`--model`直後の単一argvとして渡す。model名はhardcodeせず、製品read-context、public CLI、persisted data、skill receipt意味、
+Codex clientの更新・installer・permissionは変更しない。live commandがnonzeroでも、errorを報告する前にregular-file snapshot不変とStage canary不在を検査する。
 
 また、read-contextのcontinuation key取得は新設したread-only `steering.ReadContinuationKey`へ統合した。既存key lifecycleと同じ
 4 KiB+1 bounded read、regular non-symlink、UTF-8、ECMAScript whitespace trim、canonical unpadded base64url、exact 32-byte検証を再利用し、
@@ -293,6 +304,7 @@ go test -count=1 -run '^TestSkill.*(Verification|Compact).*$' ./src/harness/code
 env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run '^TestCodexReceiverLive(Receipt|Prompt|Command).*$' ./src/cmd/aidlc
 env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run '^TestCodexReceiver(CompactProof|FreshPlacementJourney|FixtureDefinesObservableStageCanary)$' ./src/cmd/aidlc
 env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run '^TestCodexReceiver(FreshPlacementJourney|RuleFixture.*|Fixture.*|StableSnapshot.*|LivePrompt|LiveCommand.*|LiveReceipt.*|CompactProof.*|ReadsDeliveredContext)$' ./src/cmd/aidlc
+env -u AIDLC_CODEX_EXEC_LIVE -u AIDLC_CODEX_EXEC_MODEL go test -tags=integration -count=1 -run '^TestCodexReceiverLive(Command|Model).*$' ./src/cmd/aidlc
 ```
 
 本家固定snapshot AI-DLC 2.6.123はdirective pathをCodex file／shell toolから直接読む。本実装は承認済み意図的差分として、同じ本文を

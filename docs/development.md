@@ -1305,10 +1305,14 @@ env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run '^TestCodex
 `rules`では各`rules_content`の最後の非空行を順序どおり照合します。schemaが`files`を要求する場合は7項目のcompact proofを照合し、
 従来schemaが`inline_context`／`stage_file`／`consumes`を要求する場合は全本文を照合します。stdout/stderrは失敗診断に限ります。
 live promptはskill invocationとこのverification receipt/schema要求だけに限定し、routing、読込順、stop、canaryの指示を重ねません。
+live harnessは任意のtest-only環境変数`AIDLC_CODEX_EXEC_MODEL`を受け付けます。値が空またはunsetなら従来どおり`--model`を渡さず、
+非空ならtrimした値を`--model`直後の単一argvとして渡します。model名はhardcodeせず、製品read-context、public CLI、persisted data、
+skill receipt意味、Codex clientの更新・installer・permissionは変更しません。live commandがnonzeroでも、errorを報告する前にregular-file
+snapshot不変とStage canary不在を検査します。
 fixtureは予測不能なBEGIN/MIDDLE/ENDをstage・consumeにも含め、stage本文の実行指示だけがproject rootの
 `stage-execution-canary.txt`へrandom sentinelを書けるようにします。liveの前後snapshotはdirectory mtimeを無視して
 regular fileのmode/bodyだけを比較します。non-live fresh journeyはtransport fileを含め、live transport比較だけはrecord-rootの正確な
 `.aidlc-active-directive.json`と`.aidlc-steering-token-key`の2 slash pathだけを除外します。
-このrepair後のlive実行は未実施であり、環境変数なしの通常loopでは明示skipします。実装・受入条件・後続Stage境界は
+互換modelでのlive再実行は未実施であり、環境変数なしの通常loopでは明示skipします。実装・受入条件・後続Stage境界は
 [Codex receiverの計画](ram/decisions/2026-09-05-codex-receiver-read-plan.md)と[安全なcontext読込契約](ram/decisions/2026-09-05-codex-safe-context-read-contract.md)
 を参照してください。

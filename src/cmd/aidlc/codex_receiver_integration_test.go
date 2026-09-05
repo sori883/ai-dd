@@ -494,6 +494,99 @@ func TestCodexReceiverLiveCommandIsRepositorySafeAndUsesReceiptFile(t *testing.T
 	}
 }
 
+func TestCodexReceiverLiveModelOverride(t *testing.T) {
+	model := "gpt-test --opaque-value"
+	tests := []struct {
+		name      string
+		unset     bool
+		value     string
+		wantModel string
+	}{
+		{name: "unset", unset: true},
+		{name: "empty", value: ""},
+		{name: "trimmed single argv", value: "  " + model + "  ", wantModel: model},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setCodexReceiverModelForTest(t, tt.unset, tt.value)
+			base := []string{
+				"exec",
+				"--ephemeral",
+				"--skip-git-repo-check",
+				"--sandbox", "workspace-write",
+				"-c", "approval_policy=\"never\"",
+				"--output-schema", "schema.json",
+				"--output-last-message", "receipt.json",
+				"prompt",
+			}
+			got := codexReceiverLiveCommandArgs(base)
+			want := append([]string(nil), base...)
+			if tt.wantModel != "" {
+				want = append(want[:2], append([]string{"--model", tt.wantModel}, want[2:]...)...)
+			}
+			if !equalStrings(got, want) {
+				t.Fatalf("command args = %#v, want %#v", got, want)
+			}
+		})
+	}
+}
+
+func TestCodexReceiverLiveCommandFailureChecksSafetyBeforeReportingError(t *testing.T) {
+	data, err := os.ReadFile("codex_receiver_integration_test.go")
+	if err != nil {
+		t.Fatalf("ReadFile(integration source): %v", err)
+	}
+	source := string(data)
+	start := strings.LastIndex(source, "func TestCodexReceiverReadsDeliveredContext")
+	end := strings.LastIndex(source, "type codexReceiverRule")
+	if start < 0 || end <= start {
+		t.Fatal("could not isolate live command implementation")
+	}
+	implementation := source[start:end]
+	errorIndex := strings.Index(implementation, `t.Fatalf("codex exec: %v`)
+	snapshotIndex := strings.Index(implementation, "if afterExec := receiverTreeSnapshotIgnoringTransport")
+	canaryIndex := strings.Index(implementation, "stage execution canary")
+	if errorIndex < 0 || snapshotIndex < 0 || canaryIndex < 0 {
+		t.Fatalf("live command is missing failure or safety checks: error=%d snapshot=%d canary=%d", errorIndex, snapshotIndex, canaryIndex)
+	}
+	if snapshotIndex > errorIndex {
+		t.Fatalf("stable snapshot check occurs after command error reporting: snapshot=%d error=%d", snapshotIndex, errorIndex)
+	}
+	if canaryIndex > errorIndex {
+		t.Fatalf("stage canary check occurs after command error reporting: canary=%d error=%d", canaryIndex, errorIndex)
+	}
+}
+
+func setCodexReceiverModelForTest(t *testing.T, unset bool, value string) {
+	t.Helper()
+	const name = "AIDLC_CODEX_EXEC_MODEL"
+	previous, hadPrevious := os.LookupEnv(name)
+	t.Cleanup(func() {
+		if hadPrevious {
+			_ = os.Setenv(name, previous)
+			return
+		}
+		_ = os.Unsetenv(name)
+	})
+	if unset {
+		_ = os.Unsetenv(name)
+		return
+	}
+	_ = os.Setenv(name, value)
+}
+
+func codexReceiverLiveCommandArgs(base []string) []string {
+	model := strings.TrimSpace(os.Getenv("AIDLC_CODEX_EXEC_MODEL"))
+	if model == "" || len(base) < 2 {
+		return base
+	}
+	args := make([]string, 0, len(base)+2)
+	args = append(args, base[:2]...)
+	args = append(args, "--model", model)
+	args = append(args, base[2:]...)
+	return args
+}
+
 func TestCodexReceiverReadsDeliveredContext(t *testing.T) {
 	if os.Getenv("AIDLC_CODEX_EXEC_LIVE") != "1" {
 		t.Skip("set AIDLC_CODEX_EXEC_LIVE=1 to run the live Codex receipt")
@@ -521,7 +614,7 @@ func TestCodexReceiverReadsDeliveredContext(t *testing.T) {
 	defer cancel()
 	prompt := codexReceiverLivePrompt
 	receiptPath := filepath.Join(t.TempDir(), "receiver-last-message.json")
-	commandArgs := []string{
+	commandArgs := codexReceiverLiveCommandArgs([]string{
 		"exec",
 		"--ephemeral",
 		"--skip-git-repo-check",
@@ -530,24 +623,25 @@ func TestCodexReceiverReadsDeliveredContext(t *testing.T) {
 		"--output-schema", schemaPath,
 		"--output-last-message", receiptPath,
 		prompt,
-	}
+	})
 	command := exec.CommandContext(ctx, "codex", commandArgs...)
 	command.Dir = fixture.Project
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 	beforeExec := receiverTreeSnapshotIgnoringTransport(t, fixture.Project)
-	if err := command.Run(); err != nil {
-		if ctx.Err() != nil {
-			t.Fatalf("codex exec timed out: %v", ctx.Err())
-		}
-		t.Fatalf("codex exec: %v\nstdout=%s\nstderr=%s", err, stdout.Bytes(), stderr.Bytes())
-	}
+	commandErr := command.Run()
 	if afterExec := receiverTreeSnapshotIgnoringTransport(t, fixture.Project); !reflect.DeepEqual(beforeExec, afterExec) {
 		t.Fatal("live Codex receiver changed project state, audit, artifact, canary, or another stable file")
 	}
 	if _, err := os.Stat(filepath.Join(fixture.Project, "stage-execution-canary.txt")); err == nil || !os.IsNotExist(err) {
 		t.Fatalf("stage execution canary = %v, want absent after live context read", err)
+	}
+	if commandErr != nil {
+		if ctx.Err() != nil {
+			t.Fatalf("codex exec timed out: %v", ctx.Err())
+		}
+		t.Fatalf("codex exec: %v\nstdout=%s\nstderr=%s", commandErr, stdout.Bytes(), stderr.Bytes())
 	}
 
 	receiptBytes, err := os.ReadFile(receiptPath)

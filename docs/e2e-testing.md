@@ -267,6 +267,8 @@ env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run '^TestCodex
 `context ready`だが、live testは検証用machine-readable read receiptの要求とoutput schemaを明示したcallerとして、live時だけ
 `codex exec --ephemeral`を一度だけ起動し、`--output-last-message`の専用temporary receipt fileからJSON receiptを読み、各`rules_content`の最後の非空行を順番どおり照合し、compact `files` schemaでは7項目のproofを、従来schemaではinline／stage／consumeの全本文を順序どおり厳密照合する。stdout/stderrは失敗診断に限る。どちらの応答形式でも
 Stage実行や成果物作成へ進まない。live promptはskill invocationと定義済みreceipt/schema要求だけを含み、routing・読込順・stop・canaryを
-補いません。通常CIではliveをskipし、このrepair後のlive実行は未実施です。promptにsentinelやpathを埋め込まず、credentialを読み取らず、
+補いません。live harnessは任意のtest-only環境変数`AIDLC_CODEX_EXEC_MODEL`を受け付け、空／unsetなら`--model`を省略し、非空ならtrimした値を
+単一argvとして`--model`直後へ渡します。model名はhardcodeせず、製品read-contextやCodex clientは変更しません。通常CIではliveをskipし、
+互換modelでのlive再実行は未実施です。promptにsentinelやpathを埋め込まず、credentialを読み取らず、
 unknown directive・read failureではfail-closedで止めます。installer/update、review・sensor、report、人間承認、
 full lifecycleはこのscenarioの対象外である。
