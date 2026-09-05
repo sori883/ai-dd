@@ -917,6 +917,76 @@ func TestActiveDirectiveAtomicWriteRejectsReplacedTemporary(t *testing.T) {
 	}
 }
 
+func TestActiveDirectiveAtomicWriteRejectsMutatedTemporary(t *testing.T) {
+	rootPath := t.TempDir()
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		t.Fatalf("OpenRoot(%q): %v", rootPath, err)
+	}
+	defer func() { _ = root.Close() }()
+	previous := minimalActiveDirectiveMarker()
+	if err := WriteActiveDirectiveMarker(root, previous); err != nil {
+		t.Fatalf("WriteActiveDirectiveMarker(previous): %v", err)
+	}
+	oldBytes, err := root.ReadFile(activeDirectiveMarkerName)
+	if err != nil {
+		t.Fatalf("ReadFile(previous): %v", err)
+	}
+	ops := systemActiveDirectiveOps()
+	var replacementPath string
+	ops.close = func(file *os.File) error {
+		before, err := file.Stat()
+		if err != nil {
+			return err
+		}
+		if err := file.Close(); err != nil {
+			return err
+		}
+		entries, err := os.ReadDir(rootPath)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if !strings.HasPrefix(entry.Name(), activeDirectiveMarkerName+".tmp-") {
+				continue
+			}
+			replacementPath = filepath.Join(rootPath, entry.Name())
+			if err := os.WriteFile(replacementPath, []byte("replacement"), 0o600); err != nil {
+				return err
+			}
+			after, err := os.Stat(replacementPath)
+			if err != nil {
+				return err
+			}
+			if !os.SameFile(before, after) {
+				return errors.New("temporary replacement did not preserve file identity")
+			}
+			return nil
+		}
+		return errors.New("temporary marker not found")
+	}
+	if err := writeActiveDirectiveMarker(root, previous, ops); err == nil {
+		t.Fatal("writeActiveDirectiveMarker() error = nil, want mutated temporary rejection")
+	}
+	gotBytes, err := root.ReadFile(activeDirectiveMarkerName)
+	if err != nil {
+		t.Fatalf("ReadFile(after mutation): %v", err)
+	}
+	if !bytes.Equal(gotBytes, oldBytes) {
+		t.Errorf("marker changed after mutated temporary: got %q, want %q", gotBytes, oldBytes)
+	}
+	if replacementPath == "" {
+		t.Fatal("replacement path was not captured")
+	}
+	replacementBytes, err := os.ReadFile(replacementPath)
+	if err != nil {
+		t.Fatalf("ReadFile(replacement): %v", err)
+	}
+	if string(replacementBytes) != "replacement" {
+		t.Errorf("mutated temporary bytes = %q, want replacement to remain owned by other object", replacementBytes)
+	}
+}
+
 func minimalActiveDirectiveMarker() ActiveDirectiveMarker {
 	intentUUID := "intent-uuid"
 	return ActiveDirectiveMarker{

@@ -84,8 +84,9 @@ active record直下の`.aidlc-active-directive.json`を使用する。version 2�
 revision、harness、kind、stage、part／parts、continue tokenとSHA-256、deliveryを使用する。
 
 読込はsingle descriptor、最大64 KiB、valid UTF-8、JSONの単一値、既知schema、regular leafを検査する。
-保存はrecord Root内に`0600`の排他的temporaryを作り、全byte writeとClose成功後にRenameする。
-失敗時は旧markerを保持し、所有するtemporaryだけを安全に片付ける。caller所有Rootはcloseしない。
+保存はrecord Root内に`0600`の排他的temporaryを作り、全byte writeとClose成功後に、同じregular descriptorのidentityと
+writerが実際に書いたcontent snapshotを再検証してからRenameする。失敗時は旧markerを保持し、identityと所有contentが
+一致するtemporaryだけを安全に片付ける。caller所有Rootはcloseしない。
 
 ### 公開facade
 
@@ -235,7 +236,8 @@ HMAC tokenとmarkerを結ぶ一回限りのcursor進行、commit後だけのdire
 独立reviewで見つかった固定schemaとの不一致は、optionalなzero／false／`resume: null`と未知nested fieldの
 lossless保持、`units[]`のUnit名制約（top-level `unit`は固定parserどおりtrim後nonempty）、stage／token digest
 binding、sessionless attempt、初回revision 1、既存baseのcounter／resume保持、directive固有fieldの消去、
-state変更時のfresh `next` base継承、markerとattemptのownership epoch整合、temporary fileの差替え検知と
-所有inodeだけのcleanup、予約flag表記を含むopaque tokenの解釈として回帰testを先に追加して修正した。
+state変更時のfresh `next` base継承、markerとattemptのownership epoch整合、temporary fileの差替えをidentityと
+content snapshotで検知し所有content一致時だけcleanupする契約、予約flag表記を含むopaque tokenの解釈として回帰testを
+先に追加して修正した。
 破損markerのfresh `next` recoveryと、同じmarkerを使う`continue`のfail-closedは上記review resolutionどおり
 区別した。外部Go moduleと新しい意図的差分は追加していない。

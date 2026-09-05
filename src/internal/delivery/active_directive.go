@@ -339,18 +339,25 @@ func writeActiveDirectiveMarker(root *os.Root, marker ActiveDirectiveMarker, ops
 		closeErr := ops.close(file)
 		return errors.Join(fmt.Errorf("write active directive: stat temp: %w", err), wrapActiveDirectiveCloseError(closeErr))
 	}
+	var writtenContent []byte
+	var contentKnown bool
+	var writeErr error
 	cleanup := func() error {
-		return cleanupActiveDirectiveTemp(root, tempName, tempInfo, ops)
+		return cleanupActiveDirectiveTemp(root, tempName, tempInfo, writtenContent, contentKnown, ops)
 	}
-	writeErr := writeActiveDirectiveBytes(file, data, ops.write)
+	writtenContent, contentKnown, writeErr = writeActiveDirectiveBytes(file, data, ops.write)
 	closeErr := ops.close(file)
 	if writeErr == nil && closeErr == nil {
 		if identityErr := verifyActiveDirectiveTempIdentity(root, tempName, tempInfo, ops.lstat); identityErr != nil {
 			writeErr = identityErr
+		} else if contentErr := verifyActiveDirectiveTempContent(root, tempName, tempInfo, writtenContent, ops.lstat); contentErr != nil {
+			writeErr = contentErr
 		} else if chmodErr := ops.chmod(root, tempName, 0o600); chmodErr != nil {
 			writeErr = fmt.Errorf("chmod temp: %w", chmodErr)
 		} else if identityErr := verifyActiveDirectiveTempIdentity(root, tempName, tempInfo, ops.lstat); identityErr != nil {
 			writeErr = identityErr
+		} else if contentErr := verifyActiveDirectiveTempContent(root, tempName, tempInfo, writtenContent, ops.lstat); contentErr != nil {
+			writeErr = contentErr
 		}
 	}
 	if writeErr != nil || closeErr != nil {
@@ -364,8 +371,15 @@ func writeActiveDirectiveMarker(root *os.Root, marker ActiveDirectiveMarker, ops
 	return nil
 }
 
-func cleanupActiveDirectiveTemp(root *os.Root, tempName string, expected fs.FileInfo, ops activeDirectiveOps) error {
-	if expected == nil {
+func cleanupActiveDirectiveTemp(
+	root *os.Root,
+	tempName string,
+	expected fs.FileInfo,
+	ownedContent []byte,
+	contentKnown bool,
+	ops activeDirectiveOps,
+) error {
+	if expected == nil || !contentKnown {
 		return nil
 	}
 	actual, err := ops.lstat(root, tempName)
@@ -378,10 +392,71 @@ func cleanupActiveDirectiveTemp(root *os.Root, tempName string, expected fs.File
 	if actual == nil || actual.Mode()&fs.ModeSymlink != 0 || !actual.Mode().IsRegular() || !os.SameFile(expected, actual) {
 		return nil
 	}
+	actualContent, err := readActiveDirectiveTempContent(root, tempName, expected, ops.lstat)
+	if err != nil {
+		return fmt.Errorf("inspect temporary content for cleanup: %w", err)
+	}
+	if !bytes.Equal(actualContent, ownedContent) {
+		return nil
+	}
 	if err := ops.remove(root, tempName); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	return nil
+}
+
+func verifyActiveDirectiveTempContent(
+	root *os.Root,
+	tempName string,
+	expectedInfo fs.FileInfo,
+	expectedContent []byte,
+	lstat func(*os.Root, string) (fs.FileInfo, error),
+) error {
+	actualContent, err := readActiveDirectiveTempContent(root, tempName, expectedInfo, lstat)
+	if err != nil {
+		return fmt.Errorf("write active directive: inspect temporary content: %w", err)
+	}
+	if !bytes.Equal(actualContent, expectedContent) {
+		return fmt.Errorf("write active directive: temporary content changed: %w", ErrInvalidActiveDirectiveMarker)
+	}
+	return nil
+}
+
+func readActiveDirectiveTempContent(
+	root *os.Root,
+	tempName string,
+	expectedInfo fs.FileInfo,
+	lstat func(*os.Root, string) (fs.FileInfo, error),
+) ([]byte, error) {
+	if err := verifyActiveDirectiveTempIdentity(root, tempName, expectedInfo, lstat); err != nil {
+		return nil, err
+	}
+	file, err := root.Open(tempName)
+	if err != nil {
+		return nil, fmt.Errorf("open temporary for content inspection: %w", err)
+	}
+	fileInfo, statErr := file.Stat()
+	if statErr != nil {
+		closeErr := file.Close()
+		return nil, errors.Join(fmt.Errorf("stat temporary for content inspection: %w", statErr), closeErr)
+	}
+	if fileInfo == nil || !fileInfo.Mode().IsRegular() || !os.SameFile(expectedInfo, fileInfo) {
+		closeErr := file.Close()
+		return nil, errors.Join(fmt.Errorf("temporary descriptor changed during content inspection: %w", ErrInvalidActiveDirectiveMarker), closeErr)
+	}
+	content := make([]byte, activeDirectiveMaxBytes+1)
+	length, readErr := io.ReadFull(file, content)
+	if readErr == io.EOF || readErr == io.ErrUnexpectedEOF {
+		readErr = nil
+	}
+	closeErr := file.Close()
+	if readErr != nil {
+		return nil, errors.Join(fmt.Errorf("read temporary for content inspection: %w", readErr), closeErr)
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("close temporary after content inspection: %w", closeErr)
+	}
+	return content[:length], nil
 }
 
 func verifyActiveDirectiveTempIdentity(
@@ -429,21 +504,24 @@ func completeActiveDirectiveOps(ops activeDirectiveOps) activeDirectiveOps {
 	return ops
 }
 
-func writeActiveDirectiveBytes(file *os.File, data []byte, write func(*os.File, []byte) (int, error)) error {
+func writeActiveDirectiveBytes(file *os.File, data []byte, write func(*os.File, []byte) (int, error)) ([]byte, bool, error) {
+	ownedContent := append([]byte(nil), data...)
+	writtenTotal := 0
 	for len(data) > 0 {
 		written, err := write(file, data)
 		if written < 0 || written > len(data) {
-			return fmt.Errorf("write active directive: invalid short write count %d: %w", written, io.ErrShortWrite)
+			return nil, false, fmt.Errorf("write active directive: invalid short write count %d: %w", written, io.ErrShortWrite)
 		}
 		if written == 0 {
-			return fmt.Errorf("write active directive: short write: %w", io.ErrShortWrite)
+			return append([]byte(nil), ownedContent[:writtenTotal]...), true, fmt.Errorf("write active directive: short write: %w", io.ErrShortWrite)
 		}
+		writtenTotal += written
 		data = data[written:]
 		if err != nil {
-			return fmt.Errorf("write active directive: write: %w", err)
+			return append([]byte(nil), ownedContent[:writtenTotal]...), true, fmt.Errorf("write active directive: write: %w", err)
 		}
 	}
-	return nil
+	return ownedContent, true, nil
 }
 
 func wrapActiveDirectiveCloseError(err error) error {
