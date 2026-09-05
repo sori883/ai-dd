@@ -1,80 +1,85 @@
 ---
 name: go-tdd
-description: "Execute one authorized Go TDD phase: write a failing test and return, or implement one parent-accepted RED and return. Require a plan, Issue, phase, and bounded file ownership; never advance phases autonomously."
+description: "Execute an authorized Go work unit as the sole writer through ordered, evidence-backed Red-Green-Refactor cycles, then return once at the work-unit boundary."
 ---
 
 # Go TDD
 
-Execute one authorized phase as the sole writer, not an entire feature in one turn. Always load `$golang-how-to` and `$golang-testing`, then load only the task-specific Go skills routed by `$golang-how-to`.
+Implement one authorized Go work unit as the sole writer. A work unit may contain multiple ordered behaviors. Complete each behavior test-first, record its RED and GREEN evidence, and return to the parent once after the whole work unit or immediately when genuinely blocked.
 
-First extract the explicit `tdd_phase` value from the current parent message for a `loop` request. Never infer RED from a new behavior, a test file list, or a plan describing both phases; never inherit a phase from an earlier turn. If absent, return `BLOCKED` without editing files or running tests.
+Default to one implementation work unit for all approved behaviors in one Issue／PR. Do not split merely because there are many slices. Split only for a distinct writer boundary, unresolved authorization or design gate, or a workload that cannot be handled safely in one bounded turn, and require the reason and boundary in the plan.
 
-For every `loop` handoff, read [the phase contract](../../../docs/tdd-handoff.md) completely. It is the canonical contract for both parent and implementer, including required inputs, snapshots, and return fields. Do not rely on remembered instructions from an earlier turn.
+Always load `$golang-how-to` and `$golang-testing`, then load only the task-specific Go skills routed by `$golang-how-to`.
+
+For every `loop` handoff, read [the work-unit contract](../../../docs/tdd-handoff.md) completely. It is the canonical contract for the parent and implementer. Do not require or infer the retired per-phase `tdd_phase` or `red_acceptance` protocol.
 
 ## Preconditions
 
-Before editing, verify that the parent supplied:
+Before editing, require:
 
-- a self-contained plan with either direct user approval or a named approved roadmap／milestone that fully contains it;
-- a GitHub Issue identifying the work;
-- acceptance criteria and the owned files or packages.
+- a self-contained plan authorized by direct user approval or a named approved roadmap／milestone;
+- a GitHub Issue, acceptance criteria, workdir, starting HEAD, and bounded file or package ownership;
+- one `work_unit_id` and an ordered behavior list containing each behavior's `slice_id`, observable result, test files, implementation files, and exact targeted test command;
+- explicit compile-only scaffold authority for a new API when a runnable assertion cannot otherwise be reached.
 
-For `loop`, also require exactly one `slice_id`, one observable `behavior`, `tdd_phase=red` or `green`, the workdir and starting HEAD, phase-specific file lists, and an exact targeted test command. A missing or ambiguous phase is a stop condition, not permission to run the full loop. `green` additionally requires the parent's explicit, fresh `red_acceptance` from the phase contract.
-
-If any precondition is missing, the plan's authorization boundary is ambiguous, or an external Go module or tool is required without explicit approval, stop and return every missing gate in one response. Do not install `gotests`, `testify`, `goleak`, `golangci-lint`, or another tool merely because a referenced skill mentions it.
+If a gate is missing, the work exceeds the plan, another writer is active, or an external Go module or tool lacks approval, stop before editing and return all blockers together.
 
 ## Verification Mode
 
-Read `verification_mode` from the parent handoff. Treat a missing mode as `loop`.
+Read `verification_mode`; a missing value means `loop`.
 
-- `loop`: use for initial implementation, refactoring, and every review-finding fix. Run only the narrowest targeted tests needed for RED, GREEN, and affected behavior.
-- `final`: use only when the parent explicitly says the approved implementation and blocking review fixes are stable. Run the approved full project gate once.
+- `loop`: implement or repair the authorized work unit. Run only its targeted tests and affected package checks.
+- `final`: only when the parent explicitly says the implementation and blocking review fixes are stable. Run the approved full read-only gate once and do not edit target files.
 
-Reject `review` or an unknown mode as a role mismatch. Do not infer `final` from the end of a slice, a fix handoff,
-or a request to return results.
+Reject `review` or an unknown mode as a role mismatch.
 
-## One Phase per Handoff
+## Continuous Work-Unit Loop
 
-### RED
+For each behavior in the supplied order:
 
-Write only the one requested behavior's test, run the exact targeted command, and return a final response. Do not implement the behavior, continue to GREEN, or start another slice. Production edits are forbidden except for a compile-only scaffold explicitly scoped by the parent before the task. Missing scaffolding authority is BLOCKED; a compile failure is not RED.
+1. Add or change that behavior's test before changing its production implementation. A preauthorized compile-only scaffold may declare the planned API but must not implement the behavior.
+2. Format the test and run its exact targeted command. A valid RED is a compiled, executed test that fails for the intended observable expectation. Compile errors, environment failures, skipped tests, and `no tests to run` are blockers, not RED.
+3. If the test is already green, record `ALREADY_GREEN`; do not delete correct code or distort the assertion. Otherwise record the RED command, exit code, test, and failure reason.
+4. Implement only the smallest change for that behavior. Do not implement later behaviors ahead of their tests.
+5. Run the same command to GREEN, refactor only while green, apply `gofmt` to permitted Go files, and rerun the affected targeted tests.
+6. Continue directly to the next behavior without returning to the parent.
 
-Return `RED_READY` only for the intended executed test's expectation mismatch. Return `ALREADY_GREEN` when it passes initially; never remove completed code or distort an assertion to manufacture RED. Return `BLOCKED` for missing authority, scope, environment, compile, skipped-test, or other unrelated failures.
+If a test expectation is wrong, a new material decision is required, ownership must expand, or an unrelated failure prevents safe progress, stop the work unit. Preserve completed valid cycles and return their evidence with the blocker; never weaken a test to keep moving.
 
-### GREEN
+After all behaviors, update authorized documentation as one batch, run every work-unit targeted command once more plus the permitted affected-package checks and `git diff --check`, then return `WORK_UNIT_READY`. Do not run full-project tests, race, vet, cross compilation, or distribution E2E in `loop`.
 
-Before editing, verify the parent's `red_acceptance` against the workdir, slice, HEAD, test command, and all target file hashes/ABSENT entries. Missing, incomplete, or stale acceptance is BLOCKED; never mint or refresh it yourself.
-Compare every `red_acceptance.files` entry mechanically using the parent's expected hashes (for example, `shasum -a 256 -c`), including documents and pre-existing user changes. Inspecting printed hashes is not a comparison. Require exit code 0 for all entries before edits and return the check command/result; no harmless-change exception.
+## Review-Finding Repair
 
-Implement only the accepted behavior within the implementation file list. Preserve the accepted test and command; if either needs changing, return to the parent. Run the test to GREEN, refactor only this scope while green, apply gofmt to implementation files, and rerun affected targeted tests. Return `GREEN_READY` or `BLOCKED` in a final response and stop. Never start the next slice.
+The parent should group all current blocking findings into one repair work unit. For each finding that changes observable Go behavior, add and run a failing regression test before the fix. Documentation, configuration, and an `ALREADY_GREEN` coverage gap do not require an artificial RED. Complete the grouped fixes, rerun their targeted tests, and return once for one re-review.
 
-Only the parent can issue a new phase after checking the diff and independently rerunning the targeted test. Commentary or a messaging tool is not the handoff boundary; finish the turn even when such a tool is unavailable.
+## Evidence
 
-Prefer the standard `testing` package, table-driven tests with named cases, deterministic fixtures, and assertions on observable behavior rather than implementation details.
+The final loop response must include:
 
-## Loop Evidence
+- status: `WORK_UNIT_READY` or `BLOCKED`;
+- work unit, completed and remaining slice IDs;
+- for every slice: RED or `ALREADY_GREEN` result, exact command and exit code, then GREEN command and exit code when implementation changed;
+- changed files, starting and ending HEAD, final file hashes, formatting and `git diff --check` results;
+- affected targeted/package commands rerun at the work-unit boundary;
+- residual risks or the exact blocker.
 
-In `loop`, return the current phase's status, slice, command and exit code, observed assertion/result, changed files, HEAD and file hashes, and residual risks as specified by the phase contract. Do not report both phases unless the parent actually issued and accepted separate handoffs. Apply `gofmt` to permitted changed
-Go files before returning and rerun the affected targeted tests afterward. Do not run `go test ./...`, any
-race or vet command, full linters, cross compilation, or distribution E2E. A review-finding fix remains a loop even
-when it is returned as a separate task.
+The parent reviews the complete diff and reruns the work unit's targeted command set once. The parent does not repeat every intermediate RED/GREEN transition. Historical RED evidence comes from the implementer's executed command transcript; do not claim test-first work that was not actually observed.
 
 ## Final Evidence
 
-Only in an explicitly delegated `final`, run the applicable approved checks with fresh output without modifying target files:
+Only in an explicitly delegated `final`, run the applicable approved checks with fresh output and without modifying target files:
 
 - `go test ./...`;
-- `go test -race ./...` for concurrent or race-sensitive code, and as a final project gate when supported;
+- `go test -race ./...` when supported or required;
 - `go vet ./...`;
 - `gofmt -l` as a read-only format check;
-- `git diff --check`.
+- `git diff --check`;
+- plan-specific lint, cross compilation, or distribution E2E checks.
 
-Include plan-specific checks such as linters, cross compilation, or distribution E2E only in this final gate. Report
-the final checks and residual risks. If any target file changes afterward, state that the evidence is stale and return
-to `loop`; do not reuse the old result.
+If a target file changes afterward, report the evidence as stale and return to `loop`.
 
 ## Boundaries
 
-- Do not expand beyond the authorized plan or edit unrelated user changes.
+- Do not expand beyond the authorized plan or overwrite unrelated user changes.
 - Do not use additional writer agents or delegate nested implementation work.
-- Leave independent review, commits, Issue updates, and PR operations to the parent unless they are explicitly delegated.
+- Leave independent review, commits, Issue updates, and PR operations to the parent unless explicitly delegated.
