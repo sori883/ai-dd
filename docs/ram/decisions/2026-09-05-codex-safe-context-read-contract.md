@@ -311,7 +311,7 @@ env -u AIDLC_CODEX_EXEC_LIVE -u AIDLC_CODEX_EXEC_MODEL go test -tags=integration
 active directiveへ拘束されたGo `read-context`からのみ返す。理由は必須入力欠落、symlink escape、読込中差替えをLLMへの注意書きでなく
 決定論的に拒否するためで、利用者は任意pathを指定できず、Stage本文と順序は維持される。
 
-## 独立review修正の実装証拠（未merge・live未実施）
+## 独立review修正の実装証拠（未merge）
 
 `work_unit_id=codex-safe-context-read-review-repair`では、次fileのtokenにも実本文のSHA-256、実part数、size、mtimeを保存し、継続時に
 照合した。固定512-byte bufferの2-pass streamへ移行し、要求partだけを保持してsource file全体の複製を廃止した。publicationごとに

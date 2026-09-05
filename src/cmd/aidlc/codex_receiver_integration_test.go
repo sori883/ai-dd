@@ -531,29 +531,26 @@ func TestCodexReceiverLiveModelOverride(t *testing.T) {
 	}
 }
 
-func TestCodexReceiverLiveCommandFailureChecksSafetyBeforeReportingError(t *testing.T) {
-	data, err := os.ReadFile("codex_receiver_integration_test.go")
-	if err != nil {
-		t.Fatalf("ReadFile(integration source): %v", err)
+func TestCodexReceiverLiveCommandRuntimeSafetyOrder(t *testing.T) {
+	runErr := fmt.Errorf("sentinel command failure")
+	var events []string
+	gotErr := runCodexReceiverLiveCommandWithSafety(
+		func() error {
+			events = append(events, "run")
+			return runErr
+		},
+		func() {
+			events = append(events, "snapshot")
+		},
+		func() {
+			events = append(events, "canary")
+		},
+	)
+	if gotErr != runErr {
+		t.Fatalf("run error = %v, want sentinel %v", gotErr, runErr)
 	}
-	source := string(data)
-	start := strings.LastIndex(source, "func TestCodexReceiverReadsDeliveredContext")
-	end := strings.LastIndex(source, "type codexReceiverRule")
-	if start < 0 || end <= start {
-		t.Fatal("could not isolate live command implementation")
-	}
-	implementation := source[start:end]
-	errorIndex := strings.Index(implementation, `t.Fatalf("codex exec: %v`)
-	snapshotIndex := strings.Index(implementation, "if afterExec := receiverTreeSnapshotIgnoringTransport")
-	canaryIndex := strings.Index(implementation, "stage execution canary")
-	if errorIndex < 0 || snapshotIndex < 0 || canaryIndex < 0 {
-		t.Fatalf("live command is missing failure or safety checks: error=%d snapshot=%d canary=%d", errorIndex, snapshotIndex, canaryIndex)
-	}
-	if snapshotIndex > errorIndex {
-		t.Fatalf("stable snapshot check occurs after command error reporting: snapshot=%d error=%d", snapshotIndex, errorIndex)
-	}
-	if canaryIndex > errorIndex {
-		t.Fatalf("stage canary check occurs after command error reporting: canary=%d error=%d", canaryIndex, errorIndex)
+	if !equalStrings(events, []string{"run", "snapshot", "canary"}) {
+		t.Fatalf("safety callback order = %#v, want run, snapshot, canary", events)
 	}
 }
 
@@ -585,6 +582,13 @@ func codexReceiverLiveCommandArgs(base []string) []string {
 	args = append(args, "--model", model)
 	args = append(args, base[2:]...)
 	return args
+}
+
+func runCodexReceiverLiveCommandWithSafety(run func() error, snapshotCheck func(), canaryCheck func()) error {
+	runErr := run()
+	snapshotCheck()
+	canaryCheck()
+	return runErr
 }
 
 func TestCodexReceiverReadsDeliveredContext(t *testing.T) {
@@ -630,13 +634,19 @@ func TestCodexReceiverReadsDeliveredContext(t *testing.T) {
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 	beforeExec := receiverTreeSnapshotIgnoringTransport(t, fixture.Project)
-	commandErr := command.Run()
-	if afterExec := receiverTreeSnapshotIgnoringTransport(t, fixture.Project); !reflect.DeepEqual(beforeExec, afterExec) {
-		t.Fatal("live Codex receiver changed project state, audit, artifact, canary, or another stable file")
-	}
-	if _, err := os.Stat(filepath.Join(fixture.Project, "stage-execution-canary.txt")); err == nil || !os.IsNotExist(err) {
-		t.Fatalf("stage execution canary = %v, want absent after live context read", err)
-	}
+	commandErr := runCodexReceiverLiveCommandWithSafety(
+		command.Run,
+		func() {
+			if afterExec := receiverTreeSnapshotIgnoringTransport(t, fixture.Project); !reflect.DeepEqual(beforeExec, afterExec) {
+				t.Fatal("live Codex receiver changed project state, audit, artifact, canary, or another stable file")
+			}
+		},
+		func() {
+			if _, err := os.Stat(filepath.Join(fixture.Project, "stage-execution-canary.txt")); err == nil || !os.IsNotExist(err) {
+				t.Fatalf("stage execution canary = %v, want absent after live context read", err)
+			}
+		},
+	)
 	if commandErr != nil {
 		if ctx.Err() != nil {
 			t.Fatalf("codex exec timed out: %v", ctx.Err())
