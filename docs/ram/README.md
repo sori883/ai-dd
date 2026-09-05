@@ -55,7 +55,8 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [4層Memory source readerの実装計画](decisions/2026-09-02-memory-source-reader-plan.md) | Accepted（Issue #47、独立review・final完了、Go 1.26.8で全検証） |
 | 意思決定 | [Memory bundle filterの実装計画](decisions/2026-09-02-memory-bundle-filter-plan.md) | Accepted（Issue #49、独立review完了、final検証結果はPRへ記録） |
 | 意思決定 | [検証頻度をloop・review・finalへ分離する](decisions/2026-09-02-validation-cadence.md) | Accepted（Issue #39、修正中はtargeted、差分安定後に全検証を1回） |
-| 意思決定 | [Go TDDの依頼をREDとGREENへ分離する](decisions/2026-09-04-tdd-phase-handoff-plan.md) | Accepted（1振る舞い・1phaseで返却、親の再実行確認後だけ次を依頼。RAMの整理は見送り） |
+| 意思決定 | [Go TDDの依頼をREDとGREENへ分離する](decisions/2026-09-04-tdd-phase-handoff-plan.md) | Superseded（履歴は保持。1項目ごとの親子往復は下記work unit方式へ置換） |
+| 意思決定 | [Go TDDを作業単位の連続実装へ変更する](decisions/2026-09-05-tdd-work-unit-handoff.md) | Implemented（Issue #110、各項目のtest-firstを維持し、全項目完了後に1回返却。隔離forward test成功） |
 | 意思決定 | [go_tdd_implementerをLuna / maxで運用する](decisions/2026-09-02-go-tdd-implementer-luna-max.md) | Accepted（Issue #41、実装担当のみLuna / maxへ固定） |
 | 意思決定 | [サブエージェントhandoffのコンテキスト予算](decisions/2026-09-03-subagent-context-budget.md) | Accepted（Issue #59、全文継承を例外化し、調査担当はTerra / mediumを維持） |
 | 意思決定 | [本家AI-DLCとの差分を自発的に提示する](decisions/2026-08-31-upstream-difference-reporting.md) | Superseded（下記の意図的な差分に限定する方針へ置換） |
