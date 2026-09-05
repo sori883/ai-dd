@@ -109,8 +109,10 @@ func (s Snapshot) RouteHash(stageSlug, scope string) (string, error)
 ```
 
 `graph.Load`時に、各enabled nodeを簡略化した公開`graph.Stage`へ変換する前のJSONを、本家の`JSON.parse`後の
-`JSON.stringify`相当に正規化して非公開保持する。通常propertyの初出順を保ち、duplicate keyはlast-winsで
-値だけを更新し、文字列escapeや数値表現、nested object／arrayもJSONの意味へ正規化する。`RouteHash`はこのnodeと、scope-gridで`EXECUTE`になったenabled stageを
+`JSON.stringify`相当に正規化して非公開保持する。array-index propertyは数値昇順で通常propertyより先に並べ、
+通常propertyの初出順を保つ。duplicate keyはlast-winsで値だけを更新し、文字列escape、数値表現、nested
+object／arrayもJSONの意味へ正規化する。正しいUTF-16 surrogate pairはUnicode文字へ戻し、孤立surrogateは
+小文字の`\uXXXX`で保持する。`RouteHash`はこのnodeと、scope-gridで`EXECUTE`になったenabled stageを
 stage number順に並べたslug列を、`{"node":...,"scopeStages":[...]}`の順で正規化し、bare lowercase
 SHA-256 hexを返す。現在の`graph.Stage`を再JSON化してはならない。そうすると`condition`、`inputs`、
 `outputs`、review詳細、`sensors_applicable`等がhashから落ちるためである。
@@ -291,6 +293,12 @@ directive／route／state hash、deep ownershipを接続した。外部Go module
 duplicate keyのlast-winsを本家の`JSON.parse`／`JSON.stringify`と同じ意味へ正規化していないP1が見つかった。
 旧実装で両方のhash不一致を示す回帰testを先に追加してから、property順を保持する標準libraryだけの
 canonicalizerへ置換した。固定2.6.123 goldenとgraph package testも維持した。
+
+再reviewでは、JavaScriptがarray-index propertyを数値昇順で先に列挙することと、孤立したUTF-16 surrogateを
+置換せずescapeのまま保持することが不足しているP1が見つかった。2項目を1つのreview修正作業単位にまとめ、
+旧実装で両方が失敗する回帰testを先に確認してから、UTF-16 code unitを保持するparserとproperty orderingを
+実装した。これは[Go TDDを意味のある実装作業単位で連続実行する](2026-09-05-tdd-work-unit-handoff.md)へ移行後の
+運用に従い、項目ごとの親子往復を行わず一括で修正した。
 
 最後のfilesystem freshness testは、テスト追加前のproduction実装ですでに成功したため`ALREADY_GREEN`として
 受理した。同じcaller Rootを使ってrule本文、knowledge一覧、raw graph、valid state bytesを順に変更し、次回の
