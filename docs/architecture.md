@@ -1396,7 +1396,7 @@ receiverはPATH上の単一built binaryへ`aidlc next --project-dir .`を呼び�
 sandbox testはsource skillのbyte-identical配置、複数rule chunkからの複数continue、rule本文の全文と順序、inline→stage→consumeのsentinel順を検査します。
 live `codex exec --ephemeral` receipt testは`AIDLC_CODEX_EXEC_LIVE=1`のときだけ実行する設計であり、専用temporary fileへ
 `--output-last-message`で保存したreceiptを検査します。receiptの`rules`は各`rules_content`の最後の非空行だけを順序どおり照合し、
-inline／stage／consumeは全本文を照合します。stdout/stderrは失敗診断に限ります。現在のnon-live loopでは明示skipとなるため、
-live receiptの成否を実装済みとは扱いません。詳細な受入条件、promptへ期待値・pathを渡さない制約、credentialを
+inline／stage／consumeは全本文を照合します。stdout/stderrは失敗診断に限ります。通常CIでは明示skipを維持し、ユーザーが
+許可した2026-09-05の1回のlive実行では全receiptが一致しました。詳細な証拠、promptへ期待値・pathを渡さない制約、credentialを
 扱わない境界、Stage実行を後続へ残す理由は[Codex receiverで配信本文を実読込する計画](ram/decisions/2026-09-05-codex-receiver-read-plan.md)
 を参照してください。

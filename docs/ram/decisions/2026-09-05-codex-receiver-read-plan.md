@@ -1,7 +1,7 @@
 # Codex receiverで配信本文を実読込する
 
 - 日付: 2026-09-05（Asia/Tokyo）
-- 状態: Accepted（non-live実装・loop検証済み、live receipt・独立review・final検証待ち。Issue #115）
+- 状態: Implemented（live実読込receipt成功、独立review・final検証待ち。Issue #115）
 - 対応Issue: [#115 Codex receiverで配信本文を実読込する](https://github.com/sori883/ai-dd/issues/115)
 - 実装許可: [ルール・知識のAI供給を個別承認なしで完了まで進める](2026-09-05-context-delivery-autonomous-authorization.md)
 - 前提: [Codex向け配信transactionと公開next／continueを接続する](2026-09-05-delivery-publication-plan.md)
@@ -135,9 +135,24 @@ byte-identical配置し、`crypto/rand` sentinel付きの複数rule chunkをcont
 
 `live-gated-read-receipt`では、外部model利用とcredential境界を越えないため、`AIDLC_CODEX_EXEC_LIVE`が`1`でない場合に
 明示skipするtestだけを追加した。通常呼出しは全read後に`context ready`だけを返し、live promptのようにcallerが検証用receiptと
-schemaを明示した場合だけschemaに従うreceiptを返す限定例外をSKILLへ記録した。loop実行はskipでexit 0となり、実際の`codex exec`は
-実行していない。したがってlive receiptの成功、Codexが本文を実読込したこと、Stage実行の成功は本記録では主張しない。live実行は
-計画記載の明示確認後に別途行う。
+schemaを明示した場合だけschemaに従うreceiptを返す限定例外をSKILLへ記録した。work unitのnon-live loopでは環境変数を設定せず、
+testがskipすることだけを確認したため、その時点ではlive receipt成功を主張しなかった。
+
+## live実読込証拠
+
+ユーザーは2026-09-05、現在ログイン済みのCodexアカウントで`codex exec --ephemeral`を1回だけ実行し、利用量を消費することを
+明示的に許可した。この許可後、source commit `11c11e4341e4d6fb825e79c24d8d9ee3266dd3f7`に対して次を1回実行した。
+
+```sh
+AIDLC_CODEX_EXEC_LIVE=1 go test -tags=integration -count=1 -run '^TestCodexReceiverReadsDeliveredContext$' -v ./src/cmd/aidlc
+```
+
+`go1.26.4 darwin/arm64`、`codex-cli 0.145.0`で、testは107.85秒、packageは108.316秒でexit 0となった。fresh projectで
+repo skillを発見したCodexが、promptに値もpathも与えられない状態から、2つのrule末尾sentinelを配信順に、lead／supportの
+inline context全文を先に、続いてstage file全文、最後にconsume全文をJSON receiptへ返し、testが全byteと順序の完全一致を確認した。
+実行は`--ephemeral`、`--skip-git-repo-check`、`--sandbox workspace-write`、`approval_policy="never"`を使い、専用temporary
+`--output-last-message`だけをreceiptとして検査した。追加のlive retryは行っておらず、Stage実行・成果物生成・report・人間承認も
+行っていない。
 
 ## 独立reviewとfinal検証
 

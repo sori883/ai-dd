@@ -94,7 +94,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [配信継続token用のprivate key lifecycleを実装する](decisions/2026-09-05-steering-token-key-lifecycle-plan.md) | Accepted（record／session key、32-byte random・0600・fresh read・並行初回生成、cursorは後続、知識供給の包括承認内） |
 | 意思決定 | [配置済み情報からcanonical run-stageをread-only構成する](decisions/2026-09-05-run-stage-composition-plan.md) | Implemented（Issue #109、fresh配置読込・canonical wire・route/state/rule freshness、知識供給の包括承認内） |
 | 意思決定 | [Codex向け配信transactionと公開next／continueを接続する](decisions/2026-09-05-delivery-publication-plan.md) | Implemented（Issue #113、active-directive v2、same-token exactly-once、公開CLIと配布journey、temporaryのidentity/content snapshot検証。破損markerは`next`がfresh recovery、`continue`はtyped error） |
-| 意思決定 | [Codex receiverで配信本文を実読込する](decisions/2026-09-05-codex-receiver-read-plan.md) | Accepted（Issue #115、non-live実装・loop検証済み。live実読込receipt・独立review・final待ち、Stage実行とinstaller/updateは後続） |
+| 意思決定 | [Codex receiverで配信本文を実読込する](decisions/2026-09-05-codex-receiver-read-plan.md) | Implemented（Issue #115、repo skill・fresh配置・1回のlive実読込receipt成功。独立review・final待ち、Stage実行とinstaller/updateは後続） |
 | 意思決定 | [配置ファイルから必須ルール本文を毎回読み込む](decisions/2026-09-04-required-rule-delivery-plan.md) | Accepted（Issue #89、知識供給の第一slice、必須本文reader） |
 | 意思決定 | [工程の必須ルール参照を配置ファイルへ解決する](decisions/2026-09-04-stage-rule-path-resolution-plan.md) | Accepted（Issue #91、graph参照の保持・active Space/配置先解決・毎回読込みの内部接続） |
 | 意思決定 | [利用先の配置Markdownと知識の固定順を採用する](decisions/2026-09-04-installed-context-source-and-order.md) | Accepted（利用先配置からの読込み・UTF-16固定順と上限への影響を直接承認） |

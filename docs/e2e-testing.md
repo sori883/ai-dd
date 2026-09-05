@@ -256,6 +256,7 @@ go test -tags=integration -count=1 -run '^TestCodexReceiverReadsDeliveredContext
 `TestCodexReceiverReadsDeliveredContext`は`AIDLC_CODEX_EXEC_LIVE=1`がない通常loopで明示skipする。通常呼出しの成功応答は
 `context ready`だが、live testは検証用machine-readable read receiptの要求とoutput schemaを明示したcallerとして、live時だけ
 `codex exec --ephemeral`を一度だけ起動し、`--output-last-message`の専用temporary receipt fileからJSON receiptを読み、各`rules_content`の最後の非空行を順番どおり照合し、inline／stage／consumeは全本文と順序を厳密照合する。stdout/stderrは失敗診断に限る。どちらの応答形式でも
-Stage実行や成果物作成へ進まない。live commandを実行していない状態では成功とは記録しない。promptにsentinelやpathを埋め込まず、
+Stage実行や成果物作成へ進まない。通常CIではliveをskipし、ユーザーが許可した2026-09-05の1回のlive実行では全receiptが一致した。
+promptにsentinelやpathを埋め込まず、
 credentialを読み取らず、unknown directive・read failureではfail-closedで止める。installer/update、review・sensor、report、人間承認、
 full lifecycleはこのscenarioの対象外である。

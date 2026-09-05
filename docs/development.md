@@ -1283,6 +1283,7 @@ go test -tags=integration -count=1 -run '^TestCodexReceiverReadsDeliveredContext
 ```
 
 最後のtestは`AIDLC_CODEX_EXEC_LIVE=1`がない場合に明示skipします。live `codex exec`は外部model利用とcredential境界を伴うため、
-環境変数なしのloopでは実行せず、receipt成功を記録しません。live時のreceiptは`--output-last-message`で専用temporary fileから読み、
+環境変数なしの通常loopでは実行しません。live時のreceiptは`--output-last-message`で専用temporary fileから読み、
 `rules`では各`rules_content`の最後の非空行を順序どおり、`inline_context`／`stage_file`／`consumes`では全本文を照合します。stdout/stderrは失敗診断に限ります。
-実装・受入条件・後続Stage境界は[Codex receiverの計画](ram/decisions/2026-09-05-codex-receiver-read-plan.md)を参照してください。
+ユーザー許可後に1回だけ実施したlive成功証拠、実装・受入条件・後続Stage境界は
+[Codex receiverの計画](ram/decisions/2026-09-05-codex-receiver-read-plan.md)を参照してください。
