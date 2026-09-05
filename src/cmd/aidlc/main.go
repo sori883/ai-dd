@@ -9,6 +9,7 @@ import (
 
 	"github.com/sori883/ai-dd/src/internal/buildinfo"
 	"github.com/sori883/ai-dd/src/internal/cli"
+	deliverypkg "github.com/sori883/ai-dd/src/internal/delivery"
 	"github.com/sori883/ai-dd/src/internal/workspace"
 )
 
@@ -27,6 +28,12 @@ func main() {
 				os.Getwd,
 				os.Getenv,
 				workspace.SwitchIntent,
+			),
+			NextDelivery: deliveryNext(os.Getwd, os.Getenv, deliverypkg.Next),
+			ContinueDelivery: deliveryContinue(
+				os.Getwd,
+				os.Getenv,
+				deliverypkg.Continue,
 			),
 			PrepareOutput: func() {
 				// Recognized workspace commands promise exit 1 for writes to closed stdout or stderr pipes.

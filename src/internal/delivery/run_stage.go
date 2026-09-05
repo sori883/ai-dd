@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 
+	"github.com/sori883/ai-dd/src/internal/audit"
 	"github.com/sori883/ai-dd/src/internal/graph"
 	"github.com/sori883/ai-dd/src/internal/knowledge"
 	"github.com/sori883/ai-dd/src/internal/orchestrator"
@@ -22,9 +23,12 @@ import (
 
 // RunStageInput identifies the caller-owned roots used for one composition.
 type RunStageInput struct {
-	Identity       recordlock.Identity
-	ProjectRoot    *os.Root
-	RecordRoot     *os.Root
+	Identity    recordlock.Identity
+	ProjectRoot *os.Root
+	RecordRoot  *os.Root
+	// IntentUUID optionally binds delivery freshness to the selected intent
+	// registry identity when the caller has resolved one.
+	IntentUUID     *string
 	EnabledPlugins []string
 }
 
@@ -66,13 +70,45 @@ const maxRunStageDirectiveBytes = 28 * 1024
 // ComposeRunStage reads the active selection and graph for one identity-bound
 // run-stage composition. Caller-owned roots remain open and are never closed.
 func ComposeRunStage(ctx context.Context, input RunStageInput) (RunStageComposition, error) {
+	if err := validateRunStageInput(ctx, input); err != nil {
+		return RunStageComposition{}, err
+	}
+	var result RunStageComposition
+	err := recordlock.With(ctx, input.Identity, func(guard *recordlock.Guard) error {
+		var err error
+		result, err = composeRunStageWithGuard(ctx, guard, input)
+		return err
+	})
+	if err != nil {
+		return RunStageComposition{}, err
+	}
+	return result, nil
+}
+
+// ComposeRunStageWithGuard composes a run-stage view while the caller-owned
+// record lock remains held. It validates the guard and then performs all
+// reads through that same transaction.
+func ComposeRunStageWithGuard(ctx context.Context, guard *recordlock.Guard, input RunStageInput) (RunStageComposition, error) {
+	if err := validateRunStageInput(ctx, input); err != nil {
+		return RunStageComposition{}, err
+	}
+	return composeRunStageWithGuard(ctx, guard, input)
+}
+
+func validateRunStageInput(ctx context.Context, input RunStageInput) error {
 	if ctx == nil {
-		return RunStageComposition{}, fmt.Errorf("compose run-stage: context is nil: %w", orchestrator.ErrInvalidNext)
+		return fmt.Errorf("compose run-stage: context is nil: %w", orchestrator.ErrInvalidNext)
 	}
 	if input.ProjectRoot == nil || input.RecordRoot == nil {
-		return RunStageComposition{}, fmt.Errorf("compose run-stage: project and record roots are required: %w", orchestrator.ErrInvalidNext)
+		return fmt.Errorf("compose run-stage: project and record roots are required: %w", orchestrator.ErrInvalidNext)
 	}
+	return nil
+}
 
+func composeRunStageWithGuard(ctx context.Context, guard *recordlock.Guard, input RunStageInput) (RunStageComposition, error) {
+	if err := audit.ValidateRecordBinding(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot); err != nil {
+		return RunStageComposition{}, fmt.Errorf("compose run-stage: validate record binding: %w", err)
+	}
 	projectFS := input.ProjectRoot.FS()
 	activeSpace := workspace.ActiveSpace(projectFS)
 	if activeSpace != input.Identity.Space() {
@@ -107,7 +143,7 @@ func ComposeRunStage(ctx context.Context, input RunStageInput) (RunStageComposit
 		return RunStageComposition{}, fmt.Errorf("compose run-stage: load graph: %w", err)
 	}
 
-	next, err := orchestrator.Next(ctx, orchestrator.NextInput{
+	next, err := orchestrator.NextWithGuard(ctx, guard, orchestrator.NextInput{
 		Identity:    input.Identity,
 		ProjectRoot: input.ProjectRoot,
 		RecordRoot:  input.RecordRoot,

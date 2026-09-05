@@ -15,6 +15,8 @@ const helpText = `AI-DLC command-line interface
 
 Usage:
   aidlc <command>
+  aidlc next [--project-dir <path>]
+  aidlc continue <token> [--project-dir <path>]
   aidlc space create <name> [--project-dir <path>]
   aidlc space list [--json] [--project-dir <path>]
   aidlc space switch <name> [--project-dir <path>]
@@ -27,6 +29,8 @@ Usage:
 Commands:
   help       Show help
   version    Show version information
+  next       Compose and publish the next directive
+  continue   Continue a published directive
   space create  Create a new space
   space list    List spaces (space is an alias)
   space switch  Select an existing space
@@ -43,12 +47,14 @@ Flags:
 // Dependencies groups the workspace operations used by Run. Nil callbacks are
 // valid for commands that do not invoke the corresponding operation.
 type Dependencies struct {
-	CreateSpace   func(rawName, explicitDir string) (string, error)
-	ListSpaces    func(explicitDir string) ([]workspace.Space, error)
-	SwitchSpace   func(rawName, explicitDir string) (string, error)
-	ListIntents   func(explicitDir string) (workspace.IntentListing, error)
-	SwitchIntent  func(target, explicitDir string) (workspace.IntentSelection, error)
-	PrepareOutput func()
+	CreateSpace      func(rawName, explicitDir string) (string, error)
+	ListSpaces       func(explicitDir string) ([]workspace.Space, error)
+	SwitchSpace      func(rawName, explicitDir string) (string, error)
+	ListIntents      func(explicitDir string) (workspace.IntentListing, error)
+	SwitchIntent     func(target, explicitDir string) (workspace.IntentSelection, error)
+	NextDelivery     func(explicitDir string) ([]byte, error)
+	ContinueDelivery func(token, explicitDir string) ([]byte, error)
+	PrepareOutput    func()
 }
 
 // Run executes the CLI with injected process inputs, outputs, and workspace operations.
@@ -77,6 +83,19 @@ func Run(
 				fmt.Sprintf("aidlc %s (commit %s)\n", info.Version, info.Commit),
 			)
 		}
+	}
+	if isDeliveryCommand(args) {
+		if dependencies.PrepareOutput != nil {
+			dependencies.PrepareOutput()
+		}
+		command, explicitDir, err := deliveryArguments(args)
+		if err != nil {
+			return writeDeliverySyntaxError(stderr, err)
+		}
+		if command[0] == "next" {
+			return runDeliveryNext(command, explicitDir, stdout, stderr, dependencies.NextDelivery)
+		}
+		return runDeliveryContinue(command, explicitDir, stdout, stderr, dependencies.ContinueDelivery)
 	}
 	command, explicitDir, _, err := workspaceArguments(args, false)
 	hasSpaceSubcommand := len(command) >= 2 && command[0] == "space"

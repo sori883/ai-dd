@@ -36,6 +36,8 @@ const wantHelp = `AI-DLC command-line interface
 
 Usage:
   aidlc <command>
+  aidlc next [--project-dir <path>]
+  aidlc continue <token> [--project-dir <path>]
   aidlc space create <name> [--project-dir <path>]
   aidlc space list [--json] [--project-dir <path>]
   aidlc space switch <name> [--project-dir <path>]
@@ -48,6 +50,8 @@ Usage:
 Commands:
   help       Show help
   version    Show version information
+  next       Compose and publish the next directive
+  continue   Continue a published directive
   space create  Create a new space
   space list    List spaces (space is an alias)
   space switch  Select an existing space

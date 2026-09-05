@@ -28,6 +28,7 @@ sandbox rootそのものへ実行物を直置きせず、必ずscenarioごとの
 | Space switching | 配布binaryから既存spaceを選び、shared cursor保存・失敗境界・周辺dataの無変更を確認 | 実施可能 |
 | Intent listing | 配布binaryから現在spaceのregistry・record相関、human/JSON・bare aliasと無変更を確認 | 実施可能 |
 | Intent switching | 配布binaryから現在spaceのIntentを解決し、shared cursor保存・失敗境界・周辺dataの無変更を確認 | 実施可能 |
+| Codex directive delivery | 配布binaryからfreshなnext、複数continue、最終run-stageとstale/replay拒否を確認 | 実施可能 |
 | 配布・install | binaryがCodex向け資産を対象projectへ安全に展開できること | 未実装 |
 | workspace lifecycle | project root、space、intent、stateを配布先から一連で扱えること | 未実装 |
 
@@ -218,3 +219,23 @@ flagの詳細と`-`始まりのpathの指定方法は[開発手順](development.
 本家との差分は[意図的な差分表](architecture.md#space作成の意図的な差分)を参照する。
 途中失敗やClose・出力失敗で生成物が残っても、E2Eの都合で自動削除・上書き再試行はしない。
 OS固有のerror本文の一致ではなく、JSON形式・終了コード・対象dataへの影響を記録する。
+
+## Codex directive delivery scenario
+
+repository外の新しい一時sandboxへ単一built binaryを配置し、active Space/Intent、stage graph、scope
+grid、state、required ruleを用意する。`next --project-dir <sandbox>`を一度実行し、rule bundleが複数
+partへ分割された`load-steering`とtokenを受け取る。続けて各tokenを`continue <token>`へ一度ずつ渡し、
+最後にfresh `run-stage` JSONが返ること、そのwireが同じ入力を再構成した結果と一致することを確認する。
+
+同一tokenのreplay、別sandboxのtoken、token改ざん、途中のrule/state/route/active selection変更、破損
+active markerは、正常run-stageへ進まずtyped workflow errorまたはinternal fail-closedになることを確認する。
+required rule欠落もstdoutを公開せずexit 1となることを確認する。各起動でstdoutは単一JSON行、syntax errorは
+stdout空・exit 2、workflow errorは`{"kind":"error","message":"..."}`・exit 0であることを記録する。
+
+このscenarioはdelivery transactionと公開adapterの経路を検証するが、state遷移、human approval、Stage実行、
+receiver側の本文読込、installer/update、full AI-DLC lifecycleを検証済みとは扱わない。実行証跡にはsource
+commit、Go/OS/architecture、sandbox、binary size・SHA-256、各commandのexit・stdout・stderr、active marker
+の前後、replay/stale/missing時のfilesystem snapshotを記録する。関連する単体・統合テストは
+`go test -count=1 -run '^TestDelivery(Next|Continue|RejectsStale|PublishesRunStage)' ./src/internal/delivery`、
+`go test -count=1 -run '^TestRun(Next|Continue)' ./src/internal/cli`、
+`go test -tags=integration -count=1 -run '^TestDeliveryJourney$' ./src/cmd/aidlc`で再現できる。

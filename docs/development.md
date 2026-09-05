@@ -1225,3 +1225,38 @@ repository外の承認済みlocal sandboxへ実行物を配置して確認する
 包括承認枠は、複数の小さなIssue・PRを含むroadmapまたはmilestoneへの実装許可です。各PRの粒度、
 TDD、独立review、final検証は変えず、個別計画ごとの承認待ちだけを省きます。適用条件と人間へ確認する
 条件は[カスタムエージェント運用](agent-workflow.md#実装許可と包括承認枠)を参照してください。
+
+## Codex directive配信CLI
+
+配置済みworkflowから次に実行すべきdirectiveを取得する公開入口は次の2つです。
+
+```sh
+aidlc next [--project-dir <path>]
+aidlc continue <token> [--project-dir <path>]
+```
+
+`next`はactive Space/Intentとrecord stateをfreshに構成し、ruleがchunk分割される場合はpart 1の
+`load-steering`と署名付き`continue_token`を返します。chunkがない場合は`run-stage`を返します。
+`continue`は受け取ったtoken、record専用key、active marker、fresh compositionのstage/scope/rule
+bundle/route/directive/state hashを照合して一段だけ進めます。最終partではfreshな`run-stage` wireを返し、
+同じtokenの再利用、別record token、改ざん・破損cursor、途中の配置変更は正常directiveになりません。
+
+成功とworkflowエラーはいずれもstdoutへ1行のcanonical JSONを返します。workflowエラーは
+`{"kind":"error","message":"..."}`としてexit 0です。引数数・未知flagなどsyntax errorはstdout空・
+stderr・exit 2、filesystem・内部失敗はstdout空・stderr・exit 1です。stdoutへのshort writeも成功扱いに
+せずexit 1とします。認識済みcommandでは既存の`PrepareOutput`が一度だけ呼ばれ、UnixのSIGPIPE契約を
+維持します。
+
+配信処理は同一record lock内で行われます。markerは`.aidlc-active-directive.json` v2としてrecord Root内
+temporary fileへ全byteを書き、Close後にRenameします。marker commit前にstdoutを返さず、commit failureでは
+旧markerを保持して同じtokenを再試行できます。公開CLI adapterが借りたproject/record RootをCloseし、
+delivery package自体はcaller-owned RootをCloseしません。対象は通常Stageの構成と公開だけであり、human
+approval、Stage実行、report、sensor、receiver本文読込はこの入口から開始しません。
+
+slice単位の確認には次を使用します。
+
+```sh
+go test -count=1 -run '^TestDelivery(Next|Continue|RejectsStale|PublishesRunStage)' ./src/internal/delivery
+go test -count=1 -run '^TestRun(Next|Continue)' ./src/internal/cli
+go test -tags=integration -count=1 -run '^TestDeliveryJourney$' ./src/cmd/aidlc
+```
