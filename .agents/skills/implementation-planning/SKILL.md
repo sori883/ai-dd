@@ -20,7 +20,7 @@ Turn a requested change and verified repository context into a plan whose implem
    - verified facts, assumptions, and unresolved decisions;
    - design and alternatives considered;
    - files or packages to add or change, with one writer per owned area;
-   - ordered TDD slices and the observable seam for each slice; for Go, one behavior per slice with separate RED/GREEN handoffs, phase-specific file ownership, and the parent's targeted rerun gate described in [the phase contract](../../../docs/tdd-handoff.md);
+   - ordered TDD slices and the observable seam for each slice; for Go, default all approved implementation slices in one Issue／PR to one bounded work unit with aggregate ownership and exact targeted commands, so one implementer can run every test-first RED→GREEN cycle before the parent's single boundary rerun described in [the work-unit contract](../../../docs/tdd-handoff.md). Split only for a distinct writer boundary, unresolved gate, or unsafe workload—not merely for slice count—and document why;
    - targeted and final verification commands;
    - dependency impact, risks, rollback, and documentation updates.
 7. Call out every proposed external Go module with its necessity and why the standard library is insufficient.
