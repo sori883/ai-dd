@@ -188,6 +188,31 @@ GOTOOLCHAIN=go1.26.8 go test -tags=integration -count=1 -run '^TestBuildRosterIn
 
 計画と承認済みのUTF-16順・本家上限との差分、未保証事項は[knowledge rosterの実装計画](ram/decisions/2026-09-04-knowledge-roster-plan.md)を参照してください。
 
+### Run-stage composer（内部API）
+
+`delivery.ComposeRunStage(ctx, input)`は、callerが開いたproject／record Rootを借り、active Space・Intentと
+固定AI-DLC 2.6.123の配置graph、保存state、artifact状態、knowledge一覧、必須ruleを毎回読み直します。
+既存`orchestrator.Next`が検証した通常Stageだけを受理し、次を一つの`RunStageComposition`として返します。
+
+- 固定field順・JSON.stringify互換escapeのcanonical `run-stage` JSON
+- AIへ先に渡す必須rule本文の順序付きchunksと、そのbundle digest
+- 配信途中の変更を検出するdirective／route／state hashと継続claims
+
+runtimeの読込元は利用projectの`.codex/`と`aidlc/spaces/<active>/`です。knowledge、工程手順、成果物は
+本文をwireへ埋め込まずpathを渡し、必須rule本文だけをchunksに保持します。配置Markdownを変更すると次回の
+呼出しへ反映されます。Rootはcloseせず、state、audit、cursor、key、Markdownも変更しません。
+
+targeted確認は次です。
+
+```sh
+GOTOOLCHAIN=go1.26.8 go test -count=1 ./src/internal/delivery
+GOTOOLCHAIN=go1.26.8 go test -count=1 -run '^TestComposeRunStageIntegrationFreshness$' ./src/internal/delivery
+```
+
+token署名、active-directive cursorによる一回限り消費、`load-steering`／`run-stage`の公開、receiverによる
+knowledge・工程手順・成果物本文の実読込は後続の配信facadeが担当します。契約と本家確認範囲は
+[run-stage composition計画](ram/decisions/2026-09-05-run-stage-composition-plan.md)を参照してください。
+
 ### Workspaceのspace・intent readerと接続
 
 内部readerの単体テストと、実filesystemでの統合テストを分けて実行します。
