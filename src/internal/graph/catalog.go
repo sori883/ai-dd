@@ -22,6 +22,11 @@ var (
 	ErrCatalogTooLarge = errors.New("graph: catalog exceeds read limit")
 )
 
+type catalogLeafReadOps struct {
+	lstat func(string) (fs.FileInfo, error)
+	open  func(*os.Root, string) (*os.File, error)
+}
+
 // LoadFromRoot loads the project catalog through descriptor- and path-bound
 // regular-file reads. The general Load(fs.FS) API remains available for
 // in-memory and caller-controlled filesystems.
@@ -43,14 +48,34 @@ func LoadFromRoot(projectRoot *os.Root) (Snapshot, error) {
 }
 
 func readCatalogLeaf(projectRoot *os.Root, name string) (content []byte, err error) {
-	pathInfo, err := projectRoot.Lstat(name)
+	return readCatalogLeafWithOps(projectRoot, name, catalogLeafReadOps{
+		lstat: projectRoot.Lstat,
+		open: func(root *os.Root, name string) (*os.File, error) {
+			return openCatalogLeaf(root, name)
+		},
+	})
+}
+
+func readCatalogLeafWithOps(projectRoot *os.Root, name string, ops catalogLeafReadOps) (content []byte, err error) {
+	if projectRoot == nil {
+		return nil, fmt.Errorf("catalog %q requires a project root: %w", name, ErrInvalidCatalog)
+	}
+	lstat := ops.lstat
+	if lstat == nil {
+		lstat = projectRoot.Lstat
+	}
+	open := ops.open
+	if open == nil {
+		open = openCatalogLeaf
+	}
+	pathInfo, err := lstat(name)
 	if err != nil {
 		return nil, err
 	}
 	if pathInfo == nil || pathInfo.Mode()&fs.ModeSymlink != 0 || !pathInfo.Mode().IsRegular() {
 		return nil, fmt.Errorf("catalog %q must be a regular non-symlink file: %w", name, ErrInvalidCatalog)
 	}
-	file, err := openCatalogLeaf(projectRoot, name)
+	file, err := open(projectRoot, name)
 	if err != nil {
 		return nil, fmt.Errorf("open catalog %q: %w", name, err)
 	}
@@ -81,7 +106,7 @@ func readCatalogLeaf(projectRoot *os.Root, name string) (content []byte, err err
 	if err != nil {
 		return nil, fmt.Errorf("stat catalog %q after read: %w", name, err)
 	}
-	current, err := projectRoot.Lstat(name)
+	current, err := lstat(name)
 	if err != nil {
 		return nil, fmt.Errorf("inspect catalog %q after read: %w", name, err)
 	}

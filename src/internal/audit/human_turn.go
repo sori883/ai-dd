@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"sort"
 
 	"github.com/sori883/ai-dd/src/internal/recordlock"
 	"github.com/sori883/ai-dd/src/internal/state"
+	"github.com/sori883/ai-dd/src/internal/workspace"
 )
 
 var (
@@ -62,6 +64,9 @@ func RecordHumanTurnIfCurrent(ctx context.Context, identity recordlock.Identity,
 		return fmt.Errorf("audit: HUMAN_TURN identity advanced since observation: %w", ErrHumanTurnObservationStale)
 	}
 	return recordlock.With(ctx, identity, func(guard *recordlock.Guard) error {
+		if err := humanTurnSelectionMatches(identity, projectRoot); err != nil {
+			return err
+		}
 		current, err := humanTurnObservationWithGuard(ctx, identity, guard, projectRoot, recordRoot)
 		if errors.Is(err, ErrNoActiveWorkflow) {
 			return ErrHumanTurnObservationStale
@@ -74,6 +79,35 @@ func RecordHumanTurnIfCurrent(ctx context.Context, identity recordlock.Identity,
 		}
 		return AppendForIdentity(ctx, identity, guard, projectRoot, recordRoot, []Event{{Event: "HUMAN_TURN"}})
 	})
+}
+
+func humanTurnSelectionMatches(identity recordlock.Identity, projectRoot *os.Root) error {
+	if projectRoot == nil {
+		return fmt.Errorf("audit: HUMAN_TURN selection root is nil: %w", ErrHumanTurnObservationStale)
+	}
+	activeSpace := workspace.ActiveSpace(projectRoot.FS())
+	if activeSpace != identity.Space() {
+		return fmt.Errorf(
+			"audit: HUMAN_TURN active space %q does not match identity %q: %w",
+			activeSpace,
+			identity.Space(),
+			ErrHumanTurnObservationStale,
+		)
+	}
+	intentsFS, err := fs.Sub(projectRoot.FS(), path.Join("aidlc", "spaces", activeSpace, "intents"))
+	if err != nil {
+		return fmt.Errorf("audit: HUMAN_TURN open active intents: %w: %w", ErrHumanTurnObservationStale, err)
+	}
+	activeIntent, found := workspace.ActiveIntent(intentsFS, "")
+	if !found || activeIntent != identity.Intent() {
+		return fmt.Errorf(
+			"audit: HUMAN_TURN active intent %q does not match identity %q: %w",
+			activeIntent,
+			identity.Intent(),
+			ErrHumanTurnObservationStale,
+		)
+	}
+	return nil
 }
 
 func humanTurnObservationWithGuard(ctx context.Context, identity recordlock.Identity, guard *recordlock.Guard, projectRoot, recordRoot *os.Root) (HumanTurnObservation, error) {

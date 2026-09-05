@@ -147,6 +147,9 @@ func TestHumanTurnHookAcceptsPayloadVariantsAndBoundsInput(t *testing.T) {
 	if reader.maxRead > 64*1024 {
 		t.Fatalf("hook read size = %d, want bounded at 64 KiB", reader.maxRead)
 	}
+	if reader.totalRead != humanTurnPayloadLimit {
+		t.Fatalf("hook total read = %d, want exactly %d bytes", reader.totalRead, humanTurnPayloadLimit)
+	}
 }
 
 func TestHumanTurnObservationRejectsAdvancedStateOrAudit(t *testing.T) {
@@ -276,16 +279,117 @@ func TestHumanTurnHookSkipsWhenStateAdvancesAfterObservation(t *testing.T) {
 	}
 }
 
+func TestHumanTurnHookSkipsWhenActiveSelectionChangesAfterObservation(t *testing.T) {
+	tests := []struct {
+		name           string
+		newSpace       string
+		activeCursor   string
+		activeContents string
+		newRecord      string
+	}{
+		{
+			name:           "active intent changes",
+			newSpace:       "team",
+			activeCursor:   filepath.Join("aidlc", "spaces", "team", "intents", "active-intent"),
+			activeContents: "revised\n",
+			newRecord:      filepath.Join("aidlc", "spaces", "team", "intents", "revised"),
+		},
+		{
+			name:           "active space changes",
+			newSpace:       "other",
+			activeCursor:   filepath.Join("aidlc", "spaces", "other", "intents", "active-intent"),
+			activeContents: "build\n",
+			newRecord:      filepath.Join("aidlc", "spaces", "other", "intents", "build"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := newReportAdapterFixture(t)
+			projectPath := fixture.input.Identity.ProjectRoot()
+			oldRecordPath := filepath.Join(projectPath, "aidlc", "spaces", "team", "intents", "build")
+			stateBytes, err := os.ReadFile(filepath.Join(oldRecordPath, "aidlc-state.md"))
+			if err != nil {
+				t.Fatalf("ReadFile(old state): %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(projectPath, "aidlc", "active-space"), []byte("team\n"), 0o600); err != nil {
+				t.Fatalf("WriteFile(active-space): %v", err)
+			}
+			if err := os.MkdirAll(filepath.Join(projectPath, tt.newRecord), 0o700); err != nil {
+				t.Fatalf("MkdirAll(new record): %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(projectPath, tt.newRecord, "aidlc-state.md"), stateBytes, 0o600); err != nil {
+				t.Fatalf("WriteFile(new state): %v", err)
+			}
+			oldActiveIntent := filepath.Join(projectPath, "aidlc", "spaces", "team", "intents", "active-intent")
+			if err := os.WriteFile(oldActiveIntent, []byte("build\n"), 0o600); err != nil {
+				t.Fatalf("WriteFile(old active intent): %v", err)
+			}
+
+			previousResolver := humanTurnInputResolver
+			previousObserve := humanTurnObserve
+			previousRecordIfCurrent := humanTurnRecordIfCurrent
+			previousAfterObservation := humanTurnAfterObservation
+			previousCloser := humanTurnRootCloser
+			t.Cleanup(func() {
+				humanTurnInputResolver = previousResolver
+				humanTurnObserve = previousObserve
+				humanTurnRecordIfCurrent = previousRecordIfCurrent
+				humanTurnAfterObservation = previousAfterObservation
+				humanTurnRootCloser = previousCloser
+			})
+			humanTurnInputResolver = func(func() (string, error), func(string) string, string) (deliverypkg.RunStageInput, *os.Root, *os.Root, error) {
+				return fixture.input, fixture.projectRoot, fixture.recordRoot, nil
+			}
+			humanTurnObserve = audit.ObserveHumanTurn
+			humanTurnRecordIfCurrent = audit.RecordHumanTurnIfCurrent
+			humanTurnRootCloser = func(*os.Root) error { return nil }
+			humanTurnAfterObservation = func() {
+				if err := os.WriteFile(filepath.Join(projectPath, tt.activeCursor), []byte(tt.activeContents), 0o600); err != nil {
+					t.Fatalf("WriteFile(new active intent): %v", err)
+				}
+				if tt.newSpace != "team" {
+					if err := os.WriteFile(filepath.Join(projectPath, "aidlc", "active-space"), []byte(tt.newSpace+"\n"), 0o600); err != nil {
+						t.Fatalf("WriteFile(new active-space): %v", err)
+					}
+				}
+			}
+			if err := runHumanTurnHook(func() ([]byte, error) { return []byte("legacy prompt"), nil }, nil, nil); err != nil {
+				t.Fatalf("runHumanTurnHook() error = %v, want silent success", err)
+			}
+			assertHumanTurnAuditAbsent(t, oldRecordPath)
+			assertHumanTurnAuditAbsent(t, filepath.Join(projectPath, tt.newRecord))
+		})
+	}
+}
+
+func assertHumanTurnAuditAbsent(t *testing.T, recordPath string) {
+	t.Helper()
+	auditPath := filepath.Join(recordPath, "audit")
+	entries, err := os.ReadDir(auditPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	if err != nil {
+		t.Fatalf("ReadDir(%q): %v", auditPath, err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("audit entries in %q = %v, want none", recordPath, entries)
+	}
+}
+
 type trackingHumanTurnReader struct {
-	reader  *strings.Reader
-	maxRead int
+	reader    *strings.Reader
+	maxRead   int
+	totalRead int
 }
 
 func (r *trackingHumanTurnReader) Read(p []byte) (int, error) {
 	if len(p) > r.maxRead {
 		r.maxRead = len(p)
 	}
-	return r.reader.Read(p)
+	n, err := r.reader.Read(p)
+	r.totalRead += n
+	return n, err
 }
 
 func TestHumanTurnHookSwallowsAppendAndRootFailures(t *testing.T) {
