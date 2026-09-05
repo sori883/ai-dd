@@ -1,13 +1,14 @@
 package graph
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
 	"math"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 type canonicalJSONKind uint8
@@ -22,127 +23,352 @@ const (
 	canonicalJSONObject
 )
 
+type canonicalJSONStringValue []uint16
+
 type canonicalJSONValue struct {
 	kind   canonicalJSONKind
 	bool   bool
-	str    string
+	str    canonicalJSONStringValue
 	number string
 	array  []canonicalJSONValue
 	object []canonicalJSONObjectField
 }
 
 type canonicalJSONObjectField struct {
-	name  string
+	name  canonicalJSONStringValue
 	value canonicalJSONValue
 }
 
+type canonicalJSONParser struct {
+	data   []byte
+	offset int
+}
+
 func canonicalizeJSON(data []byte) ([]byte, error) {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	value, err := decodeCanonicalJSONValue(decoder)
+	parser := canonicalJSONParser{data: data}
+	value, err := parser.parseValue()
 	if err != nil {
 		return nil, err
 	}
-	if _, err := decoder.Token(); err != io.EOF {
-		if err == nil {
-			return nil, fmt.Errorf("multiple JSON values")
-		}
-		return nil, err
+	parser.skipWhitespace()
+	if parser.offset != len(parser.data) {
+		return nil, parser.errorf("multiple JSON values")
 	}
 
 	return appendCanonicalJSON(nil, value)
 }
 
-func decodeCanonicalJSONValue(decoder *json.Decoder) (canonicalJSONValue, error) {
-	token, err := decoder.Token()
-	if err != nil {
-		return canonicalJSONValue{}, err
+func (p *canonicalJSONParser) parseValue() (canonicalJSONValue, error) {
+	p.skipWhitespace()
+	if p.offset == len(p.data) {
+		return canonicalJSONValue{}, p.errorf("unexpected end of JSON input")
 	}
 
-	switch value := token.(type) {
-	case nil:
+	switch p.data[p.offset] {
+	case 'n':
+		if err := p.consumeLiteral("null"); err != nil {
+			return canonicalJSONValue{}, err
+		}
 		return canonicalJSONValue{kind: canonicalJSONNull}, nil
-	case bool:
-		return canonicalJSONValue{kind: canonicalJSONBoolean, bool: value}, nil
-	case string:
-		return canonicalJSONValue{kind: canonicalJSONString, str: value}, nil
-	case json.Number:
-		number, err := canonicalizeJSONNumber(value.String())
+	case 't':
+		if err := p.consumeLiteral("true"); err != nil {
+			return canonicalJSONValue{}, err
+		}
+		return canonicalJSONValue{kind: canonicalJSONBoolean, bool: true}, nil
+	case 'f':
+		if err := p.consumeLiteral("false"); err != nil {
+			return canonicalJSONValue{}, err
+		}
+		return canonicalJSONValue{kind: canonicalJSONBoolean}, nil
+	case '"':
+		value, err := p.parseString()
 		if err != nil {
 			return canonicalJSONValue{}, err
 		}
-		return canonicalJSONValue{kind: canonicalJSONNumber, number: number}, nil
-	case json.Delim:
-		switch value {
-		case '{':
-			return decodeCanonicalJSONObject(decoder)
-		case '[':
-			return decodeCanonicalJSONArray(decoder)
-		default:
-			return canonicalJSONValue{}, fmt.Errorf("unexpected JSON delimiter %q", value)
-		}
+		return canonicalJSONValue{kind: canonicalJSONString, str: value}, nil
+	case '[':
+		return p.parseArray()
+	case '{':
+		return p.parseObject()
+	case '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+		return p.parseNumber()
 	default:
-		return canonicalJSONValue{}, fmt.Errorf("unexpected JSON token %T", token)
+		return canonicalJSONValue{}, p.errorf("unexpected character %q", p.data[p.offset])
 	}
 }
 
-func decodeCanonicalJSONObject(decoder *json.Decoder) (canonicalJSONValue, error) {
+func (p *canonicalJSONParser) parseObject() (canonicalJSONValue, error) {
+	p.offset++
+	p.skipWhitespace()
+	if p.consumeByte('}') {
+		return canonicalJSONValue{kind: canonicalJSONObject}, nil
+	}
+
 	fields := make([]canonicalJSONObjectField, 0)
-	for decoder.More() {
-		keyToken, err := decoder.Token()
+	for {
+		p.skipWhitespace()
+		if p.offset == len(p.data) || p.data[p.offset] != '"' {
+			return canonicalJSONValue{}, p.errorf("object key must be a string")
+		}
+		name, err := p.parseString()
 		if err != nil {
 			return canonicalJSONValue{}, err
 		}
-		key, ok := keyToken.(string)
-		if !ok {
-			return canonicalJSONValue{}, fmt.Errorf("object key is %T, want string", keyToken)
+		p.skipWhitespace()
+		if !p.consumeByte(':') {
+			return canonicalJSONValue{}, p.errorf("expected colon after object key")
+		}
+		value, err := p.parseValue()
+		if err != nil {
+			return canonicalJSONValue{}, err
 		}
 
-		value, err := decodeCanonicalJSONValue(decoder)
-		if err != nil {
-			return canonicalJSONValue{}, err
-		}
 		updated := false
 		for index := range fields {
-			if fields[index].name == key {
+			if slices.Equal(fields[index].name, name) {
 				fields[index].value = value
 				updated = true
 				break
 			}
 		}
 		if !updated {
-			fields = append(fields, canonicalJSONObjectField{name: key, value: value})
+			fields = append(fields, canonicalJSONObjectField{name: name, value: value})
+		}
+
+		p.skipWhitespace()
+		if p.consumeByte('}') {
+			break
+		}
+		if !p.consumeByte(',') {
+			return canonicalJSONValue{}, p.errorf("expected comma or object end")
 		}
 	}
 
-	closing, err := decoder.Token()
-	if err != nil {
-		return canonicalJSONValue{}, err
-	}
-	if closing != json.Delim('}') {
-		return canonicalJSONValue{}, fmt.Errorf("object ended with %v, want }", closing)
-	}
-	return canonicalJSONValue{kind: canonicalJSONObject, object: fields}, nil
+	return canonicalJSONValue{kind: canonicalJSONObject, object: orderCanonicalJSONObjectFields(fields)}, nil
 }
 
-func decodeCanonicalJSONArray(decoder *json.Decoder) (canonicalJSONValue, error) {
+func (p *canonicalJSONParser) parseArray() (canonicalJSONValue, error) {
+	p.offset++
+	p.skipWhitespace()
+	if p.consumeByte(']') {
+		return canonicalJSONValue{kind: canonicalJSONArray}, nil
+	}
+
 	values := make([]canonicalJSONValue, 0)
-	for decoder.More() {
-		value, err := decodeCanonicalJSONValue(decoder)
+	for {
+		value, err := p.parseValue()
 		if err != nil {
 			return canonicalJSONValue{}, err
 		}
 		values = append(values, value)
+
+		p.skipWhitespace()
+		if p.consumeByte(']') {
+			break
+		}
+		if !p.consumeByte(',') {
+			return canonicalJSONValue{}, p.errorf("expected comma or array end")
+		}
 	}
 
-	closing, err := decoder.Token()
-	if err != nil {
-		return canonicalJSONValue{}, err
-	}
-	if closing != json.Delim(']') {
-		return canonicalJSONValue{}, fmt.Errorf("array ended with %v, want ]", closing)
-	}
 	return canonicalJSONValue{kind: canonicalJSONArray, array: values}, nil
+}
+
+func (p *canonicalJSONParser) parseString() (canonicalJSONStringValue, error) {
+	p.offset++
+	value := make(canonicalJSONStringValue, 0)
+	for p.offset < len(p.data) {
+		character := p.data[p.offset]
+		switch character {
+		case '"':
+			p.offset++
+			return value, nil
+		case '\\':
+			p.offset++
+			if p.offset == len(p.data) {
+				return nil, p.errorf("unterminated string escape")
+			}
+			escaped := p.data[p.offset]
+			p.offset++
+			switch escaped {
+			case '"', '\\', '/':
+				value = append(value, uint16(escaped))
+			case 'b':
+				value = append(value, '\b')
+			case 'f':
+				value = append(value, '\f')
+			case 'n':
+				value = append(value, '\n')
+			case 'r':
+				value = append(value, '\r')
+			case 't':
+				value = append(value, '\t')
+			case 'u':
+				unit, err := p.parseHexCodeUnit()
+				if err != nil {
+					return nil, err
+				}
+				value = append(value, unit)
+			default:
+				return nil, p.errorf("invalid string escape %q", escaped)
+			}
+		default:
+			if character < 0x20 {
+				return nil, p.errorf("unescaped control character in string")
+			}
+			r, size := utf8.DecodeRune(p.data[p.offset:])
+			p.offset += size
+			if r <= 0xffff {
+				value = append(value, uint16(r))
+				continue
+			}
+			high, low := utf16.EncodeRune(r)
+			value = append(value, uint16(high), uint16(low))
+		}
+	}
+
+	return nil, p.errorf("unterminated string")
+}
+
+func (p *canonicalJSONParser) parseHexCodeUnit() (uint16, error) {
+	if len(p.data)-p.offset < 4 {
+		return 0, p.errorf("short Unicode escape")
+	}
+	var value uint16
+	for range 4 {
+		digit, ok := hexadecimalValue(p.data[p.offset])
+		if !ok {
+			return 0, p.errorf("invalid Unicode escape")
+		}
+		value = value<<4 | uint16(digit)
+		p.offset++
+	}
+	return value, nil
+}
+
+func (p *canonicalJSONParser) parseNumber() (canonicalJSONValue, error) {
+	start := p.offset
+	if p.consumeByte('-') && p.offset == len(p.data) {
+		return canonicalJSONValue{}, p.errorf("incomplete JSON number")
+	}
+
+	if p.consumeByte('0') {
+		if p.offset < len(p.data) && isDecimalDigit(p.data[p.offset]) {
+			return canonicalJSONValue{}, p.errorf("leading zero in JSON number")
+		}
+	} else {
+		if p.offset == len(p.data) || p.data[p.offset] < '1' || p.data[p.offset] > '9' {
+			return canonicalJSONValue{}, p.errorf("invalid JSON number")
+		}
+		for p.offset < len(p.data) && isDecimalDigit(p.data[p.offset]) {
+			p.offset++
+		}
+	}
+
+	if p.consumeByte('.') {
+		fractionStart := p.offset
+		for p.offset < len(p.data) && isDecimalDigit(p.data[p.offset]) {
+			p.offset++
+		}
+		if p.offset == fractionStart {
+			return canonicalJSONValue{}, p.errorf("JSON number fraction has no digits")
+		}
+	}
+	if p.offset < len(p.data) && (p.data[p.offset] == 'e' || p.data[p.offset] == 'E') {
+		p.offset++
+		if p.offset < len(p.data) && (p.data[p.offset] == '+' || p.data[p.offset] == '-') {
+			p.offset++
+		}
+		exponentStart := p.offset
+		for p.offset < len(p.data) && isDecimalDigit(p.data[p.offset]) {
+			p.offset++
+		}
+		if p.offset == exponentStart {
+			return canonicalJSONValue{}, p.errorf("JSON number exponent has no digits")
+		}
+	}
+
+	number, err := canonicalizeJSONNumber(string(p.data[start:p.offset]))
+	if err != nil {
+		return canonicalJSONValue{}, p.errorf("invalid JSON number: %v", err)
+	}
+	return canonicalJSONValue{kind: canonicalJSONNumber, number: number}, nil
+}
+
+func (p *canonicalJSONParser) consumeLiteral(literal string) error {
+	if len(p.data)-p.offset < len(literal) || string(p.data[p.offset:p.offset+len(literal)]) != literal {
+		return p.errorf("invalid JSON literal")
+	}
+	p.offset += len(literal)
+	return nil
+}
+
+func (p *canonicalJSONParser) consumeByte(want byte) bool {
+	if p.offset == len(p.data) || p.data[p.offset] != want {
+		return false
+	}
+	p.offset++
+	return true
+}
+
+func (p *canonicalJSONParser) skipWhitespace() {
+	for p.offset < len(p.data) {
+		switch p.data[p.offset] {
+		case ' ', '\t', '\n', '\r':
+			p.offset++
+		default:
+			return
+		}
+	}
+}
+
+func (p *canonicalJSONParser) errorf(format string, args ...any) error {
+	return fmt.Errorf("canonical JSON at byte %d: %s", p.offset, fmt.Sprintf(format, args...))
+}
+
+func orderCanonicalJSONObjectFields(fields []canonicalJSONObjectField) []canonicalJSONObjectField {
+	type indexedField struct {
+		index uint32
+		field canonicalJSONObjectField
+	}
+	indexed := make([]indexedField, 0, len(fields))
+	ordinary := make([]canonicalJSONObjectField, 0, len(fields))
+	for _, field := range fields {
+		index, ok := canonicalJSONArrayIndex(field.name)
+		if ok {
+			indexed = append(indexed, indexedField{index: index, field: field})
+			continue
+		}
+		ordinary = append(ordinary, field)
+	}
+	sort.Slice(indexed, func(i, j int) bool {
+		return indexed[i].index < indexed[j].index
+	})
+
+	ordered := make([]canonicalJSONObjectField, 0, len(fields))
+	for _, entry := range indexed {
+		ordered = append(ordered, entry.field)
+	}
+	return append(ordered, ordinary...)
+}
+
+func canonicalJSONArrayIndex(value canonicalJSONStringValue) (uint32, bool) {
+	if len(value) == 0 || len(value) > 1 && value[0] == '0' {
+		return 0, false
+	}
+	const maximumArrayIndex uint64 = 1<<32 - 2
+	var number uint64
+	for _, unit := range value {
+		if unit < '0' || unit > '9' {
+			return 0, false
+		}
+		digit := uint64(unit - '0')
+		if number > (maximumArrayIndex-digit)/10 {
+			return 0, false
+		}
+		number = number*10 + digit
+	}
+	return uint32(number), true
 }
 
 func appendCanonicalJSON(dst []byte, value canonicalJSONValue) ([]byte, error) {
@@ -191,11 +417,11 @@ func appendCanonicalJSON(dst []byte, value canonicalJSONValue) ([]byte, error) {
 	}
 }
 
-func appendCanonicalJSONString(dst []byte, value string) []byte {
+func appendCanonicalJSONString(dst []byte, value canonicalJSONStringValue) []byte {
 	dst = append(dst, '"')
 	for index := 0; index < len(value); index++ {
-		character := value[index]
-		switch character {
+		unit := value[index]
+		switch unit {
 		case '"':
 			dst = append(dst, '\\', '"')
 		case '\\':
@@ -211,14 +437,49 @@ func appendCanonicalJSONString(dst []byte, value string) []byte {
 		case '\t':
 			dst = append(dst, '\\', 't')
 		default:
-			if character < 0x20 {
-				dst = append(dst, '\\', 'u', '0', '0', hexDigits[character>>4], hexDigits[character&0x0f])
-			} else {
-				dst = append(dst, character)
+			switch {
+			case unit < 0x20:
+				dst = appendUnicodeEscape(dst, unit)
+			case utf16.IsSurrogate(rune(unit)):
+				if unit <= 0xdbff && index+1 < len(value) && value[index+1] >= 0xdc00 && value[index+1] <= 0xdfff {
+					dst = utf8.AppendRune(dst, utf16.DecodeRune(rune(unit), rune(value[index+1])))
+					index++
+				} else {
+					dst = appendUnicodeEscape(dst, unit)
+				}
+			default:
+				dst = utf8.AppendRune(dst, rune(unit))
 			}
 		}
 	}
 	return append(dst, '"')
+}
+
+func appendUnicodeEscape(dst []byte, value uint16) []byte {
+	return append(dst,
+		'\\', 'u',
+		hexDigits[value>>12],
+		hexDigits[value>>8&0x0f],
+		hexDigits[value>>4&0x0f],
+		hexDigits[value&0x0f],
+	)
+}
+
+func hexadecimalValue(value byte) (byte, bool) {
+	switch {
+	case value >= '0' && value <= '9':
+		return value - '0', true
+	case value >= 'a' && value <= 'f':
+		return value - 'a' + 10, true
+	case value >= 'A' && value <= 'F':
+		return value - 'A' + 10, true
+	default:
+		return 0, false
+	}
+}
+
+func isDecimalDigit(value byte) bool {
+	return value >= '0' && value <= '9'
 }
 
 const hexDigits = "0123456789abcdef"

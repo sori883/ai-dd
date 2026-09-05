@@ -127,6 +127,51 @@ func TestSnapshotRouteHashBindsCanonicalNodeAndScopeStages(t *testing.T) {
 	})
 }
 
+func TestSnapshotRouteHashMatchesJavaScriptObjectAndStringEdges(t *testing.T) {
+	t.Run("array-index properties sort before ordinary properties", func(t *testing.T) {
+		inputNode := strings.Replace(routeTargetNodeJSON, `"review_detail":`, `"metadata":{"ordinary":"value","10":"ten","2":"two","1":"one"},"review_detail":`, 1)
+		jsonStringifyNode := strings.Replace(routeTargetNodeJSON, `"review_detail":`, `"metadata":{"1":"one","2":"two","10":"ten","ordinary":"value"},"review_detail":`, 1)
+
+		inputSnapshot, err := Load(routeFixtureFS(inputNode, routeScopeGridJSON))
+		if err != nil {
+			t.Fatalf("Load(input node) error = %v", err)
+		}
+		jsonStringifySnapshot, err := Load(routeFixtureFS(jsonStringifyNode, routeScopeGridJSON))
+		if err != nil {
+			t.Fatalf("Load(JSON.stringify node) error = %v", err)
+		}
+
+		got, err := inputSnapshot.RouteHash("raw-stage", "mvp")
+		if err != nil {
+			t.Fatalf("RouteHash(input node) error = %v", err)
+		}
+		want, err := jsonStringifySnapshot.RouteHash("raw-stage", "mvp")
+		if err != nil {
+			t.Fatalf("RouteHash(JSON.stringify node) error = %v", err)
+		}
+		if got != want {
+			t.Errorf("RouteHash() = %q, want JSON.stringify property order hash %q", got, want)
+		}
+	})
+
+	t.Run("lone UTF-16 surrogates remain escaped", func(t *testing.T) {
+		node := strings.Replace(routeTargetNodeJSON, `"review_detail":`, `"edge_cases":{"high":"\ud800","low":"\udc00","pair":"\ud83d\ude80","unicode":"日本語"},"review_detail":`, 1)
+		snapshot, err := Load(routeFixtureFS(node, routeScopeGridJSON))
+		if err != nil {
+			t.Fatalf("Load(surrogate node) error = %v", err)
+		}
+
+		got, err := snapshot.RouteHash("raw-stage", "mvp")
+		if err != nil {
+			t.Fatalf("RouteHash(surrogate node) error = %v", err)
+		}
+		const want = "5f9d617d24007d1bcd19a9a5bb16a902adbef0e7aca63807cded009f71b923b0"
+		if got != want {
+			t.Errorf("RouteHash() = %q, want independent JSON.parse/JSON.stringify golden %q", got, want)
+		}
+	})
+}
+
 func TestSnapshotRouteHashRejectsUnknownRoute(t *testing.T) {
 	snapshot, err := Load(routeFixtureFS(routeTargetNodeJSON, routeScopeGridJSON))
 	if err != nil {
