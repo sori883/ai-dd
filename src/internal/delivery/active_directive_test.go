@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -125,6 +126,407 @@ func TestActiveDirectiveRoundTripPreservesExplicitNullIntent(t *testing.T) {
 	if !bytes.Contains(data, []byte(`"intent_uuid":null`)) {
 		t.Errorf("marker = %s, want explicit null intent_uuid", data)
 	}
+}
+
+func TestActiveDirectivePreservesOptionalPresenceAndUnknownNestedFields(t *testing.T) {
+	rootPath := t.TempDir()
+	markerPath := filepath.Join(rootPath, activeDirectiveMarkerName)
+	stateHash := strings.Repeat("a", sha256.Size*2)
+	projectHash := strings.Repeat("b", sha256.Size*2)
+	raw := fmt.Sprintf(`{"version":2,"stage":"intent-capture","state_sha256":%q,"revision":0,"project_sha256":%q,"intent_uuid":null,"state_present":false,"code_generation_authority_revision":0,"part":0,"parts":0,"continue_token":"","continue_token_sha256":%q,"stop_fingerprint":"","owner_session":"session","owner_epoch":0,"context_epoch":0,"kind":"run-stage","delivery":"delivered","needs_rehydrate":false,"active_attempt":{"id":"","command_kind":"next","command_sha256":%q,"issued_state_sha256":%q,"session_id":"session","owner_epoch":0,"context_epoch":0,"status":"settled","claim_revision":0,"shared_attempt":false,"resume_request":false,"resume_action":"","resume_gate_revision":0,"attempt_unknown":{"kept":true}},"resume":null,"event_sequence":0,"human_sequence":0,"engine_sequence":0,"conversation_sequence":0,"stop_count":0,"top_unknown":[1,true]}`,
+		stateHash,
+		projectHash,
+		sha256Hex(""),
+		strings.Repeat("c", sha256.Size*2),
+		stateHash,
+	)
+	if err := os.WriteFile(markerPath, []byte(raw), 0o600); err != nil {
+		t.Fatalf("WriteFile(marker): %v", err)
+	}
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		t.Fatalf("OpenRoot(%q): %v", rootPath, err)
+	}
+	defer func() { _ = root.Close() }()
+
+	marker, found, err := ReadActiveDirectiveMarker(root)
+	if err != nil || !found {
+		t.Fatalf("ReadActiveDirectiveMarker() = found %v, error %v", found, err)
+	}
+	if err := WriteActiveDirectiveMarker(root, marker); err != nil {
+		t.Fatalf("WriteActiveDirectiveMarker() error = %v", err)
+	}
+	gotBytes, err := root.ReadFile(activeDirectiveMarkerName)
+	if err != nil {
+		t.Fatalf("ReadFile(round-trip marker): %v", err)
+	}
+	assertJSONFieldsPresent(t, gotBytes,
+		"code_generation_authority_revision", "part", "parts", "continue_token", "continue_token_sha256",
+		"stop_fingerprint", "resume", "top_unknown",
+	)
+	assertJSONFieldsPresent(t, nestedJSONField(gotBytes, "active_attempt"),
+		"id", "claim_revision", "shared_attempt", "resume_request", "resume_action", "resume_gate_revision", "attempt_unknown",
+	)
+	var want, got map[string]any
+	if err := json.Unmarshal([]byte(raw), &want); err != nil {
+		t.Fatalf("Unmarshal(want): %v", err)
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(gotBytes), &got); err != nil {
+		t.Fatalf("Unmarshal(got): %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("semantic marker round-trip = %#v, want %#v", got, want)
+	}
+}
+
+func TestActiveDirectivePreservesUnknownResumeFields(t *testing.T) {
+	marker := minimalActiveDirectiveMarker()
+	marker.Resume = &ActiveDirectiveResume{
+		Status:             ActiveDirectiveResumeWaiting,
+		IssuingStage:       marker.Stage,
+		IssuingStateSHA256: marker.StateSHA256,
+		IssuingSession:     marker.OwnerSession,
+		IssuingIntentUUID:  marker.IntentUUID,
+		Action:             "",
+		Extra: map[string]json.RawMessage{
+			"resume_unknown": json.RawMessage(`{"value":42}`),
+		},
+		present: map[string]bool{"action": true},
+	}
+	data, err := json.Marshal(marker)
+	if err != nil {
+		t.Fatalf("Marshal(marker): %v", err)
+	}
+	rootPath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(rootPath, activeDirectiveMarkerName), data, 0o600); err != nil {
+		t.Fatalf("WriteFile(marker): %v", err)
+	}
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		t.Fatalf("OpenRoot(%q): %v", rootPath, err)
+	}
+	defer func() { _ = root.Close() }()
+	got, found, err := ReadActiveDirectiveMarker(root)
+	if err != nil || !found {
+		t.Fatalf("ReadActiveDirectiveMarker() = found %v, error %v", found, err)
+	}
+	if got.Resume == nil || string(got.Resume.Extra["resume_unknown"]) != `{"value":42}` {
+		t.Fatalf("decoded resume = %#v, want unknown field preserved", got.Resume)
+	}
+	if err := WriteActiveDirectiveMarker(root, got); err != nil {
+		t.Fatalf("WriteActiveDirectiveMarker() error = %v", err)
+	}
+	assertJSONFieldsPresent(t, nestedJSONField(mustReadMarkerBytes(t, root), "resume"), "action", "resume_unknown")
+}
+
+func TestActiveDirectiveRejectsDisallowedExplicitEmptyOptionals(t *testing.T) {
+	base, err := json.Marshal(minimalActiveDirectiveMarker())
+	if err != nil {
+		t.Fatalf("Marshal(minimal marker): %v", err)
+	}
+	tests := []struct {
+		name   string
+		mutate func(map[string]json.RawMessage) error
+	}{
+		{
+			name: "code_generation_source_sha256",
+			mutate: func(raw map[string]json.RawMessage) error {
+				raw["code_generation_source_sha256"] = json.RawMessage(`""`)
+				return nil
+			},
+		},
+		{
+			name: "cursor_harness",
+			mutate: func(raw map[string]json.RawMessage) error {
+				raw["cursor_harness"] = json.RawMessage(`""`)
+				return nil
+			},
+		},
+		{
+			name: "active_attempt.cursor_input_sha256",
+			mutate: func(raw map[string]json.RawMessage) error {
+				var attempt map[string]json.RawMessage
+				if err := json.Unmarshal(raw["active_attempt"], &attempt); err != nil {
+					return err
+				}
+				attempt["cursor_input_sha256"] = json.RawMessage(`""`)
+				encoded, err := json.Marshal(attempt)
+				if err != nil {
+					return err
+				}
+				raw["active_attempt"] = encoded
+				return nil
+			},
+		},
+		{
+			name: "active_attempt.result_sha256",
+			mutate: func(raw map[string]json.RawMessage) error {
+				var attempt map[string]json.RawMessage
+				if err := json.Unmarshal(raw["active_attempt"], &attempt); err != nil {
+					return err
+				}
+				attempt["result_sha256"] = json.RawMessage(`""`)
+				encoded, err := json.Marshal(attempt)
+				if err != nil {
+					return err
+				}
+				raw["active_attempt"] = encoded
+				return nil
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var raw map[string]json.RawMessage
+			if err := json.Unmarshal(base, &raw); err != nil {
+				t.Fatalf("Unmarshal(marker): %v", err)
+			}
+			if err := test.mutate(raw); err != nil {
+				t.Fatalf("mutate marker: %v", err)
+			}
+			data, err := json.Marshal(raw)
+			if err != nil {
+				t.Fatalf("Marshal(mutated marker): %v", err)
+			}
+			assertActiveDirectiveMarkerRejected(t, data)
+		})
+	}
+}
+
+func TestActiveDirectivePreservesWhitespaceInFixedUnits(t *testing.T) {
+	base, err := json.Marshal(minimalActiveDirectiveMarker())
+	if err != nil {
+		t.Fatalf("Marshal(minimal marker): %v", err)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(base, &raw); err != nil {
+		t.Fatalf("Unmarshal(marker): %v", err)
+	}
+	raw["units"] = json.RawMessage(`[" unit-a ","\tunit-b\t"]`)
+	data, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatalf("Marshal(marker with whitespace units): %v", err)
+	}
+	rootPath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(rootPath, activeDirectiveMarkerName), data, 0o600); err != nil {
+		t.Fatalf("WriteFile(marker): %v", err)
+	}
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		t.Fatalf("OpenRoot(%q): %v", rootPath, err)
+	}
+	defer func() { _ = root.Close() }()
+	marker, found, err := ReadActiveDirectiveMarker(root)
+	if err != nil || !found {
+		t.Fatalf("ReadActiveDirectiveMarker() = found %v, error %v", found, err)
+	}
+	if !reflect.DeepEqual(marker.Units, []string{" unit-a ", "\tunit-b\t"}) {
+		t.Fatalf("decoded units = %#v, want fixed parser values with whitespace preserved", marker.Units)
+	}
+	if err := WriteActiveDirectiveMarker(root, marker); err != nil {
+		t.Fatalf("WriteActiveDirectiveMarker(round-trip): %v", err)
+	}
+	var got map[string]any
+	roundTrip := mustReadMarkerBytes(t, root)
+	if err := json.Unmarshal(bytes.TrimSpace(roundTrip), &got); err != nil {
+		t.Fatalf("Unmarshal(round-trip marker): %v", err)
+	}
+	if !reflect.DeepEqual(got["units"], []any{" unit-a ", "\tunit-b\t"}) {
+		t.Errorf("round-trip units = %#v, want whitespace-preserving values", got["units"])
+	}
+}
+
+func TestActiveDirectiveV1RoundTripRemainsNarrow(t *testing.T) {
+	rootPath := t.TempDir()
+	raw := []byte(`{"version":1,"stage":"intent-capture","unit":"unit-a","state_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","project_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","kind":"run-stage","top_unknown":true}`)
+	if err := os.WriteFile(filepath.Join(rootPath, activeDirectiveMarkerName), raw, 0o600); err != nil {
+		t.Fatalf("WriteFile(marker): %v", err)
+	}
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		t.Fatalf("OpenRoot(%q): %v", rootPath, err)
+	}
+	defer func() { _ = root.Close() }()
+	marker, found, err := ReadActiveDirectiveMarker(root)
+	if err != nil || !found {
+		t.Fatalf("ReadActiveDirectiveMarker() = found %v, error %v", found, err)
+	}
+	if marker.Version != 1 || marker.ProjectSHA256 != "" || marker.Kind != "" || len(marker.Extra) != 0 {
+		t.Fatalf("decoded v1 marker = %#v, want narrow representation", marker)
+	}
+	if err := WriteActiveDirectiveMarker(root, marker); err != nil {
+		t.Fatalf("WriteActiveDirectiveMarker() error = %v", err)
+	}
+	var got map[string]any
+	data := mustReadMarkerBytes(t, root)
+	if err := json.Unmarshal(bytes.TrimSpace(data), &got); err != nil {
+		t.Fatalf("Unmarshal(round-trip v1): %v", err)
+	}
+	if len(got) != 4 || got["version"] != float64(1) || got["stage"] != "intent-capture" || got["unit"] != "unit-a" || got["state_sha256"] != strings.Repeat("a", sha256.Size*2) {
+		t.Errorf("round-trip v1 = %#v, want exactly fixed v1 fields", got)
+	}
+}
+
+func TestActiveDirectiveV1IgnoresMalformedV2Fields(t *testing.T) {
+	raw := []byte(`{"version":1,"stage":"intent-capture","state_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","revision":"not-a-number","active_attempt":"not-an-attempt","unknown":[1,true]}`)
+	rootPath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(rootPath, activeDirectiveMarkerName), raw, 0o600); err != nil {
+		t.Fatalf("WriteFile(marker): %v", err)
+	}
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		t.Fatalf("OpenRoot(%q): %v", rootPath, err)
+	}
+	defer func() { _ = root.Close() }()
+	marker, found, err := ReadActiveDirectiveMarker(root)
+	if err != nil || !found {
+		t.Fatalf("ReadActiveDirectiveMarker() = found %v, error %v, want narrow v1 read", found, err)
+	}
+	if marker.Version != 1 || marker.Stage != "intent-capture" || len(marker.Extra) != 0 {
+		t.Errorf("decoded v1 marker = %#v, want malformed v2 fields ignored", marker)
+	}
+}
+
+func TestActiveDirectiveTrimsFixedJavaScriptWhitespace(t *testing.T) {
+	marker := minimalActiveDirectiveMarker()
+	marker.Stage = "\ufeff" + marker.Stage + " "
+	data := mustMarshalActiveDirectiveMarkerWithoutValidation(marker)
+	rootPath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(rootPath, activeDirectiveMarkerName), data, 0o600); err != nil {
+		t.Fatalf("WriteFile(marker): %v", err)
+	}
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		t.Fatalf("OpenRoot(%q): %v", rootPath, err)
+	}
+	defer func() { _ = root.Close() }()
+	got, found, err := ReadActiveDirectiveMarker(root)
+	if err != nil || !found {
+		t.Fatalf("ReadActiveDirectiveMarker() = found %v, error %v", found, err)
+	}
+	if got.Stage != minimalActiveDirectiveMarker().Stage {
+		t.Errorf("decoded stage = %q, want trimmed %q", got.Stage, minimalActiveDirectiveMarker().Stage)
+	}
+}
+
+func TestActiveDirectiveRejectsInvalidFixedUnitNames(t *testing.T) {
+	invalid := []struct {
+		name   string
+		mutate func(*ActiveDirectiveMarker)
+	}{
+		{name: "unit leading dot", mutate: func(marker *ActiveDirectiveMarker) { marker.Unit = ".unit" }},
+		{name: "unit leading underscore", mutate: func(marker *ActiveDirectiveMarker) { marker.Unit = "_unit" }},
+		{name: "unit leading hyphen", mutate: func(marker *ActiveDirectiveMarker) { marker.Unit = "-unit" }},
+		{name: "unit too long", mutate: func(marker *ActiveDirectiveMarker) { marker.Unit = strings.Repeat("u", 65) }},
+		{name: "units leading dot", mutate: func(marker *ActiveDirectiveMarker) { marker.Units = []string{".unit"} }},
+		{name: "units leading underscore", mutate: func(marker *ActiveDirectiveMarker) { marker.Units = []string{"_unit"} }},
+		{name: "units leading hyphen", mutate: func(marker *ActiveDirectiveMarker) { marker.Units = []string{"-unit"} }},
+		{name: "units too long", mutate: func(marker *ActiveDirectiveMarker) { marker.Units = []string{strings.Repeat("u", 65)} }},
+	}
+	for _, test := range invalid {
+		t.Run(test.name, func(t *testing.T) {
+			rootPath := t.TempDir()
+			root, err := os.OpenRoot(rootPath)
+			if err != nil {
+				t.Fatalf("OpenRoot(%q): %v", rootPath, err)
+			}
+			defer func() { _ = root.Close() }()
+			marker := minimalActiveDirectiveMarker()
+			test.mutate(&marker)
+			if err := WriteActiveDirectiveMarker(root, marker); err == nil {
+				t.Fatal("WriteActiveDirectiveMarker() error = nil, want fixed unit rejection")
+			} else if !errors.Is(err, ErrInvalidActiveDirectiveMarker) {
+				t.Errorf("WriteActiveDirectiveMarker() error = %v, want ErrInvalidActiveDirectiveMarker", err)
+			}
+		})
+	}
+}
+
+func TestActiveDirectiveV1RejectsInvalidFixedUnitNames(t *testing.T) {
+	for _, unit := range []string{".unit", "_unit", "-unit", strings.Repeat("u", 65)} {
+		t.Run(unit, func(t *testing.T) {
+			rootPath := t.TempDir()
+			root, err := os.OpenRoot(rootPath)
+			if err != nil {
+				t.Fatalf("OpenRoot(%q): %v", rootPath, err)
+			}
+			defer func() { _ = root.Close() }()
+			marker := minimalActiveDirectiveMarker()
+			marker.Version = 1
+			marker.Unit = unit
+			if err := WriteActiveDirectiveMarker(root, marker); err == nil {
+				t.Fatal("WriteActiveDirectiveMarker() error = nil, want fixed v1 unit rejection")
+			} else if !errors.Is(err, ErrInvalidActiveDirectiveMarker) {
+				t.Errorf("WriteActiveDirectiveMarker() error = %v, want ErrInvalidActiveDirectiveMarker", err)
+			}
+		})
+	}
+}
+
+func mustMarshalActiveDirectiveMarkerWithoutValidation(marker ActiveDirectiveMarker) []byte {
+	data, err := json.Marshal(activeDirectiveMarkerWire{
+		Version:        marker.Version,
+		Stage:          marker.Stage,
+		StateSHA256:    marker.StateSHA256,
+		Revision:       marker.Revision,
+		ProjectSHA256:  marker.ProjectSHA256,
+		IntentUUID:     marker.IntentUUID,
+		StatePresent:   marker.StatePresent,
+		OwnerSession:   marker.OwnerSession,
+		OwnerEpoch:     marker.OwnerEpoch,
+		ContextEpoch:   marker.ContextEpoch,
+		Kind:           marker.Kind,
+		Delivery:       marker.Delivery,
+		NeedsRehydrate: marker.NeedsRehydrate,
+		ActiveAttempt: &activeDirectiveAttemptWire{
+			CommandKind:       marker.ActiveAttempt.CommandKind,
+			CommandSHA256:     marker.ActiveAttempt.CommandSHA256,
+			IssuedStateSHA256: marker.ActiveAttempt.IssuedStateSHA256,
+			SessionID:         marker.ActiveAttempt.SessionID,
+			OwnerEpoch:        marker.ActiveAttempt.OwnerEpoch,
+			ContextEpoch:      marker.ActiveAttempt.ContextEpoch,
+			Status:            marker.ActiveAttempt.Status,
+		},
+		EventSequence:        marker.EventSequence,
+		HumanSequence:        marker.HumanSequence,
+		EngineSequence:       marker.EngineSequence,
+		ConversationSequence: marker.ConversationSequence,
+		StopCount:            marker.StopCount,
+	})
+	if err != nil {
+		panic(err)
+	}
+	return data
+}
+
+func assertJSONFieldsPresent(t *testing.T, data []byte, fields ...string) {
+	t.Helper()
+	var values map[string]json.RawMessage
+	if err := json.Unmarshal(bytes.TrimSpace(data), &values); err != nil {
+		t.Fatalf("Unmarshal(JSON object): %v", err)
+	}
+	for _, field := range fields {
+		if _, ok := values[field]; !ok {
+			t.Errorf("JSON field %q is absent", field)
+		}
+	}
+}
+
+func nestedJSONField(data []byte, field string) []byte {
+	var values map[string]json.RawMessage
+	if err := json.Unmarshal(bytes.TrimSpace(data), &values); err != nil {
+		return nil
+	}
+	return values[field]
+}
+
+func mustReadMarkerBytes(t *testing.T, root *os.Root) []byte {
+	t.Helper()
+	data, err := root.ReadFile(activeDirectiveMarkerName)
+	if err != nil {
+		t.Fatalf("ReadFile(marker): %v", err)
+	}
+	return data
 }
 
 func TestActiveDirectiveRejectsInvalidExtra(t *testing.T) {
@@ -417,6 +819,54 @@ func TestActiveDirectiveAtomicWritePreservesPreviousOnFailure(t *testing.T) {
 				t.Errorf("caller root was closed by failed commit: %v", err)
 			}
 		})
+	}
+}
+
+func TestActiveDirectiveAtomicWriteRejectsReplacedTemporary(t *testing.T) {
+	rootPath := t.TempDir()
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		t.Fatalf("OpenRoot(%q): %v", rootPath, err)
+	}
+	defer func() { _ = root.Close() }()
+	previous := minimalActiveDirectiveMarker()
+	if err := WriteActiveDirectiveMarker(root, previous); err != nil {
+		t.Fatalf("WriteActiveDirectiveMarker(previous): %v", err)
+	}
+	oldBytes, err := root.ReadFile(activeDirectiveMarkerName)
+	if err != nil {
+		t.Fatalf("ReadFile(previous): %v", err)
+	}
+	ops := systemActiveDirectiveOps()
+	ops.close = func(file *os.File) error {
+		if err := file.Close(); err != nil {
+			return err
+		}
+		entries, err := os.ReadDir(rootPath)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if !strings.HasPrefix(entry.Name(), activeDirectiveMarkerName+".tmp-") {
+				continue
+			}
+			tempPath := filepath.Join(rootPath, entry.Name())
+			if err := os.Remove(tempPath); err != nil {
+				return err
+			}
+			return os.WriteFile(tempPath, []byte("replacement"), 0o600)
+		}
+		return errors.New("temporary marker not found")
+	}
+	if err := writeActiveDirectiveMarker(root, previous, ops); err == nil {
+		t.Fatal("writeActiveDirectiveMarker() error = nil, want replaced temporary rejection")
+	}
+	gotBytes, err := root.ReadFile(activeDirectiveMarkerName)
+	if err != nil {
+		t.Fatalf("ReadFile(after replacement): %v", err)
+	}
+	if !bytes.Equal(gotBytes, oldBytes) {
+		t.Errorf("marker changed after replaced temporary: got %q, want %q", gotBytes, oldBytes)
 	}
 }
 

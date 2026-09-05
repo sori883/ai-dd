@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -226,15 +227,18 @@ func validateContinuationMarker(
 	if composition.Freshness.StateHash != nil {
 		stateHash = *composition.Freshness.StateHash
 	}
-	if marker.Kind != ActiveDirectiveKindLoadSteering || marker.ContinueToken != token ||
+	if marker.Kind != ActiveDirectiveKindLoadSteering || marker.Stage != composition.Freshness.Stage ||
+		!activeDirectiveSHA256Equal(marker.ContinueTokenSHA256, token) ||
 		marker.Part != claims.NextPart || marker.Parts != len(composition.Chunks) || marker.CursorHarness != "codex" ||
 		(marker.Delivery != ActiveDirectiveDeliveryIssued && marker.Delivery != ActiveDirectiveDeliveryDelivered) {
 		return ErrDeliveryWorkflow
 	}
 	if marker.ActiveAttempt == nil || marker.ActiveAttempt.IssuedStateSHA256 != stateHash ||
 		marker.ActiveAttempt.SessionID != marker.OwnerSession || marker.ActiveAttempt.OwnerEpoch != marker.OwnerEpoch ||
-		marker.ActiveAttempt.ContextEpoch != marker.ContextEpoch || marker.ActiveAttempt.Status != ActiveDirectiveAttemptSettled ||
-		marker.ActiveAttempt.CursorInputSHA256 != continuationTokenSHA(token) {
+		marker.ActiveAttempt.ContextEpoch != marker.ContextEpoch || marker.ActiveAttempt.Status != ActiveDirectiveAttemptSettled {
+		return ErrDeliveryWorkflow
+	}
+	if marker.ActiveAttempt.CursorInputSHA256 != "" && !activeDirectiveSHA256Equal(marker.ActiveAttempt.CursorInputSHA256, token) {
 		return ErrDeliveryWorkflow
 	}
 	if err := ValidateActiveDirectiveContext(marker, ActiveDirectiveContext{
@@ -259,8 +263,13 @@ func validateContinuationMarker(
 	if err != nil {
 		return fmt.Errorf("validate continuation marker wire: %w", err)
 	}
-	if marker.ActiveAttempt.ResultSHA256 != sha256Hex(string(currentWire)) || marker.ActiveAttempt.ResultRevision != marker.Revision {
-		return ErrDeliveryWorkflow
+	if marker.ActiveAttempt.ResultSHA256 != "" {
+		if !activeDirectiveSHA256Equal(marker.ActiveAttempt.ResultSHA256, string(currentWire)) {
+			return ErrDeliveryWorkflow
+		}
+		if marker.ActiveAttempt.ResultRevision != marker.Revision {
+			return ErrDeliveryWorkflow
+		}
 	}
 	return nil
 }
@@ -289,49 +298,200 @@ func activeDirectiveMarkerForComposition(
 	}
 	projectHash := sha256Hex(input.Identity.ProjectPath())
 	intentUUID := cloneDeliveryString(input.IntentUUID)
-	revision := 0
-	if previous, found, err := ReadActiveDirectiveMarker(input.RecordRoot); err == nil && found {
-		revision = previous.Revision + 1
-	}
 	ownerSession := "sessionless:" + projectHash[:16]
+	context := ActiveDirectiveContext{
+		ProjectSHA256: projectHash,
+		IntentUUID:    intentUUID,
+		StatePresent:  true,
+		StateSHA256:   stateHash,
+	}
+	base := freshActiveDirectiveMarkerForComposition(input, composition, ownerSession, stateHash, intentUUID)
+	baseValid := false
+	if previous, found, err := ReadActiveDirectiveMarker(input.RecordRoot); err == nil && found && previous.Version == 2 &&
+		activeDirectiveIdentityMatches(previous, context) {
+		if command == ActiveDirectiveCommandNext || ValidateActiveDirectiveContext(previous, context) == nil {
+			base = cloneActiveDirectiveMarker(previous)
+			baseValid = true
+		}
+	}
+	if baseValid {
+		base.Revision++
+	} else {
+		base.Revision = 1
+	}
+
+	base.Version = 2
+	base.Stage = composition.Freshness.Stage
+	base.StateSHA256 = stateHash
+	base.ProjectSHA256 = projectHash
+	base.IntentUUID = intentUUID
+	base.StatePresent = true
+	base.Unit = ""
+	base.Units = nil
+	base.CodeGenerationSourceSHA256 = ""
+	base.CodeGenerationAuthorityRevision = 0
+	delete(base.present, "unit")
+	delete(base.present, "units")
+	delete(base.present, "code_generation_source_sha256")
+	delete(base.present, "code_generation_authority_revision")
+	base.CursorHarness = "codex"
+	base.OwnerSession = ownerSession
+	base.Kind = kind
+	base.Part = part
+	base.Parts = parts
+	base.ContinueToken = token
+	base.ContinueTokenSHA256 = continuationTokenSHA(token)
+	base.Delivery = ActiveDirectiveDeliveryIssued
+	base.NeedsRehydrate = false
+	if part == 0 {
+		delete(base.present, "part")
+		delete(base.present, "parts")
+	}
+	if token == "" {
+		delete(base.present, "continue_token")
+		delete(base.present, "continue_token_sha256")
+	}
+	base.ActiveAttempt = activeDirectiveAttemptForPublication(base, baseValid, stateHash, ownerSession, wire, token)
+	return base
+}
+
+func activeDirectiveIdentityMatches(marker ActiveDirectiveMarker, context ActiveDirectiveContext) bool {
+	if marker.ProjectSHA256 != context.ProjectSHA256 {
+		return false
+	}
+	if (marker.IntentUUID == nil) != (context.IntentUUID == nil) {
+		return false
+	}
+	return marker.IntentUUID == nil || *marker.IntentUUID == *context.IntentUUID
+}
+
+func freshActiveDirectiveMarkerForComposition(
+	input RunStageInput,
+	composition RunStageComposition,
+	ownerSession, stateHash string,
+	intentUUID *string,
+) ActiveDirectiveMarker {
+	projectHash := sha256Hex(input.Identity.ProjectPath())
 	return ActiveDirectiveMarker{
-		Version:             2,
-		Stage:               composition.Freshness.Stage,
-		StateSHA256:         stateHash,
-		Revision:            revision,
-		ProjectSHA256:       projectHash,
-		IntentUUID:          intentUUID,
-		StatePresent:        true,
-		CursorHarness:       "codex",
-		OwnerSession:        ownerSession,
-		OwnerEpoch:          0,
-		ContextEpoch:        0,
-		Kind:                kind,
-		Part:                part,
-		Parts:               parts,
-		ContinueToken:       token,
-		ContinueTokenSHA256: continuationTokenSHA(token),
-		Delivery:            ActiveDirectiveDeliveryIssued,
-		NeedsRehydrate:      false,
+		Version:        2,
+		Stage:          composition.Freshness.Stage,
+		StateSHA256:    stateHash,
+		ProjectSHA256:  projectHash,
+		IntentUUID:     cloneDeliveryString(intentUUID),
+		StatePresent:   true,
+		CursorHarness:  "codex",
+		OwnerSession:   ownerSession,
+		OwnerEpoch:     0,
+		ContextEpoch:   0,
+		Kind:           ActiveDirectiveKindError,
+		Delivery:       ActiveDirectiveDeliverySuperseded,
+		NeedsRehydrate: true,
 		ActiveAttempt: &ActiveDirectiveAttempt{
-			CommandKind:       command,
-			CommandSHA256:     sha256Hex(string(command)),
+			ID:                "sessionless",
+			CommandKind:       ActiveDirectiveCommandNext,
+			CommandSHA256:     stateHash,
 			IssuedStateSHA256: stateHash,
 			SessionID:         ownerSession,
 			OwnerEpoch:        0,
 			ContextEpoch:      0,
 			Status:            ActiveDirectiveAttemptSettled,
-			ClaimRevision:     revision,
-			CursorInputSHA256: continuationTokenSHA(token),
-			ResultSHA256:      sha256Hex(string(wire)),
-			ResultRevision:    revision,
 		},
-		EventSequence:        revision,
-		HumanSequence:        0,
-		EngineSequence:       0,
-		ConversationSequence: revision,
-		StopCount:            0,
 	}
+}
+
+func activeDirectiveAttemptForPublication(
+	base ActiveDirectiveMarker,
+	baseValid bool,
+	stateHash, ownerSession string,
+	wire []byte,
+	token string,
+) *ActiveDirectiveAttempt {
+	fresh := &ActiveDirectiveAttempt{
+		ID:                "sessionless",
+		CommandKind:       ActiveDirectiveCommandNext,
+		CommandSHA256:     stateHash,
+		IssuedStateSHA256: stateHash,
+		SessionID:         ownerSession,
+		OwnerEpoch:        0,
+		ContextEpoch:      0,
+		Status:            ActiveDirectiveAttemptSettled,
+	}
+	if !baseValid || base.ActiveAttempt == nil {
+		return fresh
+	}
+	attempt := cloneActiveDirectiveAttempt(*base.ActiveAttempt)
+	if attempt.IssuedStateSHA256 != stateHash || attempt.SessionID != ownerSession ||
+		attempt.OwnerEpoch != base.OwnerEpoch || attempt.ContextEpoch != base.ContextEpoch ||
+		attempt.Status != ActiveDirectiveAttemptSettled {
+		fresh.Extra = cloneActiveDirectiveRawMap(base.ActiveAttempt.Extra)
+		return fresh
+	}
+	if attempt.CursorInputSHA256 != "" && !activeDirectiveSHA256Equal(attempt.CursorInputSHA256, token) {
+		fresh.Extra = cloneActiveDirectiveRawMap(attempt.Extra)
+		return fresh
+	}
+	if attempt.ResultSHA256 != "" && !activeDirectiveSHA256Equal(attempt.ResultSHA256, string(wire)) {
+		fresh.Extra = cloneActiveDirectiveRawMap(attempt.Extra)
+		return fresh
+	}
+	if attempt.ResultSHA256 != "" {
+		attempt.ResultRevision = base.Revision
+	}
+	return &attempt
+}
+
+func cloneActiveDirectiveMarker(marker ActiveDirectiveMarker) ActiveDirectiveMarker {
+	cloned := marker
+	cloned.Units = append([]string(nil), marker.Units...)
+	cloned.IntentUUID = cloneDeliveryString(marker.IntentUUID)
+	cloned.Extra = cloneActiveDirectiveRawMap(marker.Extra)
+	cloned.present = cloneActiveDirectivePresence(marker.present)
+	if marker.ActiveAttempt != nil {
+		attempt := cloneActiveDirectiveAttempt(*marker.ActiveAttempt)
+		cloned.ActiveAttempt = &attempt
+	}
+	if marker.Resume != nil {
+		resume := cloneActiveDirectiveResume(*marker.Resume)
+		cloned.Resume = &resume
+	}
+	return cloned
+}
+
+func cloneActiveDirectiveAttempt(attempt ActiveDirectiveAttempt) ActiveDirectiveAttempt {
+	cloned := attempt
+	cloned.Extra = cloneActiveDirectiveRawMap(attempt.Extra)
+	cloned.present = cloneActiveDirectivePresence(attempt.present)
+	return cloned
+}
+
+func cloneActiveDirectiveResume(resume ActiveDirectiveResume) ActiveDirectiveResume {
+	cloned := resume
+	cloned.IssuingIntentUUID = cloneDeliveryString(resume.IssuingIntentUUID)
+	cloned.Extra = cloneActiveDirectiveRawMap(resume.Extra)
+	cloned.present = cloneActiveDirectivePresence(resume.present)
+	return cloned
+}
+
+func cloneActiveDirectiveRawMap(values map[string]json.RawMessage) map[string]json.RawMessage {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]json.RawMessage, len(values))
+	for key, value := range values {
+		cloned[key] = append(json.RawMessage(nil), value...)
+	}
+	return cloned
+}
+
+func cloneActiveDirectivePresence(values map[string]bool) map[string]bool {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]bool, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func continuationTokenSHA(token string) string {

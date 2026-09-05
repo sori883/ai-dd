@@ -3,6 +3,8 @@ package delivery
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -106,6 +108,226 @@ func TestDeliveryNextRejectsInvalidInput(t *testing.T) {
 	}
 	if !errors.Is(err, ErrInvalidDelivery) {
 		t.Errorf("Next(zero input) error = %v, want ErrInvalidDelivery", err)
+	}
+}
+
+func TestDeliveryNextStartsPublicationAtRevisionOneWithFreshAttempt(t *testing.T) {
+	fixture := newChunkedDeliveryFixture(t)
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+	if _, err := Next(context.Background(), input); err != nil {
+		t.Fatalf("Next() error = %v", err)
+	}
+	marker, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
+	if err != nil || !found || marker.ActiveAttempt == nil {
+		t.Fatalf("ReadActiveDirectiveMarker() = found %v, error %v, marker %#v", found, err, marker)
+	}
+	if marker.Revision != 1 {
+		t.Errorf("initial marker revision = %d, want 1", marker.Revision)
+	}
+	if marker.ActiveAttempt.ID != "sessionless" || marker.ActiveAttempt.CommandKind != ActiveDirectiveCommandNext ||
+		marker.ActiveAttempt.CommandSHA256 != marker.StateSHA256 || marker.ActiveAttempt.CursorInputSHA256 != "" ||
+		marker.ActiveAttempt.ResultSHA256 != "" || marker.ActiveAttempt.ResultRevision != 0 {
+		t.Errorf("initial active attempt = %#v, want fixed generic fresh attempt", marker.ActiveAttempt)
+	}
+}
+
+func TestDeliveryPublicationPreservesGenericMarkerMetadata(t *testing.T) {
+	fixture := newChunkedDeliveryFixture(t)
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+	if _, err := Next(context.Background(), input); err != nil {
+		t.Fatalf("Next(initial) error = %v", err)
+	}
+	base, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
+	if err != nil || !found || base.ActiveAttempt == nil {
+		t.Fatalf("ReadActiveDirectiveMarker(base) = found %v, error %v, marker %#v", found, err, base)
+	}
+	base.HumanSequence = 17
+	base.EngineSequence = 19
+	base.ConversationSequence = 23
+	base.StopFingerprint = "stop-fingerprint"
+	base.StopCount = 29
+	base.Extra = map[string]json.RawMessage{
+		"top_unknown": json.RawMessage(`{"preserve":true}`),
+	}
+	base.ActiveAttempt.Extra = map[string]json.RawMessage{
+		"attempt_unknown": json.RawMessage(`{"preserve":42}`),
+	}
+	base.Resume = &ActiveDirectiveResume{
+		Status:             ActiveDirectiveResumeWaiting,
+		IssuingStage:       base.Stage,
+		IssuingStateSHA256: base.StateSHA256,
+		IssuingSession:     base.OwnerSession,
+		IssuingIntentUUID:  base.IntentUUID,
+		Action:             ActiveDirectiveResumeActionResume,
+		Extra: map[string]json.RawMessage{
+			"resume_unknown": json.RawMessage(`{"preserve":"yes"}`),
+		},
+	}
+	if err := WriteActiveDirectiveMarker(fixture.recordRoot, base); err != nil {
+		t.Fatalf("WriteActiveDirectiveMarker(base): %v", err)
+	}
+	if _, err := Next(context.Background(), input); err != nil {
+		t.Fatalf("Next(publication) error = %v", err)
+	}
+	got, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
+	if err != nil || !found || got.ActiveAttempt == nil || got.Resume == nil {
+		t.Fatalf("ReadActiveDirectiveMarker(publication) = found %v, error %v, marker %#v", found, err, got)
+	}
+	if got.Revision != base.Revision+1 {
+		t.Errorf("publication revision = %d, want %d", got.Revision, base.Revision+1)
+	}
+	if got.HumanSequence != base.HumanSequence || got.EngineSequence != base.EngineSequence ||
+		got.ConversationSequence != base.ConversationSequence || got.StopFingerprint != base.StopFingerprint || got.StopCount != base.StopCount {
+		t.Errorf("publication counters = %d/%d/%d/%q/%d, want preserved %d/%d/%d/%q/%d",
+			got.HumanSequence, got.EngineSequence, got.ConversationSequence, got.StopFingerprint, got.StopCount,
+			base.HumanSequence, base.EngineSequence, base.ConversationSequence, base.StopFingerprint, base.StopCount)
+	}
+	if string(got.Extra["top_unknown"]) != `{"preserve":true}` || string(got.ActiveAttempt.Extra["attempt_unknown"]) != `{"preserve":42}` ||
+		string(got.Resume.Extra["resume_unknown"]) != `{"preserve":"yes"}` {
+		t.Errorf("publication unknown metadata lost: top=%#v attempt=%#v resume=%#v", got.Extra, got.ActiveAttempt.Extra, got.Resume.Extra)
+	}
+}
+
+func TestDeliveryPublicationClearsDirectiveSpecificMetadata(t *testing.T) {
+	fixture := newChunkedDeliveryFixture(t)
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+	if _, err := Next(context.Background(), input); err != nil {
+		t.Fatalf("Next(initial) error = %v", err)
+	}
+	base, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
+	if err != nil || !found {
+		t.Fatalf("ReadActiveDirectiveMarker(base) = found %v, error %v", found, err)
+	}
+	base.Unit = "legacy-unit"
+	base.Units = []string{"legacy-unit"}
+	base.CodeGenerationSourceSHA256 = strings.Repeat("c", sha256.Size*2)
+	base.CodeGenerationAuthorityRevision = 7
+	if err := WriteActiveDirectiveMarker(fixture.recordRoot, base); err != nil {
+		t.Fatalf("WriteActiveDirectiveMarker(base): %v", err)
+	}
+	nextResult, err := Next(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Next(publication) error = %v", err)
+	}
+	assertDirectiveSpecificMetadataCleared(t, fixture.recordRoot)
+
+	current, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
+	if err != nil || !found {
+		t.Fatalf("ReadActiveDirectiveMarker(current) = found %v, error %v", found, err)
+	}
+	current.Unit = "legacy-unit"
+	current.Units = []string{"legacy-unit"}
+	current.CodeGenerationSourceSHA256 = strings.Repeat("d", sha256.Size*2)
+	current.CodeGenerationAuthorityRevision = 8
+	if err := WriteActiveDirectiveMarker(fixture.recordRoot, current); err != nil {
+		t.Fatalf("WriteActiveDirectiveMarker(current): %v", err)
+	}
+	if _, err := Continue(context.Background(), input, nextResult.ContinueToken); err != nil {
+		t.Fatalf("Continue(publication) error = %v", err)
+	}
+	assertDirectiveSpecificMetadataCleared(t, fixture.recordRoot)
+}
+
+func assertDirectiveSpecificMetadataCleared(t *testing.T, root *os.Root) {
+	t.Helper()
+	data := mustReadMarkerBytes(t, root)
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(bytes.TrimSpace(data), &fields); err != nil {
+		t.Fatalf("Unmarshal(marker): %v", err)
+	}
+	for _, field := range []string{
+		"unit", "units", "code_generation_source_sha256", "code_generation_authority_revision",
+	} {
+		if _, ok := fields[field]; ok {
+			t.Errorf("directive-specific field %q is present in publication: %s", field, data)
+		}
+	}
+}
+
+func TestDeliveryNextPreservesGenericBaseAcrossStateChange(t *testing.T) {
+	fixture := newChunkedDeliveryFixture(t)
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+	if _, err := Next(context.Background(), input); err != nil {
+		t.Fatalf("Next(initial) error = %v", err)
+	}
+	base, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
+	if err != nil || !found {
+		t.Fatalf("ReadActiveDirectiveMarker(base) = found %v, error %v", found, err)
+	}
+	base.HumanSequence = 41
+	base.Extra = map[string]json.RawMessage{"state_change_base": json.RawMessage(`{"preserve":true}`)}
+	if err := WriteActiveDirectiveMarker(fixture.recordRoot, base); err != nil {
+		t.Fatalf("WriteActiveDirectiveMarker(base): %v", err)
+	}
+	statePath := filepath.Join(fixture.identity.ProjectPath(), "aidlc", "spaces", "team", "intents", "build", "aidlc-state.md")
+	stateBytes, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("ReadFile(state): %v", err)
+	}
+	writeRunStageFile(t, statePath, string(stateBytes)+"\n## Delivery State Change\nchanged\n")
+	if _, err := Next(context.Background(), input); err != nil {
+		t.Fatalf("Next(state change) error = %v", err)
+	}
+	got, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
+	if err != nil || !found {
+		t.Fatalf("ReadActiveDirectiveMarker(after state change) = found %v, error %v", found, err)
+	}
+	if got.Revision != base.Revision+1 {
+		t.Errorf("state-change next revision = %d, want %d", got.Revision, base.Revision+1)
+	}
+	if got.HumanSequence != base.HumanSequence || string(got.Extra["state_change_base"]) != `{"preserve":true}` {
+		t.Errorf("state-change next lost generic base metadata: sequence=%d extra=%#v", got.HumanSequence, got.Extra)
+	}
+	if got.StateSHA256 == base.StateSHA256 {
+		t.Error("state-change next retained the old state hash")
+	}
+}
+
+func TestDeliveryContinueAcceptsFixedGenericAttempt(t *testing.T) {
+	fixture := newChunkedDeliveryFixture(t)
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+	first, err := Next(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Next() error = %v", err)
+	}
+	marker, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
+	if err != nil || !found || marker.ActiveAttempt == nil {
+		t.Fatalf("ReadActiveDirectiveMarker() = found %v, error %v, marker %#v", found, err, marker)
+	}
+	marker.ActiveAttempt.CursorInputSHA256 = ""
+	marker.ActiveAttempt.ResultSHA256 = ""
+	marker.ActiveAttempt.ResultRevision = 0
+	if err := WriteActiveDirectiveMarker(fixture.recordRoot, marker); err != nil {
+		t.Fatalf("WriteActiveDirectiveMarker(generic): %v", err)
+	}
+	if _, err := Continue(context.Background(), input, first.ContinueToken); err != nil {
+		t.Fatalf("Continue(generic attempt) error = %v, want nil", err)
+	}
+}
+
+func TestDeliveryNextRecoversFromCorruptMarker(t *testing.T) {
+	fixture := newChunkedDeliveryFixture(t)
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+	if _, err := Next(context.Background(), input); err != nil {
+		t.Fatalf("Next(initial) error = %v", err)
+	}
+	markerPath := filepath.Join(fixture.identity.ProjectPath(), "aidlc", "spaces", "team", "intents", "build", activeDirectiveMarkerName)
+	if err := os.WriteFile(markerPath, []byte("{broken\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(corrupt marker): %v", err)
+	}
+	result, err := Next(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Next(recovery) error = %v, want fresh recovery", err)
+	}
+	if result.Kind != ActiveDirectiveKindLoadSteering {
+		t.Fatalf("Next(recovery).Kind = %q, want load-steering", result.Kind)
+	}
+	marker, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
+	if err != nil || !found {
+		t.Fatalf("ReadActiveDirectiveMarker(recovery) = found %v, error %v", found, err)
+	}
+	if marker.Revision != 1 {
+		t.Errorf("recovered marker revision = %d, want fresh publication revision 1", marker.Revision)
 	}
 }
 
@@ -322,6 +544,30 @@ func TestDeliveryRejectsStaleContinuations(t *testing.T) {
 				t.Errorf("Continue(stale %s) error = %v, want ErrDeliveryWorkflow", test.name, err)
 			}
 		})
+	}
+}
+
+func TestDeliveryContinueRejectsTamperedMarkerStage(t *testing.T) {
+	fixture := newChunkedDeliveryFixture(t)
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+	first, err := Next(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Next() error = %v", err)
+	}
+	marker, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
+	if err != nil || !found {
+		t.Fatalf("ReadActiveDirectiveMarker() = found %v, error %v", found, err)
+	}
+	if marker.Stage == "next-stage" {
+		marker.Stage = "intent-capture"
+	} else {
+		marker.Stage = "next-stage"
+	}
+	if err := WriteActiveDirectiveMarker(fixture.recordRoot, marker); err != nil {
+		t.Fatalf("WriteActiveDirectiveMarker(tampered stage): %v", err)
+	}
+	if _, err := Continue(context.Background(), input, first.ContinueToken); err == nil || !IsWorkflowError(err) {
+		t.Fatalf("Continue(tampered stage) error = %v, want workflow error", err)
 	}
 }
 

@@ -1,7 +1,7 @@
 # Codex向け配信transactionと公開next／continueを接続する
 
 - 日付: 2026-09-05（Asia/Tokyo）
-- 状態: Accepted（知識供給の包括承認内）
+- 状態: Implemented（知識供給の包括承認内、Issue #113）
 - 対応Issue: [#113 Codex向け配信transactionと公開next／continueを接続する](https://github.com/sori883/ai-dd/issues/113)
 - 実装許可: [ルール・知識のAI供給を個別承認なしで完了まで進める](2026-09-05-context-delivery-autonomous-authorization.md)
 - 前提: [canonical run-stage composition](2026-09-05-run-stage-composition-plan.md)
@@ -115,6 +115,19 @@ part 1から再発行できる。`continue`でcommit済みの古いtokenは再�
 これは固定本家のCodex通常経路で観測される「古いtokenを再利用せずfresh nextから再開」に従う。
 Copilot固有attempt共有、legacy Kiro approval、swarm/unit authorityを通常Codexで実行可能にはしない。
 
+### Review resolution: 破損cursorとfresh `next` recoveryの区別
+
+固定本家のtransactionは、markerが存在しない場合、version 1のlegacy markerの場合、または
+regular fileの内容が破損して読めない場合、fresh markerをbaseにして`next`を再発行できる。
+この場合はrevision 0のfresh baseからpublication revision 1を作り、atomic replacementが成功した後に
+directiveを返す。markerのsymlinkやnon-regular pathはRoot境界違反として置換せず、内部failureにする。
+
+一方、`continue`は現在のmarkerを継続cursorの証拠として必要とするため、missing、legacy、破損、改ざん、
+superseded markerをworkflow errorとしてtyped `error` directiveへ変換し、markerを置換しない。
+したがって受け入れ条件の「破損cursorでfail-closed」は継続処理に適用し、fresh `next`の安全なrecoveryは
+同じ固定契約内の別経路として扱う。この区別は新しい永続形式を追加するものではなく、2.6.123の
+missing/corrupt/legacy parse結果とpublication transactionの既存挙動を明文化するものである。
+
 ## 対象fileと単独writer所有権
 
 1人のGo実装担当が次を所有する。
@@ -211,3 +224,16 @@ revert時にstate migrationは不要である。
 `load-steering`本文を順序どおり保持して直ちにcontinueし、`run-stage`受領後に全`inline_context_paths`を
 最初に実読込し、その完了後に`stage_file`と存在する全`consumes`を本文まで読む。fresh projectへbinaryと
 receiverを明示配置するE2Eでsentinel本文の読込を検証する。一般向けinstaller/updateは第5段階まで扱わない。
+
+## 実装記録
+
+2026-09-05に、計画した7 sliceを単一writerのRED／GREEN loopで実装した。公開`aidlc next`／
+`aidlc continue <token>`、guard-awareなfresh composition、固定2.6.123のactive-directive v2、
+HMAC tokenとmarkerを結ぶ一回限りのcursor進行、commit後だけのdirective返却、全rule chunk後だけの
+`run-stage`公開、CLIのtyped error分類、repository外fresh sandboxの配布journeyを接続した。
+
+独立reviewで見つかった固定schemaとの不一致は、optionalなzero／false／`resume: null`と未知nested fieldの
+lossless保持、Unit名制約、stage／token digest binding、sessionless attempt、初回revision 1、既存baseの
+counter／resume保持、directive固有fieldの消去、state変更時のfresh `next` base継承、temporary fileの
+差替え検知として回帰testを先に追加して修正した。破損markerのfresh `next` recoveryと、同じmarkerを使う
+`continue`のfail-closedは上記review resolutionどおり区別した。外部Go moduleと新しい意図的差分は追加していない。

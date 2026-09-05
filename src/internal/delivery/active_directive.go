@@ -3,6 +3,7 @@ package delivery
 import (
 	"bytes"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -11,10 +12,10 @@ import (
 	"io/fs"
 	"os"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -109,6 +110,9 @@ type ActiveDirectiveAttempt struct {
 	ResumeRequest      bool
 	ResumeAction       ActiveDirectiveResumeAction
 	ResumeGateRevision int
+	// Extra retains unknown nested fields from the fixed marker snapshot.
+	Extra   map[string]json.RawMessage
+	present map[string]bool
 }
 
 // ActiveDirectiveResume is the optional v2 resume evidence.
@@ -119,6 +123,9 @@ type ActiveDirectiveResume struct {
 	IssuingSession     string
 	IssuingIntentUUID  *string
 	Action             ActiveDirectiveResumeAction
+	// Extra retains unknown nested fields from the fixed marker snapshot.
+	Extra   map[string]json.RawMessage
+	present map[string]bool
 }
 
 // ActiveDirectiveMarker is the fixed AI-DLC 2.6.123 active-directive v2
@@ -156,6 +163,7 @@ type ActiveDirectiveMarker struct {
 	StopFingerprint                 string
 	StopCount                       int
 	Extra                           map[string]json.RawMessage
+	present                         map[string]bool
 }
 
 // ActiveDirectiveContext is the identity/state snapshot used to validate a
@@ -193,7 +201,7 @@ var activeDirectiveTempSequence atomic.Uint64
 
 var (
 	activeDirectiveStagePattern        = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
-	activeDirectiveUnitPattern         = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+	activeDirectiveUnitPattern         = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 	activeDirectiveHarnessPattern      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 	activeDirectiveSHA256Pattern       = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	activeDirectiveSourceSHA256Pattern = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64}|unbindable)$`)
@@ -335,10 +343,21 @@ func writeActiveDirectiveMarker(root *os.Root, marker ActiveDirectiveMarker, ops
 		return errors.Join(fmt.Errorf("write active directive: create temp returned nil file: %w", fs.ErrInvalid), wrapActiveDirectiveCleanupError(cleanupErr))
 	}
 	writeErr := writeActiveDirectiveBytes(file, data, ops.write)
+	var tempInfo fs.FileInfo
+	if writeErr == nil {
+		tempInfo, err = file.Stat()
+		if err != nil {
+			writeErr = fmt.Errorf("stat temp before close: %w", err)
+		}
+	}
 	closeErr := ops.close(file)
 	if writeErr == nil && closeErr == nil {
-		if chmodErr := ops.chmod(root, tempName, 0o600); chmodErr != nil {
+		if identityErr := verifyActiveDirectiveTempIdentity(root, tempName, tempInfo, ops.lstat); identityErr != nil {
+			writeErr = identityErr
+		} else if chmodErr := ops.chmod(root, tempName, 0o600); chmodErr != nil {
 			writeErr = fmt.Errorf("chmod temp: %w", chmodErr)
+		} else if identityErr := verifyActiveDirectiveTempIdentity(root, tempName, tempInfo, ops.lstat); identityErr != nil {
+			writeErr = identityErr
 		}
 	}
 	if writeErr != nil || closeErr != nil {
@@ -348,6 +367,25 @@ func writeActiveDirectiveMarker(root *os.Root, marker ActiveDirectiveMarker, ops
 	if err := ops.rename(root, tempName, activeDirectiveMarkerName); err != nil {
 		cleanupErr := cleanup()
 		return errors.Join(fmt.Errorf("write active directive: rename: %w", err), wrapActiveDirectiveCleanupError(cleanupErr))
+	}
+	return nil
+}
+
+func verifyActiveDirectiveTempIdentity(
+	root *os.Root,
+	tempName string,
+	expected fs.FileInfo,
+	lstat func(*os.Root, string) (fs.FileInfo, error),
+) error {
+	if expected == nil || expected.Mode()&fs.ModeSymlink != 0 || !expected.Mode().IsRegular() {
+		return fmt.Errorf("write active directive: temporary descriptor is not regular: %w", ErrInvalidActiveDirectiveMarker)
+	}
+	actual, err := lstat(root, tempName)
+	if err != nil {
+		return fmt.Errorf("write active directive: inspect temporary identity: %w", err)
+	}
+	if actual == nil || actual.Mode()&fs.ModeSymlink != 0 || !actual.Mode().IsRegular() || !os.SameFile(expected, actual) {
+		return fmt.Errorf("write active directive: temporary file identity changed: %w", ErrInvalidActiveDirectiveMarker)
 	}
 	return nil
 }
@@ -540,37 +578,191 @@ func marshalActiveDirectiveMarker(marker ActiveDirectiveMarker) ([]byte, error) 
 	if err := validateActiveDirectiveMarker(marker); err != nil {
 		return nil, err
 	}
-	data, err := json.Marshal(marker.toWire())
+	if marker.Version == 1 {
+		fields := make(map[string]json.RawMessage, 4)
+		if err := addActiveDirectiveJSONField(fields, "version", marker.Version); err != nil {
+			return nil, err
+		}
+		if err := addActiveDirectiveJSONField(fields, "stage", marker.Stage); err != nil {
+			return nil, err
+		}
+		if marker.Unit != "" {
+			if err := addActiveDirectiveJSONField(fields, "unit", marker.Unit); err != nil {
+				return nil, err
+			}
+		}
+		if err := addActiveDirectiveJSONField(fields, "state_sha256", marker.StateSHA256); err != nil {
+			return nil, err
+		}
+		return json.Marshal(fields)
+	}
+
+	fields := make(map[string]json.RawMessage, len(activeDirectiveKnownFields())+len(marker.Extra))
+	for key, value := range map[string]any{
+		"version":               marker.Version,
+		"stage":                 marker.Stage,
+		"state_sha256":          marker.StateSHA256,
+		"revision":              marker.Revision,
+		"project_sha256":        marker.ProjectSHA256,
+		"intent_uuid":           marker.IntentUUID,
+		"state_present":         marker.StatePresent,
+		"owner_session":         marker.OwnerSession,
+		"owner_epoch":           marker.OwnerEpoch,
+		"context_epoch":         marker.ContextEpoch,
+		"kind":                  marker.Kind,
+		"delivery":              marker.Delivery,
+		"needs_rehydrate":       marker.NeedsRehydrate,
+		"event_sequence":        marker.EventSequence,
+		"human_sequence":        marker.HumanSequence,
+		"engine_sequence":       marker.EngineSequence,
+		"conversation_sequence": marker.ConversationSequence,
+		"stop_count":            marker.StopCount,
+	} {
+		if err := addActiveDirectiveJSONField(fields, key, value); err != nil {
+			return nil, err
+		}
+	}
+	if marker.ActiveAttempt == nil {
+		return nil, fmt.Errorf("marker active attempt is required: %w", ErrInvalidActiveDirectiveMarker)
+	}
+	attempt, err := marshalActiveDirectiveAttempt(*marker.ActiveAttempt)
 	if err != nil {
 		return nil, err
 	}
-	if len(marker.Extra) == 0 {
-		return data, nil
+	fields["active_attempt"] = attempt
+
+	optional := []struct {
+		key     string
+		include bool
+		value   any
+	}{
+		{"unit", marker.Unit != "" || marker.present["unit"], marker.Unit},
+		{"units", len(marker.Units) > 0 || marker.present["units"], marker.Units},
+		{"code_generation_source_sha256", marker.CodeGenerationSourceSHA256 != "" || marker.present["code_generation_source_sha256"], marker.CodeGenerationSourceSHA256},
+		{"code_generation_authority_revision", marker.CodeGenerationAuthorityRevision != 0 || marker.present["code_generation_authority_revision"], marker.CodeGenerationAuthorityRevision},
+		{"cursor_harness", marker.CursorHarness != "" || marker.present["cursor_harness"], marker.CursorHarness},
+		{"part", marker.Part != 0 || marker.present["part"], marker.Part},
+		{"parts", marker.Parts != 0 || marker.present["parts"], marker.Parts},
+		{"continue_token", marker.ContinueToken != "" || marker.present["continue_token"], marker.ContinueToken},
+		{"continue_token_sha256", marker.ContinueTokenSHA256 != "" || marker.present["continue_token_sha256"], marker.ContinueTokenSHA256},
+		{"stop_fingerprint", marker.StopFingerprint != "" || marker.present["stop_fingerprint"], marker.StopFingerprint},
 	}
-	keys := make([]string, 0, len(marker.Extra))
-	for key := range marker.Extra {
-		if isActiveDirectiveKnownField(key) {
+	for _, field := range optional {
+		if !field.include {
 			continue
 		}
-		if !json.Valid(marker.Extra[key]) {
-			return nil, fmt.Errorf("marker extra field %q is invalid: %w", key, ErrInvalidActiveDirectiveMarker)
+		if err := addActiveDirectiveJSONField(fields, field.key, field.value); err != nil {
+			return nil, err
 		}
-		keys = append(keys, key)
 	}
-	slices.Sort(keys)
-	for _, key := range keys {
-		value := marker.Extra[key]
-		keyJSON, err := json.Marshal(key)
+	if marker.Resume != nil {
+		resume, err := marshalActiveDirectiveResume(*marker.Resume)
 		if err != nil {
 			return nil, err
 		}
-		data = append(data[:len(data)-1], ',')
-		data = append(data, keyJSON...)
-		data = append(data, ':')
-		data = append(data, value...)
-		data = append(data, '}')
+		fields["resume"] = resume
+	} else if marker.present["resume"] {
+		fields["resume"] = json.RawMessage("null")
 	}
-	return data, nil
+	for key, value := range marker.Extra {
+		if isActiveDirectiveKnownField(key) {
+			continue
+		}
+		if !json.Valid(value) {
+			return nil, fmt.Errorf("marker extra field %q is invalid: %w", key, ErrInvalidActiveDirectiveMarker)
+		}
+		fields[key] = append(json.RawMessage(nil), value...)
+	}
+	return json.Marshal(fields)
+}
+
+func addActiveDirectiveJSONField(fields map[string]json.RawMessage, key string, value any) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("marker field %q cannot be encoded: %w", key, err)
+	}
+	fields[key] = data
+	return nil
+}
+
+func marshalActiveDirectiveAttempt(attempt ActiveDirectiveAttempt) ([]byte, error) {
+	fields := make(map[string]json.RawMessage, len(activeDirectiveKnownAttemptFields())+len(attempt.Extra))
+	for key, value := range map[string]any{
+		"command_kind":        attempt.CommandKind,
+		"command_sha256":      attempt.CommandSHA256,
+		"issued_state_sha256": attempt.IssuedStateSHA256,
+		"session_id":          attempt.SessionID,
+		"owner_epoch":         attempt.OwnerEpoch,
+		"context_epoch":       attempt.ContextEpoch,
+		"status":              attempt.Status,
+	} {
+		if err := addActiveDirectiveJSONField(fields, key, value); err != nil {
+			return nil, err
+		}
+	}
+	optional := []struct {
+		key     string
+		include bool
+		value   any
+	}{
+		{"id", attempt.ID != "" || attempt.present["id"], attempt.ID},
+		{"claim_revision", attempt.ClaimRevision != 0 || attempt.present["claim_revision"], attempt.ClaimRevision},
+		{"shared_attempt", attempt.SharedAttempt || attempt.present["shared_attempt"], attempt.SharedAttempt},
+		{"cursor_input_sha256", attempt.CursorInputSHA256 != "" || attempt.present["cursor_input_sha256"], attempt.CursorInputSHA256},
+		{"result_sha256", attempt.ResultSHA256 != "" || attempt.present["result_sha256"], attempt.ResultSHA256},
+		{"result_revision", attempt.ResultRevision != 0 || attempt.present["result_revision"], attempt.ResultRevision},
+		{"resume_request", attempt.ResumeRequest || attempt.present["resume_request"], attempt.ResumeRequest},
+		{"resume_action", attempt.ResumeAction != "" || attempt.present["resume_action"], attempt.ResumeAction},
+		{"resume_gate_revision", attempt.ResumeGateRevision != 0 || attempt.present["resume_gate_revision"], attempt.ResumeGateRevision},
+	}
+	for _, field := range optional {
+		if !field.include {
+			continue
+		}
+		if err := addActiveDirectiveJSONField(fields, field.key, field.value); err != nil {
+			return nil, err
+		}
+	}
+	for key, value := range attempt.Extra {
+		if isActiveDirectiveKnownAttemptField(key) {
+			continue
+		}
+		if !json.Valid(value) {
+			return nil, fmt.Errorf("marker active attempt extra field %q is invalid: %w", key, ErrInvalidActiveDirectiveMarker)
+		}
+		fields[key] = append(json.RawMessage(nil), value...)
+	}
+	return json.Marshal(fields)
+}
+
+func marshalActiveDirectiveResume(resume ActiveDirectiveResume) ([]byte, error) {
+	fields := make(map[string]json.RawMessage, len(activeDirectiveKnownResumeFields())+len(resume.Extra))
+	for key, value := range map[string]any{
+		"status":               resume.Status,
+		"issuing_stage":        resume.IssuingStage,
+		"issuing_state_sha256": resume.IssuingStateSHA256,
+		"issuing_session":      resume.IssuingSession,
+		"issuing_intent_uuid":  resume.IssuingIntentUUID,
+	} {
+		if err := addActiveDirectiveJSONField(fields, key, value); err != nil {
+			return nil, err
+		}
+	}
+	if resume.Action != "" || resume.present["action"] {
+		if err := addActiveDirectiveJSONField(fields, "action", resume.Action); err != nil {
+			return nil, err
+		}
+	}
+	for key, value := range resume.Extra {
+		if isActiveDirectiveKnownResumeField(key) {
+			continue
+		}
+		if !json.Valid(value) {
+			return nil, fmt.Errorf("marker resume extra field %q is invalid: %w", key, ErrInvalidActiveDirectiveMarker)
+		}
+		fields[key] = append(json.RawMessage(nil), value...)
+	}
+	return json.Marshal(fields)
 }
 
 func decodeActiveDirectiveMarker(data []byte) (ActiveDirectiveMarker, error) {
@@ -595,6 +787,38 @@ func decodeActiveDirectiveMarker(data []byte) (ActiveDirectiveMarker, error) {
 		}
 		return ActiveDirectiveMarker{}, fmt.Errorf("marker has trailing JSON: %w", ErrInvalidActiveDirectiveMarker)
 	}
+	var version int
+	versionRaw, ok := raw["version"]
+	if !ok || json.Unmarshal(versionRaw, &version) != nil {
+		return ActiveDirectiveMarker{}, invalidActiveDirectiveRawField("version", ErrInvalidActiveDirectiveMarker)
+	}
+	if version == 1 {
+		if err := validateActiveDirectiveRawFields(raw, version); err != nil {
+			return ActiveDirectiveMarker{}, err
+		}
+		var stage, unit, stateHash string
+		if err := json.Unmarshal(raw["stage"], &stage); err != nil {
+			return ActiveDirectiveMarker{}, invalidActiveDirectiveRawField("stage", ErrInvalidActiveDirectiveMarker)
+		}
+		if err := json.Unmarshal(raw["state_sha256"], &stateHash); err != nil {
+			return ActiveDirectiveMarker{}, invalidActiveDirectiveRawField("state_sha256", ErrInvalidActiveDirectiveMarker)
+		}
+		if unitRaw, ok := raw["unit"]; ok {
+			if err := json.Unmarshal(unitRaw, &unit); err != nil {
+				return ActiveDirectiveMarker{}, invalidActiveDirectiveRawField("unit", ErrInvalidActiveDirectiveMarker)
+			}
+		}
+		marker := ActiveDirectiveMarker{
+			Version:     1,
+			Stage:       trimActiveDirectiveText(stage),
+			Unit:        trimActiveDirectiveText(unit),
+			StateSHA256: stateHash,
+		}
+		if err := validateActiveDirectiveMarker(marker); err != nil {
+			return ActiveDirectiveMarker{}, err
+		}
+		return marker, nil
+	}
 	wireBytes, err := json.Marshal(raw)
 	if err != nil {
 		return ActiveDirectiveMarker{}, fmt.Errorf("marker object encoding failed: %w", ErrInvalidActiveDirectiveMarker)
@@ -608,8 +832,8 @@ func decodeActiveDirectiveMarker(data []byte) (ActiveDirectiveMarker, error) {
 	}
 	marker := ActiveDirectiveMarker{
 		Version:                         wire.Version,
-		Stage:                           wire.Stage,
-		Unit:                            wire.Unit,
+		Stage:                           trimActiveDirectiveText(wire.Stage),
+		Unit:                            trimActiveDirectiveText(wire.Unit),
 		StateSHA256:                     wire.StateSHA256,
 		Units:                           append([]string(nil), wire.Units...),
 		Revision:                        wire.Revision,
@@ -656,6 +880,16 @@ func decodeActiveDirectiveMarker(data []byte) (ActiveDirectiveMarker, error) {
 			ResumeAction:       value.ResumeAction,
 			ResumeGateRevision: value.ResumeGateRevision,
 		}
+		var rawAttempt map[string]json.RawMessage
+		if err := json.Unmarshal(raw["active_attempt"], &rawAttempt); err != nil || rawAttempt == nil {
+			return ActiveDirectiveMarker{}, invalidActiveDirectiveRawField("active_attempt", ErrInvalidActiveDirectiveMarker)
+		}
+		marker.ActiveAttempt.Extra = activeDirectiveUnknownFields(rawAttempt, activeDirectiveKnownAttemptFields())
+		marker.ActiveAttempt.present = activeDirectiveZeroPresence(rawAttempt,
+			[]string{"id", "resume_action"},
+			[]string{"claim_revision", "result_revision", "resume_gate_revision"},
+			[]string{"shared_attempt", "resume_request"},
+		)
 	}
 	if wire.Resume != nil {
 		value := wire.Resume
@@ -667,17 +901,88 @@ func decodeActiveDirectiveMarker(data []byte) (ActiveDirectiveMarker, error) {
 			IssuingIntentUUID:  value.IssuingIntentUUID,
 			Action:             value.Action,
 		}
-	}
-	known := activeDirectiveKnownFields()
-	for key, value := range raw {
-		if !known[key] {
-			marker.Extra = appendActiveDirectiveExtra(marker.Extra, key, value)
+		var rawResume map[string]json.RawMessage
+		if err := json.Unmarshal(raw["resume"], &rawResume); err != nil || rawResume == nil {
+			return ActiveDirectiveMarker{}, invalidActiveDirectiveRawField("resume", ErrInvalidActiveDirectiveMarker)
 		}
+		marker.Resume.Extra = activeDirectiveUnknownFields(rawResume, activeDirectiveKnownResumeFields())
+		marker.Resume.present = activeDirectiveZeroPresence(rawResume, []string{"action"}, nil, nil)
+	}
+	marker.Extra = activeDirectiveUnknownFields(raw, activeDirectiveKnownFields())
+	marker.present = activeDirectiveZeroPresence(raw,
+		[]string{"unit", "code_generation_source_sha256", "cursor_harness", "continue_token", "continue_token_sha256", "stop_fingerprint"},
+		[]string{"code_generation_authority_revision", "part", "parts"},
+		nil,
+	)
+	if resume, ok := raw["resume"]; ok && bytes.Equal(bytes.TrimSpace(resume), []byte("null")) {
+		if marker.present == nil {
+			marker.present = make(map[string]bool)
+		}
+		marker.present["resume"] = true
 	}
 	if err := validateActiveDirectiveMarker(marker); err != nil {
 		return ActiveDirectiveMarker{}, err
 	}
 	return marker, nil
+}
+
+func trimActiveDirectiveText(value string) string {
+	return strings.TrimFunc(value, func(r rune) bool {
+		switch r {
+		case '\ufeff':
+			return true
+		case '\u0085':
+			return false
+		default:
+			return unicode.IsSpace(r)
+		}
+	})
+}
+
+func activeDirectiveUnknownFields(raw map[string]json.RawMessage, known map[string]bool) map[string]json.RawMessage {
+	var extra map[string]json.RawMessage
+	for key, value := range raw {
+		if known[key] {
+			continue
+		}
+		extra = appendActiveDirectiveExtra(extra, key, value)
+	}
+	return extra
+}
+
+func activeDirectiveZeroPresence(
+	raw map[string]json.RawMessage,
+	stringFields, numberFields, boolFields []string,
+) map[string]bool {
+	var present map[string]bool
+	for _, field := range stringFields {
+		var value string
+		if rawValue, ok := raw[field]; ok && activeDirectiveRawKind(rawValue) == 's' && json.Unmarshal(rawValue, &value) == nil && value == "" {
+			if present == nil {
+				present = make(map[string]bool)
+			}
+			present[field] = true
+		}
+	}
+	for _, field := range numberFields {
+		var value int64
+		if rawValue, ok := raw[field]; ok && activeDirectiveRawInteger(rawValue) && json.Unmarshal(rawValue, &value) == nil && value == 0 {
+			if present == nil {
+				present = make(map[string]bool)
+			}
+			present[field] = true
+		}
+	}
+	for _, field := range boolFields {
+		var value bool
+		if rawValue, ok := raw[field]; ok && activeDirectiveRawKind(rawValue) == 'b' && json.Unmarshal(rawValue, &value) == nil && !value {
+			if present == nil {
+				present = make(map[string]bool)
+			}
+			present[field] = true
+		}
+	}
+	return present
 }
 
 func validateActiveDirectiveRawFields(raw map[string]json.RawMessage, version int) error {
@@ -819,8 +1124,28 @@ func validateActiveDirectiveOptionalRawField(raw map[string]json.RawMessage, fie
 	}
 	if expected == 's' && field == "unit" {
 		var text string
-		if json.Unmarshal(value, &text) != nil || strings.TrimSpace(text) == "" {
+		if json.Unmarshal(value, &text) != nil || trimActiveDirectiveText(text) == "" {
 			return invalidActiveDirectiveRawField(field, ErrInvalidActiveDirectiveMarker)
+		}
+	}
+	if expected == 's' {
+		var text string
+		if err := json.Unmarshal(value, &text); err != nil {
+			return invalidActiveDirectiveRawField(field, ErrInvalidActiveDirectiveMarker)
+		}
+		switch field {
+		case "code_generation_source_sha256":
+			if !activeDirectiveSourceSHA256Pattern.MatchString(text) {
+				return invalidActiveDirectiveRawField(field, ErrInvalidActiveDirectiveMarker)
+			}
+		case "cursor_harness":
+			if !activeDirectiveHarnessPattern.MatchString(text) {
+				return invalidActiveDirectiveRawField(field, ErrInvalidActiveDirectiveMarker)
+			}
+		case "cursor_input_sha256", "result_sha256":
+			if !activeDirectiveSHA256Pattern.MatchString(text) {
+				return invalidActiveDirectiveRawField(field, ErrInvalidActiveDirectiveMarker)
+			}
 		}
 	}
 	return nil
@@ -893,11 +1218,38 @@ func activeDirectiveKnownFields() map[string]bool {
 	}
 }
 
+func activeDirectiveKnownAttemptFields() map[string]bool {
+	return map[string]bool{
+		"id": true, "command_kind": true, "command_sha256": true, "issued_state_sha256": true,
+		"session_id": true, "owner_epoch": true, "context_epoch": true, "status": true,
+		"claim_revision": true, "shared_attempt": true, "cursor_input_sha256": true,
+		"result_sha256": true, "result_revision": true, "resume_request": true,
+		"resume_action": true, "resume_gate_revision": true,
+	}
+}
+
+func activeDirectiveKnownResumeFields() map[string]bool {
+	return map[string]bool{
+		"status": true, "issuing_stage": true, "issuing_state_sha256": true,
+		"issuing_session": true, "issuing_intent_uuid": true, "action": true,
+	}
+}
+
 func isActiveDirectiveKnownField(key string) bool { return activeDirectiveKnownFields()[key] }
+
+func isActiveDirectiveKnownAttemptField(key string) bool {
+	return activeDirectiveKnownAttemptFields()[key]
+}
+
+func isActiveDirectiveKnownResumeField(key string) bool {
+	return activeDirectiveKnownResumeFields()[key]
+}
 
 func validateActiveDirectiveMarker(marker ActiveDirectiveMarker) error {
 	if marker.Version == 1 {
-		if !activeDirectiveStagePattern.MatchString(marker.Stage) || !activeDirectiveSHA256Pattern.MatchString(marker.StateSHA256) {
+		if !activeDirectiveStagePattern.MatchString(marker.Stage) ||
+			!activeDirectiveSHA256Pattern.MatchString(marker.StateSHA256) ||
+			(marker.Unit != "" && !activeDirectiveUnitPattern.MatchString(marker.Unit)) {
 			return fmt.Errorf("v1 marker fields are invalid: %w", ErrInvalidActiveDirectiveMarker)
 		}
 		return nil
@@ -913,7 +1265,7 @@ func validateActiveDirectiveMarker(marker ActiveDirectiveMarker) error {
 	}
 	if len(marker.Units) > 0 {
 		for _, unit := range marker.Units {
-			if !activeDirectiveUnitPattern.MatchString(unit) {
+			if !activeDirectiveUnitPattern.MatchString(trimActiveDirectiveText(unit)) {
 				return fmt.Errorf("marker units contain an invalid name: %w", ErrInvalidActiveDirectiveMarker)
 			}
 		}
@@ -945,8 +1297,8 @@ func validateActiveDirectiveMarker(marker ActiveDirectiveMarker) error {
 			return err
 		}
 	}
-	if marker.ContinueToken != "" {
-		if !utf8.ValidString(marker.ContinueToken) || len([]byte(marker.ContinueToken)) > 16*1024 || marker.ContinueTokenSHA256 != sha256Hex(marker.ContinueToken) {
+	if marker.ContinueToken != "" || marker.present["continue_token"] {
+		if !utf8.ValidString(marker.ContinueToken) || len([]byte(marker.ContinueToken)) > 16*1024 || !activeDirectiveSHA256Equal(marker.ContinueTokenSHA256, marker.ContinueToken) {
 			return fmt.Errorf("marker continue token digest is invalid: %w", ErrInvalidActiveDirectiveMarker)
 		}
 	}
@@ -1045,4 +1397,17 @@ func validActiveDirectiveResumeAction(value ActiveDirectiveResumeAction) bool {
 func sha256Hex(value string) string {
 	digest := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(digest[:])
+}
+
+func activeDirectiveSHA256Equal(expectedHex, value string) bool {
+	const digestHexLength = sha256.Size * 2
+	if len(expectedHex) != digestHexLength {
+		return false
+	}
+	digest := sha256.Sum256([]byte(value))
+	var encoded [digestHexLength]byte
+	hex.Encode(encoded[:], digest[:])
+	var expected [digestHexLength]byte
+	copy(expected[:], expectedHex)
+	return subtle.ConstantTimeCompare(expected[:], encoded[:]) == 1
 }
