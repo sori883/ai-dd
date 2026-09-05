@@ -1,8 +1,9 @@
 # Codexのcontext読込をGoの安全境界へ移す
 
 - 日付: 2026-09-05（Asia/Tokyo）
-- 状態: Implemented（実装・独立review・final・live E2E成功。Issue #115は未merge）
+- 状態: Implemented（実装・独立review・final・live E2E成功。PR #116をmergeし、Issue #115をclose）
 - 対応Issue: [#115 Codex receiverで配信本文を実読込する](https://github.com/sori883/ai-dd/issues/115)
+- 完了PR: [#116 Codexへ配信contextを安全に実読込する](https://github.com/sori883/ai-dd/pull/116)
 - 置換対象: [Codex receiverで配信本文を実読込する](2026-09-05-codex-receiver-read-plan.md)のshell直接読込、
   live prompt、短いfixtureに関する設計
 - 前提: [Codex向け配信transactionと公開next／continueを接続する](2026-09-05-delivery-publication-plan.md)
@@ -293,6 +294,9 @@ compact receiptのschema decode、rule末尾sentinel、全fileのslot／index／
 live前後のregular-file snapshot不変、`stage-execution-canary.txt`不在をすべて確認した。これはCodexがskillだけに従って
 全contextを読み、Stage実行・成果物生成へ進まなかったlive証拠である。追加呼び出しや自動retryは行っていない。
 `gpt-5.6-luna`はtest-only環境変数によるこの実行だけのoverrideで、製品既定modelや永続設定には保存していない。
+
+同日、現在HEADのGitHub CI 16件がすべて成功した後、PR #116を既存運用と同じmerge commit方式でdefault branchへ
+mergeした。merge commitは`fe796f9803d4d7196f2fcad4c9340dbd1a21368e`で、Issue #115のcloseとremote `main`への反映を確認した。
 
 また、read-contextのcontinuation key取得は新設したread-only `steering.ReadContinuationKey`へ統合した。既存key lifecycleと同じ
 4 KiB+1 bounded read、regular non-symlink、UTF-8、ECMAScript whitespace trim、canonical unpadded base64url、exact 32-byte検証を再利用し、
