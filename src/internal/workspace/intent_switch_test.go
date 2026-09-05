@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -9,6 +10,102 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestSwitchIntentWithWorkspaceLockRunsSwitchInsideLock(t *testing.T) {
+	project := t.TempDir()
+	held := false
+	acquiredPath := ""
+	released := false
+	want := IntentSelection{SpaceName: "team", DirName: "240901-build-auth"}
+	selection, err := switchIntentWithWorkspaceLock(
+		RootInput{ExplicitDir: project},
+		want.DirName,
+		func(_ RootInput, _ string) (IntentSelection, error) {
+			if !held {
+				t.Error("switch callback ran before workspace lock acquisition")
+			}
+			return want, nil
+		},
+		func(_ context.Context, path string) (workspaceLockReceipt, error) {
+			held = true
+			acquiredPath = path
+			return workspaceLockReceipt{path: "lock", token: "token"}, nil
+		},
+		func(_ workspaceLockReceipt) error {
+			if !held {
+				t.Error("workspace lock released before switch callback completed")
+			}
+			held = false
+			released = true
+			return nil
+		},
+	)
+	if err != nil || selection != want {
+		t.Fatalf("switchIntentWithWorkspaceLock() = (%+v, %v), want %+v and nil", selection, err, want)
+	}
+	if acquiredPath != project {
+		t.Errorf("workspace lock path = %q, want %q", acquiredPath, project)
+	}
+	if held || !released {
+		t.Errorf("lock state after switch = held:%t released:%t, want held:false released:true", held, released)
+	}
+}
+
+func TestSwitchIntentWithWorkspaceLockZeroesResultOnLockFailure(t *testing.T) {
+	project := t.TempDir()
+	acquireErr := errors.New("workspace lock acquire failure")
+	releaseErr := errors.New("workspace lock release failure")
+	want := IntentSelection{SpaceName: "team", DirName: "240901-build-auth"}
+	tests := []struct {
+		name       string
+		acquire    func(context.Context, string) (workspaceLockReceipt, error)
+		release    func(workspaceLockReceipt) error
+		wantCause  error
+		wantCalled bool
+	}{
+		{
+			name: "acquire",
+			acquire: func(context.Context, string) (workspaceLockReceipt, error) {
+				return workspaceLockReceipt{}, acquireErr
+			},
+			release: func(workspaceLockReceipt) error {
+				t.Error("release called after unsuccessful acquire")
+				return nil
+			},
+			wantCause: acquireErr,
+		},
+		{
+			name: "release",
+			acquire: func(context.Context, string) (workspaceLockReceipt, error) {
+				return workspaceLockReceipt{path: "lock", token: "token"}, nil
+			},
+			release:    func(workspaceLockReceipt) error { return releaseErr },
+			wantCause:  releaseErr,
+			wantCalled: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			called := false
+			selection, err := switchIntentWithWorkspaceLock(
+				RootInput{ExplicitDir: project},
+				want.DirName,
+				func(_ RootInput, _ string) (IntentSelection, error) {
+					called = true
+					return want, nil
+				},
+				tt.acquire,
+				tt.release,
+			)
+			if selection != (IntentSelection{}) || !errors.Is(err, tt.wantCause) {
+				t.Fatalf("switchIntentWithWorkspaceLock() = (%+v, %v), want zero and %v", selection, err, tt.wantCause)
+			}
+			if called != tt.wantCalled {
+				t.Errorf("switch callback called = %t, want %t", called, tt.wantCalled)
+			}
+		})
+	}
+}
 
 func TestSwitchIntentSelectsExactDirectory(t *testing.T) {
 	t.Parallel()

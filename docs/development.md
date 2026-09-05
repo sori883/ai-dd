@@ -944,7 +944,7 @@ identity-bound GuardとRootから`audit.ReadEvents`をfresh readしてreceiptを
 Codex発行者の暗号認証や改ざん不能な承認根ではありません。
 
 UserPromptSubmitのhook入口はpayloadを権限情報として解釈せず、上限付き読込みの後にactive recordを観測します。identity、state／stage、
-最新resolutionを含むaudit generationはappend直前に同じrecord lock内で再検証し、差分があればreceiptを追加せずsilent no-opとします。
+最新resolutionを含むaudit generationは共有workspace lock→record lockの同じcritical sectionでappend直前に再検証し、差分があればreceiptを追加せずsilent no-opとします。
 これは同一利用者権限のlocal workflowで古い観測が次Stageを誤って承認しないためのTOCTOU境界です。
 
 このwalking skeletonのgate対象は未対応能力を持たない通常Stageに限ります。summary confirmation（`if-present`を含む）、pipeline、

@@ -1301,10 +1301,10 @@ stdinを渡して非公開の`__codex-user-prompt-submit` commandを呼びます
 再解決し、stdinをauthorityやchoiceとして保存しません。空・旧形式・malformed stdinでも上限内の読込み後は時系列上の
 presence receiptを記録できますが、読込み失敗、active stateなし、root／append failureではpromptを妨げずexit 0
 （stdout／stderr空）で終了します。`AIDLC_UNATTENDED=1`では`HUMAN_TURN`をwithholdします。これはCodex発行者の暗号認証や
-改ざん不能性を保証する境界ではありません。成功したhookだけが既存のrecord lock、binding検証、audit Appendを通じてpayloadを
+改ざん不能性を保証する境界ではありません。成功したhookのappend phaseだけが共有workspace lockからrecord lockの順に取得し、既存のbinding検証、audit Appendを通じてpayloadを
 持たない`HUMAN_TURN`を1件追加し、public reportからは追加しません。
 hookは最初にidentity、state／stage、最新audit generationを観測し、
-append直前に同じrecord lock内で再読します。観測後にresolution、state、stage、identity bindingが変わった場合はfail-open no-opとし、
+workspace lock→record lockの同じcritical sectionでappend直前に再読します。観測後にresolution、state、stage、identity bindingが変わった場合はfail-open no-opとし、
 古いreceiptを次Stageへ持ち越しません。reviewer・sensor・summary capabilityの解除やinstallerはこのboundaryに含めません。
 固定本家`2.6.123`が別のhook eventでもpresenceを作る範囲とは異なり、この配布sourceは`UserPromptSubmit`だけを対象にする承認済みの
 意図的差分です。

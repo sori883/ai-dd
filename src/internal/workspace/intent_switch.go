@@ -1,12 +1,46 @@
 package workspace
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 )
+
+func switchIntentWithWorkspaceLock(
+	input RootInput,
+	target string,
+	switchFn func(RootInput, string) (IntentSelection, error),
+	acquire func(context.Context, string) (workspaceLockReceipt, error),
+	release func(workspaceLockReceipt) error,
+) (IntentSelection, error) {
+	if switchFn == nil {
+		return IntentSelection{}, fmt.Errorf("switch intent callback is nil: %w", fs.ErrInvalid)
+	}
+	projectPath := ResolveRoot(input)
+	if !filepath.IsAbs(projectPath) {
+		return IntentSelection{}, fmt.Errorf("resolve project root %q: %w", projectPath, fs.ErrInvalid)
+	}
+
+	selection := IntentSelection{}
+	err := withWorkspaceLock(
+		context.Background(),
+		projectPath,
+		func() error {
+			var callbackErr error
+			selection, callbackErr = switchFn(input, target)
+			return callbackErr
+		},
+		acquire,
+		release,
+	)
+	if err != nil {
+		return IntentSelection{}, err
+	}
+	return selection, nil
+}
 
 // IntentSelection identifies the shared space and intent selected by a switch.
 type IntentSelection struct {
@@ -29,17 +63,34 @@ type intentSwitchOps struct {
 //
 // A missing shared active-space cursor is completed without replacing a
 // concurrent value. The active-intent cursor is safely replaced inside the
-// intents root. Any error is returned with a zero selection, but a cursor may
-// already have changed; callers must not interpret failure as a rollback.
+// intents root while the shared workspace lock is held. Any error is returned
+// with a zero selection, but a cursor may already have changed; callers must
+// not interpret failure as a rollback.
 func SwitchIntent(input RootInput, target string) (IntentSelection, error) {
-	return switchIntent(input, target, intentSwitchOps{
-		openProject:         os.OpenRoot,
-		openChild:           (*os.Root).OpenRoot,
-		closeRoot:           (*os.Root).Close,
-		listIntents:         ListIntents,
-		completeActiveSpace: completeActiveSpaceCursor,
-		saveActiveIntent:    saveIntentCursor,
-	})
+	ops := systemWorkspaceLockOps()
+	return switchIntentWithWorkspaceLock(
+		input,
+		target,
+		func(input RootInput, target string) (IntentSelection, error) {
+			return switchIntent(input, target, intentSwitchOps{
+				openProject:         os.OpenRoot,
+				openChild:           (*os.Root).OpenRoot,
+				closeRoot:           (*os.Root).Close,
+				listIntents:         ListIntents,
+				completeActiveSpace: completeActiveSpaceCursor,
+				saveActiveIntent:    saveIntentCursor,
+			})
+		},
+		func(ctx context.Context, projectPath string) (workspaceLockReceipt, error) {
+			return acquireWorkspaceLock(ctx, projectPath, workspaceLockSettings{
+				maxRetries:    workspaceLockMaxRetries,
+				retryInterval: workspaceLockRetryInterval,
+			}, ops)
+		},
+		func(receipt workspaceLockReceipt) error {
+			return releaseWorkspaceLock(receipt, ops)
+		},
+	)
 }
 
 func completeActiveSpaceCursor(projectRoot *os.Root, spaceName string) (err error) {

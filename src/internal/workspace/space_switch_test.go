@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -53,6 +54,100 @@ func TestSwitchSpaceRejectsRelativeRoot(t *testing.T) {
 			name, err := SwitchSpace(tt.input, "default")
 			if name != "" || !errors.Is(err, fs.ErrInvalid) {
 				t.Errorf("SwitchSpace() = (%q, %v), want empty name and fs.ErrInvalid", name, err)
+			}
+		})
+	}
+}
+
+func TestSwitchSpaceWithWorkspaceLockRunsSwitchInsideLock(t *testing.T) {
+	project := t.TempDir()
+	held := false
+	acquiredPath := ""
+	released := false
+	name, err := switchSpaceWithWorkspaceLock(
+		RootInput{ExplicitDir: project},
+		"team",
+		func(_ RootInput, _ string) (string, error) {
+			if !held {
+				t.Error("switch callback ran before workspace lock acquisition")
+			}
+			return "team", nil
+		},
+		func(_ context.Context, path string) (workspaceLockReceipt, error) {
+			held = true
+			acquiredPath = path
+			return workspaceLockReceipt{path: "lock", token: "token"}, nil
+		},
+		func(_ workspaceLockReceipt) error {
+			if !held {
+				t.Error("workspace lock released before switch callback completed")
+			}
+			held = false
+			released = true
+			return nil
+		},
+	)
+	if err != nil || name != "team" {
+		t.Fatalf("switchSpaceWithWorkspaceLock() = (%q, %v), want team and nil", name, err)
+	}
+	if acquiredPath != project {
+		t.Errorf("workspace lock path = %q, want %q", acquiredPath, project)
+	}
+	if held || !released {
+		t.Errorf("lock state after switch = held:%t released:%t, want held:false released:true", held, released)
+	}
+}
+
+func TestSwitchSpaceWithWorkspaceLockZeroesResultOnLockFailure(t *testing.T) {
+	project := t.TempDir()
+	acquireErr := errors.New("workspace lock acquire failure")
+	releaseErr := errors.New("workspace lock release failure")
+	tests := []struct {
+		name       string
+		acquire    func(context.Context, string) (workspaceLockReceipt, error)
+		release    func(workspaceLockReceipt) error
+		wantCause  error
+		wantCalled bool
+	}{
+		{
+			name: "acquire",
+			acquire: func(context.Context, string) (workspaceLockReceipt, error) {
+				return workspaceLockReceipt{}, acquireErr
+			},
+			release: func(workspaceLockReceipt) error {
+				t.Error("release called after unsuccessful acquire")
+				return nil
+			},
+			wantCause: acquireErr,
+		},
+		{
+			name: "release",
+			acquire: func(context.Context, string) (workspaceLockReceipt, error) {
+				return workspaceLockReceipt{path: "lock", token: "token"}, nil
+			},
+			release:    func(workspaceLockReceipt) error { return releaseErr },
+			wantCause:  releaseErr,
+			wantCalled: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			called := false
+			name, err := switchSpaceWithWorkspaceLock(
+				RootInput{ExplicitDir: project},
+				"team",
+				func(_ RootInput, _ string) (string, error) {
+					called = true
+					return "team", nil
+				},
+				tt.acquire,
+				tt.release,
+			)
+			if name != "" || !errors.Is(err, tt.wantCause) {
+				t.Fatalf("switchSpaceWithWorkspaceLock() = (%q, %v), want empty and %v", name, err, tt.wantCause)
+			}
+			if called != tt.wantCalled {
+				t.Errorf("switch callback called = %t, want %t", called, tt.wantCalled)
 			}
 		})
 	}

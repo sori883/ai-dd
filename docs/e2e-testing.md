@@ -89,7 +89,7 @@ CIのcross-build matrixで別に検証し、各OSでのnative実行と同一視�
 6. active workflowのないfresh project、root／append failureではpromptを妨げずstdout／stderr空・exit 0でauditやstateを作らないことを確認する。
    active workflowがある場合はempty／旧形式／malformed stdinでも上限内の読込み後にpresence receiptが増え、stdin本文はauditへ保存されない。
    hook commandの発行者認証やledger改ざん耐性はこのlocal運用証拠scenarioの検査対象外である。
-7. hookの観測後にstateまたはaudit resolutionを同じrecord lock経由で進めた競合では、古い`HUMAN_TURN`を追加せずsilent no-opとなることを
+7. hookの観測後にstateまたはaudit resolutionを共有workspace lock→record lock経由で進めた競合では、古い`HUMAN_TURN`を追加せずsilent no-opとなることを
    確認する。catalogのsymlink／FIFO差替えではcallbackが呼ばれず、stdoutなし・exit 1となることも確認する。
    このjourneyは`UserPromptSubmit`だけを検査し、本家の他hook eventを対象にしない承認済み差分を前提とする。
 

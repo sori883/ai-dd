@@ -21,6 +21,10 @@ var (
 	ErrHumanTurnObservationStale = errors.New("audit: HUMAN_TURN observation is stale")
 	// ErrNoActiveWorkflow means that a hook observation found no running stage.
 	ErrNoActiveWorkflow = errors.New("audit: no active workflow")
+
+	// humanTurnAfterSelectionValidation is a test seam for the lock ordering
+	// boundary. Production leaves it as a no-op.
+	humanTurnAfterSelectionValidation = func() {}
 )
 
 // HumanTurnObservation carries the private state and audit snapshot from the
@@ -54,8 +58,8 @@ func ObserveHumanTurn(ctx context.Context, identity recordlock.Identity, project
 	return observation, nil
 }
 
-// RecordHumanTurnIfCurrent appends only when the lock-protected workflow
-// snapshot still matches observation.
+// RecordHumanTurnIfCurrent appends only when the workspace-to-record
+// lock-protected workflow snapshot still matches observation.
 func RecordHumanTurnIfCurrent(ctx context.Context, identity recordlock.Identity, projectRoot, recordRoot *os.Root, observation HumanTurnObservation) error {
 	if ctx == nil {
 		return fmt.Errorf("audit: HUMAN_TURN append context is nil: %w", fs.ErrInvalid)
@@ -63,21 +67,24 @@ func RecordHumanTurnIfCurrent(ctx context.Context, identity recordlock.Identity,
 	if observation.identity != identity {
 		return fmt.Errorf("audit: HUMAN_TURN identity advanced since observation: %w", ErrHumanTurnObservationStale)
 	}
-	return recordlock.With(ctx, identity, func(guard *recordlock.Guard) error {
-		if err := humanTurnSelectionMatches(identity, projectRoot); err != nil {
-			return err
-		}
-		current, err := humanTurnObservationWithGuard(ctx, identity, guard, projectRoot, recordRoot)
-		if errors.Is(err, ErrNoActiveWorkflow) {
-			return ErrHumanTurnObservationStale
-		}
-		if err != nil {
-			return err
-		}
-		if !sameHumanTurnObservation(observation, current) {
-			return ErrHumanTurnObservationStale
-		}
-		return AppendForIdentity(ctx, identity, guard, projectRoot, recordRoot, []Event{{Event: "HUMAN_TURN"}})
+	return workspace.WithLock(ctx, identity.ProjectPath(), func() error {
+		return recordlock.With(ctx, identity, func(guard *recordlock.Guard) error {
+			if err := humanTurnSelectionMatches(identity, projectRoot); err != nil {
+				return err
+			}
+			humanTurnAfterSelectionValidation()
+			current, err := humanTurnObservationWithGuard(ctx, identity, guard, projectRoot, recordRoot)
+			if errors.Is(err, ErrNoActiveWorkflow) {
+				return ErrHumanTurnObservationStale
+			}
+			if err != nil {
+				return err
+			}
+			if !sameHumanTurnObservation(observation, current) {
+				return ErrHumanTurnObservationStale
+			}
+			return AppendForIdentity(ctx, identity, guard, projectRoot, recordRoot, []Event{{Event: "HUMAN_TURN"}})
+		})
 	})
 }
 
