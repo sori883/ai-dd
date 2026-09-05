@@ -331,25 +331,18 @@ func writeActiveDirectiveMarker(root *os.Root, marker ActiveDirectiveMarker, ops
 	if err != nil {
 		return fmt.Errorf("write active directive: create temp: %w", err)
 	}
-	cleanup := func() error {
-		removeErr := ops.remove(root, tempName)
-		if errors.Is(removeErr, fs.ErrNotExist) {
-			return nil
-		}
-		return removeErr
-	}
 	if file == nil {
-		cleanupErr := cleanup()
-		return errors.Join(fmt.Errorf("write active directive: create temp returned nil file: %w", fs.ErrInvalid), wrapActiveDirectiveCleanupError(cleanupErr))
+		return fmt.Errorf("write active directive: create temp returned nil file: %w", fs.ErrInvalid)
+	}
+	tempInfo, err := file.Stat()
+	if err != nil {
+		closeErr := ops.close(file)
+		return errors.Join(fmt.Errorf("write active directive: stat temp: %w", err), wrapActiveDirectiveCloseError(closeErr))
+	}
+	cleanup := func() error {
+		return cleanupActiveDirectiveTemp(root, tempName, tempInfo, ops)
 	}
 	writeErr := writeActiveDirectiveBytes(file, data, ops.write)
-	var tempInfo fs.FileInfo
-	if writeErr == nil {
-		tempInfo, err = file.Stat()
-		if err != nil {
-			writeErr = fmt.Errorf("stat temp before close: %w", err)
-		}
-	}
 	closeErr := ops.close(file)
 	if writeErr == nil && closeErr == nil {
 		if identityErr := verifyActiveDirectiveTempIdentity(root, tempName, tempInfo, ops.lstat); identityErr != nil {
@@ -367,6 +360,26 @@ func writeActiveDirectiveMarker(root *os.Root, marker ActiveDirectiveMarker, ops
 	if err := ops.rename(root, tempName, activeDirectiveMarkerName); err != nil {
 		cleanupErr := cleanup()
 		return errors.Join(fmt.Errorf("write active directive: rename: %w", err), wrapActiveDirectiveCleanupError(cleanupErr))
+	}
+	return nil
+}
+
+func cleanupActiveDirectiveTemp(root *os.Root, tempName string, expected fs.FileInfo, ops activeDirectiveOps) error {
+	if expected == nil {
+		return nil
+	}
+	actual, err := ops.lstat(root, tempName)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect temporary for cleanup: %w", err)
+	}
+	if actual == nil || actual.Mode()&fs.ModeSymlink != 0 || !actual.Mode().IsRegular() || !os.SameFile(expected, actual) {
+		return nil
+	}
+	if err := ops.remove(root, tempName); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
 	}
 	return nil
 }
@@ -1246,10 +1259,12 @@ func isActiveDirectiveKnownResumeField(key string) bool {
 }
 
 func validateActiveDirectiveMarker(marker ActiveDirectiveMarker) error {
+	if marker.Unit != "" && trimActiveDirectiveText(marker.Unit) == "" {
+		return fmt.Errorf("marker unit is empty after trim: %w", ErrInvalidActiveDirectiveMarker)
+	}
 	if marker.Version == 1 {
 		if !activeDirectiveStagePattern.MatchString(marker.Stage) ||
-			!activeDirectiveSHA256Pattern.MatchString(marker.StateSHA256) ||
-			(marker.Unit != "" && !activeDirectiveUnitPattern.MatchString(marker.Unit)) {
+			!activeDirectiveSHA256Pattern.MatchString(marker.StateSHA256) {
 			return fmt.Errorf("v1 marker fields are invalid: %w", ErrInvalidActiveDirectiveMarker)
 		}
 		return nil
@@ -1259,9 +1274,6 @@ func validateActiveDirectiveMarker(marker ActiveDirectiveMarker) error {
 	}
 	if !activeDirectiveStagePattern.MatchString(marker.Stage) || !activeDirectiveSHA256Pattern.MatchString(marker.StateSHA256) {
 		return fmt.Errorf("marker stage or state hash is invalid: %w", ErrInvalidActiveDirectiveMarker)
-	}
-	if marker.Unit != "" && !activeDirectiveUnitPattern.MatchString(marker.Unit) {
-		return fmt.Errorf("marker unit is invalid: %w", ErrInvalidActiveDirectiveMarker)
 	}
 	if len(marker.Units) > 0 {
 		for _, unit := range marker.Units {

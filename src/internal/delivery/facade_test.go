@@ -283,6 +283,45 @@ func TestDeliveryNextPreservesGenericBaseAcrossStateChange(t *testing.T) {
 	}
 }
 
+func TestDeliveryNextKeepsFreshAttemptTupleBoundToMarker(t *testing.T) {
+	fixture := newChunkedDeliveryFixture(t)
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+	if _, err := Next(context.Background(), input); err != nil {
+		t.Fatalf("Next(initial) error = %v", err)
+	}
+	base, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
+	if err != nil || !found || base.ActiveAttempt == nil {
+		t.Fatalf("ReadActiveDirectiveMarker(base) = found %v, error %v, marker %#v", found, err, base)
+	}
+	base.OwnerSession = "foreign-owner"
+	base.OwnerEpoch = 7
+	base.ContextEpoch = 9
+	base.ActiveAttempt.SessionID = base.OwnerSession
+	base.ActiveAttempt.OwnerEpoch = base.OwnerEpoch
+	base.ActiveAttempt.ContextEpoch = base.ContextEpoch
+	if err := WriteActiveDirectiveMarker(fixture.recordRoot, base); err != nil {
+		t.Fatalf("WriteActiveDirectiveMarker(base): %v", err)
+	}
+	result, err := Next(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Next(foreign owner base) error = %v", err)
+	}
+	marker, found, err := ReadActiveDirectiveMarker(fixture.recordRoot)
+	if err != nil || !found || marker.ActiveAttempt == nil {
+		t.Fatalf("ReadActiveDirectiveMarker(publication) = found %v, error %v, marker %#v", found, err, marker)
+	}
+	if marker.OwnerSession == "foreign-owner" || marker.ActiveAttempt.SessionID != marker.OwnerSession {
+		t.Errorf("publication owner tuple = marker %q / attempt %q, want sessionless-aligned tuple", marker.OwnerSession, marker.ActiveAttempt.SessionID)
+	}
+	if marker.ActiveAttempt.OwnerEpoch != marker.OwnerEpoch || marker.ActiveAttempt.ContextEpoch != marker.ContextEpoch {
+		t.Errorf("publication epoch tuple = marker %d/%d attempt %d/%d, want equal tuples",
+			marker.OwnerEpoch, marker.ContextEpoch, marker.ActiveAttempt.OwnerEpoch, marker.ActiveAttempt.ContextEpoch)
+	}
+	if _, err := Continue(context.Background(), input, result.ContinueToken); err != nil {
+		t.Fatalf("Continue(immediately after tuple repair) error = %v, want nil", err)
+	}
+}
+
 func TestDeliveryContinueAcceptsFixedGenericAttempt(t *testing.T) {
 	fixture := newChunkedDeliveryFixture(t)
 	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}

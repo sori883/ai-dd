@@ -412,8 +412,8 @@ func activeDirectiveAttemptForPublication(
 		CommandSHA256:     stateHash,
 		IssuedStateSHA256: stateHash,
 		SessionID:         ownerSession,
-		OwnerEpoch:        0,
-		ContextEpoch:      0,
+		OwnerEpoch:        base.OwnerEpoch,
+		ContextEpoch:      base.ContextEpoch,
 		Status:            ActiveDirectiveAttemptSettled,
 	}
 	if !baseValid || base.ActiveAttempt == nil {

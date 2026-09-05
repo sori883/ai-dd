@@ -25,13 +25,19 @@ func deliveryArguments(args []string) (command []string, explicitDir string, err
 	}
 	command = []string{args[0]}
 	projectDirSeen := false
-	tokenSeen := false
 	recordError := func(argumentErr error) {
 		if err == nil {
 			err = argumentErr
 		}
 	}
-	for i := 1; i < len(args); i++ {
+	argumentStart := 1
+	if args[0] == "continue" && len(args) > argumentStart {
+		// The first argument after continue is always the opaque token slot.
+		// Parse project-dir options only after the token has been secured.
+		command = append(command, args[argumentStart])
+		argumentStart++
+	}
+	for i := argumentStart; i < len(args); i++ {
 		arg := args[i]
 		value, equalsForm := strings.CutPrefix(arg, "--project-dir=")
 		if arg == "--project-dir" || equalsForm {
@@ -51,11 +57,6 @@ func deliveryArguments(args []string) (command []string, explicitDir string, err
 				recordError(errors.New("--project-dir requires a nonempty path"))
 			}
 			explicitDir = value
-			continue
-		}
-		if args[0] == "continue" && !tokenSeen {
-			command = append(command, arg)
-			tokenSeen = true
 			continue
 		}
 		if strings.HasPrefix(arg, "-") {

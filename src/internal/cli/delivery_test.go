@@ -112,6 +112,44 @@ func TestRunContinueTreatsDashPrefixedTokenAsOpaque(t *testing.T) {
 	}
 }
 
+func TestRunContinueTreatsReservedProjectFlagTokenAsOpaque(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		args      []string
+		wantToken string
+	}{
+		{name: "equals flag spelling", args: []string{"continue", "--project-dir=opaque"}, wantToken: "--project-dir=opaque"},
+		{name: "split flag spelling", args: []string{"continue", "--project-dir"}, wantToken: "--project-dir"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			var callbackToken string
+			dependencies := cli.Dependencies{
+				ContinueDelivery: func(token, explicitDir string) ([]byte, error) {
+					callbackToken = token
+					if explicitDir != "" {
+						t.Errorf("ContinueDelivery explicitDir = %q, want empty", explicitDir)
+					}
+					return nil, &delivery.WorkflowError{Message: "continuation token is invalid"}
+				},
+			}
+			if got := cli.Run(test.args, &stdout, &stderr, buildinfo.Info{}, dependencies); got != 0 {
+				t.Fatalf("Run(%v) exit = %d, want 0", test.args, got)
+			}
+			if callbackToken != test.wantToken {
+				t.Errorf("ContinueDelivery token = %q, want %q", callbackToken, test.wantToken)
+			}
+			if stdout.String() != "{\"kind\":\"error\",\"message\":\"continuation token is invalid\"}\n" {
+				t.Errorf("stdout = %q, want typed workflow error", stdout.String())
+			}
+			if stderr.String() != "" {
+				t.Errorf("stderr = %q, want empty", stderr.String())
+			}
+		})
+	}
+}
+
 func TestRunDeliverySyntaxAndInternalErrorsHaveNoStdout(t *testing.T) {
 	tests := []struct {
 		name string

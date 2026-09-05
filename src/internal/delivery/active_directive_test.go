@@ -409,15 +409,39 @@ func TestActiveDirectiveTrimsFixedJavaScriptWhitespace(t *testing.T) {
 	}
 }
 
+func TestActiveDirectiveAcceptsFixedTopLevelUnitNames(t *testing.T) {
+	for _, version := range []int{1, 2} {
+		for _, unit := range []string{".unit", "_unit", "-unit", strings.Repeat("u", 65)} {
+			t.Run(fmt.Sprintf("v%d/%s", version, unit), func(t *testing.T) {
+				rootPath := t.TempDir()
+				root, err := os.OpenRoot(rootPath)
+				if err != nil {
+					t.Fatalf("OpenRoot(%q): %v", rootPath, err)
+				}
+				defer func() { _ = root.Close() }()
+				marker := minimalActiveDirectiveMarker()
+				marker.Version = version
+				marker.Unit = unit
+				if err := WriteActiveDirectiveMarker(root, marker); err != nil {
+					t.Fatalf("WriteActiveDirectiveMarker() error = %v, want fixed top-level unit accepted", err)
+				}
+				got, found, err := ReadActiveDirectiveMarker(root)
+				if err != nil || !found {
+					t.Fatalf("ReadActiveDirectiveMarker() = found %v, error %v", found, err)
+				}
+				if got.Unit != unit {
+					t.Errorf("round-trip top-level unit = %q, want %q", got.Unit, unit)
+				}
+			})
+		}
+	}
+}
+
 func TestActiveDirectiveRejectsInvalidFixedUnitNames(t *testing.T) {
 	invalid := []struct {
 		name   string
 		mutate func(*ActiveDirectiveMarker)
 	}{
-		{name: "unit leading dot", mutate: func(marker *ActiveDirectiveMarker) { marker.Unit = ".unit" }},
-		{name: "unit leading underscore", mutate: func(marker *ActiveDirectiveMarker) { marker.Unit = "_unit" }},
-		{name: "unit leading hyphen", mutate: func(marker *ActiveDirectiveMarker) { marker.Unit = "-unit" }},
-		{name: "unit too long", mutate: func(marker *ActiveDirectiveMarker) { marker.Unit = strings.Repeat("u", 65) }},
 		{name: "units leading dot", mutate: func(marker *ActiveDirectiveMarker) { marker.Units = []string{".unit"} }},
 		{name: "units leading underscore", mutate: func(marker *ActiveDirectiveMarker) { marker.Units = []string{"_unit"} }},
 		{name: "units leading hyphen", mutate: func(marker *ActiveDirectiveMarker) { marker.Units = []string{"-unit"} }},
@@ -434,7 +458,7 @@ func TestActiveDirectiveRejectsInvalidFixedUnitNames(t *testing.T) {
 			marker := minimalActiveDirectiveMarker()
 			test.mutate(&marker)
 			if err := WriteActiveDirectiveMarker(root, marker); err == nil {
-				t.Fatal("WriteActiveDirectiveMarker() error = nil, want fixed unit rejection")
+				t.Fatal("WriteActiveDirectiveMarker() error = nil, want fixed units rejection")
 			} else if !errors.Is(err, ErrInvalidActiveDirectiveMarker) {
 				t.Errorf("WriteActiveDirectiveMarker() error = %v, want ErrInvalidActiveDirectiveMarker", err)
 			}
@@ -442,9 +466,9 @@ func TestActiveDirectiveRejectsInvalidFixedUnitNames(t *testing.T) {
 	}
 }
 
-func TestActiveDirectiveV1RejectsInvalidFixedUnitNames(t *testing.T) {
-	for _, unit := range []string{".unit", "_unit", "-unit", strings.Repeat("u", 65)} {
-		t.Run(unit, func(t *testing.T) {
+func TestActiveDirectiveRejectsWhitespaceOnlyTopLevelUnit(t *testing.T) {
+	for _, version := range []int{1, 2} {
+		t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
 			rootPath := t.TempDir()
 			root, err := os.OpenRoot(rootPath)
 			if err != nil {
@@ -452,13 +476,24 @@ func TestActiveDirectiveV1RejectsInvalidFixedUnitNames(t *testing.T) {
 			}
 			defer func() { _ = root.Close() }()
 			marker := minimalActiveDirectiveMarker()
-			marker.Version = 1
-			marker.Unit = unit
+			marker.Version = version
+			marker.Unit = " \t\n"
 			if err := WriteActiveDirectiveMarker(root, marker); err == nil {
-				t.Fatal("WriteActiveDirectiveMarker() error = nil, want fixed v1 unit rejection")
+				t.Fatal("WriteActiveDirectiveMarker() error = nil, want whitespace-only top-level unit rejection")
 			} else if !errors.Is(err, ErrInvalidActiveDirectiveMarker) {
 				t.Errorf("WriteActiveDirectiveMarker() error = %v, want ErrInvalidActiveDirectiveMarker", err)
 			}
+			data := mustMarshalActiveDirectiveMarkerWithoutValidation(marker)
+			var raw map[string]json.RawMessage
+			if err := json.Unmarshal(data, &raw); err != nil {
+				t.Fatalf("Unmarshal(marker): %v", err)
+			}
+			raw["unit"] = json.RawMessage(`" \t\n"`)
+			data, err = json.Marshal(raw)
+			if err != nil {
+				t.Fatalf("Marshal(marker with whitespace unit): %v", err)
+			}
+			assertActiveDirectiveMarkerRejected(t, data)
 		})
 	}
 }
@@ -838,6 +873,7 @@ func TestActiveDirectiveAtomicWriteRejectsReplacedTemporary(t *testing.T) {
 		t.Fatalf("ReadFile(previous): %v", err)
 	}
 	ops := systemActiveDirectiveOps()
+	var replacementPath string
 	ops.close = func(file *os.File) error {
 		if err := file.Close(); err != nil {
 			return err
@@ -854,7 +890,8 @@ func TestActiveDirectiveAtomicWriteRejectsReplacedTemporary(t *testing.T) {
 			if err := os.Remove(tempPath); err != nil {
 				return err
 			}
-			return os.WriteFile(tempPath, []byte("replacement"), 0o600)
+			replacementPath = tempPath
+			return os.WriteFile(replacementPath, []byte("replacement"), 0o600)
 		}
 		return errors.New("temporary marker not found")
 	}
@@ -867,6 +904,16 @@ func TestActiveDirectiveAtomicWriteRejectsReplacedTemporary(t *testing.T) {
 	}
 	if !bytes.Equal(gotBytes, oldBytes) {
 		t.Errorf("marker changed after replaced temporary: got %q, want %q", gotBytes, oldBytes)
+	}
+	if replacementPath == "" {
+		t.Fatal("replacement path was not captured")
+	}
+	replacementBytes, err := os.ReadFile(replacementPath)
+	if err != nil {
+		t.Fatalf("ReadFile(replacement): %v", err)
+	}
+	if string(replacementBytes) != "replacement" {
+		t.Errorf("replacement temporary bytes = %q, want replacement to remain owned by other object", replacementBytes)
 	}
 }
 
