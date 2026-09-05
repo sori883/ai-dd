@@ -643,17 +643,29 @@ func TestReadContextRejectsNonCanonicalTokenEnvelope(t *testing.T) {
 		{
 			name: "noncanonical outer base64",
 			build: func() string {
-				return base64.RawURLEncoding.EncodeToString(raw) + "="
+				modified := insertBase64WhitespaceForTest(t, first.ReadContinueToken)
+				if _, err := base64.RawURLEncoding.DecodeString(modified); err != nil {
+					t.Fatalf("DecodeString(noncanonical outer base64): %v", err)
+				}
+				return modified
 			},
 		},
 		{
 			name: "noncanonical MAC base64",
 			build: func() string {
-				macBytes, err := base64.RawURLEncoding.DecodeString(envelope.MAC)
+				noncanonicalMAC := insertBase64WhitespaceForTest(t, envelope.MAC)
+				macBytes, err := base64.RawURLEncoding.DecodeString(noncanonicalMAC)
 				if err != nil {
 					t.Fatalf("DecodeString(MAC): %v", err)
 				}
-				modified := contextReadTokenEnvelope{Payload: envelope.Payload, MAC: base64.URLEncoding.EncodeToString(macBytes)}
+				canonicalMAC, err := base64.RawURLEncoding.DecodeString(envelope.MAC)
+				if err != nil {
+					t.Fatalf("DecodeString(canonical MAC): %v", err)
+				}
+				if !bytes.Equal(macBytes, canonicalMAC) {
+					t.Fatal("noncanonical MAC changed decoded bytes")
+				}
+				modified := contextReadTokenEnvelope{Payload: envelope.Payload, MAC: noncanonicalMAC}
 				encoded, err := json.Marshal(modified)
 				if err != nil {
 					t.Fatalf("json.Marshal(noncanonical MAC envelope): %v", err)
@@ -677,6 +689,15 @@ func TestReadContextRejectsNonCanonicalTokenEnvelope(t *testing.T) {
 			}
 		})
 	}
+}
+
+func insertBase64WhitespaceForTest(t *testing.T, value string) string {
+	t.Helper()
+	if len(value) < 4 {
+		t.Fatalf("base64 value length = %d, want at least 4", len(value))
+	}
+	middle := len(value) / 2
+	return value[:middle] + "\r\n" + value[middle:]
 }
 
 func quoteJSONForTest(t *testing.T, value string) []byte {
