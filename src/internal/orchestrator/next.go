@@ -54,31 +54,46 @@ func Next(ctx context.Context, input NextInput) (result NextResult, err error) {
 		return NextResult{}, err
 	}
 	err = recordlock.With(ctx, input.Identity, func(guard *recordlock.Guard) error {
-		if err := audit.ValidateRecordBinding(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot); err != nil {
-			return fmt.Errorf("next: validate initial binding: %w", err)
-		}
-		document, err := state.ReadDocument(input.RecordRoot)
-		if err != nil {
-			return fmt.Errorf("next: read state: %w", err)
-		}
-		if err := audit.ValidateRecordBinding(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot); err != nil {
-			return fmt.Errorf("next: validate binding after state read: %w", err)
-		}
-		directive, err := classifyNext(document, input.Catalog)
-		if err != nil {
-			return err
-		}
-		result = NextResult{
-			Directive: directive,
-			State:     document.State,
-			Content:   slices.Clone(document.Content),
-		}
-		return nil
+		result, err = nextWithGuard(ctx, guard, input)
+		return err
 	})
 	if err != nil {
 		return NextResult{}, err
 	}
-	return result, err
+	return result, nil
+}
+
+// NextWithGuard classifies one state snapshot while the caller-owned record
+// lock remains held. The guard-aware entry point is used by transactions that
+// must compose and publish a directive without reacquiring the same lock.
+func NextWithGuard(ctx context.Context, guard *recordlock.Guard, input NextInput) (NextResult, error) {
+	if err := validateNextInput(ctx, input); err != nil {
+		return NextResult{}, err
+	}
+	return nextWithGuard(ctx, guard, input)
+}
+
+func nextWithGuard(ctx context.Context, guard *recordlock.Guard, input NextInput) (result NextResult, err error) {
+	if err := audit.ValidateRecordBinding(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot); err != nil {
+		return NextResult{}, fmt.Errorf("next: validate initial binding: %w", err)
+	}
+	document, err := state.ReadDocument(input.RecordRoot)
+	if err != nil {
+		return NextResult{}, fmt.Errorf("next: read state: %w", err)
+	}
+	if err := audit.ValidateRecordBinding(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot); err != nil {
+		return NextResult{}, fmt.Errorf("next: validate binding after state read: %w", err)
+	}
+	directive, err := classifyNext(document, input.Catalog)
+	if err != nil {
+		return NextResult{}, err
+	}
+	result = NextResult{
+		Directive: directive,
+		State:     document.State,
+		Content:   slices.Clone(document.Content),
+	}
+	return result, nil
 }
 
 func validateNextInput(ctx context.Context, input NextInput) error {

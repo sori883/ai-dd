@@ -176,6 +176,32 @@ func TestComposeRunStageBuildsFreshRequiredRuleBundle(t *testing.T) {
 	assertZeroRunStageComposition(t, "invalid UTF-8 rule", invalid)
 }
 
+func TestComposeRunStageWithGuard(t *testing.T) {
+	fixture := newRunStageFixture(t)
+	var got RunStageComposition
+	err := recordlock.With(context.Background(), fixture.identity, func(guard *recordlock.Guard) error {
+		var err error
+		got, err = ComposeRunStageWithGuard(context.Background(), guard, RunStageInput{
+			Identity:    fixture.identity,
+			ProjectRoot: fixture.projectRoot,
+			RecordRoot:  fixture.recordRoot,
+		})
+		if err != nil {
+			return err
+		}
+		if !guard.Held() {
+			t.Fatal("ComposeRunStageWithGuard() released the caller-owned guard")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("recordlock.With(ComposeRunStageWithGuard) error = %v", err)
+	}
+	if got.Directive.Kind != orchestrator.DirectiveKindRunStage {
+		t.Fatalf("ComposeRunStageWithGuard().Directive.Kind = %q, want %q", got.Directive.Kind, orchestrator.DirectiveKindRunStage)
+	}
+}
+
 func assertRunStageRulesInContext(t *testing.T, label string, data []byte, want []string) {
 	t.Helper()
 	var wire struct {

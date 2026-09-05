@@ -1350,3 +1350,31 @@ advisoryは`state.BuildInitial`が生成する`StartedIntent.Initial.Plan`へ構
 - `ReadSelection`・intent読み取りの公開CLI/status接続、space/intent明示override、session binding
 - Cobra、Viper、GoReleaserなどの外部依存
 - release、署名、公証、installer
+
+## Codex向けdirective配信transaction
+
+`delivery.Next`と`delivery.Continue`は、現在の配置済み`.codex/`、active Space/Intent、recordの
+`aidlc-state.md`を同じrecord lockの`recordlock.Guard`下でfreshに読み、`ComposeRunStage`の結果を
+公開するtransaction入口です。`ComposeRunStageWithGuard`と`orchestrator.NextWithGuard`は、外側が保持する
+同一Guardを再利用するため、compose中の再lockによるdeadlockを起こしません。既存の`Next`と
+`ComposeRunStage`は従来どおりread-only結果を返し、human approval gateやStage実行を開始しません。
+
+rule bundleが複数chunkになる場合、`Next`はrecord専用の`.aidlc-steering-token-key`でpart 1の
+`load-steering` wireを作り、active marker commitが成功した後だけwireを返します。`Continue`は freshな
+state・graph・rule・route・directiveを再構成し、署名claimsと現在markerを全照合して一段だけ進めます。
+同一tokenのreplayや並列競合の敗者、rule/state/route/directive/active selection変更は正常directiveへ
+進めず、workflow errorとして扱います。最終partでは同じfresh compositionから作った`run-stage` wireを
+返します。marker commit失敗時は旧markerを残し、同じtokenで再試行できます。stdoutの書込み失敗では
+cursorをrollbackしません。
+
+active markerは固定AI-DLC `2.6.123`の`.aidlc-active-directive.json` v2を使用します。既知のoptional
+fieldとunknown top-level fieldを保持し、64 KiB、UTF-8、single JSON、regular non-symlinkを検証します。
+更新はrecord Root内の0600 temporary fileへ全byteを書き、Close成功後にRenameするため、途中失敗では
+旧markerを置換せず、自分のtemporary fileだけをcleanupします。Rootのopen/Close所有権はadapterにあり、
+marker reader/writerはcaller-owned Rootをcloseしません。
+
+`src/cmd/aidlc`はprocessのcwd・環境変数・`--project-dir`を`workspace.RootInput`へ変換し、active
+space/intentからidentity、project Root、record Rootを安全に解決します。`src/internal/cli`の
+`next`/`continue`はsyntax errorをstderr/exit 2、internal/I/O failureをstdout空・stderr/exit 1、
+invalid/stale workflowを改行付き単一`{"kind":"error","message":"..."}` stdout/exit 0へ分類します。
+この公開経路は通常の単一built binaryからも利用できます。
