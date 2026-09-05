@@ -264,8 +264,8 @@ mode/bodyだけを比較し、transport上必要な`.aidlc-active-directive.json
 各file全文意味は維持する。live promptはskill invocationとこのschema要求だけであり、routing、停止、canaryの指示を重ねない。
 
 2026-09-06（HEAD `1b09812c71ba392a00da91bca6d638c8e4b3da16`）に、承認済みのlive commandを1回だけ実行した。約265秒後、schema decode、
-rule sentinel照合、live前後のregular-file snapshot不変、`stage-execution-canary.txt`不在は成功したが、約22 KiBのinline全文をreceiptへ
-再掲させる旧exact comparisonが失敗し、stage／consume assertionへは到達しなかった。non-live fresh journeyは同じ`read-context`出力を
+rule sentinel照合、live前後のregular-file snapshot不変、`stage-execution-canary.txt`不在は成功したが、約22.6 KiBの全context本文をreceiptへ
+再掲させる旧exact comparisonのうち、約16.2 KiBのinline本文比較が失敗し、stage／consume assertionへは到達しなかった。non-live fresh journeyは同じ`read-context`出力を
 全byte復元して既に成功していたため、reader本体ではなくlive oracleの長大出力が不安定だったと判断した。追加live実行は行わず、compact
 proofへ修正して環境変数unsetのskip可能なintegration testで検証する。
 
