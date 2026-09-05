@@ -1,29 +1,31 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"os"
 
 	"github.com/sori883/ai-dd/src/internal/audit"
 	deliverypkg "github.com/sori883/ai-dd/src/internal/delivery"
 	"github.com/sori883/ai-dd/src/internal/recordlock"
-	"github.com/sori883/ai-dd/src/internal/state"
 )
+
+const humanTurnPayloadLimit = 64 * 1024
 
 var (
 	humanTurnInputResolver = func(getwd func() (string, error), getenv func(string) string, explicitDir string) (deliverypkg.RunStageInput, *os.Root, *os.Root, error) {
 		return deliveryInputResolver(getwd, getenv, explicitDir)
 	}
-	humanTurnRecord     func(context.Context, recordlock.Identity, *os.Root, *os.Root) error = audit.RecordHumanTurn
-	humanTurnRootCloser                                                                      = func(root *os.Root) error { return deliveryRootCloser(root) }
+	humanTurnObserve          func(context.Context, recordlock.Identity, *os.Root, *os.Root) (audit.HumanTurnObservation, error) = audit.ObserveHumanTurn
+	humanTurnRecordIfCurrent  func(context.Context, recordlock.Identity, *os.Root, *os.Root, audit.HumanTurnObservation) error   = audit.RecordHumanTurnIfCurrent
+	humanTurnAfterObservation                                                                                                    = func() {}
+	humanTurnRootCloser                                                                                                          = func(root *os.Root) error { return deliveryRootCloser(root) }
 )
 
-// runHumanTurnHook is the fail-open UserPromptSubmit boundary. The payload is
-// parsed only as a validity guard; no prompt text, session value, or choice is
-// passed to the authority-bearing audit entry.
+// runHumanTurnHook is the fail-open UserPromptSubmit boundary. It records an
+// operational presence receipt when the caller has resolved an active record;
+// origin authentication is outside this function and is not implied here.
+// Stdin is never used as authority, prompt text, or choice data.
 func runHumanTurnHook(
 	read func() ([]byte, error),
 	getwd func() (string, error),
@@ -37,8 +39,7 @@ func runHumanTurnHook(
 	if read == nil {
 		return nil
 	}
-	payload, err := read()
-	if err != nil || !validHumanTurnPayload(payload) {
+	if _, err := read(); err != nil {
 		return nil
 	}
 	if getenv != nil && getenv("AIDLC_UNATTENDED") == "1" {
@@ -58,38 +59,27 @@ func runHumanTurnHook(
 		_ = humanTurnRootCloser(recordRoot)
 		_ = humanTurnRootCloser(projectRoot)
 	}()
-	info, statErr := recordRoot.Lstat("aidlc-state.md")
-	if statErr != nil || info == nil || !info.Mode().IsRegular() {
+	if humanTurnObserve == nil || humanTurnRecordIfCurrent == nil {
 		return nil
 	}
-	document, stateErr := state.ReadDocument(recordRoot)
-	if stateErr != nil || document.State.WorkflowStatus() != state.WorkflowStatusRunning {
+	observation, observeErr := humanTurnObserve(context.Background(), input.Identity, projectRoot, recordRoot)
+	if observeErr != nil {
 		return nil
 	}
-	if currentStage := document.State.CurrentStage(); currentStage == "" || currentStage == "none" {
-		return nil
+	if humanTurnAfterObservation != nil {
+		humanTurnAfterObservation()
 	}
-	if humanTurnRecord != nil {
-		_ = humanTurnRecord(context.Background(), input.Identity, projectRoot, recordRoot)
+	if err := humanTurnRecordIfCurrent(context.Background(), input.Identity, projectRoot, recordRoot, observation); err != nil {
+		return nil
 	}
 	return nil
-}
-
-func validHumanTurnPayload(payload []byte) bool {
-	trimmed := bytes.TrimSpace(payload)
-	if len(trimmed) == 0 {
-		return false
-	}
-	var value map[string]any
-	if err := json.Unmarshal(trimmed, &value); err != nil {
-		return false
-	}
-	return value != nil
 }
 
 func humanTurnHook(reader io.Reader, getwd func() (string, error), getenv func(string) string) error {
 	if reader == nil {
 		return nil
 	}
-	return runHumanTurnHook(func() ([]byte, error) { return io.ReadAll(reader) }, getwd, getenv)
+	return runHumanTurnHook(func() ([]byte, error) {
+		return io.ReadAll(io.LimitReader(reader, humanTurnPayloadLimit))
+	}, getwd, getenv)
 }

@@ -105,6 +105,7 @@ func TestReportHumanTurnJourney(t *testing.T) {
 	}
 
 	noHookProject := newDeliveryJourneyProject(t)
+	assertNoCodexHookConfig(t, noHookProject)
 	noHookStateBefore, err := os.ReadFile(filepath.Join(noHookProject, "aidlc", "spaces", "team", "intents", "build", "aidlc-state.md"))
 	if err != nil {
 		t.Fatalf("ReadFile(state before report): %v", err)
@@ -129,7 +130,8 @@ func TestReportHumanTurnJourney(t *testing.T) {
 		t.Fatalf("public report without a human turn audit = %v, want absent", err)
 	}
 
-	hook := runReportBinary(t, binaryPath, noHookProject, []byte(`{"session_id":"s1","prompt":"Request Changes"}`), "__codex-user-prompt-submit")
+	installCodexHookConfig(t, moduleRoot, noHookProject)
+	hook := runConfiguredHumanTurnHook(t, binaryPath, noHookProject, []byte(`{"session_id":"s1","prompt":"Request Changes"}`), nil)
 	if hook.exitCode != 0 || hook.stdout.Len() != 0 || hook.stderr.Len() != 0 {
 		t.Fatalf("human-turn hook = code %d stdout %q stderr %q, want silent success", hook.exitCode, hook.stdout.String(), hook.stderr.String())
 	}
@@ -149,7 +151,7 @@ func TestReportHumanTurnJourney(t *testing.T) {
 	if staleApproval.kind != "error" || staleApproval.exitCode != 0 || !strings.Contains(staleApproval.message, "HUMAN_TURN") {
 		t.Fatalf("approve without new hook = %#v, want stale workflow error", staleApproval)
 	}
-	_ = runReportBinary(t, binaryPath, noHookProject, []byte(`{"prompt":"Approve"}`), "__codex-user-prompt-submit")
+	_ = runConfiguredHumanTurnHook(t, binaryPath, noHookProject, []byte(`{"prompt":"Approve"}`), nil)
 	approved := runReportBinary(t, binaryPath, noHookProject, nil,
 		"report", "--stage", "intent-capture", "--result", "approved", "--user-input", "Approve")
 	if approved.kind != "done" || approved.exitCode != 0 || !strings.Contains(approved.reason, "State advanced; run next to continue.") {
@@ -157,13 +159,15 @@ func TestReportHumanTurnJourney(t *testing.T) {
 	}
 
 	noWorkflowProject := t.TempDir()
-	noWorkflowHook := runReportBinary(t, binaryPath, noWorkflowProject, []byte(`{"prompt":"Approve"}`), "__codex-user-prompt-submit")
+	installCodexHookConfig(t, moduleRoot, noWorkflowProject)
+	noWorkflowHook := runConfiguredHumanTurnHook(t, binaryPath, noWorkflowProject, []byte(`{"prompt":"Approve"}`), nil)
 	if noWorkflowHook.exitCode != 0 || noWorkflowHook.stdout.Len() != 0 || noWorkflowHook.stderr.Len() != 0 {
 		t.Fatalf("hook without workflow = code %d stdout %q stderr %q, want silent no-op", noWorkflowHook.exitCode, noWorkflowHook.stdout.String(), noWorkflowHook.stderr.String())
 	}
 
 	unattendedProject := newDeliveryJourneyProject(t)
-	unattendedHook := runReportBinaryWithEnv(t, binaryPath, unattendedProject, []byte(`{"prompt":"Approve"}`), []string{"AIDLC_UNATTENDED=1"}, "__codex-user-prompt-submit")
+	installCodexHookConfig(t, moduleRoot, unattendedProject)
+	unattendedHook := runConfiguredHumanTurnHook(t, binaryPath, unattendedProject, []byte(`{"prompt":"Approve"}`), []string{"AIDLC_UNATTENDED=1"})
 	if unattendedHook.exitCode != 0 || unattendedHook.stdout.Len() != 0 || unattendedHook.stderr.Len() != 0 {
 		t.Fatalf("unattended hook = code %d stdout %q stderr %q, want silent success", unattendedHook.exitCode, unattendedHook.stdout.String(), unattendedHook.stderr.String())
 	}
@@ -177,6 +181,142 @@ func TestReportHumanTurnJourney(t *testing.T) {
 	if unattendedApproval.kind != "error" || !strings.Contains(unattendedApproval.message, "HUMAN_TURN") {
 		t.Fatalf("unattended approval = %#v, want stale HUMAN_TURN error", unattendedApproval)
 	}
+}
+
+func assertNoCodexHookConfig(t *testing.T, project string) {
+	t.Helper()
+	_, err := os.Stat(filepath.Join(project, ".codex", "hooks.json"))
+	if !os.IsNotExist(err) {
+		t.Fatalf("fresh project hooks.json stat = %v, want absent", err)
+	}
+}
+
+func installCodexHookConfig(t *testing.T, moduleRoot, project string) {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join(moduleRoot, "src", "harness", "codex", "hooks.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(source hooks.json): %v", err)
+	}
+	configDir := filepath.Join(project, ".codex")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll(%s): %v", configDir, err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "hooks.json"), content, 0o600); err != nil {
+		t.Fatalf("WriteFile(project hooks.json): %v", err)
+	}
+}
+
+func configuredUserPromptSubmitCommand(t *testing.T, project string) []string {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join(project, ".codex", "hooks.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(project hooks.json): %v", err)
+	}
+	var document struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Type    string `json:"type"`
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(content, &document); err != nil {
+		t.Fatalf("Unmarshal(project hooks.json): %v", err)
+	}
+	entries := document.Hooks["UserPromptSubmit"]
+	if len(entries) != 1 || len(entries[0].Hooks) != 1 {
+		t.Fatalf("UserPromptSubmit hooks = %#v, want one command hook", entries)
+	}
+	hook := entries[0].Hooks[0]
+	if hook.Type != "command" {
+		t.Fatalf("UserPromptSubmit hook type = %q, want command", hook.Type)
+	}
+	parts := strings.Fields(hook.Command)
+	if len(parts) != 2 || parts[0] != "aidlc" || parts[1] != "__codex-user-prompt-submit" {
+		t.Fatalf("UserPromptSubmit command = %q, want fixed PATH aidlc command", hook.Command)
+	}
+	return parts
+}
+
+func runConfiguredHumanTurnHook(t *testing.T, binaryPath, project string, stdin []byte, extraEnv []string) reportBinaryResult {
+	t.Helper()
+	commandParts := configuredUserPromptSubmitCommand(t, project)
+	pathDir := t.TempDir()
+	pathAidlc := filepath.Join(pathDir, "aidlc")
+	binary, err := os.ReadFile(binaryPath)
+	if err != nil {
+		t.Fatalf("ReadFile(built aidlc): %v", err)
+	}
+	if err := os.WriteFile(pathAidlc, binary, 0o700); err != nil {
+		t.Fatalf("WriteFile(PATH aidlc): %v", err)
+	}
+	pathValue := pathDir + string(os.PathListSeparator) + os.Getenv("PATH")
+	resolved, err := resolveConfiguredPathCommand(commandParts[0], pathValue)
+	if err != nil {
+		t.Fatalf("resolve configured hook command %q: %v", commandParts[0], err)
+	}
+	// exec.Command resolves the executable using the test process's PATH
+	// before Env is applied. Resolve the fixed command into the first PATH
+	// entry explicitly, then retain that PATH for the child process.
+	command := exec.Command(resolved, commandParts[1:]...)
+	command.Dir = project
+	command.Env = appendWithEnv(os.Environ(), append([]string{"PATH=" + pathValue}, extraEnv...)...)
+	command.Stdin = bytes.NewReader(stdin)
+	var result reportBinaryResult
+	command.Stdout = &result.stdout
+	command.Stderr = &result.stderr
+	err = command.Run()
+	if err == nil {
+		result.exitCode = 0
+	} else if exitErr, ok := err.(*exec.ExitError); ok {
+		result.exitCode = exitErr.ExitCode()
+	} else {
+		t.Fatalf("run configured hook %q: %v", commandParts, err)
+	}
+	return result
+}
+
+func resolveConfiguredPathCommand(name, pathValue string) (string, error) {
+	if name == "" || strings.ContainsRune(name, os.PathSeparator) {
+		return "", fmt.Errorf("unsafe command name %q", name)
+	}
+	for _, directory := range strings.Split(pathValue, string(os.PathListSeparator)) {
+		if directory == "" {
+			continue
+		}
+		candidate := filepath.Join(directory, name)
+		info, err := os.Stat(candidate)
+		if err != nil {
+			continue
+		}
+		if info.Mode().IsRegular() {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("command %q is not present in PATH", name)
+}
+
+func appendWithEnv(base []string, overrides ...string) []string {
+	result := make([]string, 0, len(base)+len(overrides))
+	for _, entry := range base {
+		name, _, ok := strings.Cut(entry, "=")
+		if !ok {
+			result = append(result, entry)
+			continue
+		}
+		replaced := false
+		for _, override := range overrides {
+			overrideName, _, hasValue := strings.Cut(override, "=")
+			if hasValue && name == overrideName {
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			result = append(result, entry)
+		}
+	}
+	return append(result, overrides...)
 }
 
 type reportBinaryResult struct {

@@ -931,7 +931,7 @@ go test -count=1 -run '^(TestLoad|TestEvaluateStageCompletion)' ./src/internal/g
 `OpenGate`、`RejectGate`、`ReviseGate`は、`recordlock.With`で自分のrecord lockを取得してから、同じrecordのRoot、graph、state、
 auditを再読取します。callerからGuardを受け取らず、auditの`Append`を外側のleaseで囲みません。`OpenGate`は完了条件を満たす
 通常Stageの`[-]`を`[?]`へ進め、`STAGE_AWAITING_APPROVAL`を先に追記します。既に`[?]`なら完了条件とbindingを再検証するだけで、
-state/auditを変更しません。`RejectGate`は新しいtrusted `HUMAN_TURN`がある場合だけ、`[-]`または`[?]`を`[R]`へ進め、Revision Countを
+state/auditを変更しません。`RejectGate`は最新resolution後の新しい運用上の`HUMAN_TURN` presence receiptがある場合だけ、`[-]`または`[?]`を`[R]`へ進め、Revision Countを
 増やし、`GATE_REJECTED`→`STAGE_REVISING`の順に追記します。`[R]`の再差戻し、receipt不在、壊れたRevision Countは拒否し、receiptを消費しません。
 `ReviseGate`は`[R]`を`[?]`へ戻し、後続approvalには新しいreceiptを要求します。
 
@@ -940,7 +940,12 @@ timestamp逆行、Root/directory/leaf identityを検証します。最新resolut
 順序を推定せずfail-closedにします。canonical headerと空末尾以外の不完全event、nonregular leaf、FIFO差替えは許可へ変換しません。
 `HUMAN_TURN`はこのgateや自由なchoice文字列から生成しません。`validateApprovalGateDecision`はraw recordを受け取らず、保持中の
 identity-bound GuardとRootから`audit.ReadEvents`をfresh readしてreceiptを検証し、Revision Countをstateから読み、exact choiceと
-自己帰属tripwireをprivate helperで検証します。
+自己帰属tripwireをprivate helperで検証します。これは同じ利用者権限のprocessやproject fileを信頼するlocal workflow向けの運用証拠であり、
+Codex発行者の暗号認証や改ざん不能な承認根ではありません。
+
+UserPromptSubmitのhook入口はpayloadを権限情報として解釈せず、上限付き読込みの後にactive recordを観測します。identity、state／stage、
+最新resolutionを含むaudit generationはappend直前に同じrecord lock内で再検証し、差分があればreceiptを追加せずsilent no-opとします。
+これは同一利用者権限のlocal workflowで古い観測が次Stageを誤って承認しないためのTOCTOU境界です。
 
 このwalking skeletonのgate対象は未対応能力を持たない通常Stageに限ります。summary confirmation（`if-present`を含む）、pipeline、
 reviewer、sensor、agent-team、per-unit、CodeKB、workspace sourceを要求するStage、Initialization、Constructionは常にunsupportedです。
@@ -1024,9 +1029,16 @@ exit 0、I/O、callback、root cleanup、wire short writeはstdoutなしのexit 
 既存のidentity-bound gate transactionへ一回だけ渡します。
 
 `src/harness/codex/hooks.json`は一般installerではなく、freshな配布先でUserPromptSubmitから同じPATH上のbuilt `aidlc`へstdinを渡す
-sourceです。非公開commandはactive stateとactive selectionを解決できる場合だけ、prompt本文やchoiceを含めない`HUMAN_TURN`を既存の
-record lock／binding／Append経由で追記します。空・malformed stdin、active workflowなし、root／append failureはsilent exit 0でpromptを
-止めず、`AIDLC_UNATTENDED=1`ではauthority receiptを追加しません。public reportによるHUMAN_TURN mintはありません。
+sourceです。非公開commandはactive stateとactive selectionを解決できる場合だけ、prompt本文やchoiceを含めない運用上の`HUMAN_TURN`
+presence receiptを既存のrecord lock／binding／Append経由で追記します。空・旧形式・malformed stdinでも上限内の読込み後はpresenceを
+記録できますが、読込み失敗、active workflowなし、root／append failureはsilent exit 0でpromptを止めず、`AIDLC_UNATTENDED=1`では
+receiptを追加しません。commandを隠すことは認証・認可ではなく、public reportによるHUMAN_TURN mintもありません。
+
+Report adapterのcatalog readerは`stage-graph.json`と`scope-grid.json`をRoot相対regular non-symlink leafとしてnonblockingに開き、descriptor／path
+identityを再検証し、bounded readを行います。FIFO、symlink、special file、差替え、上限超過はcallback前のinternal errorです。record-lock releaseや
+root cleanupがworkflow拒否とjoinされた場合も、workflow wireへ分類せずstdoutなし・exit 1のinternal failureを維持します。
+本家`2.6.123`の他hook event（`PostToolUse`や`request_user_input`）はこのsourceでは扱わず、`UserPromptSubmit`だけでpresenceを作るのは
+承認済みの運用上の意図的差分です。
 
 loopでの対象確認は次です。
 

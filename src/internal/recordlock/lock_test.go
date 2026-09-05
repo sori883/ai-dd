@@ -790,6 +790,9 @@ func TestWithJoinsCallbackAndReleaseErrors(t *testing.T) {
 	if !errors.Is(err, callbackCause) || !errors.Is(err, removeCause) {
 		t.Errorf("With() error = %v, want joined callback/release causes", err)
 	}
+	if !IsReleaseError(err) {
+		t.Errorf("With() error = %v, want identifiable release failure", err)
+	}
 	_ = os.RemoveAll(lockPath)
 }
 

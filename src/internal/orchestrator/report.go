@@ -31,8 +31,32 @@ func (err *WorkflowError) Unwrap() error { return err.Cause }
 
 // IsWorkflowError reports whether err is a typed workflow rejection.
 func IsWorkflowError(err error) bool {
+	if recordlock.IsReleaseError(err) || hasCompositeCauseOutsideWorkflow(err) {
+		return false
+	}
 	var workflowErr *WorkflowError
 	return errors.As(err, &workflowErr)
+}
+
+func hasCompositeCauseOutsideWorkflow(err error) bool {
+	if err == nil {
+		return false
+	}
+	if _, ok := err.(*WorkflowError); ok {
+		return false
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		causes := joined.Unwrap()
+		if len(causes) > 1 {
+			return true
+		}
+		if len(causes) == 1 {
+			return hasCompositeCauseOutsideWorkflow(causes[0])
+		}
+		return false
+	}
+	wrapped, ok := err.(interface{ Unwrap() error })
+	return ok && hasCompositeCauseOutsideWorkflow(wrapped.Unwrap())
 }
 
 // NewWorkflowError wraps a workflow rejection without converting internal I/O

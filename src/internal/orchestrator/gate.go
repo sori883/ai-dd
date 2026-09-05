@@ -24,8 +24,8 @@ var (
 	ErrUnsupportedGate = errors.New("orchestrator: unsupported gate capability")
 	// ErrGateNotReady indicates that the stage cannot enter a gate yet.
 	ErrGateNotReady = errors.New("orchestrator: gate not ready")
-	// ErrStaleHumanTurn indicates that no trusted HUMAN_TURN follows the latest
-	// workflow resolution boundary.
+	// ErrStaleHumanTurn indicates that no operational HUMAN_TURN presence
+	// receipt follows the latest workflow resolution boundary.
 	ErrStaleHumanTurn = errors.New("orchestrator: stale human turn")
 )
 

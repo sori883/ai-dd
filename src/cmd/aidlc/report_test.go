@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -131,6 +132,14 @@ func TestReportAdapterWorkflowRejectionAndInternalFailureClassification(t *testi
 			wantWorkflow:  true,
 		},
 		{
+			name: "workflow plus release failure is internal",
+			callbackError: errors.Join(
+				orchestrator.NewWorkflowError("stage is not ready", orchestrator.ErrGateNotReady),
+				errors.New("record-lock release failed"),
+			),
+			wantWorkflow: false,
+		},
+		{
 			name:          "ordinary I/O failure",
 			callbackError: errors.New("record read failed"),
 			wantWorkflow:  false,
@@ -158,6 +167,24 @@ func TestReportAdapterWorkflowRejectionAndInternalFailureClassification(t *testi
 				t.Errorf("IsWorkflowError(%v) = %v, want %v", err, got, tt.wantWorkflow)
 			}
 		})
+	}
+}
+
+func TestReportAdapterPreservesWorkflowClassificationThroughSingleCauseLockJoin(t *testing.T) {
+	// recordlock.With uses errors.Join(callbackErr, releaseErr), which is a
+	// one-cause join when release succeeds. That wrapper must still be mapped
+	// to the workflow directive; only a composite failure with another cause is
+	// internal.
+	callbackErr := errors.Join(
+		fmt.Errorf("reject gate: no fresh HUMAN_TURN receipt: %w", orchestrator.ErrStaleHumanTurn),
+		nil,
+	)
+	classified := classifyReportAdapterError(callbackErr)
+	if !orchestrator.IsWorkflowError(classified) {
+		t.Fatalf("classifyReportAdapterError(%v) = %v, want workflow error", callbackErr, classified)
+	}
+	if !errors.Is(classified, orchestrator.ErrStaleHumanTurn) {
+		t.Fatalf("classified error = %v, want ErrStaleHumanTurn", classified)
 	}
 }
 
@@ -191,6 +218,40 @@ func TestReportAdapterRootCloseFailureIsInternal(t *testing.T) {
 	}
 	if orchestrator.IsWorkflowError(err) {
 		t.Errorf("reportAdapter() error = %v, must not remain workflow error", err)
+	}
+}
+
+func TestReportAdapterRootCloseFailurePreservesWorkflowCauseAsInternal(t *testing.T) {
+	fixture := newReportAdapterFixture(t)
+	previousResolver := reportInputResolver
+	previousCloser := reportRootCloser
+	t.Cleanup(func() {
+		reportInputResolver = previousResolver
+		reportRootCloser = previousCloser
+	})
+	reportInputResolver = func(func() (string, error), func(string) string, string) (deliverypkg.RunStageInput, *os.Root, *os.Root, error) {
+		return fixture.input, fixture.projectRoot, fixture.recordRoot, nil
+	}
+	closeErr := errors.New("report root close failed after workflow rejection")
+	reportRootCloser = func(root *os.Root) error {
+		if root == fixture.recordRoot {
+			return closeErr
+		}
+		return nil
+	}
+	workflowCause := orchestrator.ErrGateNotReady
+	callback := reportAdapter(nil, nil, func(context.Context, orchestrator.ReportInput) (orchestrator.ReportResult, error) {
+		return orchestrator.ReportResult{}, orchestrator.NewWorkflowError("stage is not ready", workflowCause)
+	})
+	wire, err := callback("intent-capture", "awaiting-approval", "", "", "")
+	if wire != nil {
+		t.Errorf("reportAdapter() wire = %q, want nil after cleanup failure", wire)
+	}
+	if err == nil || !errors.Is(err, closeErr) || !errors.Is(err, workflowCause) {
+		t.Fatalf("reportAdapter() error = %v, want cleanup and workflow causes", err)
+	}
+	if orchestrator.IsWorkflowError(err) {
+		t.Errorf("reportAdapter() error = %v, must be internal after cleanup failure", err)
 	}
 }
 
@@ -277,6 +338,54 @@ func TestReportAdapterRejectsMissingCatalogAsInternal(t *testing.T) {
 	}
 	if orchestrator.IsWorkflowError(err) {
 		t.Errorf("missing catalog error = %v, want internal classification", err)
+	}
+}
+
+func TestReportAdapterRejectsSymlinkCatalogBeforeCallback(t *testing.T) {
+	tests := []struct {
+		name    string
+		catalog string
+		content string
+	}{
+		{name: "stage graph", catalog: "stage-graph.json", content: reportAdapterGraphJSON},
+		{name: "scope grid", catalog: "scope-grid.json", content: reportAdapterScopeGridJSON},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := newReportAdapterFixture(t)
+			previousResolver := reportInputResolver
+			t.Cleanup(func() { reportInputResolver = previousResolver })
+			reportInputResolver = func(func() (string, error), func(string) string, string) (deliverypkg.RunStageInput, *os.Root, *os.Root, error) {
+				return fixture.input, fixture.projectRoot, fixture.recordRoot, nil
+			}
+			dataPath := filepath.Join(fixture.input.Identity.ProjectRoot(), ".codex", "tools", "data")
+			catalogPath := filepath.Join(dataPath, tt.catalog)
+			if err := fixture.projectRoot.Remove(filepath.ToSlash(filepath.Join(".codex", "tools", "data", tt.catalog))); err != nil {
+				t.Fatalf("Remove(%s): %v", tt.catalog, err)
+			}
+			targetName := tt.catalog + ".target"
+			if err := os.WriteFile(filepath.Join(dataPath, targetName), []byte(tt.content), 0o600); err != nil {
+				t.Fatalf("WriteFile(%s): %v", targetName, err)
+			}
+			if err := os.Symlink(targetName, catalogPath); err != nil {
+				t.Fatalf("Symlink(%s): %v", tt.catalog, err)
+			}
+			callbackCalls := 0
+			callback := reportAdapter(nil, nil, func(context.Context, orchestrator.ReportInput) (orchestrator.ReportResult, error) {
+				callbackCalls++
+				return orchestrator.ReportResult{Kind: orchestrator.ReportKindAwaitingApproval, Slug: "intent-capture"}, nil
+			})
+			wire, err := callback("intent-capture", "awaiting-approval", "", "", "")
+			if wire != nil || err == nil {
+				t.Fatalf("reportAdapter(%s symlink) = (%q, %v), want internal error", tt.catalog, wire, err)
+			}
+			if callbackCalls != 0 {
+				t.Fatalf("report callback calls = %d, want 0 for symlink catalog", callbackCalls)
+			}
+			if orchestrator.IsWorkflowError(err) {
+				t.Fatalf("reportAdapter(%s symlink) error = %v, want internal classification", tt.catalog, err)
+			}
+		})
 	}
 }
 

@@ -5,13 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
-	"path/filepath"
 
 	deliverypkg "github.com/sori883/ai-dd/src/internal/delivery"
 	"github.com/sori883/ai-dd/src/internal/graph"
 	"github.com/sori883/ai-dd/src/internal/orchestrator"
+	"github.com/sori883/ai-dd/src/internal/recordlock"
 	"github.com/sori883/ai-dd/src/internal/state"
 )
 
@@ -50,7 +49,9 @@ func reportAdapter(
 				err = closeErr
 				return
 			}
-			err = fmt.Errorf("report operation failed during root cleanup: %v; %w", err, closeErr)
+			// Keep both the workflow cause and cleanup cause discoverable while
+			// the composite error remains internal to the CLI classifier.
+			err = fmt.Errorf("report operation failed during root cleanup: %w", errors.Join(err, closeErr))
 		}()
 
 		if projectRoot == nil || recordRoot == nil {
@@ -67,12 +68,7 @@ func reportAdapter(
 		if readErr != nil {
 			return nil, fmt.Errorf("report: read state: %w", readErr)
 		}
-		dataPath := filepath.ToSlash(filepath.Join(".codex", "tools", "data"))
-		dataFS, subErr := fs.Sub(projectRoot.FS(), dataPath)
-		if subErr != nil {
-			return nil, fmt.Errorf("report: open graph data %q: %w", dataPath, subErr)
-		}
-		catalog, loadErr := graph.Load(dataFS)
+		catalog, loadErr := graph.LoadFromRoot(projectRoot)
 		if loadErr != nil {
 			return nil, fmt.Errorf("report: load graph: %w", loadErr)
 		}
@@ -158,7 +154,10 @@ func reportCurrentStage(current state.State, catalog graph.Snapshot) (graph.Stag
 }
 
 func classifyReportAdapterError(err error) error {
-	if err == nil || orchestrator.IsWorkflowError(err) {
+	if err == nil || recordlock.IsReleaseError(err) || hasReportCompositeCause(err) {
+		return err
+	}
+	if orchestrator.IsWorkflowError(err) {
 		return err
 	}
 	for _, cause := range []error{
@@ -179,6 +178,27 @@ func classifyReportAdapterError(err error) error {
 		}
 	}
 	return err
+}
+
+func hasReportCompositeCause(err error) bool {
+	if err == nil {
+		return false
+	}
+	if _, ok := err.(*orchestrator.WorkflowError); ok {
+		return false
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		causes := joined.Unwrap()
+		if len(causes) > 1 {
+			return true
+		}
+		if len(causes) == 1 {
+			return hasReportCompositeCause(causes[0])
+		}
+		return false
+	}
+	wrapped, ok := err.(interface{ Unwrap() error })
+	return ok && hasReportCompositeCause(wrapped.Unwrap())
 }
 
 func marshalReportResult(result orchestrator.ReportResult) ([]byte, error) {

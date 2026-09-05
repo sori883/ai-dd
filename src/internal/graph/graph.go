@@ -98,11 +98,16 @@ func Load(dataFS fs.FS) (Snapshot, error) {
 	if dataFS == nil {
 		return Snapshot{}, errors.New("load graph: nil filesystem")
 	}
-	data, err := fs.ReadFile(dataFS, "stage-graph.json")
+	stageData, err := fs.ReadFile(dataFS, "stage-graph.json")
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("load stage graph: read stage-graph.json: %w", err)
 	}
-	rawStages, err := decodeStageDocuments(data)
+	scopeData, scopeErr := fs.ReadFile(dataFS, "scope-grid.json")
+	return loadSnapshot(stageData, scopeData, scopeErr)
+}
+
+func loadSnapshot(stageData, scopeData []byte, scopeErr error) (Snapshot, error) {
+	rawStages, err := decodeStageDocuments(stageData)
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("load stage graph: decode stage-graph.json: %w", err)
 	}
@@ -146,7 +151,7 @@ func Load(dataFS fs.FS) (Snapshot, error) {
 		enabledSlugs[raw.Slug] = struct{}{}
 	}
 
-	rawGrid, err := loadScopeDocuments(dataFS, stages)
+	rawGrid, err := loadScopeDocumentsBytes(scopeData, scopeErr, stages)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -729,6 +734,10 @@ type scopeDocument struct {
 
 func loadScopeDocuments(dataFS fs.FS, stages []Stage) (map[string]scopeDocument, error) {
 	data, err := fs.ReadFile(dataFS, "scope-grid.json")
+	return loadScopeDocumentsBytes(data, err, stages)
+}
+
+func loadScopeDocumentsBytes(data []byte, err error, stages []Stage) (map[string]scopeDocument, error) {
 	if err != nil || !json.Valid(data) {
 		return transposeStageScopes(stages), nil
 	}
