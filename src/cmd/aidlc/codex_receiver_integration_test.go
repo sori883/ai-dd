@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 const codexReceiverJourneyGraphJSON = `[
@@ -192,6 +194,196 @@ func TestCodexReceiverFixtureDefinesObservableStageCanary(t *testing.T) {
 	}
 }
 
+func TestCodexReceiverCompactProof(t *testing.T) {
+	fixture, binaryPath, wire := prepareCodexReceiverContext(t)
+	chunks := runCodexReceiverContext(t, binaryPath, fixture.Project)
+	assertCodexReceiverContextOrder(t, chunks, wire.InlineContextPaths, wire.StageFile, wire.Consumes)
+	targets := codexReceiverContextTargets(wire)
+	want := expectedCodexReceiverCompactProofs(t, fixture, targets)
+	got := deriveCodexReceiverCompactProofs(t, chunks)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("compact file proofs = %#v, want %#v", got, want)
+	}
+}
+
+func prepareCodexReceiverContext(t *testing.T) (codexReceiverJourneyFixture, string, codexReceiverRunStageWire) {
+	t.Helper()
+	moduleRoot := deliveryModuleRoot(t)
+	binaryPath := filepath.Join(t.TempDir(), "aidlc")
+	build := exec.Command("go", "build", "-o", binaryPath, "./src/cmd/aidlc")
+	build.Dir = moduleRoot
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build aidlc: %v\n%s", err, output)
+	}
+	fixture := newCodexReceiverJourneyProject(t, moduleRoot)
+	next := runCodexReceiverDirective(t, binaryPath, fixture.Project, "next")
+	for next.Kind == "load-steering" {
+		if next.ContinueToken == "" {
+			t.Fatal("load-steering directive has empty continuation token")
+		}
+		next = runCodexReceiverDirective(t, binaryPath, fixture.Project, "continue", next.ContinueToken)
+	}
+	if next.Kind != "run-stage" {
+		t.Fatalf("final directive kind = %q, want run-stage", next.Kind)
+	}
+	var wire codexReceiverRunStageWire
+	if err := json.Unmarshal(next.Raw, &wire); err != nil {
+		t.Fatalf("decode run-stage directive: %v", err)
+	}
+	return fixture, binaryPath, wire
+}
+
+type codexReceiverContextTarget struct {
+	Slot  string
+	Index int
+	Path  string
+}
+
+func codexReceiverContextTargets(wire codexReceiverRunStageWire) []codexReceiverContextTarget {
+	targets := make([]codexReceiverContextTarget, 0, len(wire.InlineContextPaths)+1+len(wire.Consumes))
+	for index, path := range wire.InlineContextPaths {
+		targets = append(targets, codexReceiverContextTarget{Slot: "inline-context", Index: index + 1, Path: path})
+	}
+	targets = append(targets, codexReceiverContextTarget{Slot: "stage-file", Index: 1, Path: wire.StageFile})
+	for index, path := range wire.Consumes {
+		targets = append(targets, codexReceiverContextTarget{Slot: "consume", Index: index + 1, Path: path})
+	}
+	return targets
+}
+
+func expectedCodexReceiverCompactProofs(t *testing.T, fixture codexReceiverJourneyFixture, targets []codexReceiverContextTarget) []codexReceiverLiveFileProof {
+	t.Helper()
+	proofs := make([]codexReceiverLiveFileProof, 0, len(targets))
+	for _, target := range targets {
+		text, ok := fixture.Sentinels[target.Path]
+		if !ok {
+			t.Fatalf("fixture has no context file %q", target.Path)
+		}
+		proofs = append(proofs, codexReceiverCompactProofForText(t, target.Slot, target.Index, text))
+	}
+	return proofs
+}
+
+func deriveCodexReceiverCompactProofs(t *testing.T, chunks []codexReceiverContextChunk) []codexReceiverLiveFileProof {
+	t.Helper()
+	if len(chunks) == 0 {
+		t.Fatal("context chunks are empty")
+	}
+	type accumulatedFile struct {
+		proof    codexReceiverLiveFileProof
+		text     strings.Builder
+		lastPart int
+	}
+	files := make([]accumulatedFile, 0)
+	fileIndexes := make(map[string]int)
+	for _, chunk := range chunks {
+		key := fmt.Sprintf("%s/%d", chunk.Slot, chunk.Index)
+		fileIndex, found := fileIndexes[key]
+		if !found {
+			if chunk.Part != 1 || chunk.Parts < 1 || chunk.ContentSHA256 == "" {
+				t.Fatalf("first chunk metadata for %s = %#v", key, chunk)
+			}
+			fileIndex = len(files)
+			fileIndexes[key] = fileIndex
+			files = append(files, accumulatedFile{proof: codexReceiverLiveFileProof{
+				Slot:          chunk.Slot,
+				Index:         chunk.Index,
+				Parts:         chunk.Parts,
+				ContentSHA256: chunk.ContentSHA256,
+			}})
+		} else {
+			file := &files[fileIndex]
+			if chunk.Parts != file.proof.Parts || chunk.ContentSHA256 != file.proof.ContentSHA256 {
+				t.Fatalf("inconsistent chunk metadata for %s: %#v versus %#v", key, chunk, file.proof)
+			}
+			if chunk.Part != file.lastPart+1 {
+				t.Fatalf("context parts for %s jumped from %d to %d", key, file.lastPart, chunk.Part)
+			}
+		}
+		file := &files[fileIndex]
+		if file.lastPart == 0 && chunk.Part != 1 {
+			t.Fatalf("first observed part for %s = %d, want 1", key, chunk.Part)
+		}
+		file.text.WriteString(chunk.Text)
+		file.lastPart = chunk.Part
+		if file.lastPart > file.proof.Parts {
+			t.Fatalf("context parts for %s exceeded declared total %d", key, file.proof.Parts)
+		}
+	}
+	proofs := make([]codexReceiverLiveFileProof, 0, len(files))
+	for _, file := range files {
+		proof := file.proof
+		if file.lastPart != proof.Parts {
+			t.Fatalf("context parts for %s/%d ended at %d, want %d", proof.Slot, proof.Index, file.lastPart, proof.Parts)
+		}
+		text := file.text.String()
+		derived := codexReceiverCompactProofForText(t, proof.Slot, proof.Index, text)
+		if proof.Parts != derived.Parts || proof.ContentSHA256 != derived.ContentSHA256 {
+			t.Fatalf("chunk metadata does not match concatenated file %s/%d: got %#v, derived %#v", proof.Slot, proof.Index, proof, derived)
+		}
+		proof.FirstNonEmptyLine = derived.FirstNonEmptyLine
+		proof.MiddleMarkerLine = derived.MiddleMarkerLine
+		proof.LastNonEmptyLine = derived.LastNonEmptyLine
+		proofs = append(proofs, proof)
+	}
+	return proofs
+}
+
+func codexReceiverCompactProofForText(t *testing.T, slot string, index int, text string) codexReceiverLiveFileProof {
+	t.Helper()
+	digest := sha256.Sum256([]byte(text))
+	lines := strings.Split(text, "\n")
+	first, middle, last := "", "", ""
+	for _, line := range lines {
+		if first == "" && strings.TrimSpace(line) != "" {
+			first = line
+		}
+		if middle == "" && strings.HasPrefix(line, "MIDDLE-") {
+			middle = line
+		}
+	}
+	for lineIndex := len(lines) - 1; lineIndex >= 0; lineIndex-- {
+		if strings.TrimSpace(lines[lineIndex]) != "" {
+			last = lines[lineIndex]
+			break
+		}
+	}
+	if first == "" || middle == "" || last == "" {
+		t.Fatalf("context proof markers missing for %s/%d: first=%q middle=%q last=%q", slot, index, first, middle, last)
+	}
+	return codexReceiverLiveFileProof{
+		Slot:              slot,
+		Index:             index,
+		Parts:             codexReceiverContextPartCount(t, text),
+		ContentSHA256:     hex.EncodeToString(digest[:]),
+		FirstNonEmptyLine: first,
+		MiddleMarkerLine:  middle,
+		LastNonEmptyLine:  last,
+	}
+}
+
+func codexReceiverContextPartCount(t *testing.T, text string) int {
+	t.Helper()
+	parts := 1
+	chunkBytes := 0
+	for len(text) > 0 {
+		runeValue, runeBytes := utf8.DecodeRuneInString(text)
+		if runeBytes == 0 {
+			t.Fatal("UTF-8 decoder made no progress")
+		}
+		if runeValue == utf8.RuneError && runeBytes == 1 {
+			t.Fatal("context fixture contains invalid UTF-8")
+		}
+		if chunkBytes > 0 && chunkBytes+runeBytes > 512 {
+			parts++
+			chunkBytes = 0
+		}
+		chunkBytes += runeBytes
+		text = text[runeBytes:]
+	}
+	return parts
+}
+
 func TestCodexReceiverStableSnapshotIgnoresTransportAndDetectsFiles(t *testing.T) {
 	fixture := newCodexReceiverJourneyProject(t, deliveryModuleRoot(t))
 	before := receiverTreeSnapshotIgnoringTransport(t, fixture.Project)
@@ -227,6 +419,8 @@ func TestCodexReceiverStableSnapshotIgnoresTransportAndDetectsFiles(t *testing.T
 
 const codexReceiverLivePrompt = `Use the $aidlc skill explicitly in the current project. Return only the verification read receipt defined by that skill, matching the supplied output schema.`
 
+const codexReceiverLiveCompactReceiptSchema = `{"type":"object","additionalProperties":false,"required":["rules","files"],"properties":{"rules":{"type":"array","items":{"type":"string"}},"files":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["slot","index","parts","content_sha256","first_non_empty_line","middle_marker_line","last_non_empty_line"],"properties":{"slot":{"type":"string"},"index":{"type":"integer"},"parts":{"type":"integer"},"content_sha256":{"type":"string"},"first_non_empty_line":{"type":"string"},"middle_marker_line":{"type":"string"},"last_non_empty_line":{"type":"string"}}}}}}`
+
 func TestCodexReceiverLivePrompt(t *testing.T) {
 	const want = `Use the $aidlc skill explicitly in the current project. Return only the verification read receipt defined by that skill, matching the supplied output schema.`
 	if codexReceiverLivePrompt != want {
@@ -250,6 +444,29 @@ func TestCodexReceiverLivePrompt(t *testing.T) {
 		if strings.Contains(lower, forbidden) {
 			t.Errorf("live prompt contains routing, receipt, stop, or canary instruction %q", forbidden)
 		}
+	}
+}
+
+func TestCodexReceiverLiveReceiptSchemaUsesCompactFiles(t *testing.T) {
+	data, err := os.ReadFile("codex_receiver_integration_test.go")
+	if err != nil {
+		t.Fatalf("ReadFile(integration source): %v", err)
+	}
+	source := string(data)
+	for _, phrase := range []string{
+		`required":["rules","files"]`,
+		`"content_sha256"`,
+		`"first_non_empty_line"`,
+		`"middle_marker_line"`,
+		`"last_non_empty_line"`,
+	} {
+		if !strings.Contains(source, phrase) {
+			t.Errorf("compact live schema does not contain %q", phrase)
+		}
+	}
+	legacyRequired := `required":["rules","` + "inline_context" + `","stage_file","consumes"]`
+	if strings.Contains(source, legacyRequired) {
+		t.Fatal("live schema still requires legacy full-text receipt fields")
 	}
 }
 
@@ -293,7 +510,7 @@ func TestCodexReceiverReadsDeliveredContext(t *testing.T) {
 	}
 
 	schemaPath := filepath.Join(t.TempDir(), "receiver-receipt-schema.json")
-	const schema = `{"type":"object","additionalProperties":false,"required":["rules","inline_context","stage_file","consumes"],"properties":{"rules":{"type":"array","items":{"type":"string"}},"inline_context":{"type":"array","items":{"type":"string"}},"stage_file":{"type":"string"},"consumes":{"type":"array","items":{"type":"string"}}}}`
+	schema := codexReceiverLiveCompactReceiptSchema
 	if err := os.WriteFile(schemaPath, []byte(schema), 0o600); err != nil {
 		t.Fatalf("WriteFile(output schema): %v", err)
 	}
@@ -352,21 +569,19 @@ func TestCodexReceiverReadsDeliveredContext(t *testing.T) {
 	if !equalStrings(receipt.Rules, wantRules) {
 		t.Fatalf("Codex rule sentinel receipt changed bytes/order: got %#v, want %#v", receipt.Rules, wantRules)
 	}
-	wantInline := []string{
-		fixture.Sentinels[".codex/agents/aidlc-product-agent.md"],
-		fixture.Sentinels[".codex/agents/aidlc-architect-agent.md"],
+	wire := codexReceiverRunStageWire{
+		InlineContextPaths: []string{
+			".codex/agents/aidlc-product-agent.md",
+			".codex/agents/aidlc-architect-agent.md",
+		},
+		StageFile: ".codex/aidlc-common/stages/ideation/intent-capture.md",
+		Consumes: []string{
+			"aidlc/spaces/team/intents/build/ideation/intent-capture/receiver-input.md",
+		},
 	}
-	if !equalStrings(receipt.InlineContext, wantInline) {
-		t.Fatalf("Codex inline_context = %#v, want %#v", receipt.InlineContext, wantInline)
-	}
-	if receipt.StageFile != fixture.Sentinels[".codex/aidlc-common/stages/ideation/intent-capture.md"] {
-		t.Fatalf("Codex stage_file receipt = %q, want sentinel", receipt.StageFile)
-	}
-	wantConsumes := []string{
-		fixture.Sentinels["aidlc/spaces/team/intents/build/ideation/intent-capture/receiver-input.md"],
-	}
-	if !equalStrings(receipt.Consumes, wantConsumes) {
-		t.Fatalf("Codex consumes receipt = %#v, want %#v", receipt.Consumes, wantConsumes)
+	wantFiles := expectedCodexReceiverCompactProofs(t, fixture, codexReceiverContextTargets(wire))
+	if !reflect.DeepEqual(receipt.Files, wantFiles) {
+		t.Fatalf("Codex compact file proof changed bytes/order: got %#v, want %#v", receipt.Files, wantFiles)
 	}
 }
 
@@ -398,10 +613,21 @@ type codexReceiverContextChunk struct {
 }
 
 type codexReceiverLiveReceipt struct {
-	Rules         []string `json:"rules"`
-	InlineContext []string `json:"inline_context"`
-	StageFile     string   `json:"stage_file"`
-	Consumes      []string `json:"consumes"`
+	Rules         []string                     `json:"rules"`
+	Files         []codexReceiverLiveFileProof `json:"files"`
+	InlineContext []string                     `json:"inline_context"`
+	StageFile     string                       `json:"stage_file"`
+	Consumes      []string                     `json:"consumes"`
+}
+
+type codexReceiverLiveFileProof struct {
+	Slot              string `json:"slot"`
+	Index             int    `json:"index"`
+	Parts             int    `json:"parts"`
+	ContentSHA256     string `json:"content_sha256"`
+	FirstNonEmptyLine string `json:"first_non_empty_line"`
+	MiddleMarkerLine  string `json:"middle_marker_line"`
+	LastNonEmptyLine  string `json:"last_non_empty_line"`
 }
 
 type codexReceiverRunStageWire struct {

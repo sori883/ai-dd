@@ -1,7 +1,7 @@
 # Codexのcontext読込をGoの安全境界へ移す
 
 - 日付: 2026-09-05（Asia/Tokyo）
-- 状態: In Progress（実装済み・独立review修正中。未merge／live未実施）
+- 状態: In Progress（実装済み・独立review修正中。未merge／compact receipt repair後live未実施）
 - 対応Issue: [#115 Codex receiverで配信本文を実読込する](https://github.com/sori883/ai-dd/issues/115)
 - 置換対象: [Codex receiverで配信本文を実読込する](2026-09-05-codex-receiver-read-plan.md)のshell直接読込、
   live prompt、短いfixtureに関する設計
@@ -256,6 +256,19 @@ canaryの指示を重ねない。fixtureのstage・consumeは予測不能なBEGI
 mode/bodyだけを比較し、transport上必要な`.aidlc-active-directive.json`と`.aidlc-steering-token-key`だけを除外する。Codex liveはこのrepair後
 未実施で、環境変数なしのintegration testはskipする。
 
+追加repair `work_unit_id=codex-live-compact-receipt-repair`では、長大な本文をCodexの生成出力へ再掲させないため、verification-only schemaが
+`files`をrequiredにした場合のcompact proofを定義した。配信順の各fileは`slot`、`index`、`parts`、`content_sha256`、
+`first_non_empty_line`、`middle_marker_line`、`last_non_empty_line`の順で返し、`parts`は総chunk数、digestは連結本文のSHA-256、
+3つのlineはそれぞれskillで定義した最初／`MIDDLE-`最初／最後の非空行である。proofはnon-liveの実chunkをslot/index/part順に連結して
+算出し、fixture本文から算出したdigest、part数、markerと完全一致させる。従来schemaが要求する`inline_context`、`stage_file`、`consumes`の
+各file全文意味は維持する。live promptはskill invocationとこのschema要求だけであり、routing、停止、canaryの指示を重ねない。
+
+2026-09-06（HEAD `1b09812c71ba392a00da91bca6d638c8e4b3da16`）に、承認済みのlive commandを1回だけ実行した。約265秒後、schema decode、
+rule sentinel照合、live前後のregular-file snapshot不変、`stage-execution-canary.txt`不在は成功したが、約22 KiBのinline全文をreceiptへ
+再掲させる旧exact comparisonが失敗し、stage／consume assertionへは到達しなかった。non-live fresh journeyは同じ`read-context`出力を
+全byte復元して既に成功していたため、reader本体ではなくlive oracleの長大出力が不安定だったと判断した。追加live実行は行わず、compact
+proofへ修正して環境変数unsetのskip可能なintegration testで検証する。
+
 また、read-contextのcontinuation key取得は新設したread-only `steering.ReadContinuationKey`へ統合した。既存key lifecycleと同じ
 4 KiB+1 bounded read、regular non-symlink、UTF-8、ECMAScript whitespace trim、canonical unpadded base64url、exact 32-byte検証を再利用し、
 read-context中のkey／session directory作成・変更を許可しない。
@@ -276,6 +289,10 @@ go test -count=1 -run '^TestReadContinuationKeyIsReadOnlyAndUsesCanonicalBounds$
 env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run 'TestCodexReceiver(LivePrompt|LiveCommand).*' ./src/cmd/aidlc
 env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run '^TestCodexReceiver(FreshPlacementJourney|Fixture.*|StableSnapshot.*|ReadsDeliveredContext)$' ./src/cmd/aidlc
 go test -count=20 -run '^TestReadContextTokenTamperReplayAndContentChange$' ./src/internal/delivery
+go test -count=1 -run '^TestSkill.*(Verification|Compact).*$' ./src/harness/codex/skills/aidlc
+env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run '^TestCodexReceiverLive(Receipt|Prompt|Command).*$' ./src/cmd/aidlc
+env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run '^TestCodexReceiver(CompactProof|FreshPlacementJourney|FixtureDefinesObservableStageCanary)$' ./src/cmd/aidlc
+env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run '^TestCodexReceiver(FreshPlacementJourney|RuleFixture.*|Fixture.*|StableSnapshot.*|LivePrompt|LiveCommand.*|LiveReceipt.*|CompactProof.*|ReadsDeliveredContext)$' ./src/cmd/aidlc
 ```
 
 本家固定snapshot AI-DLC 2.6.123はdirective pathをCodex file／shell toolから直接読む。本実装は承認済み意図的差分として、同じ本文を

@@ -1278,9 +1278,12 @@ non-regular file・不正UTF-8・予想外の必須入力欠落をfail-closedに
 output schemaを明示した場合だけ、そのschemaに従うreceiptを返して停止します。どちらでもStage実行、成果物作成、review・sensor、
 report、人間承認は行いません。unknown directive、read failure、path境界違反はfail-closedで停止します。
 
-検証receiptのfield意味はskill側で固定します。`rules`は受領順の各`rules_content` entryの末尾非空行、
+検証receiptのfield意味はskill側で固定します。従来の全文receiptでは、`rules`は受領順の各`rules_content` entryの末尾非空行、
 `inline_context`はinline fileごとの全chunk連結本文、`stage_file`はstage fileの全chunk連結本文、
 `consumes`はconsume fileごとの全chunk連結本文です。file本文は`slot/index/part`順で連結し、末尾改行を省略しません。
+schemaが`files`を要求するcompact receiptでは、配信順の各fileを`slot`、`index`、`parts`、`content_sha256`、
+`first_non_empty_line`、`middle_marker_line`、`last_non_empty_line`の順で表します。`parts`は全chunk数、`content_sha256`は連結本文の
+SHA-256、`first_non_empty_line`と`last_non_empty_line`はtrim後に非空な最初／最後の行、`middle_marker_line`は`MIDDLE-`で始まる最初の行です。
 source fileは新しい公開size capなしで、open直後sizeを上限とする固定512-byte bufferの2-pass streamからdigest、UTF-8、実part数、要求partだけを計算し、
 pass間digest／size／part数とdescriptor／最終pathのidentity・size・mtimeを照合します。全targetのslot／index／path／digest／parts／size／mtimeも
 domain-separated plan-wide commitmentへ含め、各開始／継続で再計算するため、境界tokenから将来fileを差し替えたsuccessorを再発行しません。
@@ -1299,7 +1302,8 @@ env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run '^TestCodex
 
 最後のtestは`AIDLC_CODEX_EXEC_LIVE=1`がない場合に明示skipします。live `codex exec`は外部model利用とcredential境界を伴うため、
 環境変数なしの通常loopでは実行しません。live時のreceiptは`--output-last-message`で専用temporary fileから読み、
-`rules`では各`rules_content`の最後の非空行を順序どおり、`inline_context`／`stage_file`／`consumes`では全本文を照合します。stdout/stderrは失敗診断に限ります。
+`rules`では各`rules_content`の最後の非空行を順序どおり照合します。schemaが`files`を要求する場合は7項目のcompact proofを照合し、
+従来schemaが`inline_context`／`stage_file`／`consumes`を要求する場合は全本文を照合します。stdout/stderrは失敗診断に限ります。
 live promptはskill invocationとこのverification receipt/schema要求だけに限定し、routing、読込順、stop、canaryの指示を重ねません。
 fixtureは予測不能なBEGIN/MIDDLE/ENDをstage・consumeにも含め、stage本文の実行指示だけがproject rootの
 `stage-execution-canary.txt`へrandom sentinelを書けるようにします。liveの前後snapshotはdirectory mtimeを無視して

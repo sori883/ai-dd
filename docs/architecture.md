@@ -1399,9 +1399,12 @@ artifact、markerを変更せず、同じtokenの再送は同じchunkを返し�
 receiptだけを返して停止します。どちらの場合もStage実行、成果物、review・sensor、report、人間承認へ進みません。unknown directive、
 malformed directive、path外参照、read failureはfail-closedで停止します。
 
-verification receiptのschema意味はskillが定義し、`rules`は受領順の各`rules_content` entryの末尾非空行、
+verification receiptのschema意味はskillが定義します。従来の全文receiptでは、`rules`は受領順の各`rules_content` entryの末尾非空行、
 `inline_context`はinline fileごとの全chunk連結本文、`stage_file`はstage fileの全chunk連結本文、`consumes`はconsume fileごとの
-全chunk連結本文を表します。file本文は`slot/index/part`順で連結し、末尾改行を保持します。source fileは新しい公開size capなしで、open直後sizeを
+全chunk連結本文を表します。file本文は`slot/index/part`順で連結し、末尾改行を保持します。schemaが`files`を要求する場合は、本文を再掲せず、
+配信順の各fileについて`slot`、`index`、`parts`、`content_sha256`、`first_non_empty_line`、`middle_marker_line`、
+`last_non_empty_line`をこの順で返します。`parts`は全chunk数、`content_sha256`は連結本文のSHA-256、最初と最後のlineはtrim後に非空な
+行、`middle_marker_line`は`MIDDLE-`で始まる最初の行です。source fileは新しい公開size capなしで、open直後sizeを
 上限とする固定512-byte bufferの2-pass streamからdigest、UTF-8、実part数、要求partだけを計算し、全targetのslot／index／path／digest／parts／size／mtimeを
 domain-separated plan-wide commitmentとしてtokenへbindします。各開始／継続で同じcommitmentを再計算するため、境界tokenから将来fileを差し替えた
 successorを再発行せず、source本文全体は保持しません。token envelope／claimsはcanonical再encodeとのbyte一致も要求します。read token keyは既存steering lifecycleの4 KiB+1 bounded readと
@@ -1411,7 +1414,8 @@ ECMAScript whitespace canonicalizationを共有するread-only APIから取得�
 sandbox testはsource skillのbyte-identical配置、複数rule chunkからの複数continue、rule本文の全文と順序、inline→stage→consumeのsentinel順を検査します。
 live `codex exec --ephemeral` receipt testは`AIDLC_CODEX_EXEC_LIVE=1`のときだけ実行する設計であり、専用temporary fileへ
 `--output-last-message`で保存したreceiptを検査します。receiptの`rules`は各`rules_content`の最後の非空行だけを順序どおり照合し、
-inline／stage／consumeは全本文を照合します。stdout/stderrは失敗診断に限ります。live promptはskill invocationとverification
+`files`がrequiredなら上記7項目のcompact proofを順序どおり照合します。schemaが従来の`inline_context`／`stage_file`／`consumes`を
+要求する場合は、各fileの全本文を照合します。stdout/stderrは失敗診断に限ります。live promptはskill invocationとverification
 receipt/schema要求だけに限定し、routing、読込順、stop、canaryを含めません。fresh fixtureのstage・consumeは予測不能なBEGIN/MIDDLE/ENDを
 持ち、stage本文は実行時だけrandom sentinelをproject rootの`stage-execution-canary.txt`へ書く指示を含みます。live前後はdirectory mtimeを
 除外してregular fileのmode/bodyを比較します。non-live fresh journeyはtransport fileを含め、live transport比較だけはrecord-rootの正確な

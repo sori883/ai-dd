@@ -78,6 +78,18 @@ text after concatenating its chunks; and `consumes` contains each consume file's
 full text after concatenating its chunks. For every file field, concatenate
 chunks in `slot/index/part` order and do not omit empty or trailing text.
 
+If the supplied verification schema requires `files`, `files` contains one
+compact proof for each delivered file in `slot/index` order. Each `files` entry has these
+fields in this order: `slot`, `index`, `parts`, `content_sha256`,
+`first_non_empty_line`, `middle_marker_line`, `last_non_empty_line`. `parts` is
+the total number of context chunks for that file. `content_sha256` is the
+SHA-256 digest of the concatenated chunk text. `first_non_empty_line` is the
+first line whose trimmed text is non-empty. `middle_marker_line` is the first
+line beginning with `MIDDLE-`. `last_non_empty_line` is the final line whose
+trimmed text is non-empty. The legacy `inline_context`, `stage_file`, and
+`consumes` fields retain their full-text meanings when the supplied schema
+requires those fields; a compact schema does not require those legacy fields.
+
 ## Safe failure behavior
 
 An `error` directive is terminal: show its message and stop. An unknown directive

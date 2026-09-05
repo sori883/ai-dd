@@ -252,7 +252,10 @@ project rootの`stage-execution-canary.txt`へrandom sentinelを書く明示指�
 plan-wide commitmentへ含め、boundary tokenの継続時に再計算して将来fileの差し替えrebaseを拒否する。read-context前後はdirectory mtimeを無視して
 regular fileのmode/bodyをsnapshot比較し、non-live fresh journeyはtransport fileを含め、live transport比較だけはrecord-rootの正確な
 `.aidlc-active-directive.json`と`.aidlc-steering-token-key`の2 slash pathを除外する。
-state、audit、artifact、新規canaryが変わらず、Stage実行や成果物作成へ進まないことを確認する。
+state、audit、artifact、新規canaryが変わらず、Stage実行や成果物作成へ進まないことを確認する。verification schemaが`files`を要求する場合、
+live receiptは各fileを`slot`、`index`、`parts`、`content_sha256`、`first_non_empty_line`、`middle_marker_line`、
+`last_non_empty_line`のcompact proofで順序どおり照合する。`parts`、digest、3つのlineの意味はskillの定義に従う。
+従来schemaの`inline_context`、`stage_file`、`consumes`は各fileの全chunk連結本文を照合するため、互換性を保つ。
 
 ```sh
 go test -count=1 ./src/harness/codex/skills/aidlc
@@ -262,7 +265,7 @@ env -u AIDLC_CODEX_EXEC_LIVE go test -tags=integration -count=1 -run '^TestCodex
 
 `TestCodexReceiverReadsDeliveredContext`は`AIDLC_CODEX_EXEC_LIVE=1`がない通常loopで明示skipする。通常呼出しの成功応答は
 `context ready`だが、live testは検証用machine-readable read receiptの要求とoutput schemaを明示したcallerとして、live時だけ
-`codex exec --ephemeral`を一度だけ起動し、`--output-last-message`の専用temporary receipt fileからJSON receiptを読み、各`rules_content`の最後の非空行を順番どおり照合し、inline／stage／consumeは全本文と順序を厳密照合する。stdout/stderrは失敗診断に限る。どちらの応答形式でも
+`codex exec --ephemeral`を一度だけ起動し、`--output-last-message`の専用temporary receipt fileからJSON receiptを読み、各`rules_content`の最後の非空行を順番どおり照合し、compact `files` schemaでは7項目のproofを、従来schemaではinline／stage／consumeの全本文を順序どおり厳密照合する。stdout/stderrは失敗診断に限る。どちらの応答形式でも
 Stage実行や成果物作成へ進まない。live promptはskill invocationと定義済みreceipt/schema要求だけを含み、routing・読込順・stop・canaryを
 補いません。通常CIではliveをskipし、このrepair後のlive実行は未実施です。promptにsentinelやpathを埋め込まず、credentialを読み取らず、
 unknown directive・read failureではfail-closedで止めます。installer/update、review・sensor、report、人間承認、
