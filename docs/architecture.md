@@ -1420,5 +1420,6 @@ receipt/schema要求だけに限定し、routing、読込順、stop、canaryを�
 持ち、stage本文は実行時だけrandom sentinelをproject rootの`stage-execution-canary.txt`へ書く指示を含みます。live前後はdirectory mtimeを
 除外してregular fileのmode/bodyを比較します。non-live fresh journeyはtransport fileを含め、live transport比較だけはrecord-rootの正確な
 `.aidlc-active-directive.json`と`.aidlc-steering-token-key`の2 slash pathだけを除外します。
-通常CIでは明示skipを維持し、このrepair後のlive実行は未実施です。詳細な証拠、credentialを扱わない境界、Stage実行を後続へ残す理由は
-[Codex receiverで配信本文を実読込する計画](ram/decisions/2026-09-05-codex-receiver-read-plan.md)を参照してください。
+通常CIでは明示skipを維持します。2026-09-06に`codex-cli 0.153.4`と一回限りの`gpt-5.6-luna` overrideでlive testを実行し、
+compact proof、配信順、snapshot不変、Stage canary不在を確認して成功しました。詳細な証拠、credentialを扱わない境界、
+Stage実行を後続へ残す理由は[安全なcontext読込契約](ram/decisions/2026-09-05-codex-safe-context-read-contract.md)を参照してください。

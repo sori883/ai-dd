@@ -1,7 +1,7 @@
 # Codexのcontext読込をGoの安全境界へ移す
 
 - 日付: 2026-09-05（Asia/Tokyo）
-- 状態: In Progress（実装済み・独立review修正中。未merge／互換modelでのlive再実行未実施）
+- 状態: Implemented（実装・独立review・final・live E2E成功。Issue #115は未merge）
 - 対応Issue: [#115 Codex receiverで配信本文を実読込する](https://github.com/sori883/ai-dd/issues/115)
 - 置換対象: [Codex receiverで配信本文を実読込する](2026-09-05-codex-receiver-read-plan.md)のshell直接読込、
   live prompt、短いfixtureに関する設計
@@ -279,6 +279,20 @@ compact proofへ修正して環境変数unsetのskip可能なintegration testで
 このclient incompatibilityを回避するtest-only harness設定として、`AIDLC_CODEX_EXEC_MODEL`が空またはunsetなら従来どおり`--model`を付けず、
 非空ならtrimした値を`--model`直後の単一argvとして渡す。model名はhardcodeせず、製品read-context、public CLI、persisted data、skill receipt意味、
 Codex clientの更新・installer・permissionは変更しない。live commandがnonzeroでも、errorを報告する前にregular-file snapshot不変とStage canary不在を検査する。
+
+ユーザーはtoken消費を抑えるため、2026-09-06に`gpt-5.6-luna`を一回限り指定したlive再実行を明示的に依頼した。
+事前にユーザー依頼でCodex CLIを`0.145.0`からnpm公開最新版`0.153.4`へ更新し、HEAD
+`fe9ae233cdfe6c022abc24e25e9622464a1ab9ad`に対して次を1回だけ実行した。
+
+```sh
+AIDLC_CODEX_EXEC_LIVE=1 AIDLC_CODEX_EXEC_MODEL=gpt-5.6-luna go test -tags=integration -count=1 -run '^TestCodexReceiverReadsDeliveredContext$' -v ./src/cmd/aidlc
+```
+
+`go1.26.4 darwin/arm64`、`codex-cli 0.153.4`でtestは117.32秒、packageは117.772秒、exit 0となった。
+compact receiptのschema decode、rule末尾sentinel、全fileのslot／index／parts／SHA-256／BEGIN・MIDDLE・END proofと配信順、
+live前後のregular-file snapshot不変、`stage-execution-canary.txt`不在をすべて確認した。これはCodexがskillだけに従って
+全contextを読み、Stage実行・成果物生成へ進まなかったlive証拠である。追加呼び出しや自動retryは行っていない。
+`gpt-5.6-luna`はtest-only環境変数によるこの実行だけのoverrideで、製品既定modelや永続設定には保存していない。
 
 また、read-contextのcontinuation key取得は新設したread-only `steering.ReadContinuationKey`へ統合した。既存key lifecycleと同じ
 4 KiB+1 bounded read、regular non-symlink、UTF-8、ECMAScript whitespace trim、canonical unpadded base64url、exact 32-byte検証を再利用し、

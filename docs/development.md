@@ -1313,6 +1313,8 @@ fixtureは予測不能なBEGIN/MIDDLE/ENDをstage・consumeにも含め、stage�
 `stage-execution-canary.txt`へrandom sentinelを書けるようにします。liveの前後snapshotはdirectory mtimeを無視して
 regular fileのmode/bodyだけを比較します。non-live fresh journeyはtransport fileを含め、live transport比較だけはrecord-rootの正確な
 `.aidlc-active-directive.json`と`.aidlc-steering-token-key`の2 slash pathだけを除外します。
-互換modelでのlive再実行は未実施であり、環境変数なしの通常loopでは明示skipします。実装・受入条件・後続Stage境界は
+2026-09-06に`codex-cli 0.153.4`と一回限りの`gpt-5.6-luna` overrideでlive再実行し、compact proof、配信順、
+snapshot不変、Stage canary不在を確認して成功しました。永続model設定は変更せず、環境変数なしの通常loopでは引き続き明示skipします。
+実装・受入条件・後続Stage境界は
 [Codex receiverの計画](ram/decisions/2026-09-05-codex-receiver-read-plan.md)と[安全なcontext読込契約](ram/decisions/2026-09-05-codex-safe-context-read-contract.md)
 を参照してください。
