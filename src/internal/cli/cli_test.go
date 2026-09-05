@@ -39,6 +39,7 @@ Usage:
   aidlc next [--project-dir <path>]
   aidlc continue <token> [--project-dir <path>]
   aidlc read-context [continue <opaque-token>] [--project-dir <path>]
+  aidlc report --stage <slug> --result <awaiting-approval|rejected|revised|approved> [--user-input <exact>] [--reason <feedback>] [--project-dir <path>]
   aidlc space create <name> [--project-dir <path>]
   aidlc space list [--json] [--project-dir <path>]
   aidlc space switch <name> [--project-dir <path>]
@@ -54,6 +55,7 @@ Commands:
   next       Compose and publish the next directive
   continue   Continue a published directive
   read-context  Read the active run-stage context
+  report     Record one explicit stage result
   space create  Create a new space
   space list    List spaces (space is an alias)
   space switch  Select an existing space

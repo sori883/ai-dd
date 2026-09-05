@@ -1009,12 +1009,36 @@ StartIntentから終端までの実filesystem確認はintegration tag付きtest�
 使用し、reject/revise、旧receipt再利用拒否、SKIP、phase境界、unknown state bytes、registry status未同期、無関係record、terminal後の
 audit／graph／artifact欠落を確認します。
 
+### 公開ReportとCodex human-turn hook
+
+公開Reportの引数は次の一つのgrammarに限定します。
+
+```text
+aidlc report --stage <slug> --result <awaiting-approval|rejected|revised|approved> [--user-input <exact>] [--reason <feedback>] [--project-dir <path>]
+```
+
+CLIはresultを4種類に限定し、unknown alias／flag、duplicate、missing value、position argumentを受け付けません。syntax errorはstdout空・
+stderr診断・exit 2、workflowが現在state・artifact・fresh HUMAN_TURN・exact choiceを拒否した場合はcanonical `kind:error` をstdoutへ出す
+exit 0、I/O、callback、root cleanup、wire short writeはstdoutなしのexit 1です。`awaiting-approval`・`rejected`・`revised`は固定の
+`Recorded <result> for "<slug>".` print wire、`approved`はstate advanceを示すdone wireを返します。public reportはHUMAN_TURNを作らず、
+既存のidentity-bound gate transactionへ一回だけ渡します。
+
+`src/harness/codex/hooks.json`は一般installerではなく、freshな配布先でUserPromptSubmitから同じPATH上のbuilt `aidlc`へstdinを渡す
+sourceです。非公開commandはactive stateとactive selectionを解決できる場合だけ、prompt本文やchoiceを含めない`HUMAN_TURN`を既存の
+record lock／binding／Append経由で追記します。空・malformed stdin、active workflowなし、root／append failureはsilent exit 0でpromptを
+止めず、`AIDLC_UNATTENDED=1`ではauthority receiptを追加しません。public reportによるHUMAN_TURN mintはありません。
+
 loopでの対象確認は次です。
 
 ```sh
 go test -count=1 -run '^(TestNext|TestReport|Test.*Directive)' ./src/internal/orchestrator
 go test -tags=integration -count=1 -run '^TestLifecycle' ./src/internal/orchestrator
 go test -tags=integration -count=1 -run '^TestValidateRecordBindingIntegration' ./src/internal/audit
+GOTOOLCHAIN=go1.26.8 go test -count=1 -run '^TestRunReport' ./src/internal/cli
+GOTOOLCHAIN=go1.26.8 go test -count=1 -run '^Test(Report|RunReport)' ./src/cmd/aidlc
+GOTOOLCHAIN=go1.26.8 go test -count=1 -run '^Test.*HumanTurn' ./src/internal/audit ./src/cmd/aidlc
+GOTOOLCHAIN=go1.26.8 go test -count=1 ./src/harness/codex/...
+GOTOOLCHAIN=go1.26.8 go test -tags=integration -count=1 -run '^TestReport.*Journey$' ./src/cmd/aidlc
 ```
 
 quality jobでは既存integration stepに加えて、`go test -tags=integration -race -count=1 -shuffle=on ./src/internal/audit ./src/internal/recordlock ./src/internal/orchestrator`

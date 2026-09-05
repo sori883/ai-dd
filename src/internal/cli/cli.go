@@ -18,6 +18,7 @@ Usage:
   aidlc next [--project-dir <path>]
   aidlc continue <token> [--project-dir <path>]
   aidlc read-context [continue <opaque-token>] [--project-dir <path>]
+  aidlc report --stage <slug> --result <awaiting-approval|rejected|revised|approved> [--user-input <exact>] [--reason <feedback>] [--project-dir <path>]
   aidlc space create <name> [--project-dir <path>]
   aidlc space list [--json] [--project-dir <path>]
   aidlc space switch <name> [--project-dir <path>]
@@ -33,6 +34,7 @@ Commands:
   next       Compose and publish the next directive
   continue   Continue a published directive
   read-context  Read the active run-stage context
+  report     Record one explicit stage result
   space create  Create a new space
   space list    List spaces (space is an alias)
   space switch  Select an existing space
@@ -46,6 +48,12 @@ Flags:
   --json     Print space or intent lists as JSON
 `
 
+const humanTurnHookCommand = "__codex-user-prompt-submit"
+
+func isHumanTurnHookCommand(args []string) bool {
+	return len(args) == 1 && args[0] == humanTurnHookCommand
+}
+
 // Dependencies groups the workspace operations used by Run. Nil callbacks are
 // valid for commands that do not invoke the corresponding operation.
 type Dependencies struct {
@@ -58,7 +66,11 @@ type Dependencies struct {
 	ContinueDelivery func(token, explicitDir string) ([]byte, error)
 	ReadContext      func(explicitDir string) ([]byte, error)
 	ContinueContext  func(token, explicitDir string) ([]byte, error)
-	PrepareOutput    func()
+	// Report records one explicit lifecycle result. The callback receives raw
+	// values after the CLI has validated only the public grammar.
+	Report        func(stage, result, userInput, reason, explicitDir string) ([]byte, error)
+	HumanTurnHook func() error
+	PrepareOutput func()
 }
 
 // Run executes the CLI with injected process inputs, outputs, and workspace operations.
@@ -88,6 +100,15 @@ func Run(
 			)
 		}
 	}
+	if isHumanTurnHookCommand(args) {
+		if dependencies.PrepareOutput != nil {
+			dependencies.PrepareOutput()
+		}
+		if dependencies.HumanTurnHook != nil {
+			_ = dependencies.HumanTurnHook()
+		}
+		return 0
+	}
 	if isDeliveryCommand(args) {
 		if dependencies.PrepareOutput != nil {
 			dependencies.PrepareOutput()
@@ -113,6 +134,16 @@ func Run(
 			return runContextReadStart(command, explicitDir, stdout, stderr, dependencies.ReadContext)
 		}
 		return runContextReadContinue(command, explicitDir, stdout, stderr, dependencies.ContinueContext)
+	}
+	if isReportCommand(args) {
+		if dependencies.PrepareOutput != nil {
+			dependencies.PrepareOutput()
+		}
+		request, err := parseReportArguments(args)
+		if err != nil {
+			return writeReportSyntaxError(stderr, err)
+		}
+		return runReport(request, stdout, stderr, dependencies.Report)
 	}
 	command, explicitDir, _, err := workspaceArguments(args, false)
 	hasSpaceSubcommand := len(command) >= 2 && command[0] == "space"

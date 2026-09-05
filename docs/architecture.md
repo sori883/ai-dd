@@ -1281,6 +1281,25 @@ reject/revise、保存suffix優先のSKIP、phase境界、終端Nextまでを一
 未同期status、無関係record、rootの継続利用、terminal後のaudit／graph／artifact欠落を確認します。workflowの公開CLI接続やregistry同期は
 この内部入口の責務ではありません。計画、受入条件、実装記録は[内部Next・Reportとライフサイクル一周テストの計画](ram/decisions/2026-09-04-next-report-lifecycle-plan.md)を参照してください。
 
+### 公開ReportとCodex UserPromptSubmitのtrust boundary
+
+公開CLIの`aidlc report`は、Stageの結果を4種類だけ受け付けます。文法は
+`aidlc report --stage <slug> --result <awaiting-approval|rejected|revised|approved> [--user-input <exact>] [--reason <feedback>] [--project-dir <path>]`
+だけで、未定義のresult・alias・flag、重複flag、値の欠落、位置引数はsyntax errorとして拒否します。syntax errorはstdoutを空にして
+stderrへ診断を出しexit 2、解釈後のworkflow拒否は`{"kind":"error","message":"..."}`をstdoutへ出してexit 0、I/O・root cleanup・
+callback・short writeは成功wireを出さずexit 1です。成功時はgateの3結果を
+`{"kind":"print","message":"Recorded <result> for \"<slug>\"."}`、approvalを
+`{"kind":"done","reason":"Committed approve for \"<slug>\" ... State advanced; run next to continue."}`
+相当の一行JSONとして返します。Reportは`HUMAN_TURN`を生成せず、fresh receipt、exact choice、artifact、state／audit bindingの判断を
+既存gate transactionへ委譲します。
+
+Codexの`UserPromptSubmit`配布sourceは`src/harness/codex/hooks.json`です。hookはPATH上の同じbuilt `aidlc`へ
+stdinを渡して非公開の`__codex-user-prompt-submit` commandを呼びます。このcommandはactive workflowのidentity-bound recordだけを
+再解決し、validなstdinをauthorityやchoiceとして保存せず、空・malformed stdin、active stateなし、root／append failureではpromptを
+妨げずexit 0（stdout／stderr空）で終了します。`AIDLC_UNATTENDED=1`では`HUMAN_TURN`をwithholdします。成功したhookだけが既存の
+record lock、binding検証、audit Appendを通じてpayloadを持たない`HUMAN_TURN`を1件追加し、public reportからは追加しません。
+reviewer・sensor・summary capabilityの解除やinstallerはこのboundaryに含めません。
+
 ## Intent開始 orchestration
 
 `orchestrator.StartIntent(ctx, input) (StartedIntent, error)`は、callerが解決したlabel、scope、説明、

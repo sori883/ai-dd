@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "aidlc __codex-user-prompt-submit"
+          }
+        ]
+      }
+    ]
+  }
+}

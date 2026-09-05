@@ -29,6 +29,7 @@ sandbox rootそのものへ実行物を直置きせず、必ずscenarioごとの
 | Intent listing | 配布binaryから現在spaceのregistry・record相関、human/JSON・bare aliasと無変更を確認 | 実施可能 |
 | Intent switching | 配布binaryから現在spaceのIntentを解決し、shared cursor保存・失敗境界・周辺dataの無変更を確認 | 実施可能 |
 | Codex directive delivery | 配布binaryからfreshなnext、複数continue、最終run-stageとstale/replay拒否を確認 | 実施可能 |
+| Report・human-turn journey | fresh projectへhook sourceを明示配置し、hookなし拒否、hook後approve、reject→revise、unattended抑止を確認 | 実施可能 |
 | 配布・install | binaryがCodex向け資産を対象projectへ安全に展開できること | 未実装 |
 | workspace lifecycle | project root、space、intent、stateを配布先から一連で扱えること | 未実装 |
 
@@ -70,6 +71,30 @@ CIのcross-build matrixで別に検証し、各OSでのnative実行と同一視�
 4. 配布先をworking directoryとして、正常系と異常系を実行する。
 5. 終了code、stdout、stderr、artifact hashを確認する。
 6. 結果と未検証範囲を`docs/e2e-runs/`へ記録する。
+
+## Report・human-turn journey scenario
+
+このscenarioは公開`report`とCodex UserPromptSubmitのauthority境界を、毎回新しい子directoryで確認する。
+一般installerは使わず、検証対象binaryとsourceを明示的に配置する。
+
+1. `src/harness/codex/hooks.json`をfresh projectの`.codex/hooks.json`へコピーし、hookのcommandが実行物directoryをPATHの先頭で
+   見つけられるようにする。hookは`aidlc __codex-user-prompt-submit`へstdinを渡すため、別runtimeや別binaryを配置しない。
+2. hookなしで`aidlc report --stage intent-capture --result rejected --user-input "Request Changes" --reason "revise"`を実行し、
+   stdoutの`kind:error`・exit 0と、state／audit無変更を確認する。syntax errorではstdout空・stderr・exit 2となる。
+3. 同じfresh workflowへUserPromptSubmit payloadを渡してhookを一度実行し、stdout／stderr空・exit 0と`HUMAN_TURN`一件を確認する。
+   payload本文、session、choiceがaudit fieldへ現れないことも確認する。
+4. hook後に同じrejected reportを実行し、canonical printを確認する。`revised` report後は新しいHUMAN_TURNなしのapproveがstale拒否となり、
+   もう一度hookを実行したapproveだけがdone／state advanceになることを確認する。
+5. `AIDLC_UNATTENDED=1`で同じhookを実行した場合はstdout／stderr空・exit 0だがreceiptが増えず、approveはstale拒否となることを確認する。
+6. active workflowのないfresh project、empty／malformed stdin、root／append failureでも、promptを妨げずstdout／stderr空・exit 0で、
+   auditやstateを作らないことを確認する。
+
+repository内の再現コマンドは次です。
+
+```sh
+GOTOOLCHAIN=go1.26.8 go test -count=1 ./src/harness/codex/...
+GOTOOLCHAIN=go1.26.8 go test -tags=integration -count=1 -run '^TestReport.*Journey$' ./src/cmd/aidlc
+```
 
 ## Space一覧scenario
 

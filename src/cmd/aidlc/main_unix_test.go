@@ -578,6 +578,25 @@ func TestMainRootCommandsKeepSIGPIPE(t *testing.T) {
 	}
 }
 
+func TestMainReportIgnoresSIGPIPEOnClosedStderr(t *testing.T) {
+	t.Parallel()
+
+	cmd := mainProcess(t, "report")
+	cmd.Stdout = &bytes.Buffer{}
+	cmd.Stderr = closedPipeWriter(t)
+	state := runMainProcess(t, cmd)
+	status, ok := state.Sys().(syscall.WaitStatus)
+	if !ok {
+		t.Fatalf("process status has unexpected type %T", state.Sys())
+	}
+	if status.Signaled() {
+		t.Fatalf("main state = %s, want exit 2 after SIGPIPE is ignored", state)
+	}
+	if got := state.ExitCode(); got != 2 {
+		t.Fatalf("main exit = %d, want 2 for report syntax error", got)
+	}
+}
+
 // TestMainProcessHelper runs only in an isolated child, so real main owns signals and exit.
 func TestMainProcessHelper(t *testing.T) {
 	if os.Getenv("AIDLC_TEST_MAIN_PROCESS") != "1" {
