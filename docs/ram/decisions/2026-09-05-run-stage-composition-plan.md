@@ -108,8 +108,9 @@ graph側は次を追加する。
 func (s Snapshot) RouteHash(stageSlug, scope string) (string, error)
 ```
 
-`graph.Load`時に、各enabled nodeを簡略化した公開`graph.Stage`へ変換する前のJSONを、property順を保った
-compact JSONとして非公開保持する。`RouteHash`はこのnodeと、scope-gridで`EXECUTE`になったenabled stageを
+`graph.Load`時に、各enabled nodeを簡略化した公開`graph.Stage`へ変換する前のJSONを、本家の`JSON.parse`後の
+`JSON.stringify`相当に正規化して非公開保持する。通常propertyの初出順を保ち、duplicate keyはlast-winsで
+値だけを更新し、文字列escapeや数値表現、nested object／arrayもJSONの意味へ正規化する。`RouteHash`はこのnodeと、scope-gridで`EXECUTE`になったenabled stageを
 stage number順に並べたslug列を、`{"node":...,"scopeStages":[...]}`の順で正規化し、bare lowercase
 SHA-256 hexを返す。現在の`graph.Stage`を再JSON化してはならない。そうすると`condition`、`inputs`、
 `outputs`、review詳細、`sensors_applicable`等がhashから落ちるためである。
@@ -285,6 +286,11 @@ first `load-steering`、継続ごとのfresh再構成、active-directive cursor 
 scope stage列からroute hashを作り、`delivery.ComposeRunStage`でfresh selection、既存`orchestrator.Next`、
 artifact分類、配置rule本文、knowledge roster、任意presentation、canonical wire、28 KiB上限、
 directive／route／state hash、deep ownershipを接続した。外部Go moduleと新しい意図的差分は追加していない。
+
+独立reviewでは、最初のroute node保持が空白だけを除く`json.Compact`であり、同じ文字列のUnicode escape表記と
+duplicate keyのlast-winsを本家の`JSON.parse`／`JSON.stringify`と同じ意味へ正規化していないP1が見つかった。
+旧実装で両方のhash不一致を示す回帰testを先に追加してから、property順を保持する標準libraryだけの
+canonicalizerへ置換した。固定2.6.123 goldenとgraph package testも維持した。
 
 最後のfilesystem freshness testは、テスト追加前のproduction実装ですでに成功したため`ALREADY_GREEN`として
 受理した。同じcaller Rootを使ってrule本文、knowledge一覧、raw graph、valid state bytesを順に変更し、次回の

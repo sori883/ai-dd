@@ -9,7 +9,7 @@ import (
 	"sort"
 )
 
-// RouteHash returns the SHA-256 hash of the selected raw graph node and the
+// RouteHash returns the SHA-256 hash of the selected canonical graph node and the
 // enabled stages routed to execute in the named scope.
 func (s Snapshot) RouteHash(stageSlug, scope string) (string, error) {
 	node, ok := s.routeNodes[stageSlug]
