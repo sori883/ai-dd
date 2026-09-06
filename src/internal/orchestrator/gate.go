@@ -250,12 +250,16 @@ func rejectGateWithOps(ctx context.Context, input GateInput, injected gateOps) (
 		if err != nil {
 			return fmt.Errorf("reject gate: revalidate audit binding after state read: %w", err)
 		}
-		if !audit.HumanTurnFresh(records) {
-			return fmt.Errorf("reject gate: no fresh HUMAN_TURN receipt: %w", ErrStaleHumanTurn)
-		}
 		stage, progress, err := resolveGateState(document.State, input)
 		if err != nil {
 			return err
+		}
+		freshHumanTurn := audit.HumanTurnFresh(records)
+		if progress.CheckboxState == state.CheckboxStateAwaitingApproval {
+			freshHumanTurn = humanTurnAfterAwaitingApproval(records, progress.Slug)
+		}
+		if !freshHumanTurn {
+			return fmt.Errorf("reject gate: no fresh HUMAN_TURN receipt: %w", ErrStaleHumanTurn)
 		}
 		if err := validateGateCapabilities(stage); err != nil {
 			return err

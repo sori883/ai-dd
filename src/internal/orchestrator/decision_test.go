@@ -3,7 +3,43 @@ package orchestrator
 import (
 	"errors"
 	"testing"
+	"time"
+
+	"github.com/sori883/ai-dd/src/internal/audit"
 )
+
+func TestHumanTurnAfterAwaitingApprovalUsesLatestStageBoundary(t *testing.T) {
+	when := time.Date(2026, 9, 6, 0, 0, 0, 0, time.UTC)
+	record := func(event, shard string, position int) audit.AuditRecord {
+		return audit.AuditRecord{
+			Event: event, Timestamp: when, Shard: shard, Position: position,
+			Fields: map[string]string{"Stage": "intent-capture"},
+		}
+	}
+	if humanTurnAfterAwaitingApproval([]audit.AuditRecord{
+		record("HUMAN_TURN", "audit/a", 0),
+		record("STAGE_AWAITING_APPROVAL", "audit/a", 1),
+	}, "intent-capture") {
+		t.Fatal("pre-awaiting HUMAN_TURN accepted")
+	}
+	if !humanTurnAfterAwaitingApproval([]audit.AuditRecord{
+		record("STAGE_AWAITING_APPROVAL", "audit/a", 0),
+		record("HUMAN_TURN", "audit/a", 1),
+	}, "intent-capture") {
+		t.Fatal("post-awaiting HUMAN_TURN rejected")
+	}
+	if humanTurnAfterAwaitingApproval([]audit.AuditRecord{
+		record("STAGE_AWAITING_APPROVAL", "audit/a", 0),
+		record("HUMAN_TURN", "audit/b", 0),
+	}, "intent-capture") {
+		t.Fatal("equal-second cross-shard HUMAN_TURN accepted")
+	}
+	if humanTurnAfterAwaitingApproval([]audit.AuditRecord{
+		record("HUMAN_TURN", "audit/a", 0),
+	}, "intent-capture") {
+		t.Fatal("HUMAN_TURN without same-stage awaiting receipt accepted")
+	}
+}
 
 func TestValidateApprovalChoiceHonorsRevisionBoundary(t *testing.T) {
 	t.Parallel()

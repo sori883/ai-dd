@@ -253,13 +253,15 @@ func TestSummaryConfirmationRequiresCanonicalCheckpoint(t *testing.T) {
 
 func TestSummaryConfirmationRejectsHiddenOrDuplicateCheckpoint(t *testing.T) {
 	cases := map[string]string{
-		"duplicate checkpoint":             "## Q1\n\nQuestion\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n",
-		"hidden checkpoint":                "## Q1\n\nQuestion\n\n~~~markdown\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n~~~\n",
-		"raw html heading":                 "## Consolidated Summary Confirmation\n[Answer]: Looks correct\n<h2>Unreviewed</h2>\n",
-		"setext heading":                   "## Consolidated Summary Confirmation\n[Answer]: Looks correct\nUnreviewed\n----\n",
-		"duplicate pre-summary assumption": "## Assumption Confirmation\n- one\n\n## Assumption Confirmation\n- two\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n",
-		"duplicate pre-summary feedback":   "## Requested Changes Feedback\n- one\n\n## Requested Changes Feedback\n- two\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n",
-		"duplicate post-summary feedback":  "## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Requested Changes Feedback\n- one\n\n## Requested Changes Feedback\n- two\n",
+		"duplicate checkpoint":                     "## Q1\n\nQuestion\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n",
+		"hidden checkpoint":                        "## Q1\n\nQuestion\n\n~~~markdown\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n~~~\n",
+		"raw html heading":                         "## Consolidated Summary Confirmation\n[Answer]: Looks correct\n<h2>Unreviewed</h2>\n",
+		"setext heading":                           "## Consolidated Summary Confirmation\n[Answer]: Looks correct\nUnreviewed\n----\n",
+		"duplicate pre-summary assumption":         "## Assumption Confirmation\n- one\n\n## Assumption Confirmation\n- two\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n",
+		"duplicate pre-summary feedback":           "## Requested Changes Feedback\n- one\n\n## Requested Changes Feedback\n- two\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n",
+		"duplicate question number before summary": "## Q1. First question\n\nQuestion\n\n## Q1. Second question\n\nQuestion\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n",
+		"duplicate question number across summary": "## Q1. First question\n\nQuestion\n\n## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Q1. Repeated question\n\nQuestion\n",
+		"duplicate post-summary feedback":          "## Consolidated Summary Confirmation\n[Answer]: Looks correct\n\n## Requested Changes Feedback\n- one\n\n## Requested Changes Feedback\n- two\n",
 	}
 	for name, content := range cases {
 		t.Run(name, func(t *testing.T) {

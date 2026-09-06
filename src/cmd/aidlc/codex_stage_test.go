@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -21,6 +22,7 @@ import (
 	"github.com/sori883/ai-dd/src/internal/scope"
 	"github.com/sori883/ai-dd/src/internal/sensor"
 	"github.com/sori883/ai-dd/src/internal/state"
+	"github.com/sori883/ai-dd/src/internal/workspace"
 )
 
 func TestDefaultCodexStageDispatchRunsPurposeSpecificActions(t *testing.T) {
@@ -29,6 +31,109 @@ func TestDefaultCodexStageDispatchRunsPurposeSpecificActions(t *testing.T) {
 		if err == nil || strings.Contains(err.Error(), "not available") {
 			t.Errorf("defaultCodexStageDispatch(%q) error = %v, want action-specific dispatch error", action, err)
 		}
+	}
+}
+
+func TestCodexStageDispatchSerializesWorkspaceSelectionSwitches(t *testing.T) {
+	for _, target := range []string{"intent", "space"} {
+		t.Run(target, func(t *testing.T) {
+			fixture := newCodexIntentCaptureRoots(t)
+			revisedPath := filepath.Join(fixture.project, "aidlc", "spaces", "team", "intents", "revised")
+			if err := os.MkdirAll(revisedPath, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(revisedPath, "aidlc-state.md"), []byte("state\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			intentsPath := filepath.Join(fixture.project, "aidlc", "spaces", "team", "intents", "intents.json")
+			if err := os.WriteFile(intentsPath, []byte(`[{"uuid":"codex-intent","slug":"codex-intent","status":"planning","dirName":"build"},{"uuid":"revised","slug":"revised","status":"planning","dirName":"revised"}]`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if target == "space" {
+				otherIntent := filepath.Join(fixture.project, "aidlc", "spaces", "other", "intents", "other")
+				if err := os.MkdirAll(otherIntent, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(fixture.project, "aidlc", "spaces", "other", "intents", "intents.json"), []byte(`[{"uuid":"other","slug":"other","status":"planning","dirName":"other"}]`), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			previous := codexStageAfterSelectionValidation
+			t.Cleanup(func() { codexStageAfterSelectionValidation = previous })
+			contention := make(chan string, 1)
+			restoreContention := workspace.SetWorkspaceLockContentionObserverForTest(func(path string) {
+				select {
+				case contention <- path:
+				default:
+				}
+			})
+			t.Cleanup(restoreContention)
+			selectionValidated := make(chan struct{})
+			continueDispatch := make(chan struct{})
+			codexStageAfterSelectionValidation = func() {
+				close(selectionValidated)
+				<-continueDispatch
+			}
+			input := deliverypkg.RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+			dispatchDone := make(chan error, 1)
+			go func() {
+				_, err := defaultCodexStageDispatchWithPayload(context.Background(), "learnings-surface", input, []byte(`{}`))
+				dispatchDone <- err
+			}()
+			select {
+			case <-selectionValidated:
+			case <-time.After(2 * time.Second):
+				t.Fatal("hidden stage dispatch did not reach selection validation")
+			}
+
+			switchStarted := make(chan struct{})
+			switchDone := make(chan error, 1)
+			go func() {
+				close(switchStarted)
+				if target == "intent" {
+					_, err := workspace.SwitchIntent(workspace.RootInput{ExplicitDir: fixture.project}, "revised")
+					switchDone <- err
+					return
+				}
+				_, err := workspace.SwitchSpace(workspace.RootInput{ExplicitDir: fixture.project}, "other")
+				switchDone <- err
+			}()
+			<-switchStarted
+			select {
+			case <-contention:
+			case err := <-switchDone:
+				t.Fatalf("workspace switch completed without contending on hidden action lock: %v", err)
+			case <-time.After(2 * time.Second):
+				t.Fatal("workspace switch did not reach the hidden action workspace lock")
+			}
+			select {
+			case err := <-switchDone:
+				t.Fatalf("workspace switch completed before hidden action released lock: %v", err)
+			default:
+				runtime.Gosched()
+			}
+			if active, err := os.ReadFile(filepath.Join(fixture.project, "aidlc", "active-space")); err != nil || string(active) != "team\n" {
+				t.Fatalf("active-space while hidden action held lock = (%q, %v), want team", active, err)
+			}
+			close(continueDispatch)
+			select {
+			case err := <-dispatchDone:
+				if err != nil {
+					t.Fatalf("hidden stage dispatch error = %v", err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("hidden stage dispatch did not finish after release")
+			}
+			select {
+			case err := <-switchDone:
+				if err != nil {
+					t.Fatalf("workspace switch error = %v", err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("workspace switch did not finish after hidden action")
+			}
+		})
 	}
 }
 

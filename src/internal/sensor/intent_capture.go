@@ -630,7 +630,7 @@ func runRequiredSections(input Input) (CheckResult, error) {
 
 func markdownH2Set(content string) map[string]struct{} {
 	sections := make(map[string]struct{})
-	for _, line := range strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n") {
+	for _, line := range visibleMarkdownLines(content) {
 		if heading, ok := sensorH2Heading(line); ok && heading != "" {
 			sections[heading] = struct{}{}
 		}

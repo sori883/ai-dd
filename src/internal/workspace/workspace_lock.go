@@ -291,6 +291,13 @@ func setWorkspaceLockContentionObserver(fn func(string)) func() {
 	}
 }
 
+// SetWorkspaceLockContentionObserverForTest exposes the package-local
+// contention seam to integration tests in sibling internal packages. It does
+// not alter lock behavior and is intentionally named as a test-only hook.
+func SetWorkspaceLockContentionObserverForTest(fn func(string)) func() {
+	return setWorkspaceLockContentionObserver(fn)
+}
+
 func observeWorkspaceLockContention(path string) {
 	workspaceLockContentionObserver.mu.RLock()
 	fn := workspaceLockContentionObserver.fn

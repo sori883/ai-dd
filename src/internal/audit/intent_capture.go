@@ -195,6 +195,17 @@ func validateReviewRequestReceipt(records []AuditRecord, request review.Request)
 
 const maxReviewArtifactBytes = 8 << 20
 
+// auditLeafAfterLstat is a package-private replacement seam used by the Unix
+// FIFO regression tests. Production leaves it as a no-op; the readers still
+// prove the opened descriptor and path identity after this boundary.
+var auditLeafAfterLstat = func(*os.Root, string) error { return nil }
+
+func setAuditLeafAfterLstat(fn func(*os.Root, string) error) func() {
+	previous := auditLeafAfterLstat
+	auditLeafAfterLstat = fn
+	return func() { auditLeafAfterLstat = previous }
+}
+
 func validateReviewArtifactSet(recordRoot *os.Root, expected map[string][]byte) error {
 	if len(expected) == 0 {
 		return nil
@@ -264,7 +275,10 @@ func readReviewArtifact(recordRoot *os.Root, name string) ([]byte, error) {
 	if pathInfo == nil || pathInfo.Mode()&fs.ModeSymlink != 0 || !pathInfo.Mode().IsRegular() {
 		return nil, fmt.Errorf("review artifact is not a regular file: %w", fs.ErrInvalid)
 	}
-	file, err := recordRoot.Open(name)
+	if err := auditLeafAfterLstat(recordRoot, name); err != nil {
+		return nil, fmt.Errorf("review artifact pre-open validation: %w", err)
+	}
+	file, err := openAuditLeaf(recordRoot, name)
 	if err != nil {
 		return nil, err
 	}
@@ -1525,10 +1539,11 @@ func summaryConfirmationCanonicalContent(content []byte, requireAnswer bool) ([]
 					continue
 				}
 				if questionID := summaryQuestionPattern.FindStringSubmatch(heading.title); questionID != nil {
-					if seenQuestion[questionID[0]] {
-						return nil, fmt.Errorf("question section %q is duplicated: %w", questionID[0], ErrIntentCaptureAmbiguous)
+					key := "Q" + questionID[1]
+					if seenQuestion[key] {
+						return nil, fmt.Errorf("question section %q is duplicated: %w", key, ErrIntentCaptureAmbiguous)
 					}
-					seenQuestion[questionID[0]] = true
+					seenQuestion[key] = true
 				}
 				if heading.title != "Assumption Confirmation" && heading.title != "Requested Changes Feedback" {
 					if seenH2[heading.title] {
@@ -1563,7 +1578,8 @@ func summaryConfirmationCanonicalContent(content []byte, requireAnswer bool) ([]
 				postAssumptionEnd = heading.line
 			}
 		case summaryQuestionPattern.MatchString(heading.title):
-			questionID := summaryQuestionPattern.FindStringSubmatch(heading.title)[0]
+			questionMatch := summaryQuestionPattern.FindStringSubmatch(heading.title)
+			questionID := "Q" + questionMatch[1]
 			if seenQuestion[questionID] {
 				return nil, fmt.Errorf("question section %q is duplicated: %w", questionID, ErrIntentCaptureAmbiguous)
 			}
@@ -1665,7 +1681,10 @@ func readIntentCaptureQuestions(recordRoot *os.Root) ([]byte, string, error) {
 	if pathInfo == nil || pathInfo.Mode()&fs.ModeSymlink != 0 || !pathInfo.Mode().IsRegular() {
 		return nil, "", fmt.Errorf("questions file must be a regular non-symlink file: %w", ErrIntentCaptureAmbiguous)
 	}
-	file, err := recordRoot.Open(intentCaptureQuestionsFile)
+	if err := auditLeafAfterLstat(recordRoot, intentCaptureQuestionsFile); err != nil {
+		return nil, "", fmt.Errorf("questions pre-open validation: %w", err)
+	}
+	file, err := openAuditLeaf(recordRoot, intentCaptureQuestionsFile)
 	if err != nil {
 		return nil, "", err
 	}

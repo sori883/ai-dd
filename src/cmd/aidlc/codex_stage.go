@@ -32,6 +32,11 @@ type codexStageDispatch func(context.Context, string, deliverypkg.RunStageInput)
 
 type codexStageDispatchWithPayload func(context.Context, string, deliverypkg.RunStageInput, []byte) ([]byte, error)
 
+// codexStageAfterSelectionValidation is a package-private synchronization
+// seam for proving that the hidden bridge keeps its workspace transaction
+// across fresh selection validation and the action-specific backend.
+var codexStageAfterSelectionValidation = func() {}
+
 // decodeCodexStagePayload decodes only ordinary action data. Authority fields
 // are derived by the backend from fresh roots and audit state; accepting them
 // at this bridge would let a caller manufacture a receipt.
@@ -279,7 +284,7 @@ func defaultCodexStageDispatch(ctx context.Context, action string, input deliver
 	if input.ProjectRoot == nil || input.RecordRoot == nil {
 		return nil, fmt.Errorf("codex stage action %q requires a resolved project", action)
 	}
-	return dispatchCodexStageAction(ctx, action, input, nil)
+	return dispatchCodexStageActionWithWorkspaceLock(ctx, action, input, nil)
 }
 
 func defaultCodexStageDispatchWithPayload(ctx context.Context, action string, input deliverypkg.RunStageInput, payload []byte) ([]byte, error) {
@@ -293,7 +298,25 @@ func defaultCodexStageDispatchWithPayload(ctx context.Context, action string, in
 	if err != nil {
 		return nil, err
 	}
-	return dispatchCodexStageAction(ctx, action, input, values)
+	return dispatchCodexStageActionWithWorkspaceLock(ctx, action, input, values)
+}
+
+// dispatchCodexStageActionWithWorkspaceLock keeps the hidden action's fresh
+// active-selection read and every resulting record/project write in one
+// workspace transaction. Public cursor writers acquire this same lock before
+// touching active Space/Intent, so an action cannot validate one selection and
+// append authority to another after a concurrent switch.
+func dispatchCodexStageActionWithWorkspaceLock(ctx context.Context, action string, input deliverypkg.RunStageInput, values map[string]any) ([]byte, error) {
+	var wire []byte
+	err := workspace.WithLock(ctx, input.Identity.ProjectPath(), func() error {
+		var err error
+		wire, err = dispatchCodexStageAction(ctx, action, input, values)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return wire, nil
 }
 
 // dispatchCodexStageAction is the action-specific backend for the hidden
@@ -308,6 +331,7 @@ func dispatchCodexStageAction(ctx context.Context, action string, input delivery
 	if err != nil {
 		return nil, err
 	}
+	codexStageAfterSelectionValidation()
 	if values == nil {
 		values = map[string]any{}
 	}

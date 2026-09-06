@@ -228,6 +228,24 @@ func TestRequiredSections(t *testing.T) {
 	}
 }
 
+func TestRequiredSectionsRejectsHeadingsOnlyInHiddenMarkdown(t *testing.T) {
+	cases := map[string]string{
+		"backtick fence": "```markdown\n## Hidden one\n## Hidden two\n```\n",
+		"tilde fence":    "~~~markdown\n## Hidden one\n## Hidden two\n~~~\n",
+		"longer fence":   "````markdown\n## Hidden one\n```\n## Hidden two\n````\n",
+		"html comment":   "<!--\n## Hidden one\n## Hidden two\n-->\n",
+	}
+	for name, content := range cases {
+		t.Run(name, func(t *testing.T) {
+			input := Input{Stage: "intent-capture", ArtifactPath: "intent-statement.md", Content: []byte(content)}
+			invocation := RunAll(context.Background(), input, nil)[1]
+			if invocation.TerminalResult().Status != StatusFailed {
+				t.Fatalf("required-sections status = %q, findings = %#v, want hidden headings rejected", invocation.TerminalResult().Status, invocation.TerminalResult().Findings)
+			}
+		})
+	}
+}
+
 func TestRequiredSectionsRejectsInvalidUTF8(t *testing.T) {
 	input := Input{Stage: "intent-capture", ArtifactPath: "intent-statement.md", Content: []byte("## Outcome\n\xff\n## Assumptions & Open Questions\n")}
 	invocation := RunAll(context.Background(), input, nil)[1]
