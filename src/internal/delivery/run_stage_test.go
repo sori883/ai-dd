@@ -31,6 +31,57 @@ const runStageGraphJSON = `[
   {"slug":"next-stage","number":"1.2","name":"Next Stage","phase":"ideation","execution":"ALWAYS","lead_agent":"product-agent","support_agents":[],"mode":"inline","scopes":["classic"],"enabled":true,"produces":[],"consumes":[],"requires_stage":[]}
 ]`
 
+func TestComposeRunStageOKFKnowledgeCutover(t *testing.T) {
+	fixture := newRunStageFixture(t)
+	project := fixture.identity.ProjectRoot()
+	knowledgeDir := filepath.Join(project, "aidlc", "spaces", "team", "knowledge")
+	for _, relative := range []string{"aidlc/spaces/team/knowledge/aidlc-shared/legacy.md", ".codex/knowledge/aidlc-shared/framework.md"} {
+		filename := filepath.Join(project, filepath.FromSlash(relative))
+		if err := os.MkdirAll(filepath.Dir(filename), 0700); err != nil {
+			t.Fatal(err)
+		}
+		writeRunStageFile(t, filename, "knowledge body")
+	}
+	input := RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}
+	before, err := ComposeRunStage(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(before.Wire), "legacy.md") {
+		t.Fatal("missing legacy fallback")
+	}
+	if err := os.Mkdir(filepath.Join(knowledgeDir, "okf"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"empty", "invalid"} {
+		t.Run(name, func(t *testing.T) {
+			if name == "invalid" {
+				writeRunStageFile(t, filepath.Join(knowledgeDir, "okf", "bad.md"), "BODY_SECRET")
+			}
+			got, err := ComposeRunStage(t.Context(), input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := string(got.Wire)
+			if strings.Contains(text, "legacy.md") || strings.Contains(text, "BODY_SECRET") || !strings.Contains(text, "framework.md") || !strings.Contains(text, "aidlc knowledge search") {
+				t.Fatalf("cutover wire %s", text)
+			}
+		})
+	}
+}
+
+func TestComposeRunStageOKFUnsafeRoot(t *testing.T) {
+	fixture := newRunStageFixture(t)
+	filename := filepath.Join(fixture.identity.ProjectRoot(), "aidlc", "spaces", "team", "knowledge", "okf")
+	if err := os.MkdirAll(filepath.Dir(filename), 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeRunStageFile(t, filename, "not a directory")
+	if _, err := ComposeRunStage(t.Context(), RunStageInput{Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot}); err == nil {
+		t.Fatal("accepted unsafe okf root")
+	}
+}
+
 const runStageGraphWithReviewerJSON = `[
   {"slug":"workspace-scaffold","number":"0.1","name":"Workspace Scaffold","phase":"initialization","execution":"ALWAYS","lead_agent":"orchestrator","support_agents":[],"mode":"inline","scopes":["classic"],"enabled":true,"produces":[],"consumes":[],"requires_stage":[]},
   {"slug":"intent-capture","number":"1.1","name":"Intent Capture","phase":"ideation","execution":"ALWAYS","lead_agent":"product-agent","support_agents":[],"mode":"inline","scopes":["classic"],"enabled":true,"reviewer":"reviewer","review_artifact":"intent-statement","reviewer_max_iterations":2,"review_class":"advisory","produces":["intent-statement"],"consumes":[],"requires_stage":[]},

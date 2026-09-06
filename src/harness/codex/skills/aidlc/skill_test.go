@@ -6,6 +6,19 @@ import (
 	"testing"
 )
 
+func TestSkillOKFMetadataDiscovery(t *testing.T) {
+	data, err := os.ReadFile("SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := strings.Join(strings.Fields(string(data)), " ")
+	for _, phrase := range []string{"aidlc knowledge search", "--tag", "--type", "--query", "repeat searches", "only returned paths", "normal file reader", "per search", "not access control", "Do not generate filters automatically", "OKF bodies are not automatically included in read-context"} {
+		if !strings.Contains(body, phrase) {
+			t.Errorf("missing OKF contract %q", phrase)
+		}
+	}
+}
+
 func TestSkillDefinesReceiverContract(t *testing.T) {
 	data, err := os.ReadFile("SKILL.md")
 	if err != nil {

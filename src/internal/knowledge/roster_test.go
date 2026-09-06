@@ -42,6 +42,20 @@ func TestBuildRosterReturnsInlineLeadPersona(t *testing.T) {
 	}
 }
 
+func TestBuildRosterKnowledgeCutoverNilSpaceKeepsFramework(t *testing.T) {
+	input := knowledge.RosterInput{
+		Stage: graph.Stage{Mode: "inline", LeadAgent: "lead"}, FrameworkDir: "/project/.codex",
+		Framework: knowledge.Source{FS: fstest.MapFS{"agents/lead.md": {Data: []byte("persona")}, "knowledge/aidlc-shared/a.md": {Data: []byte("framework")}}, DisplayPrefix: ".codex"},
+	}
+	got, err := knowledge.BuildRoster(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Paths, []string{".codex/agents/lead.md", ".codex/knowledge/aidlc-shared/a.md"}) {
+		t.Fatalf("paths %v", got.Paths)
+	}
+}
+
 func TestBuildRosterSelectsAgentsByModeAndDeclarationOrder(t *testing.T) {
 	framework := knowledge.Source{
 		FS: fstest.MapFS{

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/sori883/ai-dd/src/internal/buildinfo"
+	"github.com/sori883/ai-dd/src/internal/okf"
 	"github.com/sori883/ai-dd/src/internal/workspace"
 )
 
@@ -15,6 +16,7 @@ const helpText = `AI-DLC command-line interface
 
 Usage:
   aidlc <command>
+  aidlc knowledge search [--tag <tag>]... [--type <type>]... [--query <text>] [--limit <1..100>] [--project-dir <path>]
   aidlc next [--project-dir <path>]
   aidlc continue <token> [--project-dir <path>]
   aidlc read-context [continue <opaque-token>] [--project-dir <path>]
@@ -29,6 +31,7 @@ Usage:
   aidlc intent <target> [--project-dir <path>]
 
 Commands:
+  knowledge search  Search Space OKF metadata
   help       Show help
   version    Show version information
   next       Compose and publish the next directive
@@ -58,6 +61,7 @@ func isHumanTurnHookCommand(args []string) bool {
 // Dependencies groups the workspace operations used by Run. Nil callbacks are
 // valid for commands that do not invoke the corresponding operation.
 type Dependencies struct {
+	SearchKnowledge  func(okf.SearchOptions, string) (okf.SearchResult, error)
 	CreateSpace      func(rawName, explicitDir string) (string, error)
 	ListSpaces       func(explicitDir string) ([]workspace.Space, error)
 	SwitchSpace      func(rawName, explicitDir string) (string, error)
@@ -122,6 +126,9 @@ func Run(
 			_ = dependencies.HumanTurnHook()
 		}
 		return 0
+	}
+	if args[0] == "knowledge" {
+		return runKnowledgeSearch(args, stdout, stderr, dependencies)
 	}
 	if isCodexStageCommand(args) {
 		if dependencies.PrepareOutput != nil {

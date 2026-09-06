@@ -12,6 +12,8 @@ import (
 	"github.com/sori883/ai-dd/src/internal/state"
 )
 
+const okfNarration = " Space knowledge uses OKF metadata discovery. When needed, run aidlc knowledge search with explicitly chosen --tag, --type, or --query filters; repeat searches as needed and selectively read only returned paths with the normal file reader. Do not generate filters automatically from Stage or agent identity. The default 4 results apply per search, not over the Stage or agent lifetime; this is not access control. OKF bodies are not automatically included in read-context."
+
 type runStagePresentation struct {
 	ProtocolModules  []string
 	ConductorPersona *string

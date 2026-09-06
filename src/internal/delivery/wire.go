@@ -96,6 +96,9 @@ func buildRunStageWire(identity recordlock.Identity, stage graph.Stage, current 
 		presentationStage.Reviewer = ""
 	}
 	presentation := buildRunStagePresentation(projectRoot, identity, presentationStage, current, catalog)
+	if roster.HasOKF {
+		presentation.Narration += okfNarration
+	}
 	inlineContextPaths, err := intentCaptureInlineContextPaths(projectRoot, recordRoot, identity, stage, reviewer, roster.Paths)
 	if err != nil {
 		return nil, fmt.Errorf("resolve inline intent-capture context: %w", err)

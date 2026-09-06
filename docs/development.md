@@ -5,7 +5,37 @@
 - Go 1.26以上
 - Git
 
-このmoduleはGo標準ライブラリだけを使用します。外部Go moduleや追加の開発toolを導入する場合は、先に必要性と設計理由を提示し、明示的な承認を得てください。
+このmoduleはGo標準ライブラリを基本とし、完全YAML解析用に承認済みの`go.yaml.in/yaml/v3 v3.0.5`を使用します。外部Go moduleや追加の開発toolを導入する場合は、先に必要性と設計理由を提示し、明示的な承認を得てください。
+
+## OKF metadata検索
+
+active Spaceの`aidlc/spaces/<space>/knowledge/okf/`へ、UTF-8 Markdownの先頭にYAML frontmatterを
+持つConceptを置きます。必須fieldは非空stringの`type`です。例えば次の文書を`policy.md`として置けます。
+
+```markdown
+---
+type: Policy
+title: レビュー方針
+tags: [review, team]
+status: stable
+---
+利用teamのレビュー方針本文。
+```
+
+```text
+aidlc knowledge search --tag review --type Policy --project-dir .
+aidlc knowledge search --query レビュー方針 --limit 10 --project-dir .
+```
+
+tagは繰返し指定するとcase-sensitive完全一致AND、typeはcase-sensitive完全一致ORです。
+queryはtype／title／description／tagsのUnicode letter・number tokenを検索し、部分一致や本文検索は行いません。
+filterを1つ以上指定し、limitは1..100（既定4）にします。成功時はresults／warnings配列を持つ一行JSON、
+syntax errorはexit 2、runtime errorはexit 1でstderrへ診断を返します。結果のpathから必要な本文を通常file readerで
+読み、必要なら別filterで検索を繰り返します。
+
+`okf/`作成はSpace knowledgeの供給方法を切り替えるopt-inです。存在時は空でもlegacyへ戻らず、
+不在時だけ従来のSpace knowledge rosterを使用します。metadata検索はaccess controlではありません。
+本文量やStage全体の読込件数を制限せず、プログラムは本文を検索結果や`read-context`へ混ぜません。
 
 ## ローカル検証
 

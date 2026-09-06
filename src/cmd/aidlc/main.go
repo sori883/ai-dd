@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/sori883/ai-dd/src/internal/buildinfo"
 	"github.com/sori883/ai-dd/src/internal/cli"
@@ -22,10 +23,11 @@ func main() {
 		os.Stderr,
 		buildinfo.Current(),
 		cli.Dependencies{
-			CreateSpace: spaceCreator(os.Getwd, os.Getenv, workspace.CreateSpace),
-			ListSpaces:  spaceLister(os.Getwd, os.Getenv, workspace.ReadSpaces),
-			SwitchSpace: spaceSwitcher(os.Getwd, os.Getenv, workspace.SwitchSpace),
-			ListIntents: intentLister(os.Getwd, os.Getenv, workspace.ReadIntents),
+			SearchKnowledge: knowledgeSearcher(os.Getwd, os.Getenv, time.Now),
+			CreateSpace:     spaceCreator(os.Getwd, os.Getenv, workspace.CreateSpace),
+			ListSpaces:      spaceLister(os.Getwd, os.Getenv, workspace.ReadSpaces),
+			SwitchSpace:     spaceSwitcher(os.Getwd, os.Getenv, workspace.SwitchSpace),
+			ListIntents:     intentLister(os.Getwd, os.Getenv, workspace.ReadIntents),
 			SwitchIntent: intentSwitcher(
 				os.Getwd,
 				os.Getenv,

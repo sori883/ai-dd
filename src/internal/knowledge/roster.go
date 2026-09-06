@@ -33,6 +33,8 @@ type RosterInput struct {
 type Roster struct {
 	Paths    []string
 	Warnings []string
+	// HasOKF is set by the caller after a fresh, safe Bundle root check.
+	HasOKF bool
 }
 
 // BuildRoster builds the ordered knowledge context roster.

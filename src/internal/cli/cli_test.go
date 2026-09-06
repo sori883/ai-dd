@@ -36,6 +36,7 @@ const wantHelp = `AI-DLC command-line interface
 
 Usage:
   aidlc <command>
+  aidlc knowledge search [--tag <tag>]... [--type <type>]... [--query <text>] [--limit <1..100>] [--project-dir <path>]
   aidlc next [--project-dir <path>]
   aidlc continue <token> [--project-dir <path>]
   aidlc read-context [continue <opaque-token>] [--project-dir <path>]
@@ -50,6 +51,7 @@ Usage:
   aidlc intent <target> [--project-dir <path>]
 
 Commands:
+  knowledge search  Search Space OKF metadata
   help       Show help
   version    Show version information
   next       Compose and publish the next directive

@@ -175,20 +175,29 @@ func composeRunStageWithGuard(ctx context.Context, guard *recordlock.Guard, inpu
 	if err != nil {
 		return RunStageComposition{}, fmt.Errorf("compose run-stage: open Space knowledge: %w", err)
 	}
+	spaceSource := &knowledge.Source{
+		FS:            spaceKnowledgeFS,
+		DisplayPrefix: path.Join("aidlc", "spaces", input.Identity.Space(), "knowledge"),
+	}
+	hasOKF, err := detectOKFRoot(input.ProjectRoot, path.Join(spaceSource.DisplayPrefix, "okf"))
+	if err != nil {
+		return RunStageComposition{}, fmt.Errorf("compose run-stage: %w", err)
+	}
+	if hasOKF {
+		spaceSource = nil
+	}
 	roster, err := knowledge.BuildRoster(knowledge.RosterInput{
-		Stage:        stage,
-		Depth:        depth,
-		Framework:    knowledge.Source{FS: frameworkFS, DisplayPrefix: ".codex"},
-		FrameworkDir: filepath.Join(input.Identity.ProjectPath(), ".codex"),
-		SpaceKnowledge: &knowledge.Source{
-			FS:            spaceKnowledgeFS,
-			DisplayPrefix: path.Join("aidlc", "spaces", input.Identity.Space(), "knowledge"),
-		},
+		Stage:          stage,
+		Depth:          depth,
+		Framework:      knowledge.Source{FS: frameworkFS, DisplayPrefix: ".codex"},
+		FrameworkDir:   filepath.Join(input.Identity.ProjectPath(), ".codex"),
+		SpaceKnowledge: spaceSource,
 		EnabledPlugins: input.EnabledPlugins,
 	})
 	if err != nil {
 		return RunStageComposition{}, fmt.Errorf("compose run-stage: build knowledge roster: %w", err)
 	}
+	roster.HasOKF = hasOKF
 	resolvedRules, err := steering.ResolveRulePaths(
 		input.Identity.ProjectPath(),
 		input.Identity.Space(),
@@ -276,6 +285,27 @@ func composeRunStageWithGuard(ctx context.Context, guard *recordlock.Guard, inpu
 		Freshness: freshness,
 		Claims:    claims,
 	}, nil
+}
+
+func detectOKFRoot(projectRoot *os.Root, name string) (bool, error) {
+	info, err := projectRoot.Lstat(filepath.FromSlash(name))
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("inspect okf root: %w", err)
+	}
+	if !info.IsDir() || info.Mode()&fs.ModeSymlink != 0 {
+		return false, fmt.Errorf("okf root %q is not a non-symlink directory", name)
+	}
+	root, err := projectRoot.OpenRoot(filepath.FromSlash(name))
+	if err != nil {
+		return false, fmt.Errorf("open okf root: %w", err)
+	}
+	if err := root.Close(); err != nil {
+		return false, fmt.Errorf("close okf root: %w", err)
+	}
+	return true, nil
 }
 
 func cloneRunStageString(value *string) *string {

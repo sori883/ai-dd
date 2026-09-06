@@ -67,6 +67,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [GitHub Issueを主要な成果で分類する](decisions/2026-09-01-github-issue-classification-labels.md) | Accepted（`機能開発` / `ユーザーリクエスト`、全14 Issueへ適用） |
 | 意思決定 | [計画・Issue・PRを自己完結した分かりやすい文章にする](decisions/2026-09-02-self-contained-development-artifacts.md) | Accepted（Issue #51、今後生成する成果物へ適用） |
 | 意思決定 | [OKF v0.2参照基盤と初期統合境界](decisions/2026-09-03-okf-reference-boundaries.md) | Partially Superseded（Issue #53、Stage実行中固定はin-flight recompose方針で置換、その他のOKF境界は維持） |
+| 意思決定 | [Space固有knowledgeをOKF metadataで段階的に検索する](decisions/2026-09-07-okf-metadata-knowledge-search-plan.md) | Accepted（Bundle root、検索・順位・上限、YAML module、legacy cutover、本家との差分を2026-09-07に直接承認） |
 | 意思決定 | [AI-DLC Go実装ロードマップ（概要）](decisions/2026-09-03-aidlc-implementation-roadmap.md) | Partially Superseded（全体順序は維持、Stage実行中固定とPRごとの承認待ちは後続決定で置換） |
 | 意思決定 | [Stage catalog metadataの実装計画](decisions/2026-09-03-stage-catalog-metadata-plan.md) | Accepted（Issue #55、TDD・loop検証・独立review・final gateを記録） |
 | 意思決定 | [Intent開始時Stage Plan builderの実装計画](decisions/2026-09-03-stage-plan-builder-plan.md) | Accepted（Issue #57、ユーザー明示承認済み） |
