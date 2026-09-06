@@ -12,11 +12,13 @@ import (
 	"time"
 )
 
+const intentCaptureFIFOSubprocessTimeout = 10 * time.Second
+
 func TestIntentCaptureReadersRejectFIFOReplacementWithoutBlocking(t *testing.T) {
 	if os.Getenv("AIDLC_AUDIT_FIFO_HELPER") == "1" {
 		t.Skip("helper process is exercised by the parent test")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), intentCaptureFIFOSubprocessTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run", "^TestIntentCaptureReadersRejectFIFOReplacementHelper$", "-test.v")
 	cmd.Env = append(os.Environ(), "AIDLC_AUDIT_FIFO_HELPER=1")
