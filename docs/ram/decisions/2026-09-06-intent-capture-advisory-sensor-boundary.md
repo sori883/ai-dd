@@ -69,4 +69,3 @@ advisory sensorの実行結果を承認済み品質の証明とも扱わない�
 - `docs/配布_ai-dlc/.codex/tools/data/stage-graph.json`
 - `docs/実装_aidlc-workflows/core/tools/aidlc-state.ts`
 - `docs/実装_aidlc-workflows/core/tools/aidlc-sensor.ts`
-
