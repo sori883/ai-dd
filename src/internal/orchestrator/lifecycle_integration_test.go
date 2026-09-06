@@ -735,12 +735,8 @@ func lifecycleStage(t *testing.T, catalog graph.Snapshot, slug string) graph.Sta
 
 func appendLifecycleHumanTurn(t *testing.T, identity recordlock.Identity, projectRoot, recordRoot *os.Root) {
 	t.Helper()
-	err := recordlock.With(context.Background(), identity, func(guard *recordlock.Guard) error {
-		return audit.Append(context.Background(), guard, projectRoot, recordRoot, []audit.Event{{
-			Event:  "HUMAN_TURN",
-			Fields: map[string]string{"Prompt": "lifecycle approval"},
-		}})
-	})
+	// RecordHumanTurn owns the record lock; do not wrap it in another guard.
+	err := audit.RecordHumanTurn(context.Background(), identity, projectRoot, recordRoot)
 	if err != nil {
 		t.Fatalf("append HUMAN_TURN: %v", err)
 	}
