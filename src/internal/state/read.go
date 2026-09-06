@@ -135,6 +135,16 @@ func Parse(content []byte) (State, error) {
 	if !ok {
 		return State{}, invalidState("invalid Status %q", statusText)
 	}
+	reviewOverride := ""
+	if lines, exists := sections["Scope Configuration"]; exists {
+		reviewOverride, err = optionalStringField(lines, "Review Override")
+		if err != nil {
+			return State{}, err
+		}
+		if reviewOverride != "" && reviewOverride != "adversarial" && reviewOverride != "advisory" && reviewOverride != "none" {
+			return State{}, invalidState("invalid Review Override %q", reviewOverride)
+		}
+	}
 
 	phases, err := parsePhaseProgress(sections["Phase Progress"])
 	if err != nil {
@@ -153,6 +163,7 @@ func Parse(content []byte) (State, error) {
 		lifecyclePhase: lifecyclePhase,
 		currentStage:   currentStage,
 		nextStage:      nextStage,
+		reviewOverride: reviewOverride,
 		summary: Summary{
 			TotalStages: totalStages,
 			Completed:   completed,

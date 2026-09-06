@@ -7,7 +7,60 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/sori883/ai-dd/src/internal/graph"
 )
+
+func TestResolveReviewClassLowWins(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		declared graph.ReviewClass
+		cap      ReviewCap
+		override string
+		want     graph.ReviewClass
+	}{
+		{name: "advisory stage", declared: graph.ReviewClassAdvisory, cap: ReviewCapAdversarial, want: graph.ReviewClassAdvisory},
+		{name: "scope lowers adversarial", declared: graph.ReviewClassAdversarial, cap: ReviewCapAdvisory, want: graph.ReviewClassAdvisory},
+		{name: "override lowers", declared: graph.ReviewClassAdversarial, cap: ReviewCapAdversarial, override: "advisory", want: graph.ReviewClassAdvisory},
+		{name: "none disables", declared: graph.ReviewClassAdversarial, cap: ReviewCapNone, want: graph.ReviewClassNone},
+		{name: "no reviewer cannot be conjured", declared: graph.ReviewClassNone, cap: ReviewCapAdversarial, override: "adversarial", want: graph.ReviewClassNone},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := ResolveReviewClass(tt.declared, tt.cap, tt.override); got != tt.want {
+				t.Fatalf("ResolveReviewClass(%q, %q, %q) = %q, want %q", tt.declared, tt.cap, tt.override, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveReviewPolicySharesEffectiveClassAndBudget(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		declared    graph.ReviewClass
+		cap         ReviewCap
+		override    string
+		declaredMax int
+		wantClass   graph.ReviewClass
+		wantMax     int
+	}{
+		{name: "none cap disables", declared: graph.ReviewClassAdvisory, cap: ReviewCapNone, declaredMax: 2, wantClass: graph.ReviewClassNone, wantMax: 0},
+		{name: "none override disables", declared: graph.ReviewClassAdvisory, cap: ReviewCapAdversarial, override: "none", declaredMax: 2, wantClass: graph.ReviewClassNone, wantMax: 0},
+		{name: "advisory low wins", declared: graph.ReviewClassAdversarial, cap: ReviewCapAdvisory, declaredMax: 2, wantClass: graph.ReviewClassAdvisory, wantMax: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotClass, gotMax := ResolveReviewPolicy(tt.declared, tt.cap, tt.override, tt.declaredMax)
+			if gotClass != tt.wantClass || gotMax != tt.wantMax {
+				t.Fatalf("ResolveReviewPolicy() = (%q, %d), want (%q, %d)", gotClass, gotMax, tt.wantClass, tt.wantMax)
+			}
+		})
+	}
+}
 
 func TestReadAllLoadsMetadata(t *testing.T) {
 	t.Parallel()

@@ -116,6 +116,7 @@ type State struct {
 	lifecyclePhase LifecyclePhase
 	currentStage   string
 	nextStage      string
+	reviewOverride string
 	summary        Summary
 	phaseProgress  []PhaseProgress
 	stages         []StageProgress
@@ -141,6 +142,10 @@ func (s State) CurrentStage() string { return s.currentStage }
 
 // NextStage returns the next stage slug or the literal none value.
 func (s State) NextStage() string { return s.nextStage }
+
+// ReviewOverride returns the optional per-run review cap. An empty value means
+// that the stage and active scope determine the effective review class.
+func (s State) ReviewOverride() string { return s.reviewOverride }
 
 // Summary returns the execution plan summary.
 func (s State) Summary() Summary { return s.summary }

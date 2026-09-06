@@ -42,10 +42,15 @@ const contextReadPlanCommitmentDomain = "ai-dd/read-context-plan/v1\x00"
 type ContextReadSlot string
 
 const (
-	ContextReadSlotInline    ContextReadSlot = "inline-context"
-	ContextReadSlotStage     ContextReadSlot = "stage-file"
-	ContextReadSlotStageFile                 = ContextReadSlotStage
-	ContextReadSlotConsume   ContextReadSlot = "consume"
+	ContextReadSlotInline             ContextReadSlot = "inline-context"
+	ContextReadSlotProtocol           ContextReadSlot = "protocol"
+	ContextReadSlotReviewer           ContextReadSlot = "reviewer-protocol"
+	ContextReadSlotEnsemble           ContextReadSlot = "ensemble-protocol"
+	ContextReadSlotQuestion           ContextReadSlot = "question-annex"
+	ContextReadSlotProjectDescription ContextReadSlot = "project-description"
+	ContextReadSlotStage              ContextReadSlot = "stage-file"
+	ContextReadSlotStageFile                          = ContextReadSlotStage
+	ContextReadSlotConsume            ContextReadSlot = "consume"
 )
 
 // ContextReadResult is one bounded context chunk returned to a receiver.
@@ -301,21 +306,27 @@ func buildContextReadPlan(input RunStageInput, marker ActiveDirectiveMarker, com
 	if composition.Freshness.StateHash != nil {
 		plan.StateSHA256 = *composition.Freshness.StateHash
 	}
-	for index, name := range wire.InlineContextPaths {
-		if err := addContextReadTarget(&plan, ContextReadSlotInline, index+1, name, name, input.ProjectRoot); err != nil {
+	indices := make(map[ContextReadSlot]int)
+	nextIndex := func(slot ContextReadSlot) int {
+		indices[slot]++
+		return indices[slot]
+	}
+	for _, name := range wire.InlineContextPaths {
+		slot, root, relative := intentCaptureContextTarget(input, name)
+		if err := addContextReadTarget(&plan, slot, nextIndex(slot), name, relative, root); err != nil {
 			return contextReadPlan{}, fmt.Errorf("read context: inline path %q: %w", name, err)
 		}
 	}
-	if err := addContextReadTarget(&plan, ContextReadSlotStage, 1, wire.StageFile, wire.StageFile, input.ProjectRoot); err != nil {
+	if err := addContextReadTarget(&plan, ContextReadSlotStage, nextIndex(ContextReadSlotStage), wire.StageFile, wire.StageFile, input.ProjectRoot); err != nil {
 		return contextReadPlan{}, fmt.Errorf("read context: stage path %q: %w", wire.StageFile, err)
 	}
 	prefix := path.Join("aidlc", "spaces", input.Identity.Space(), "intents", input.Identity.Intent())
-	for index, name := range wire.Consumes {
+	for _, name := range wire.Consumes {
 		if name == "" || !strings.HasPrefix(name, prefix+"/") {
 			return contextReadPlan{}, fmt.Errorf("read context: consume path %q is outside active record: %w", name, ErrContextReadUnsafePath)
 		}
 		relative := strings.TrimPrefix(name, prefix+"/")
-		if err := addContextReadTarget(&plan, ContextReadSlotConsume, index+1, name, relative, input.RecordRoot); err != nil {
+		if err := addContextReadTarget(&plan, ContextReadSlotConsume, nextIndex(ContextReadSlotConsume), name, relative, input.RecordRoot); err != nil {
 			return contextReadPlan{}, fmt.Errorf("read context: consume path %q: %w", name, err)
 		}
 	}
@@ -323,6 +334,29 @@ func buildContextReadPlan(input RunStageInput, marker ActiveDirectiveMarker, com
 		return contextReadPlan{}, fmt.Errorf("read context: no context files are declared: %w", ErrContextReadInvalidWire)
 	}
 	return plan, nil
+}
+
+func intentCaptureContextTarget(input RunStageInput, displayPath string) (ContextReadSlot, *os.Root, string) {
+	root := input.ProjectRoot
+	relative := displayPath
+	slot := ContextReadSlotInline
+	switch {
+	case strings.HasSuffix(displayPath, "/stage-protocol.md"):
+		slot = ContextReadSlotProtocol
+	case strings.HasSuffix(displayPath, "/stage-protocol-reviewer.md"):
+		slot = ContextReadSlotReviewer
+	case strings.HasSuffix(displayPath, "/stage-protocol-ensemble.md"):
+		slot = ContextReadSlotEnsemble
+	case strings.HasSuffix(displayPath, "/question-rendering.md"):
+		slot = ContextReadSlotQuestion
+	}
+	prefix := path.Join("aidlc", "spaces", input.Identity.Space(), "intents", input.Identity.Intent())
+	if displayPath == path.Join(prefix, "project-description.json") {
+		slot = ContextReadSlotProjectDescription
+		root = input.RecordRoot
+		relative = "project-description.json"
+	}
+	return slot, root, relative
 }
 
 func addContextReadTarget(plan *contextReadPlan, slot ContextReadSlot, index int, displayPath, relativePath string, root *os.Root) error {

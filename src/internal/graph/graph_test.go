@@ -246,6 +246,60 @@ func TestLoadPreservesStageCompletionMetadata(t *testing.T) {
 	}
 }
 
+func TestLoadIntentCaptureReviewMetadata(t *testing.T) {
+	t.Parallel()
+
+	stage := stageFixture("intent-capture", "1.1")
+	stage["reviewer"] = "aidlc-product-lead-agent"
+	stage["review_artifact"] = "intent-statement"
+	stage["reviewer_max_iterations"] = 2
+	stage["review_class"] = "advisory"
+	stage["produces"] = []string{"intent-statement"}
+
+	snapshot, err := Load(fixtureFS(t, []any{stage}, map[string]any{}))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	got := snapshot.Stages()[0]
+	if got.Reviewer != "aidlc-product-lead-agent" {
+		t.Errorf("Reviewer = %q, want aidlc-product-lead-agent", got.Reviewer)
+	}
+	if got.ReviewArtifact != "intent-statement" {
+		t.Errorf("ReviewArtifact = %q, want intent-statement", got.ReviewArtifact)
+	}
+	if got.ReviewerMaxIterations != 2 {
+		t.Errorf("ReviewerMaxIterations = %d, want 2", got.ReviewerMaxIterations)
+	}
+	if got.ReviewClass != ReviewClassAdvisory {
+		t.Errorf("ReviewClass = %q, want advisory", got.ReviewClass)
+	}
+
+	invalid := []struct {
+		name  string
+		field string
+		value any
+	}{
+		{name: "artifact without reviewer", field: "review_artifact", value: "intent-statement"},
+		{name: "invalid class", field: "review_class", value: "none"},
+		{name: "zero iterations", field: "reviewer_max_iterations", value: 0},
+		{name: "negative iterations", field: "reviewer_max_iterations", value: -1},
+	}
+	for _, tt := range invalid {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			candidate := stageFixture("invalid", "1.1")
+			candidate["reviewer"] = "reviewer"
+			candidate[tt.field] = tt.value
+			if tt.name == "artifact without reviewer" {
+				delete(candidate, "reviewer")
+			}
+			if _, err := Load(fixtureFS(t, []any{candidate}, map[string]any{})); err == nil {
+				t.Fatalf("Load() error = nil, want invalid %s", tt.field)
+			}
+		})
+	}
+}
+
 func TestLoadRejectsInvalidStageCompletionMetadata(t *testing.T) {
 	t.Parallel()
 

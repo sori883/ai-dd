@@ -38,29 +38,43 @@ type Rule struct {
 	Scope string
 }
 
+// ReviewClass is the effective reviewer topology for a stage.  The graph
+// declares only adversarial or advisory; none is the resolved value when a
+// stage has no reviewer or a scope/override disables it.
+type ReviewClass string
+
+const (
+	ReviewClassNone        ReviewClass = "none"
+	ReviewClassAdvisory    ReviewClass = "advisory"
+	ReviewClassAdversarial ReviewClass = "adversarial"
+)
+
 // Stage is the routing metadata required by the AI-DLC runtime.
 type Stage struct {
-	Slug                string
-	Number              string
-	Name                string
-	Phase               string
-	Execution           string
-	LeadAgent           string
-	SupportAgents       []string
-	Mode                string
-	Scopes              []string
-	Enabled             bool
-	ForEach             string
-	WorkspaceRequires   bool
-	Reviewer            string
-	SummaryConfirmation string
-	Sensors             []string
-	ProducesKinds       map[string][]string
-	Produces            []string
-	OptionalProduces    []string
-	Consumes            []Consume
-	RequiresStages      []string
-	RulesInContext      []Rule
+	Slug                  string
+	Number                string
+	Name                  string
+	Phase                 string
+	Execution             string
+	LeadAgent             string
+	SupportAgents         []string
+	Mode                  string
+	Scopes                []string
+	Enabled               bool
+	ForEach               string
+	WorkspaceRequires     bool
+	Reviewer              string
+	ReviewArtifact        string
+	ReviewerMaxIterations int
+	ReviewClass           ReviewClass
+	SummaryConfirmation   string
+	Sensors               []string
+	ProducesKinds         map[string][]string
+	Produces              []string
+	OptionalProduces      []string
+	Consumes              []Consume
+	RequiresStages        []string
+	RulesInContext        []Rule
 }
 
 // Scope contains the routing actions for one scope.
@@ -125,27 +139,30 @@ func loadSnapshot(stageData, scopeData []byte, scopeErr error) (Snapshot, error)
 			continue
 		}
 		stages = append(stages, Stage{
-			Slug:                raw.Slug,
-			Number:              raw.Number,
-			Name:                raw.Name,
-			Phase:               raw.Phase,
-			Execution:           raw.Execution,
-			LeadAgent:           raw.LeadAgent,
-			SupportAgents:       raw.SupportAgents,
-			Mode:                raw.Mode,
-			Scopes:              raw.Scopes,
-			Enabled:             true,
-			ForEach:             raw.ForEach,
-			WorkspaceRequires:   raw.WorkspaceRequires,
-			Reviewer:            raw.Reviewer,
-			SummaryConfirmation: raw.SummaryConfirmation,
-			Sensors:             raw.Sensors,
-			ProducesKinds:       cloneStringArrayMap(raw.ProducesKinds),
-			Produces:            raw.Produces,
-			OptionalProduces:    raw.OptionalProduces,
-			Consumes:            consumeValues(raw.Consumes),
-			RequiresStages:      raw.RequiresStages,
-			RulesInContext:      ruleValues(raw.RulesInContext),
+			Slug:                  raw.Slug,
+			Number:                raw.Number,
+			Name:                  raw.Name,
+			Phase:                 raw.Phase,
+			Execution:             raw.Execution,
+			LeadAgent:             raw.LeadAgent,
+			SupportAgents:         raw.SupportAgents,
+			Mode:                  raw.Mode,
+			Scopes:                raw.Scopes,
+			Enabled:               true,
+			ForEach:               raw.ForEach,
+			WorkspaceRequires:     raw.WorkspaceRequires,
+			Reviewer:              raw.Reviewer,
+			ReviewArtifact:        raw.ReviewArtifact,
+			ReviewerMaxIterations: effectiveReviewerMaxIterations(raw),
+			ReviewClass:           effectiveReviewClass(raw),
+			SummaryConfirmation:   raw.SummaryConfirmation,
+			Sensors:               raw.Sensors,
+			ProducesKinds:         cloneStringArrayMap(raw.ProducesKinds),
+			Produces:              raw.Produces,
+			OptionalProduces:      raw.OptionalProduces,
+			Consumes:              consumeValues(raw.Consumes),
+			RequiresStages:        raw.RequiresStages,
+			RulesInContext:        ruleValues(raw.RulesInContext),
 		})
 		routeNodes[raw.Slug] = slices.Clone(raw.RouteNode)
 		enabledSlugs[raw.Slug] = struct{}{}
@@ -177,35 +194,41 @@ func loadSnapshot(stageData, scopeData []byte, scopeErr error) (Snapshot, error)
 }
 
 type stageDocument struct {
-	Slug                       string   `json:"slug"`
-	Number                     string   `json:"number"`
-	Name                       string   `json:"name"`
-	Phase                      string   `json:"phase"`
-	Execution                  string   `json:"execution"`
-	LeadAgent                  string   `json:"lead_agent"`
-	SupportAgents              []string `json:"support_agents"`
-	Mode                       string   `json:"mode"`
-	Scopes                     []string `json:"scopes"`
-	Enabled                    *bool    `json:"enabled"`
-	ForEach                    string
-	WorkspaceRequires          bool
-	Reviewer                   string
-	ReviewerPresent            bool
-	SummaryConfirmation        string
-	SummaryConfirmationPresent bool
-	Sensors                    []string
-	ProducesKinds              map[string][]string
-	Produces                   []string
-	ProducesPresent            bool
-	OptionalProduces           []string
-	OptionalProducesPresent    bool
-	Consumes                   []consumeDocument
-	ConsumesPresent            bool
-	RequiresStages             []string
-	RequiresStagesPresent      bool
-	RulesInContext             []ruleDocument
-	RulesInContextPresent      bool
-	RouteNode                  []byte
+	Slug                         string   `json:"slug"`
+	Number                       string   `json:"number"`
+	Name                         string   `json:"name"`
+	Phase                        string   `json:"phase"`
+	Execution                    string   `json:"execution"`
+	LeadAgent                    string   `json:"lead_agent"`
+	SupportAgents                []string `json:"support_agents"`
+	Mode                         string   `json:"mode"`
+	Scopes                       []string `json:"scopes"`
+	Enabled                      *bool    `json:"enabled"`
+	ForEach                      string
+	WorkspaceRequires            bool
+	Reviewer                     string
+	ReviewerPresent              bool
+	ReviewArtifact               string
+	ReviewArtifactPresent        bool
+	ReviewerMaxIterations        int
+	ReviewerMaxIterationsPresent bool
+	ReviewClass                  ReviewClass
+	ReviewClassPresent           bool
+	SummaryConfirmation          string
+	SummaryConfirmationPresent   bool
+	Sensors                      []string
+	ProducesKinds                map[string][]string
+	Produces                     []string
+	ProducesPresent              bool
+	OptionalProduces             []string
+	OptionalProducesPresent      bool
+	Consumes                     []consumeDocument
+	ConsumesPresent              bool
+	RequiresStages               []string
+	RequiresStagesPresent        bool
+	RulesInContext               []ruleDocument
+	RulesInContextPresent        bool
+	RouteNode                    []byte
 }
 
 type consumeDocument struct {
@@ -304,6 +327,35 @@ func decodeStageDocument(data []byte) (stageDocument, error) {
 		if err := json.Unmarshal(raw, &stage.Reviewer); err != nil {
 			return stageDocument{}, fmt.Errorf("field %q: %w", "reviewer", err)
 		}
+	}
+	if raw, exists := fields["review_artifact"]; exists {
+		stage.ReviewArtifactPresent = true
+		if isJSONNull(raw) {
+			return stageDocument{}, errors.New(`field "review_artifact" must be a string`)
+		}
+		if err := json.Unmarshal(raw, &stage.ReviewArtifact); err != nil {
+			return stageDocument{}, fmt.Errorf("field %q: %w", "review_artifact", err)
+		}
+	}
+	if raw, exists := fields["reviewer_max_iterations"]; exists {
+		stage.ReviewerMaxIterationsPresent = true
+		if isJSONNull(raw) {
+			return stageDocument{}, errors.New(`field "reviewer_max_iterations" must be an integer`)
+		}
+		if err := json.Unmarshal(raw, &stage.ReviewerMaxIterations); err != nil {
+			return stageDocument{}, fmt.Errorf("field %q: %w", "reviewer_max_iterations", err)
+		}
+	}
+	if raw, exists := fields["review_class"]; exists {
+		stage.ReviewClassPresent = true
+		if isJSONNull(raw) {
+			return stageDocument{}, errors.New(`field "review_class" must be a string`)
+		}
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return stageDocument{}, fmt.Errorf("field %q: %w", "review_class", err)
+		}
+		stage.ReviewClass = ReviewClass(value)
 	}
 	if raw, exists := fields["summary_confirmation"]; exists {
 		stage.SummaryConfirmationPresent = true
@@ -631,6 +683,31 @@ func validateStageDocuments(stages []stageDocument) error {
 		if stage.ReviewerPresent && stage.Reviewer == "" {
 			return fmt.Errorf("stage %d: reviewer must be non-empty when declared", index)
 		}
+		if stage.ReviewArtifactPresent && stage.ReviewArtifact == "" {
+			return fmt.Errorf("stage %d: review_artifact must be non-empty when declared", index)
+		}
+		if stage.ReviewArtifactPresent && !stage.ReviewerPresent {
+			return fmt.Errorf("stage %d: review_artifact requires reviewer", index)
+		}
+		if stage.ReviewArtifactPresent && len(stage.Produces) != 0 && !slices.Contains(stage.Produces, stage.ReviewArtifact) {
+			return fmt.Errorf("stage %d: review_artifact %q must be declared in produces", index, stage.ReviewArtifact)
+		}
+		if stage.ReviewerMaxIterationsPresent {
+			if !stage.ReviewerPresent {
+				return fmt.Errorf("stage %d: reviewer_max_iterations requires reviewer", index)
+			}
+			if stage.ReviewerMaxIterations <= 0 {
+				return fmt.Errorf("stage %d: reviewer_max_iterations must be positive", index)
+			}
+		}
+		if stage.ReviewClassPresent {
+			if !stage.ReviewerPresent {
+				return fmt.Errorf("stage %d: review_class requires reviewer", index)
+			}
+			if stage.ReviewClass != ReviewClassAdversarial && stage.ReviewClass != ReviewClassAdvisory {
+				return fmt.Errorf("stage %d: review_class %q is invalid", index, stage.ReviewClass)
+			}
+		}
 		if stage.SummaryConfirmationPresent && stage.SummaryConfirmation != "required" && stage.SummaryConfirmation != "if-present" {
 			return fmt.Errorf("stage %d: summary_confirmation %q is invalid", index, stage.SummaryConfirmation)
 		}
@@ -672,6 +749,28 @@ func validateStageDocuments(stages []stageDocument) error {
 		}
 	}
 	return nil
+}
+
+func effectiveReviewClass(stage stageDocument) ReviewClass {
+	if !stage.ReviewerPresent || stage.Reviewer == "" {
+		// Keep the zero value for legacy stage documents that do not declare a
+		// reviewer; callers resolve it to ReviewClassNone when policy is needed.
+		return ""
+	}
+	if stage.ReviewClassPresent {
+		return stage.ReviewClass
+	}
+	return ReviewClassAdversarial
+}
+
+func effectiveReviewerMaxIterations(stage stageDocument) int {
+	if !stage.ReviewerPresent || stage.Reviewer == "" {
+		return 0
+	}
+	if stage.ReviewerMaxIterationsPresent {
+		return stage.ReviewerMaxIterations
+	}
+	return 2
 }
 
 func validRuleScope(scope string) bool {

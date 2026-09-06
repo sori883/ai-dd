@@ -3,6 +3,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -46,7 +47,9 @@ func main() {
 				os.Getenv,
 				deliverypkg.ContinueContext,
 			),
-			Report: reportAdapter(os.Getwd, os.Getenv, orchestrator.Report),
+			CodexStageWithInput: codexStageAdapterWithPayload(os.Getwd, os.Getenv, defaultCodexStageDispatchWithPayload),
+			CodexStageInput:     func() ([]byte, error) { return readCodexStageInput(os.Stdin) },
+			Report:              reportAdapter(os.Getwd, os.Getenv, orchestrator.Report),
 			HumanTurnHook: func() error {
 				return humanTurnHook(os.Stdin, os.Getwd, os.Getenv)
 			},
@@ -56,6 +59,22 @@ func main() {
 			},
 		},
 	))
+}
+
+const codexStagePayloadLimit = 64 * 1024
+
+func readCodexStageInput(reader io.Reader) ([]byte, error) {
+	if reader == nil {
+		return nil, fmt.Errorf("codex stage input reader is nil")
+	}
+	content, err := io.ReadAll(io.LimitReader(reader, codexStagePayloadLimit+1))
+	if err != nil {
+		return nil, fmt.Errorf("read codex stage input: %w", err)
+	}
+	if len(content) > codexStagePayloadLimit {
+		return nil, fmt.Errorf("codex stage input exceeds %d bytes", codexStagePayloadLimit)
+	}
+	return content, nil
 }
 
 func intentLister(

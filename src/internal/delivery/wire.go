@@ -1,9 +1,13 @@
 package delivery
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/sori883/ai-dd/src/internal/artifact"
@@ -11,6 +15,7 @@ import (
 	"github.com/sori883/ai-dd/src/internal/knowledge"
 	"github.com/sori883/ai-dd/src/internal/orchestrator"
 	"github.com/sori883/ai-dd/src/internal/recordlock"
+	"github.com/sori883/ai-dd/src/internal/scope"
 	"github.com/sori883/ai-dd/src/internal/state"
 	"github.com/sori883/ai-dd/src/internal/steering"
 )
@@ -18,26 +23,30 @@ import (
 // runStageWire is the required, ordered portion of a run-stage directive.
 // Struct field order is the canonical JSON property order for this subset.
 type runStageWire struct {
-	Kind               string           `json:"kind"`
-	Stage              string           `json:"stage"`
-	Phase              string           `json:"phase"`
-	LeadAgent          string           `json:"lead_agent"`
-	SupportAgents      []string         `json:"support_agents"`
-	Mode               string           `json:"mode"`
-	InlineContextPaths []string         `json:"inline_context_paths"`
-	Gate               bool             `json:"gate"`
-	MemoryPath         string           `json:"memory_path"`
-	Consumes           []string         `json:"consumes"`
-	Produces           []string         `json:"produces"`
-	RulesInContext     []string         `json:"rules_in_context"`
-	SensorsApplicable  []string         `json:"sensors_applicable"`
-	StageFile          string           `json:"stage_file"`
-	ContextWarnings    []string         `json:"context_warnings,omitempty"`
-	ConsumesAbsent     []runStageAbsent `json:"consumes_absent,omitempty"`
-	NextStage          *string          `json:"next_stage"`
-	ProtocolModules    []string         `json:"protocol_modules,omitempty"`
-	ConductorPersona   *string          `json:"conductor_persona,omitempty"`
-	Narration          string           `json:"narration"`
+	Kind                  string           `json:"kind"`
+	Stage                 string           `json:"stage"`
+	Phase                 string           `json:"phase"`
+	LeadAgent             string           `json:"lead_agent"`
+	SupportAgents         []string         `json:"support_agents"`
+	Mode                  string           `json:"mode"`
+	InlineContextPaths    []string         `json:"inline_context_paths"`
+	Gate                  bool             `json:"gate"`
+	MemoryPath            string           `json:"memory_path"`
+	Consumes              []string         `json:"consumes"`
+	Produces              []string         `json:"produces"`
+	RulesInContext        []string         `json:"rules_in_context"`
+	SensorsApplicable     []string         `json:"sensors_applicable"`
+	StageFile             string           `json:"stage_file"`
+	ContextWarnings       []string         `json:"context_warnings,omitempty"`
+	ConsumesAbsent        []runStageAbsent `json:"consumes_absent,omitempty"`
+	NextStage             *string          `json:"next_stage"`
+	Reviewer              string           `json:"reviewer,omitempty"`
+	ReviewArtifact        string           `json:"review_artifact,omitempty"`
+	ReviewClass           string           `json:"review_class,omitempty"`
+	ReviewerMaxIterations int              `json:"reviewer_max_iterations,omitempty"`
+	ProtocolModules       []string         `json:"protocol_modules,omitempty"`
+	ConductorPersona      *string          `json:"conductor_persona,omitempty"`
+	Narration             string           `json:"narration"`
 }
 
 type runStageAbsent struct {
@@ -78,7 +87,19 @@ func buildRunStageWire(identity recordlock.Identity, stage graph.Stage, current 
 	for _, produce := range resolved.Produces {
 		produces = append(produces, path.Join(recordPrefix, produce))
 	}
-	presentation := buildRunStagePresentation(projectRoot, identity, stage, current, catalog)
+	reviewer, reviewArtifact, reviewClass, reviewerMaxIterations, err := resolveRunStageReview(projectRoot, stage, current)
+	if err != nil {
+		return nil, fmt.Errorf("resolve review contract: %w", err)
+	}
+	presentationStage := stage
+	if reviewer == "" {
+		presentationStage.Reviewer = ""
+	}
+	presentation := buildRunStagePresentation(projectRoot, identity, presentationStage, current, catalog)
+	inlineContextPaths, err := intentCaptureInlineContextPaths(projectRoot, recordRoot, identity, stage, reviewer, roster.Paths)
+	if err != nil {
+		return nil, fmt.Errorf("resolve inline intent-capture context: %w", err)
+	}
 
 	wire := runStageWire{
 		Kind:               string(orchestrator.DirectiveKindRunStage),
@@ -87,7 +108,7 @@ func buildRunStageWire(identity recordlock.Identity, stage graph.Stage, current 
 		LeadAgent:          stage.LeadAgent,
 		SupportAgents:      nonNilStrings(stage.SupportAgents),
 		Mode:               stage.Mode,
-		InlineContextPaths: nonNilStrings(roster.Paths),
+		InlineContextPaths: inlineContextPaths,
 		Gate:               true,
 		MemoryPath: path.Join(
 			"aidlc",
@@ -110,15 +131,117 @@ func buildRunStageWire(identity recordlock.Identity, stage graph.Stage, current 
 			stage.Phase,
 			stage.Slug+".md",
 		),
-		ContextWarnings:  nonNilStrings(roster.Warnings),
-		ConsumesAbsent:   consumesAbsent,
-		NextStage:        nextStage,
-		ProtocolModules:  presentation.ProtocolModules,
-		ConductorPersona: presentation.ConductorPersona,
-		Narration:        presentation.Narration,
+		ContextWarnings:       nonNilStrings(roster.Warnings),
+		ConsumesAbsent:        consumesAbsent,
+		NextStage:             nextStage,
+		Reviewer:              reviewer,
+		ReviewArtifact:        reviewArtifact,
+		ReviewClass:           string(reviewClass),
+		ReviewerMaxIterations: reviewerMaxIterations,
+		ProtocolModules:       presentation.ProtocolModules,
+		ConductorPersona:      presentation.ConductorPersona,
+		Narration:             presentation.Narration,
 	}
 
 	return marshalRunStageWire(wire)
+}
+
+func intentCaptureInlineContextPaths(projectRoot, recordRoot *os.Root, identity recordlock.Identity, stage graph.Stage, reviewer string, paths []string) ([]string, error) {
+	result := nonNilStrings(paths)
+	if !requiresIntentCaptureInlineContext(stage) {
+		return result, nil
+	}
+	appendRequiredProjectPath := func(name string) error {
+		if !regularProjectFile(projectRoot, name) {
+			return fmt.Errorf("required inline context %q is missing or not a regular non-symlink file", name)
+		}
+		if !containsString(result, name) {
+			result = append(result, name)
+		}
+		return nil
+	}
+	if err := appendRequiredProjectPath(path.Join(".codex", "aidlc-common", "protocols", "stage-protocol.md")); err != nil {
+		return nil, err
+	}
+	if reviewer != "" {
+		if err := appendRequiredProjectPath(path.Join(".codex", "aidlc-common", "protocols", "stage-protocol-reviewer.md")); err != nil {
+			return nil, err
+		}
+	}
+	if stage.Mode == "mob" || stage.Mode == "pipeline" || len(stage.SupportAgents) != 0 {
+		if err := appendRequiredProjectPath(path.Join(".codex", "aidlc-common", "protocols", "stage-protocol-ensemble.md")); err != nil {
+			return nil, err
+		}
+	}
+	if err := appendRequiredProjectPath(path.Join(".codex", "skills", "aidlc", "question-rendering.md")); err != nil {
+		return nil, err
+	}
+	if !regularRecordFile(recordRoot, "project-description.json") {
+		return nil, errors.New("required inline context project-description.json is missing or not a regular non-symlink file")
+	}
+	name := path.Join("aidlc", "spaces", identity.Space(), "intents", identity.Intent(), "project-description.json")
+	if !containsString(result, name) {
+		result = append(result, name)
+	}
+	return result, nil
+}
+
+func requiresIntentCaptureInlineContext(stage graph.Stage) bool {
+	return stage.Enabled && stage.Slug == "intent-capture" && stage.Phase == "ideation" && stage.Execution == "ALWAYS" && stage.Mode == "inline" &&
+		stage.LeadAgent == "aidlc-product-agent" && slices.Equal(stage.SupportAgents, []string{"aidlc-architect-agent"}) &&
+		slices.Equal(stage.Scopes, []string{"enterprise", "feature", "mvp", "poc"}) && stage.Reviewer == "aidlc-product-lead-agent" &&
+		stage.ReviewArtifact == "intent-statement" && stage.ReviewerMaxIterations == 2 && stage.ReviewClass == graph.ReviewClassAdvisory &&
+		stage.SummaryConfirmation == "required" && slices.Equal(stage.Sensors, []string{"claim-sources", "required-sections", "upstream-coverage"}) &&
+		slices.Equal(stage.Produces, []string{"intent-statement", "stakeholder-map", "intent-capture-questions"}) &&
+		len(stage.OptionalProduces) == 0 && len(stage.Consumes) == 0 && len(stage.RequiresStages) == 0 && stage.ProducesKinds == nil
+}
+
+func regularProjectFile(projectRoot *os.Root, name string) bool {
+	if projectRoot == nil {
+		return false
+	}
+	info, err := projectRoot.Lstat(name)
+	return err == nil && info != nil && info.Mode()&os.ModeSymlink == 0 && info.Mode().IsRegular()
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveRunStageReview(projectRoot *os.Root, stage graph.Stage, current state.State) (string, string, graph.ReviewClass, int, error) {
+	if stage.Reviewer == "" {
+		return "", "", graph.ReviewClassNone, 0, nil
+	}
+	declared := stage.ReviewClass
+	if declared == "" {
+		declared = graph.ReviewClassAdversarial
+	}
+	cap := scope.ReviewCapAdversarial
+	if projectRoot != nil {
+		scopesFS, err := fs.Sub(projectRoot.FS(), path.Join(".codex", "scopes"))
+		if err == nil {
+			metadata, err := scope.ReadAll(scopesFS)
+			if err != nil {
+				return "", "", graph.ReviewClassNone, 0, fmt.Errorf("read active scope metadata: %w", err)
+			}
+			for _, item := range metadata {
+				if item.Name == current.Scope() && item.ReviewCap != "" {
+					cap = item.ReviewCap
+					break
+				}
+			}
+		}
+	}
+	effective, maxIterations := scope.ResolveReviewPolicy(declared, cap, current.ReviewOverride(), stage.ReviewerMaxIterations)
+	if effective == graph.ReviewClassNone {
+		return "", "", graph.ReviewClassNone, 0, nil
+	}
+	return stage.Reviewer, stage.ReviewArtifact, effective, maxIterations, nil
 }
 
 func marshalRunStageWire(wire runStageWire) ([]byte, error) {
@@ -177,6 +300,16 @@ func marshalRunStageWire(wire runStageWire) ([]byte, error) {
 		builder.WriteString("null")
 	} else {
 		appendRunStageJSONString(&builder, *wire.NextStage)
+	}
+	if wire.Reviewer != "" {
+		builder.WriteString(`,"reviewer":`)
+		appendRunStageJSONString(&builder, wire.Reviewer)
+		builder.WriteString(`,"review_artifact":`)
+		appendRunStageJSONString(&builder, wire.ReviewArtifact)
+		builder.WriteString(`,"review_class":`)
+		appendRunStageJSONString(&builder, wire.ReviewClass)
+		builder.WriteString(`,"reviewer_max_iterations":`)
+		builder.WriteString(strconv.Itoa(wire.ReviewerMaxIterations))
 	}
 	if len(wire.ProtocolModules) != 0 {
 		builder.WriteString(`,"protocol_modules":`)

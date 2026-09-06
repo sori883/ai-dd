@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"slices"
 	"strconv"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/sori883/ai-dd/src/internal/audit"
 	"github.com/sori883/ai-dd/src/internal/graph"
 	"github.com/sori883/ai-dd/src/internal/recordlock"
+	"github.com/sori883/ai-dd/src/internal/scope"
 	"github.com/sori883/ai-dd/src/internal/state"
 )
 
@@ -104,14 +107,16 @@ func openGateWithOps(ctx context.Context, input GateInput, injected gateOps) (re
 	err = recordlock.With(ctx, input.Identity, func(guard *recordlock.Guard) error {
 		// ReadEvents performs the identity/root binding checks while this
 		// transaction owns the lock. It deliberately does not acquire a lease.
-		if _, err := audit.ReadEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot); err != nil {
+		records, err := audit.ReadEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot)
+		if err != nil {
 			return fmt.Errorf("open gate: validate audit binding: %w", err)
 		}
 		document, err := ops.readDocument(input.RecordRoot)
 		if err != nil {
 			return fmt.Errorf("open gate: read state: %w", err)
 		}
-		if _, err := audit.ReadEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot); err != nil {
+		records, err = audit.ReadEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot)
+		if err != nil {
 			return fmt.Errorf("open gate: revalidate audit binding after state read: %w", err)
 		}
 		stage, progress, err := resolveGateState(document.State, input)
@@ -127,11 +132,34 @@ func openGateWithOps(ctx context.Context, input GateInput, injected gateOps) (re
 		if progress.CheckboxState != state.CheckboxStateInProgress && progress.CheckboxState != state.CheckboxStateAwaitingApproval {
 			return fmt.Errorf("open gate: current stage %q is not active or awaiting approval: %w", progress.Slug, ErrInvalidGate)
 		}
-		if decision := EvaluateStageCompletion(CompletionInput{
-			Current:  stage,
-			Catalog:  input.Catalog,
-			RecordFS: input.RecordRoot.FS(),
-		}); !decision.Ready {
+		evaluationStage := stage
+		if isSupportedIntentCaptureStage(stage) {
+			effective, _, err := resolveIntentCaptureReviewPolicy(input.ProjectRoot, stage, document.State)
+			if err != nil {
+				return fmt.Errorf("open gate: resolve review policy: %w", err)
+			}
+			evaluationStage.ReviewClass = effective
+		}
+		var decision CompletionDecision
+		if isSupportedIntentCaptureStage(stage) {
+			decision = evaluateIntentCaptureGateCurrent(evaluationStage, input.RecordRoot, records)
+			if decision.Blocker == CompletionBlockerReview {
+				return fmt.Errorf("open gate: completion is not ready (%s): %s: %w", decision.Blocker, decision.Reason, ErrGateNotReady)
+			}
+			if intentCaptureSensorsNeedAttempt(records, stage.Slug) {
+				if err := recordIntentCaptureAdvisorySensors(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot, sensorInputForIntentCapture(input.ProjectRoot, input.RecordRoot, stage)); err != nil {
+					return fmt.Errorf("open gate: record intent-capture sensors: %w", err)
+				}
+			}
+			records, err = audit.ReadEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot)
+			if err != nil {
+				return fmt.Errorf("open gate: reread intent-capture evidence: %w", err)
+			}
+			decision = evaluateIntentCaptureGateCurrent(evaluationStage, input.RecordRoot, records)
+		} else {
+			decision = evaluateGateCompletion(stage, input.Catalog, input.RecordRoot.FS(), records)
+		}
+		if !decision.Ready {
 			return fmt.Errorf("open gate: completion is not ready (%s): %s: %w", decision.Blocker, decision.Reason, ErrGateNotReady)
 		}
 
@@ -322,14 +350,16 @@ func reviseGateWithOps(ctx context.Context, input GateInput, injected gateOps) (
 		return GateResult{}, err
 	}
 	err = recordlock.With(ctx, input.Identity, func(guard *recordlock.Guard) error {
-		if _, err := audit.ReadEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot); err != nil {
+		records, err := audit.ReadEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot)
+		if err != nil {
 			return fmt.Errorf("revise gate: validate audit binding: %w", err)
 		}
 		document, err := ops.readDocument(input.RecordRoot)
 		if err != nil {
 			return fmt.Errorf("revise gate: read state: %w", err)
 		}
-		if _, err := audit.ReadEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot); err != nil {
+		records, err = audit.ReadEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot)
+		if err != nil {
 			return fmt.Errorf("revise gate: revalidate audit binding after state read: %w", err)
 		}
 		stage, progress, err := resolveGateState(document.State, input)
@@ -345,11 +375,35 @@ func reviseGateWithOps(ctx context.Context, input GateInput, injected gateOps) (
 		if err := validateGatePhaseState(document, stage); err != nil {
 			return err
 		}
-		if decision := EvaluateStageCompletion(CompletionInput{
-			Current:  stage,
-			Catalog:  input.Catalog,
-			RecordFS: input.RecordRoot.FS(),
-		}); !decision.Ready {
+		var decision CompletionDecision
+		if isSupportedIntentCaptureStage(stage) {
+			// A revision starts a new advisory sensor attempt. Sensor execution,
+			// terminal availability, and recording are deliberately non-authoritative;
+			// only the fresh evidence read below can decide gate readiness.
+			evaluationStage := stage
+			effective, _, err := resolveIntentCaptureReviewPolicy(input.ProjectRoot, stage, document.State)
+			if err != nil {
+				return fmt.Errorf("revise gate: resolve review policy: %w", err)
+			}
+			evaluationStage.ReviewClass = effective
+			decision = evaluateIntentCaptureGateCurrent(evaluationStage, input.RecordRoot, records)
+			if decision.Blocker == CompletionBlockerReview {
+				return fmt.Errorf("revise gate: completion is not ready (%s): %s: %w", decision.Blocker, decision.Reason, ErrGateNotReady)
+			}
+			if intentCaptureSensorsNeedAttempt(records, stage.Slug) {
+				if err := recordIntentCaptureAdvisorySensors(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot, sensorInputForIntentCapture(input.ProjectRoot, input.RecordRoot, stage)); err != nil {
+					return fmt.Errorf("revise gate: record intent-capture sensors: %w", err)
+				}
+			}
+			records, err = audit.ReadEvents(ctx, input.Identity, guard, input.ProjectRoot, input.RecordRoot)
+			if err != nil {
+				return fmt.Errorf("revise gate: reread intent-capture evidence: %w", err)
+			}
+			decision = evaluateIntentCaptureGateCurrent(evaluationStage, input.RecordRoot, records)
+		} else {
+			decision = evaluateGateCompletion(stage, input.Catalog, input.RecordRoot.FS(), records)
+		}
+		if !decision.Ready {
 			return fmt.Errorf("revise gate: completion is not ready (%s): %s: %w", decision.Blocker, decision.Reason, ErrGateNotReady)
 		}
 		lastUpdated, err := document.LastUpdated()
@@ -397,6 +451,31 @@ func reviseGateWithOps(ctx context.Context, input GateInput, injected gateOps) (
 		return nil
 	})
 	return result, err
+}
+
+func resolveIntentCaptureReviewPolicy(projectRoot *os.Root, stage graph.Stage, current state.State) (graph.ReviewClass, int, error) {
+	declared := stage.ReviewClass
+	if declared == "" {
+		declared = graph.ReviewClassAdversarial
+	}
+	cap := scope.ReviewCapAdversarial
+	if projectRoot != nil {
+		scopesFS, err := fs.Sub(projectRoot.FS(), path.Join(".codex", "scopes"))
+		if err == nil {
+			metadata, err := scope.ReadAll(scopesFS)
+			if err != nil {
+				return graph.ReviewClassNone, 0, fmt.Errorf("read active scope metadata: %w", err)
+			}
+			for _, item := range metadata {
+				if item.Name == current.Scope() && item.ReviewCap != "" {
+					cap = item.ReviewCap
+					break
+				}
+			}
+		}
+	}
+	effective, maxIterations := scope.ResolveReviewPolicy(declared, cap, current.ReviewOverride(), stage.ReviewerMaxIterations)
+	return effective, maxIterations, nil
 }
 
 func maxIntValue() int { return int(^uint(0) >> 1) }
@@ -502,16 +581,17 @@ func cloneGateKinds(values map[string][]string) map[string][]string {
 }
 
 func validateGateCapabilities(stage graph.Stage) error {
-	if stage.SummaryConfirmation != "" {
+	canonicalIntentCapture := isSupportedIntentCaptureStage(stage)
+	if stage.SummaryConfirmation != "" && !canonicalIntentCapture {
 		return fmt.Errorf("stage %q declares unsupported summary confirmation %q: %w", stage.Slug, stage.SummaryConfirmation, ErrUnsupportedGate)
 	}
 	if stage.Mode == "pipeline" {
 		return fmt.Errorf("stage %q declares unsupported pipeline mode: %w", stage.Slug, ErrUnsupportedGate)
 	}
-	if stage.Reviewer != "" {
+	if stage.Reviewer != "" && !canonicalIntentCapture {
 		return fmt.Errorf("stage %q declares unsupported reviewer %q: %w", stage.Slug, stage.Reviewer, ErrUnsupportedGate)
 	}
-	if len(stage.Sensors) != 0 {
+	if len(stage.Sensors) != 0 && !canonicalIntentCapture {
 		return fmt.Errorf("stage %q declares unsupported sensors: %w", stage.Slug, ErrUnsupportedGate)
 	}
 	if stage.WorkspaceRequires {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/sori883/ai-dd/src/internal/buildinfo"
@@ -676,5 +677,27 @@ func TestSpaceSwitcherLazyCLIInputs(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestCodexStageInputRejectsOversizedPayload(t *testing.T) {
+	payload := bytes.Repeat([]byte("x"), 64*1024+1)
+	got, err := readCodexStageInput(bytes.NewReader(payload))
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("readCodexStageInput() error = %v, want bounded-input rejection", err)
+	}
+	if len(got) > 64*1024 {
+		t.Fatalf("readCodexStageInput() retained %d bytes, want at most 65536", len(got))
+	}
+}
+
+func TestCodexStageInputAcceptsBoundedPayload(t *testing.T) {
+	payload := bytes.Repeat([]byte("x"), 64*1024)
+	got, err := readCodexStageInput(bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("readCodexStageInput() error = %v, want nil at bound", err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("readCodexStageInput() changed bounded payload")
 	}
 }

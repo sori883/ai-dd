@@ -106,11 +106,21 @@ func approveGateWithOps(ctx context.Context, input ApproveInput, injected gateOp
 		if _, err := document.NextAction(); err != nil {
 			return fmt.Errorf("approve gate: read next action: %w", err)
 		}
-		if decision := EvaluateStageCompletion(CompletionInput{
-			Current:  stage,
-			Catalog:  input.Catalog,
-			RecordFS: input.RecordRoot.FS(),
-		}); !decision.Ready {
+		evaluationStage := stage
+		if isSupportedIntentCaptureStage(stage) {
+			effective, _, err := resolveIntentCaptureReviewPolicy(input.ProjectRoot, stage, document.State)
+			if err != nil {
+				return fmt.Errorf("approve gate: resolve review policy: %w", err)
+			}
+			evaluationStage.ReviewClass = effective
+		}
+		var decision CompletionDecision
+		if isSupportedIntentCaptureStage(stage) {
+			decision = evaluateIntentCaptureGateCurrent(evaluationStage, input.RecordRoot, records)
+		} else {
+			decision = evaluateGateCompletion(stage, input.Catalog, input.RecordRoot.FS(), records)
+		}
+		if !decision.Ready {
 			return fmt.Errorf("approve gate: completion is not ready (%s): %s: %w", decision.Blocker, decision.Reason, ErrGateNotReady)
 		}
 

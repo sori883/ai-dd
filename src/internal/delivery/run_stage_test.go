@@ -33,9 +33,108 @@ const runStageGraphJSON = `[
 
 const runStageGraphWithReviewerJSON = `[
   {"slug":"workspace-scaffold","number":"0.1","name":"Workspace Scaffold","phase":"initialization","execution":"ALWAYS","lead_agent":"orchestrator","support_agents":[],"mode":"inline","scopes":["classic"],"enabled":true,"produces":[],"consumes":[],"requires_stage":[]},
-  {"slug":"intent-capture","number":"1.1","name":"Intent Capture","phase":"ideation","execution":"ALWAYS","lead_agent":"product-agent","support_agents":[],"mode":"inline","scopes":["classic"],"enabled":true,"reviewer":"reviewer","produces":[],"consumes":[],"requires_stage":[]},
+  {"slug":"intent-capture","number":"1.1","name":"Intent Capture","phase":"ideation","execution":"ALWAYS","lead_agent":"product-agent","support_agents":[],"mode":"inline","scopes":["classic"],"enabled":true,"reviewer":"reviewer","review_artifact":"intent-statement","reviewer_max_iterations":2,"review_class":"advisory","produces":["intent-statement"],"consumes":[],"requires_stage":[]},
   {"slug":"next-stage","number":"1.2","name":"Next Stage","phase":"ideation","execution":"ALWAYS","lead_agent":"product-agent","support_agents":[],"mode":"inline","scopes":["classic"],"enabled":true,"produces":[],"consumes":[],"requires_stage":[]}
 ]`
+
+func TestBuildRunStageWireIncludesReviewContract(t *testing.T) {
+	fixture := newRunStageFixture(t)
+	for _, relative := range []string{
+		".codex/aidlc-common/protocols/stage-protocol.md",
+		".codex/aidlc-common/protocols/stage-protocol-reviewer.md",
+		".codex/skills/aidlc/question-rendering.md",
+	} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(fixture.identity.ProjectRoot(), filepath.FromSlash(relative))), 0o700); err != nil {
+			t.Fatalf("MkdirAll(%q): %v", relative, err)
+		}
+		writeRunStageFile(t, filepath.Join(fixture.identity.ProjectRoot(), filepath.FromSlash(relative)), "required context\n")
+	}
+	writeRunStageFile(t, filepath.Join(fixture.identity.ProjectRoot(), "aidlc", "spaces", "team", "intents", "build", "project-description.json"), `"run-stage fixture"`)
+	graphJSON := strings.Replace(
+		runStageGraphJSON,
+		`"phase":"ideation","execution":"ALWAYS","lead_agent":"product-agent","support_agents":[],"mode":"inline","scopes":["classic"],"enabled":true,"produces":[]`,
+		`"phase":"ideation","execution":"ALWAYS","lead_agent":"product-agent","support_agents":[],"mode":"inline","scopes":["classic"],"enabled":true,"reviewer":"aidlc-product-lead-agent","review_artifact":"intent-statement","reviewer_max_iterations":2,"review_class":"adversarial","produces":[]`,
+		1,
+	)
+	writeRunStageFile(t, fixture.stageGraphPath, graphJSON)
+	scopePath := filepath.Join(fixture.identity.ProjectRoot(), ".codex", "scopes", "classic.md")
+	if err := os.MkdirAll(filepath.Dir(scopePath), 0o700); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", filepath.Dir(scopePath), err)
+	}
+	writeRunStageFile(t, scopePath, "---\nname: classic\nreview_cap: advisory\n---\n")
+
+	catalog, err := graph.Load(os.DirFS(filepath.Dir(fixture.stageGraphPath)))
+	if err != nil {
+		t.Fatalf("graph.Load() error = %v", err)
+	}
+	var stage graph.Stage
+	for _, candidate := range catalog.Stages() {
+		if candidate.Slug == "intent-capture" {
+			stage = candidate
+			break
+		}
+	}
+	if stage.Slug == "" {
+		t.Fatal("intent-capture stage missing")
+	}
+	current, err := state.Read(fixture.recordRoot)
+	if err != nil {
+		t.Fatalf("state.Read() error = %v", err)
+	}
+	wireBytes, err := buildRunStageWire(fixture.identity, stage, current, catalog, fixture.projectRoot, fixture.recordRoot, nil, knowledge.Roster{})
+	if err != nil {
+		t.Fatalf("buildRunStageWire() error = %v", err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(wireBytes, &wire); err != nil {
+		t.Fatalf("json.Unmarshal(wire): %v", err)
+	}
+	if got, want := wire["reviewer"], "aidlc-product-lead-agent"; got != want {
+		t.Errorf("wire reviewer = %#v, want %q", got, want)
+	}
+	if got, want := wire["review_artifact"], "intent-statement"; got != want {
+		t.Errorf("wire review_artifact = %#v, want %q", got, want)
+	}
+	if got, want := wire["review_class"], "advisory"; got != want {
+		t.Errorf("wire review_class = %#v, want %q", got, want)
+	}
+	if got, want := wire["reviewer_max_iterations"], float64(1); got != want {
+		t.Errorf("wire reviewer_max_iterations = %#v, want %v", got, want)
+	}
+	wireText := string(wireBytes)
+	for _, field := range []string{"next_stage", "reviewer", "review_artifact", "review_class", "reviewer_max_iterations", "narration"} {
+		if !strings.Contains(wireText, `"`+field+`"`) {
+			t.Errorf("wire missing %q: %s", field, wireText)
+		}
+	}
+	if strings.Index(wireText, `"reviewer"`) < strings.Index(wireText, `"next_stage"`) {
+		t.Errorf("review fields must follow next_stage: %s", wireText)
+	}
+}
+
+func TestBuildRunStageWireRejectsMissingRequiredIntentCaptureContext(t *testing.T) {
+	fixture := newRunStageFixture(t)
+	stage := graph.Stage{
+		Slug: "intent-capture", Phase: "ideation", Execution: "ALWAYS", LeadAgent: "aidlc-product-agent", Mode: "inline",
+		Scopes: []string{"enterprise", "feature", "mvp", "poc"}, Enabled: true,
+		Reviewer: "aidlc-product-lead-agent", ReviewArtifact: "intent-statement", ReviewerMaxIterations: 2,
+		ReviewClass: graph.ReviewClassAdvisory, SummaryConfirmation: "required",
+		Sensors:       []string{"claim-sources", "required-sections", "upstream-coverage"},
+		Produces:      []string{"intent-statement", "stakeholder-map", "intent-capture-questions"},
+		SupportAgents: []string{"aidlc-architect-agent"},
+	}
+	current, err := state.Read(fixture.recordRoot)
+	if err != nil {
+		t.Fatalf("state.Read(): %v", err)
+	}
+	catalog, err := graph.Load(os.DirFS(filepath.Dir(fixture.stageGraphPath)))
+	if err != nil {
+		t.Fatalf("graph.Load(): %v", err)
+	}
+	if _, err := buildRunStageWire(fixture.identity, stage, current, catalog, fixture.projectRoot, fixture.recordRoot, nil, knowledge.Roster{}); err == nil {
+		t.Fatal("buildRunStageWire() error = nil, want missing required intent-capture context failure")
+	}
+}
 
 const runStageScopeGridJSON = `{"classic":{"stages":{"workspace-scaffold":"EXECUTE","intent-capture":"EXECUTE","next-stage":"EXECUTE"}}}`
 

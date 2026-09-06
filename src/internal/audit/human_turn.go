@@ -83,7 +83,7 @@ func RecordHumanTurnIfCurrent(ctx context.Context, identity recordlock.Identity,
 			if !sameHumanTurnObservation(observation, current) {
 				return ErrHumanTurnObservationStale
 			}
-			return AppendForIdentity(ctx, identity, guard, projectRoot, recordRoot, []Event{{Event: "HUMAN_TURN"}})
+			return appendIntentCaptureForIdentity(ctx, identity, guard, projectRoot, recordRoot, []Event{{Event: "HUMAN_TURN"}})
 		})
 	})
 }
@@ -180,6 +180,6 @@ func RecordHumanTurn(ctx context.Context, identity recordlock.Identity, projectR
 		return fmt.Errorf("audit: HUMAN_TURN context is nil: %w", fs.ErrInvalid)
 	}
 	return recordlock.With(ctx, identity, func(guard *recordlock.Guard) error {
-		return AppendForIdentity(ctx, identity, guard, projectRoot, recordRoot, []Event{{Event: "HUMAN_TURN"}})
+		return appendIntentCaptureForIdentity(ctx, identity, guard, projectRoot, recordRoot, []Event{{Event: "HUMAN_TURN"}})
 	})
 }

@@ -172,6 +172,27 @@ func TestTransitionFieldAccessorsReadCanonicalSections(t *testing.T) {
 	}
 }
 
+func TestLoadIntentCaptureReviewMetadata(t *testing.T) {
+	t.Parallel()
+
+	content := strings.Replace(
+		canonicalStateContent(),
+		"## Execution Plan Summary\n",
+		"## Scope Configuration\n- **Review Override**: advisory\n\n## Execution Plan Summary\n",
+		1,
+	)
+	if _, err := Parse([]byte(content)); err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	got, err := ReviewOverride([]byte(content))
+	if err != nil {
+		t.Fatalf("Document.ReviewOverride() error = %v", err)
+	}
+	if got != "advisory" {
+		t.Fatalf("Document.ReviewOverride() = %q, want advisory", got)
+	}
+}
+
 func TestPatchRevisionCountPreservesUnknownBytes(t *testing.T) {
 	t.Parallel()
 

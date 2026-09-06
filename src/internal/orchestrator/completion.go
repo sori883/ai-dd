@@ -20,8 +20,10 @@ const (
 	CompletionBlockerMode          CompletionBlocker = "mode"
 	CompletionBlockerArtifact      CompletionBlocker = "artifact"
 	CompletionBlockerSummary       CompletionBlocker = "summary"
+	CompletionBlockerQuestions     CompletionBlocker = "questions"
 	CompletionBlockerPipeline      CompletionBlocker = "pipeline"
 	CompletionBlockerReview        CompletionBlocker = "review"
+	CompletionBlockerLearnings     CompletionBlocker = "learnings"
 	CompletionBlockerSensor        CompletionBlocker = "sensor"
 	CompletionBlockerBlocking      CompletionBlocker = "blocking"
 	CompletionBlockerPerUnit       CompletionBlocker = "per-unit"
@@ -38,6 +40,7 @@ type CompletionEvidence struct {
 	ReviewReceipt        bool
 	SensorsPassed        bool
 	BlockingSensorsClear bool
+	IntentCapture        *IntentCaptureGateEvidence
 }
 
 // CompletionInput is the read-only input to EvaluateStageCompletion. Current
@@ -77,6 +80,9 @@ func EvaluateStageCompletion(input CompletionInput) CompletionDecision {
 	}
 
 	stage := selected
+	if isSupportedIntentCaptureStage(stage) && input.Evidence.IntentCapture != nil {
+		return evaluateIntentCaptureCompletion(*input.Evidence.IntentCapture)
+	}
 	if stage.Mode == "agent-team" {
 		return completionBlocked(CompletionBlockerMode, fmt.Sprintf("stage %q requires unsupported agent-team dispatcher", stage.Slug))
 	}
@@ -138,6 +144,27 @@ func EvaluateStageCompletion(input CompletionInput) CompletionDecision {
 	}
 }
 
+func evaluateIntentCaptureCompletion(evidence IntentCaptureGateEvidence) CompletionDecision {
+	decision := EvaluateIntentCaptureGate(evidence)
+	if decision.Ready {
+		return CompletionDecision{Ready: true, Blocker: CompletionBlockerNone, Reason: decision.Reason}
+	}
+	blocker := CompletionBlockerSummary
+	switch decision.Blocker {
+	case IntentCaptureGateQuestions:
+		blocker = CompletionBlockerQuestions
+	case IntentCaptureGateSummary:
+		blocker = CompletionBlockerSummary
+	case IntentCaptureGateArtifact:
+		blocker = CompletionBlockerArtifact
+	case IntentCaptureGateReview:
+		blocker = CompletionBlockerReview
+	case IntentCaptureGateLearnings:
+		blocker = CompletionBlockerLearnings
+	}
+	return completionBlocked(blocker, decision.Reason)
+}
+
 func isUnsupportedPerUnitStage(stage graph.Stage) bool {
 	if stage.ForEach != "" {
 		return true
@@ -182,6 +209,9 @@ func sameCompletionStage(current, selected graph.Stage) bool {
 		current.ForEach != selected.ForEach ||
 		current.WorkspaceRequires != selected.WorkspaceRequires ||
 		current.Reviewer != selected.Reviewer ||
+		current.ReviewArtifact != selected.ReviewArtifact ||
+		current.ReviewerMaxIterations != selected.ReviewerMaxIterations ||
+		current.ReviewClass != selected.ReviewClass ||
 		current.SummaryConfirmation != selected.SummaryConfirmation {
 		return false
 	}

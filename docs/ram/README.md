@@ -99,6 +99,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [`intent-capture`を最初の通常Stageとして縦に通す](decisions/2026-09-06-intent-capture-vertical-milestone.md) | Partially Superseded（Issue #118から開始。公開`report`と2 PR構成は維持。`HUMAN_TURN`認証保証とsensor必須証拠は下記の決定で置換） |
 | 意思決定 | [`HUMAN_TURN`を固定本家相当の運用証拠として扱う](decisions/2026-09-06-human-turn-operational-evidence.md) | Accepted（`UserPromptSubmit`を正規emit pathとするが、同じ利用者権限に対する認証済み著者証明とは扱わない） |
 | 意思決定 | [`intent-capture`のsensorを固定本家どおりadvisoryとして扱う](decisions/2026-09-06-intent-capture-advisory-sensor-boundary.md) | Accepted（3 sensorはすべて起動し、得られた結果は表示・記録するが、terminal receiptや結果をgate authorityにしない） |
+| 意思決定 | [`intent-capture`の残存境界を固定本家へ揃える](decisions/2026-09-06-intent-capture-upstream-conformance-corrections.md) | Accepted（learningsはStageごと1回、実memory／manifest保存、semantic summary digest、全artifact review bindingとrevision challengeへ訂正） |
 | 意思決定 | [配置ファイルから必須ルール本文を毎回読み込む](decisions/2026-09-04-required-rule-delivery-plan.md) | Accepted（Issue #89、知識供給の第一slice、必須本文reader） |
 | 意思決定 | [工程の必須ルール参照を配置ファイルへ解決する](decisions/2026-09-04-stage-rule-path-resolution-plan.md) | Accepted（Issue #91、graph参照の保持・active Space/配置先解決・毎回読込みの内部接続） |
 | 意思決定 | [利用先の配置Markdownと知識の固定順を採用する](decisions/2026-09-04-installed-context-source-and-order.md) | Accepted（利用先配置からの読込み・UTF-16固定順と上限への影響を直接承認） |
