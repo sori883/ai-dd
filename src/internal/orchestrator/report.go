@@ -12,7 +12,63 @@ import (
 	"github.com/sori883/ai-dd/src/internal/recordlock"
 )
 
-var ErrInvalidReport = errors.New("orchestrator: invalid report")
+var (
+	ErrInvalidReport  = errors.New("orchestrator: invalid report")
+	ErrReportWorkflow = errors.New("orchestrator: report workflow rejected")
+)
+
+// WorkflowError marks a syntactically valid report whose requested lifecycle
+// transition was rejected by the current workflow state. Public adapters may
+// render this error as a terminal directive while preserving its cause for
+// diagnostics and tests.
+type WorkflowError struct {
+	Message string
+	Cause   error
+}
+
+func (err *WorkflowError) Error() string { return err.Message }
+func (err *WorkflowError) Unwrap() error { return err.Cause }
+
+// IsWorkflowError reports whether err is a typed workflow rejection.
+func IsWorkflowError(err error) bool {
+	if recordlock.IsReleaseError(err) || hasCompositeCauseOutsideWorkflow(err) {
+		return false
+	}
+	var workflowErr *WorkflowError
+	return errors.As(err, &workflowErr)
+}
+
+func hasCompositeCauseOutsideWorkflow(err error) bool {
+	if err == nil {
+		return false
+	}
+	if _, ok := err.(*WorkflowError); ok {
+		return false
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		causes := joined.Unwrap()
+		if len(causes) > 1 {
+			return true
+		}
+		if len(causes) == 1 {
+			return hasCompositeCauseOutsideWorkflow(causes[0])
+		}
+		return false
+	}
+	wrapped, ok := err.(interface{ Unwrap() error })
+	return ok && hasCompositeCauseOutsideWorkflow(wrapped.Unwrap())
+}
+
+// NewWorkflowError wraps a workflow rejection without converting internal I/O
+// failures into a user-visible terminal directive.
+func NewWorkflowError(message string, cause error) error {
+	if cause == nil {
+		cause = ErrReportWorkflow
+	} else if !errors.Is(cause, ErrReportWorkflow) {
+		cause = errors.Join(ErrReportWorkflow, cause)
+	}
+	return &WorkflowError{Message: message, Cause: cause}
+}
 
 // ReportKind identifies one explicit lifecycle result. No free-form result or
 // completion alias is accepted by Report.

@@ -10,6 +10,7 @@ import (
 	"github.com/sori883/ai-dd/src/internal/buildinfo"
 	"github.com/sori883/ai-dd/src/internal/cli"
 	deliverypkg "github.com/sori883/ai-dd/src/internal/delivery"
+	"github.com/sori883/ai-dd/src/internal/orchestrator"
 	"github.com/sori883/ai-dd/src/internal/workspace"
 )
 
@@ -45,6 +46,10 @@ func main() {
 				os.Getenv,
 				deliverypkg.ContinueContext,
 			),
+			Report: reportAdapter(os.Getwd, os.Getenv, orchestrator.Report),
+			HumanTurnHook: func() error {
+				return humanTurnHook(os.Stdin, os.Getwd, os.Getenv)
+			},
 			PrepareOutput: func() {
 				// Recognized workspace commands promise exit 1 for writes to closed stdout or stderr pipes.
 				signal.Ignore(syscall.SIGPIPE)

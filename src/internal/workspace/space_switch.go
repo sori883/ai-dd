@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -9,6 +10,43 @@ import (
 	"slices"
 )
 
+func switchSpaceWithWorkspaceLock(
+	input RootInput,
+	rawName string,
+	switchFn func(RootInput, string) (string, error),
+	acquire func(context.Context, string) (workspaceLockReceipt, error),
+	release func(workspaceLockReceipt) error,
+) (string, error) {
+	switch rawName {
+	case "", "help", "-h":
+		return "", fmt.Errorf("invalid space name %q: %w", rawName, fs.ErrInvalid)
+	}
+	if switchFn == nil {
+		return "", fmt.Errorf("switch space callback is nil: %w", fs.ErrInvalid)
+	}
+	projectPath := ResolveRoot(input)
+	if !filepath.IsAbs(projectPath) {
+		return "", fmt.Errorf("resolve project root %q: %w", projectPath, fs.ErrInvalid)
+	}
+
+	name := ""
+	err := withWorkspaceLock(
+		context.Background(),
+		projectPath,
+		func() error {
+			var callbackErr error
+			name, callbackErr = switchFn(input, rawName)
+			return callbackErr
+		},
+		acquire,
+		release,
+	)
+	if err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
 // SwitchSpace selects a listed space by updating the shared active-space cursor.
 // The project must already exist; the synthetic default space need not exist.
 // Raw empty/help/-h names are invalid. Other names use the creation slug rules,
@@ -16,15 +54,32 @@ import (
 //
 // The cursor is replaced within os.Root boundaries; existing symlink or
 // nonregular cursors are rejected. Only existing permission bits are preserved.
+// The project root and cursor write run under the shared workspace lock.
 // An error returns an empty name, but the cursor may already have changed;
 // callers must not interpret failure as a rollback or an atomicity guarantee.
 func SwitchSpace(input RootInput, rawName string) (string, error) {
-	return switchSpace(
+	ops := systemWorkspaceLockOps()
+	return switchSpaceWithWorkspaceLock(
 		input,
 		rawName,
-		os.OpenRoot,
-		(*os.Root).Close,
-		saveSpaceCursor,
+		func(input RootInput, rawName string) (string, error) {
+			return switchSpace(
+				input,
+				rawName,
+				os.OpenRoot,
+				(*os.Root).Close,
+				saveSpaceCursor,
+			)
+		},
+		func(ctx context.Context, projectPath string) (workspaceLockReceipt, error) {
+			return acquireWorkspaceLock(ctx, projectPath, workspaceLockSettings{
+				maxRetries:    workspaceLockMaxRetries,
+				retryInterval: workspaceLockRetryInterval,
+			}, ops)
+		},
+		func(receipt workspaceLockReceipt) error {
+			return releaseWorkspaceLock(receipt, ops)
+		},
 	)
 }
 

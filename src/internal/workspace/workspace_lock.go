@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/sori883/ai-dd/src/internal/pathnorm"
@@ -156,6 +157,7 @@ func acquireWorkspaceLock(
 				fs.ErrExist,
 			)
 		}
+		observeWorkspaceLockContention(path)
 		if err := ops.wait(ctx, settings.retryInterval); err != nil {
 			return workspaceLockReceipt{}, fmt.Errorf("wait for workspace lock %q: %w", path, err)
 		}
@@ -270,4 +272,92 @@ func releaseWorkspaceLock(receipt workspaceLockReceipt, ops workspaceLockOps) er
 		}
 	}
 	return nil
+}
+
+var workspaceLockContentionObserver struct {
+	mu sync.RWMutex
+	fn func(string)
+}
+
+func setWorkspaceLockContentionObserver(fn func(string)) func() {
+	workspaceLockContentionObserver.mu.Lock()
+	previous := workspaceLockContentionObserver.fn
+	workspaceLockContentionObserver.fn = fn
+	workspaceLockContentionObserver.mu.Unlock()
+	return func() {
+		workspaceLockContentionObserver.mu.Lock()
+		workspaceLockContentionObserver.fn = previous
+		workspaceLockContentionObserver.mu.Unlock()
+	}
+}
+
+func observeWorkspaceLockContention(path string) {
+	workspaceLockContentionObserver.mu.RLock()
+	fn := workspaceLockContentionObserver.fn
+	workspaceLockContentionObserver.mu.RUnlock()
+	if fn != nil {
+		fn(path)
+	}
+}
+
+// WithLock runs fn while holding the shared workspace lock for projectPath.
+// The callback is deliberately parameterless so callers cannot accidentally
+// use a different workspace identity while the lock is held.
+func WithLock(ctx context.Context, projectPath string, fn func() error) error {
+	ops := systemWorkspaceLockOps()
+	settings := workspaceLockSettings{
+		maxRetries:    workspaceLockMaxRetries,
+		retryInterval: workspaceLockRetryInterval,
+	}
+	return withWorkspaceLock(
+		ctx,
+		projectPath,
+		fn,
+		func(ctx context.Context, projectPath string) (workspaceLockReceipt, error) {
+			return acquireWorkspaceLock(ctx, projectPath, settings, ops)
+		},
+		func(receipt workspaceLockReceipt) error {
+			return releaseWorkspaceLock(receipt, ops)
+		},
+	)
+}
+
+func withWorkspaceLock(
+	ctx context.Context,
+	projectPath string,
+	fn func() error,
+	acquire func(context.Context, string) (workspaceLockReceipt, error),
+	release func(workspaceLockReceipt) error,
+) (err error) {
+	if ctx == nil {
+		return fmt.Errorf("workspace lock context is nil: %w", fs.ErrInvalid)
+	}
+	if fn == nil {
+		return fmt.Errorf("workspace lock callback is nil: %w", fs.ErrInvalid)
+	}
+	if !filepath.IsAbs(projectPath) {
+		return fmt.Errorf("workspace lock project path %q is not absolute: %w", projectPath, fs.ErrInvalid)
+	}
+	if acquire == nil {
+		return fmt.Errorf("workspace lock acquire callback is nil: %w", fs.ErrInvalid)
+	}
+	if release == nil {
+		return fmt.Errorf("workspace lock release callback is nil: %w", fs.ErrInvalid)
+	}
+
+	receipt, err := acquire(ctx, projectPath)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		recovered := recover()
+		releaseErr := release(receipt)
+		if recovered != nil {
+			panic(recovered)
+		}
+		err = errors.Join(err, releaseErr)
+	}()
+
+	err = fn()
+	return err
 }

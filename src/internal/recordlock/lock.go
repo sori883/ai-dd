@@ -44,7 +44,38 @@ var (
 	ErrOwnerMismatch = errors.New("recordlock: lock owner mismatch")
 	// ErrInvalidCallback means that With was given no callback.
 	ErrInvalidCallback = errors.New("recordlock: nil callback")
+	// ErrRelease identifies an error encountered while releasing a record lock.
+	// It remains discoverable when the callback and release causes are joined.
+	ErrRelease = errors.New("recordlock: release failed")
 )
+
+// ReleaseError identifies a failed record-lock release while preserving its
+// underlying filesystem or ownership cause for errors.Is/errors.As callers.
+type ReleaseError struct {
+	Cause error
+}
+
+func (err *ReleaseError) Error() string {
+	if err == nil || err.Cause == nil {
+		return ErrRelease.Error()
+	}
+	return fmt.Sprintf("%s: %v", ErrRelease, err.Cause)
+}
+
+func (err *ReleaseError) Unwrap() error {
+	if err == nil {
+		return nil
+	}
+	return err.Cause
+}
+
+func (err *ReleaseError) Is(target error) bool { return target == ErrRelease }
+
+// IsReleaseError reports whether err contains a failed record-lock release.
+func IsReleaseError(err error) bool {
+	var releaseErr *ReleaseError
+	return errors.As(err, &releaseErr) || errors.Is(err, ErrRelease)
+}
 
 // Identity is the canonical identity of one record.  Use NewIdentity to
 // construct it; its fields are private so an unvalidated value cannot be
@@ -630,6 +661,11 @@ func (g *Guard) Release() (err error) {
 	state.releasing = true
 	lockRoot := state.lockRoot
 	state.mu.Unlock()
+	defer func() {
+		if err != nil {
+			err = &ReleaseError{Cause: err}
+		}
+	}()
 	<-state.leaseTokens
 	defer func() { state.leaseTokens <- struct{}{} }()
 

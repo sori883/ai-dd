@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode"
@@ -600,5 +601,174 @@ func fakeWorkspaceLockOps() workspaceLockOps {
 			0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
 		}),
 		wait: func(context.Context, time.Duration) error { return nil },
+	}
+}
+
+func TestWithLockRunsCallbackWhileLockHeld(t *testing.T) {
+	project := t.TempDir()
+	lockPath := workspaceLockPath(project, os.TempDir(), filepath.EvalSymlinks)
+	callbackCalled := false
+	if err := WithLock(context.Background(), project, func() error {
+		callbackCalled = true
+		if _, err := os.Stat(lockPath); err != nil {
+			t.Fatalf("workspace lock during callback: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(lockPath, workspaceLockOwnerName)); err != nil {
+			t.Fatalf("workspace lock owner during callback: %v", err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("WithLock() error = %v, want nil", err)
+	}
+	if !callbackCalled {
+		t.Fatal("WithLock() did not invoke callback")
+	}
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("workspace lock after callback = %v, want absent", err)
+	}
+}
+
+func TestWithLockRejectsInvalidArgumentsAndCanceledContext(t *testing.T) {
+	canceled, cancel := context.WithCancelCause(context.Background())
+	cancel(context.Canceled)
+	deadline, expire := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer expire()
+	tests := []struct {
+		name    string
+		ctx     context.Context
+		project string
+		fn      func() error
+		want    error
+	}{
+		{name: "nil context", project: t.TempDir(), fn: func() error { return nil }, want: fs.ErrInvalid},
+		{name: "nil callback", ctx: context.Background(), project: t.TempDir(), want: fs.ErrInvalid},
+		{name: "relative project", ctx: context.Background(), project: "relative", fn: func() error { return nil }, want: fs.ErrInvalid},
+		{name: "canceled context", ctx: canceled, project: t.TempDir(), fn: func() error { return nil }, want: context.Canceled},
+		{name: "expired deadline", ctx: deadline, project: t.TempDir(), fn: func() error { return nil }, want: context.DeadlineExceeded},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := WithLock(tt.ctx, tt.project, tt.fn)
+			if !errors.Is(err, tt.want) {
+				t.Errorf("WithLock() error = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestWithWorkspaceLockJoinsCallbackAndReleaseErrors(t *testing.T) {
+	callbackErr := errors.New("callback failed")
+	releaseErr := errors.New("release failed")
+	called := false
+	err := withWorkspaceLock(
+		context.Background(),
+		t.TempDir(),
+		func() error {
+			called = true
+			return callbackErr
+		},
+		func(context.Context, string) (workspaceLockReceipt, error) {
+			return workspaceLockReceipt{path: "lock", token: "token"}, nil
+		},
+		func(workspaceLockReceipt) error { return releaseErr },
+	)
+	if !called {
+		t.Fatal("withWorkspaceLock() did not invoke callback")
+	}
+	if !errors.Is(err, callbackErr) || !errors.Is(err, releaseErr) {
+		t.Fatalf("withWorkspaceLock() error = %v, want callback and release causes", err)
+	}
+}
+
+func TestWithWorkspaceLockReleasesBeforeRepanic(t *testing.T) {
+	released := false
+	panicked := false
+	func() {
+		defer func() {
+			if recover() != nil {
+				panicked = true
+			}
+		}()
+		_ = withWorkspaceLock(
+			context.Background(),
+			t.TempDir(),
+			func() error { panic("callback panic") },
+			func(context.Context, string) (workspaceLockReceipt, error) {
+				return workspaceLockReceipt{path: "lock", token: "token"}, nil
+			},
+			func(workspaceLockReceipt) error {
+				released = true
+				return nil
+			},
+		)
+	}()
+	if !panicked {
+		t.Fatal("withWorkspaceLock() did not re-panic callback panic")
+	}
+	if !released {
+		t.Fatal("withWorkspaceLock() did not release before re-panic")
+	}
+}
+
+func assertPublicWorkspaceLockContention(t *testing.T, project string, switchFn func() error) {
+	t.Helper()
+	lockPath := workspaceLockPath(project, os.TempDir(), filepath.EvalSymlinks)
+	contention := make(chan struct{})
+	var contentionOnce sync.Once
+	restoreObserver := setWorkspaceLockContentionObserver(func(path string) {
+		if path == lockPath {
+			contentionOnce.Do(func() { close(contention) })
+		}
+	})
+	defer restoreObserver()
+
+	holderReady := make(chan struct{})
+	releaseHolder := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseHolder) }) }
+	holderDone := make(chan error, 1)
+	go func() {
+		holderDone <- WithLock(context.Background(), project, func() error {
+			close(holderReady)
+			<-releaseHolder
+			return nil
+		})
+	}()
+	defer release()
+	select {
+	case <-holderReady:
+	case <-time.After(2 * time.Second):
+		t.Fatal("workspace lock holder did not acquire lock")
+	}
+
+	switchDone := make(chan error, 1)
+	go func() { switchDone <- switchFn() }()
+	select {
+	case <-contention:
+	case <-time.After(2 * time.Second):
+		t.Fatal("public switch did not reach workspace-lock contention")
+	}
+	select {
+	case err := <-switchDone:
+		t.Fatalf("public switch completed while holder retained workspace lock: %v", err)
+	default:
+	}
+
+	release()
+	select {
+	case err := <-holderDone:
+		if err != nil {
+			t.Fatalf("workspace lock holder error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("workspace lock holder did not release")
+	}
+	select {
+	case err := <-switchDone:
+		if err != nil {
+			t.Fatalf("public switch error after workspace lock release: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("public switch did not complete after workspace lock release")
 	}
 }
