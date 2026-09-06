@@ -252,6 +252,9 @@ func parseMetadata(node *yaml.Node) (Concept, error) {
 			}
 		}
 	}
+	if err := validateUsageWindow(fields); err != nil {
+		return Concept{}, err
+	}
 	if n, ok := fields["sources"]; ok {
 		if err := validateSources(&n); err != nil {
 			return Concept{}, err
@@ -278,11 +281,31 @@ func validateSources(node *yaml.Node) error {
 		if _, err := timestampField(m, "last_modified", false); err != nil {
 			return err
 		}
+		if err := validateUsageWindow(m); err != nil {
+			return fmt.Errorf("sources: %w", err)
+		}
 		if n, ok := m["usage_count"]; ok {
 			v := resolveNode(&n)
 			if v.Kind != yaml.ScalarNode || v.Tag != "!!int" {
 				return errors.New("usage_count must be an integer")
 			}
+		}
+	}
+	return nil
+}
+
+func validateUsageWindow(fields map[string]yaml.Node) error {
+	node, exists := fields["usage_window"]
+	if !exists {
+		return nil
+	}
+	window, err := mapping(&node)
+	if err != nil {
+		return fmt.Errorf("usage_window: %w", err)
+	}
+	for _, key := range []string{"from", "to"} {
+		if _, err := timestampField(window, key, true); err != nil {
+			return fmt.Errorf("usage_window: %w", err)
 		}
 	}
 	return nil

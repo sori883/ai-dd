@@ -95,3 +95,39 @@ func TestParseConceptRejectsTrailingYAMLDocument(t *testing.T) {
 		t.Fatal("accepted trailing invalid yaml")
 	}
 }
+
+func TestParseConceptUsageWindow(t *testing.T) {
+	t.Parallel()
+	for _, location := range []string{"top level", "source override"} {
+		t.Run(location, func(t *testing.T) {
+			for _, tt := range []struct {
+				name   string
+				window string
+				valid  bool
+			}{
+				{name: "valid without usage count", window: "{from: 2026-01-01T00:00:00Z, to: '2026-02-01T09:00:00+09:00', extension: true}", valid: true},
+				{name: "not mapping", window: "[]"},
+				{name: "missing from", window: "{to: 2026-02-01T00:00:00Z}"},
+				{name: "missing to", window: "{from: 2026-01-01T00:00:00Z}"},
+				{name: "invalid types", window: "{from: false, to: []}"},
+				{name: "invalid to", window: "{from: 2026-01-01T00:00:00Z, to: []}"},
+				{name: "from without offset", window: "{from: '2026-01-01T00:00:00', to: 2026-02-01T00:00:00Z}"},
+				{name: "to without offset", window: "{from: 2026-01-01T00:00:00Z, to: '2026-02-01T00:00:00'}"},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					metadata := "usage_window: " + tt.window + "\n"
+					if location == "source override" {
+						metadata = "sources:\n  - resource: /source\n    usage_window: " + tt.window + "\n"
+					}
+					_, err := ParseConcept(strings.NewReader("---\ntype: A\n" + metadata + "---\n"))
+					if tt.valid && err != nil {
+						t.Fatalf("valid window: %v", err)
+					}
+					if !tt.valid && err == nil {
+						t.Fatal("accepted invalid usage_window")
+					}
+				})
+			}
+		})
+	}
+}
