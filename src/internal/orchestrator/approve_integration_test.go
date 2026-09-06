@@ -211,6 +211,45 @@ func TestApproveGateIntegrationRequiresFreshHumanAndExactChoice(t *testing.T) {
 	}
 }
 
+func TestApproveGateIntegrationRejectsHumanTurnBeforeAwaitingApproval(t *testing.T) {
+	fixture := newApproveIntegrationFixture(t)
+	input := approveInputForFixture(fixture, "Approve")
+	gateIntegrationAppendHumanTurn(t, gateIntegrationFixture{
+		identity: fixture.identity, projectRoot: fixture.projectRoot, recordRoot: fixture.recordRoot,
+	})
+	if _, err := openApproveFixtureGate(t, fixture, input); err != nil {
+		t.Fatalf("OpenGate() error = %v", err)
+	}
+	if _, err := ApproveGate(context.Background(), input); !errors.Is(err, ErrStaleHumanTurn) {
+		t.Fatalf("ApproveGate() error = %v, want ErrStaleHumanTurn for pre-awaiting HUMAN_TURN", err)
+	}
+}
+
+func TestApproveGateIntegrationRejectsAwaitingStateWithoutAwaitingAudit(t *testing.T) {
+	fixture := newApproveIntegrationFixture(t)
+	input := approveInputForFixture(fixture, "Approve")
+	gateIntegrationAppendHumanTurn(t, gateIntegrationFixture{
+		identity: fixture.identity, projectRoot: fixture.projectRoot, recordRoot: fixture.recordRoot,
+	})
+	content, err := fixture.recordRoot.ReadFile("aidlc-state.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := state.Patch(content, state.PatchRequest{StageMarkers: []state.StageMarkerPatch{{
+		Slug: fixture.stage.Slug, Expected: state.StageMarkerInProgress, Replacement: state.StageMarkerAwaitingApproval,
+	}}})
+	if err != nil {
+		t.Fatalf("state.Patch() error = %v", err)
+	}
+	statePath := filepath.Join(fixture.projectDir, "aidlc", "spaces", "default", "intents", "build", "aidlc-state.md")
+	if err := os.WriteFile(statePath, replacement, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ApproveGate(context.Background(), input); !errors.Is(err, ErrStaleHumanTurn) {
+		t.Fatalf("ApproveGate() error = %v, want ErrStaleHumanTurn without awaiting audit", err)
+	}
+}
+
 func TestApproveGateIntegrationRejectsNonExactChoiceWithoutMutation(t *testing.T) {
 	fixture := newApproveIntegrationFixture(t)
 	input := approveInputForFixture(fixture, "approve")

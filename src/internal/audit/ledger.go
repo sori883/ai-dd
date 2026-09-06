@@ -54,17 +54,49 @@ type Event struct {
 }
 
 var eventHeadings = map[string]string{
-	"HUMAN_TURN":              "Human Turn",
-	"STAGE_AWAITING_APPROVAL": "Stage Awaiting Approval",
-	"GATE_APPROVED":           "Gate Approved",
-	"GATE_REJECTED":           "Gate Rejected",
-	"STAGE_REVISING":          "Stage Revising",
-	"STAGE_COMPLETED":         "Stage Completion",
-	"PHASE_COMPLETED":         "Phase Completion",
-	"PHASE_VERIFIED":          "Phase Verification",
-	"PHASE_STARTED":           "Phase Start",
-	"STAGE_STARTED":           "Stage Start",
-	"WORKFLOW_COMPLETED":      "Workflow Completion",
+	"HUMAN_TURN":                    "Human Turn",
+	"DECISION_RECORDED":             "Decision Recorded",
+	"QUESTION_ANSWERED":             "Question Answered",
+	"SUMMARY_CONFIRMATION_RECORDED": "Summary Confirmation Recorded",
+	"REVIEW_REQUESTED":              "Review Requested",
+	"REVIEW_COMPLETED":              "Review Completed",
+	"SENSOR_FIRED":                  "Sensor Fired",
+	"SENSOR_COMPLETED":              "Sensor Completed",
+	"SENSOR_PASSED":                 "Sensor Passed",
+	"SENSOR_FAILED":                 "Sensor Failed",
+	"SENSOR_BUDGET_OVERRIDE":        "Sensor Budget Override",
+	"RULE_LEARNED":                  "Rule Learned",
+	"SENSOR_PROPOSED":               "Sensor Proposed",
+	"STAGE_AWAITING_APPROVAL":       "Stage Awaiting Approval",
+	"GATE_APPROVED":                 "Gate Approved",
+	"GATE_REJECTED":                 "Gate Rejected",
+	"STAGE_REVISING":                "Stage Revising",
+	"STAGE_COMPLETED":               "Stage Completion",
+	"PHASE_COMPLETED":               "Phase Completion",
+	"PHASE_VERIFIED":                "Phase Verification",
+	"PHASE_STARTED":                 "Phase Start",
+	"STAGE_STARTED":                 "Stage Start",
+	"WORKFLOW_COMPLETED":            "Workflow Completion",
+}
+
+// intentCaptureOwnedEvents are rendered by the audit ledger, but may only be
+// emitted by the purpose-specific intent-capture APIs.  Keeping the rendering
+// vocabulary separate from this write allowlist prevents a generic lifecycle
+// caller from minting workflow authority evidence by choosing a known heading.
+var intentCaptureOwnedEvents = map[string]struct{}{
+	"HUMAN_TURN":                    {},
+	"DECISION_RECORDED":             {},
+	"QUESTION_ANSWERED":             {},
+	"SUMMARY_CONFIRMATION_RECORDED": {},
+	"REVIEW_REQUESTED":              {},
+	"REVIEW_COMPLETED":              {},
+	"SENSOR_FIRED":                  {},
+	"SENSOR_COMPLETED":              {}, // legacy reader vocabulary
+	"SENSOR_PASSED":                 {},
+	"SENSOR_FAILED":                 {},
+	"SENSOR_BUDGET_OVERRIDE":        {},
+	"RULE_LEARNED":                  {},
+	"SENSOR_PROPOSED":               {},
 }
 
 var validFieldKey = func(value string) bool {
@@ -105,6 +137,19 @@ func validateEvent(event Event) (string, error) {
 	return eventType, nil
 }
 
+func validateEventForAppend(event Event, allowIntentCapture bool) (string, error) {
+	eventType, err := validateEvent(event)
+	if err != nil {
+		return "", err
+	}
+	if !allowIntentCapture {
+		if _, owned := intentCaptureOwnedEvents[eventType]; owned {
+			return "", fmt.Errorf("audit: event %q is owned by an intent-capture API: %w", eventType, ErrInvalidEvent)
+		}
+	}
+	return eventType, nil
+}
+
 type renderedEvent struct {
 	eventType string
 	timestamp string
@@ -112,7 +157,7 @@ type renderedEvent struct {
 }
 
 func renderEvents(events []Event, now func() time.Time) ([]renderedEvent, error) {
-	if err := validateEvents(events); err != nil {
+	if err := validateRenderableEvents(events); err != nil {
 		return nil, err
 	}
 	if now == nil {
@@ -136,6 +181,22 @@ func renderEvents(events []Event, now func() time.Time) ([]renderedEvent, error)
 }
 
 func validateEvents(events []Event) error {
+	return validateEventsForAppend(events, false)
+}
+
+func validateEventsForAppend(events []Event, allowIntentCapture bool) error {
+	if len(events) == 0 {
+		return ErrInvalidBatch
+	}
+	for _, event := range events {
+		if _, err := validateEventForAppend(event, allowIntentCapture); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateRenderableEvents(events []Event) error {
 	if len(events) == 0 {
 		return ErrInvalidBatch
 	}
@@ -245,10 +306,21 @@ func AppendForIdentity(ctx context.Context, identity recordlock.Identity, guard 
 	if ctx == nil {
 		return fmt.Errorf("audit: append nil context: %w", fs.ErrInvalid)
 	}
-	return appendForIdentityWithOps(ctx, identity, guard, projectRoot, recordRoot, events, nil)
+	return appendForIdentityWithPermission(ctx, identity, guard, projectRoot, recordRoot, events, nil, false)
 }
 
 func appendForIdentityWithOps(ctx context.Context, expected recordlock.Identity, guard *recordlock.Guard, projectRoot, recordRoot *os.Root, events []Event, injected *ledgerOps) error {
+	return appendForIdentityWithPermission(ctx, expected, guard, projectRoot, recordRoot, events, injected, false)
+}
+
+// appendIntentCaptureForIdentity is intentionally unexported. Domain APIs in
+// this package use it after validating their own binding, while generic
+// Append/AppendForIdentity remain unable to emit intent-capture authority.
+func appendIntentCaptureForIdentity(ctx context.Context, expected recordlock.Identity, guard *recordlock.Guard, projectRoot, recordRoot *os.Root, events []Event) error {
+	return appendForIdentityWithPermission(ctx, expected, guard, projectRoot, recordRoot, events, nil, true)
+}
+
+func appendForIdentityWithPermission(ctx context.Context, expected recordlock.Identity, guard *recordlock.Guard, projectRoot, recordRoot *os.Root, events []Event, injected *ledgerOps, allowIntentCapture bool) error {
 	if err := context.Cause(ctx); err != nil {
 		return fmt.Errorf("audit: append: %w", err)
 	}
@@ -261,7 +333,7 @@ func appendForIdentityWithOps(ctx context.Context, expected recordlock.Identity,
 	if guard.Identity() != expected {
 		return fmt.Errorf("audit: guard identity differs from requested record: %w", ErrGuardIdentity)
 	}
-	if err := validateEvents(events); err != nil {
+	if err := validateEventsForAppend(events, allowIntentCapture); err != nil {
 		return err
 	}
 	ops := systemLedgerOps(projectRoot, recordRoot)

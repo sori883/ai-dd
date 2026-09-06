@@ -10,7 +10,82 @@ import (
 	"unicode"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/sori883/ai-dd/src/internal/graph"
 )
+
+// ResolveReviewClass applies the lowest review class declared by the stage,
+// the active scope cap, and the optional per-run override.  A cap or override
+// never creates a reviewer for a stage that has none.
+func ResolveReviewClass(declared graph.ReviewClass, cap ReviewCap, override string) graph.ReviewClass {
+	if declared != graph.ReviewClassAdversarial && declared != graph.ReviewClassAdvisory {
+		return graph.ReviewClassNone
+	}
+	effective := declared
+	if candidate := reviewClassForCap(cap); candidate != graph.ReviewClassNone && reviewRank(candidate) < reviewRank(effective) {
+		effective = candidate
+	}
+	if candidate := reviewClassForOverride(override); candidate != graph.ReviewClassNone && reviewRank(candidate) < reviewRank(effective) {
+		effective = candidate
+	}
+	if cap == ReviewCapNone || strings.TrimSpace(override) == string(ReviewCapNone) {
+		return graph.ReviewClassNone
+	}
+	return effective
+}
+
+// ResolveReviewPolicy applies the same low-wins review class and iteration
+// budget used by stage delivery and gate evaluation. A disabled class has no
+// reviewer budget; advisory keeps the fixed one-pass normal-flow cap.
+func ResolveReviewPolicy(declared graph.ReviewClass, cap ReviewCap, override string, declaredMax int) (graph.ReviewClass, int) {
+	effective := ResolveReviewClass(declared, cap, override)
+	if effective == graph.ReviewClassNone {
+		return effective, 0
+	}
+	max := declaredMax
+	if max <= 0 {
+		max = 2
+	}
+	if effective == graph.ReviewClassAdvisory {
+		max = 1
+	}
+	return effective, max
+}
+
+func reviewClassForCap(value ReviewCap) graph.ReviewClass {
+	switch value {
+	case ReviewCapAdvisory:
+		return graph.ReviewClassAdvisory
+	case ReviewCapNone:
+		return graph.ReviewClassNone
+	default:
+		return graph.ReviewClassAdversarial
+	}
+}
+
+func reviewClassForOverride(value string) graph.ReviewClass {
+	switch strings.TrimSpace(value) {
+	case string(graph.ReviewClassAdversarial):
+		return graph.ReviewClassAdversarial
+	case string(graph.ReviewClassAdvisory):
+		return graph.ReviewClassAdvisory
+	case string(graph.ReviewClassNone):
+		return graph.ReviewClassNone
+	default:
+		return graph.ReviewClassNone
+	}
+}
+
+func reviewRank(value graph.ReviewClass) int {
+	switch value {
+	case graph.ReviewClassAdvisory:
+		return 1
+	case graph.ReviewClassAdversarial:
+		return 2
+	default:
+		return 0
+	}
+}
 
 // ReviewCap limits the effective review class for a scope.
 type ReviewCap string

@@ -49,6 +49,7 @@ Flags:
 `
 
 const humanTurnHookCommand = "__codex-user-prompt-submit"
+const codexStageCommand = "__codex-stage"
 
 func isHumanTurnHookCommand(args []string) bool {
 	return len(args) == 1 && args[0] == humanTurnHookCommand
@@ -66,6 +67,19 @@ type Dependencies struct {
 	ContinueDelivery func(token, explicitDir string) ([]byte, error)
 	ReadContext      func(explicitDir string) ([]byte, error)
 	ContinueContext  func(token, explicitDir string) ([]byte, error)
+	// CodexStage is an intentionally hidden bridge for the configured Codex
+	// receiver. Its action namespace is not part of public help or report
+	// grammar.
+	CodexStage func(action, explicitDir string) ([]byte, error)
+	// CodexStageWithInput is the payload-aware form used by the configured
+	// receiver. CodexStage remains for embedders that only need an empty
+	// payload, but production wiring uses this form so normal answer data can
+	// cross the hidden bridge without allowing authority fields.
+	CodexStageWithInput func(action, explicitDir string, payload []byte) ([]byte, error)
+	// CodexStageInput supplies the one stdin payload for a hidden stage action.
+	// It is injected to keep Run deterministic in tests and never affects the
+	// public report grammar.
+	CodexStageInput func() ([]byte, error)
 	// Report records one explicit lifecycle result. The callback receives raw
 	// values after the CLI has validated only the public grammar.
 	Report        func(stage, result, userInput, reason, explicitDir string) ([]byte, error)
@@ -108,6 +122,35 @@ func Run(
 			_ = dependencies.HumanTurnHook()
 		}
 		return 0
+	}
+	if isCodexStageCommand(args) {
+		if dependencies.PrepareOutput != nil {
+			dependencies.PrepareOutput()
+		}
+		request, err := parseCodexStageArguments(args)
+		if err != nil {
+			return writeDeliverySyntaxError(stderr, err)
+		}
+		if dependencies.CodexStage == nil && dependencies.CodexStageWithInput == nil {
+			return writeCommandError(stderr, errors.New("codex stage callback is unavailable"))
+		}
+		var payload []byte
+		if dependencies.CodexStageInput != nil {
+			payload, err = dependencies.CodexStageInput()
+			if err != nil {
+				return writeCommandError(stderr, fmt.Errorf("read codex stage input: %w", err))
+			}
+		}
+		var wire []byte
+		if dependencies.CodexStageWithInput != nil {
+			wire, err = dependencies.CodexStageWithInput(request.action, request.explicitDir, payload)
+		} else {
+			wire, err = dependencies.CodexStage(request.action, request.explicitDir)
+		}
+		if err != nil {
+			return writeCommandError(stderr, err)
+		}
+		return writeDeliveryWire(stdout, stderr, wire)
 	}
 	if isDeliveryCommand(args) {
 		if dependencies.PrepareOutput != nil {

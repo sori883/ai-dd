@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -91,21 +92,79 @@ func validateApprovalGateDecision(ctx context.Context, identity recordlock.Ident
 	if progress.CheckboxState != state.CheckboxStateAwaitingApproval || progress.CheckboxMarker != string(state.StageMarkerAwaitingApproval) {
 		return "", fmt.Errorf("approval requires an awaiting-approval marker: %w", ErrInvalidDecision)
 	}
-	if err := validateApprovalReceipt(ctx, identity, guard, projectRoot, recordRoot); err != nil {
+	if err := validateApprovalReceipt(ctx, identity, guard, projectRoot, recordRoot, progress.Slug); err != nil {
 		return "", err
 	}
 	return validateApprovalDecision(content, choice)
 }
 
-func validateApprovalReceipt(ctx context.Context, identity recordlock.Identity, guard *recordlock.Guard, projectRoot, recordRoot *os.Root) error {
+func validateApprovalReceipt(ctx context.Context, identity recordlock.Identity, guard *recordlock.Guard, projectRoot, recordRoot *os.Root, stage string) error {
 	records, err := audit.ReadEvents(ctx, identity, guard, projectRoot, recordRoot)
 	if err != nil {
 		return fmt.Errorf("read approval audit: %w", err)
 	}
-	if !audit.HumanTurnFresh(records) {
+	if !humanTurnAfterAwaitingApproval(records, stage) {
 		return fmt.Errorf("approval has no fresh HUMAN_TURN receipt: %w", ErrStaleHumanTurn)
 	}
 	return nil
+}
+
+// humanTurnAfterAwaitingApproval is the approval-specific freshness boundary.
+// A HUMAN_TURN observed before the latest same-stage awaiting marker cannot be
+// reused for the response. Equal-second records from different shards remain
+// ambiguous and therefore fail closed.
+func humanTurnAfterAwaitingApproval(records []audit.AuditRecord, stage string) bool {
+	if stage == "" || !audit.HumanTurnFresh(records) {
+		return false
+	}
+	var latestTimestamp time.Time
+	var awaiting []audit.AuditRecord
+	for _, record := range records {
+		if record.Event != "STAGE_AWAITING_APPROVAL" || record.Fields["Stage"] != stage {
+			continue
+		}
+		if record.Timestamp.IsZero() || record.Timestamp.Nanosecond() != 0 || record.Shard == "" || record.Position < 0 {
+			return false
+		}
+		if record.Timestamp.After(latestTimestamp) {
+			latestTimestamp = record.Timestamp
+			awaiting = awaiting[:0]
+		}
+		if record.Timestamp.Equal(latestTimestamp) {
+			awaiting = append(awaiting, record)
+		}
+	}
+	if len(awaiting) == 0 {
+		return false
+	}
+	latest := awaiting[0]
+	for _, record := range awaiting[1:] {
+		if record.Shard != latest.Shard {
+			return false
+		}
+		if record.Position > latest.Position {
+			latest = record
+		}
+	}
+	var sameTimestampHuman bool
+	for _, record := range records {
+		if record.Event != "HUMAN_TURN" {
+			continue
+		}
+		if record.Timestamp.After(latest.Timestamp) {
+			return true
+		}
+		if !record.Timestamp.Equal(latest.Timestamp) {
+			continue
+		}
+		if record.Shard != latest.Shard {
+			return false
+		}
+		if record.Position > latest.Position {
+			sameTimestampHuman = true
+		}
+	}
+	return sameTimestampHuman
 }
 
 func validateRejectionDecision(choice, feedback string) (string, string, error) {
@@ -291,7 +350,7 @@ func maskQuotedDecisionExamples(text string) string {
 		regexp.MustCompile("(?s)```.*?```"),
 		regexp.MustCompile("(?s)~~~.*?~~~"),
 		regexp.MustCompile("(?s)```.*\\z"),
-		regexp.MustCompile("(?s)~~~.*\\z"),
+		regexp.MustCompile(`(?s)~~~.*\z`),
 		regexp.MustCompile("``[^`\\n]*``"),
 		regexp.MustCompile("`[^`\\n]*`"),
 		regexp.MustCompile(`"[^"\n]*"`),

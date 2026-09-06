@@ -234,6 +234,30 @@ func (d Document) LastCompletedStage() (string, error) {
 // NextAction returns the document's canonical next action.
 func (d Document) NextAction() (string, error) { return NextAction(d.Content) }
 
+// ReviewOverride returns the optional per-run review cap from Scope
+// Configuration.  Older state documents may omit the field; callers then get
+// an empty value and may use the stage/scope defaults.
+func ReviewOverride(content []byte) (string, error) {
+	if _, err := Parse(content); err != nil {
+		return "", fmt.Errorf("read review override: %w", err)
+	}
+	lines, err := canonicalSectionLines(content, "Scope Configuration")
+	if err != nil {
+		return "", fmt.Errorf("read review override: %w", err)
+	}
+	value, err := optionalStringField(lines, "Review Override")
+	if err != nil {
+		return "", fmt.Errorf("read review override: %w", err)
+	}
+	if value != "" && value != "adversarial" && value != "advisory" && value != "none" {
+		return "", invalidState("invalid Review Override %q", value)
+	}
+	return value, nil
+}
+
+// ReviewOverride returns the optional per-run review cap in this document.
+func (d Document) ReviewOverride() (string, error) { return ReviewOverride(d.Content) }
+
 func validCanonicalStage(value string) bool {
 	if value == "" || !utf8.ValidString(value) {
 		return false
@@ -288,4 +312,25 @@ func canonicalSectionLines(content []byte, target string) ([]string, error) {
 		return nil, invalidState("missing section %q", target)
 	}
 	return selected, nil
+}
+
+func optionalStringField(lines []string, label string) (string, error) {
+	prefix := "- **" + label + "**:"
+	value := ""
+	found := false
+	for _, line := range lines {
+		line = strings.TrimSuffix(line, "\r")
+		if !strings.HasPrefix(line, prefix) {
+			continue
+		}
+		if found {
+			return "", invalidState("duplicate field %q", label)
+		}
+		found = true
+		value = strings.TrimSpace(strings.TrimPrefix(line, prefix))
+		if !validCanonicalSingleLine(value) && value != "" {
+			return "", invalidState("invalid %s field", label)
+		}
+	}
+	return value, nil
 }

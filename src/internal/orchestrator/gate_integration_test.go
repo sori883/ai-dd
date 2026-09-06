@@ -365,6 +365,22 @@ func TestRejectGateIntegrationRequiresFreshHumanTurn(t *testing.T) {
 	}
 }
 
+func TestRejectGateIntegrationRejectsHumanTurnBeforeAwaitingApproval(t *testing.T) {
+	fixture := newGateIntegrationFixture(t)
+	input := GateInput{
+		Identity: fixture.identity, ProjectRoot: fixture.projectRoot, RecordRoot: fixture.recordRoot,
+		Current: fixture.stage, Catalog: fixture.catalog,
+		Choice: "Request Changes", Feedback: "Please revise the implementation.",
+	}
+	gateIntegrationAppendHumanTurn(t, fixture)
+	if _, err := OpenGate(context.Background(), input); err != nil {
+		t.Fatalf("OpenGate() error = %v", err)
+	}
+	if _, err := RejectGate(context.Background(), input); !errors.Is(err, ErrStaleHumanTurn) {
+		t.Fatalf("RejectGate() error = %v, want ErrStaleHumanTurn for pre-awaiting HUMAN_TURN", err)
+	}
+}
+
 func TestRejectGateIntegrationRecordsRevisionAfterFreshHumanTurn(t *testing.T) {
 	fixture := newGateIntegrationFixture(t)
 	input := GateInput{
@@ -509,17 +525,18 @@ func TestApprovalValidationIntegrationNeedsNewReceiptAfterRevision(t *testing.T)
 	if _, err := ReviseGate(context.Background(), input); err != nil {
 		t.Fatalf("ReviseGate() error = %v", err)
 	}
-	progress := state.StageProgress{CheckboxState: state.CheckboxStateAwaitingApproval, CheckboxMarker: "[?]"}
+	progress := state.StageProgress{Slug: fixture.stage.Slug, CheckboxState: state.CheckboxStateAwaitingApproval, CheckboxMarker: string(state.StageMarkerAwaitingApproval)}
 	err = recordlock.With(context.Background(), fixture.identity, func(guard *recordlock.Guard) error {
 		if _, err := validateApprovalGateDecision(context.Background(), fixture.identity, guard, fixture.projectRoot, fixture.recordRoot, oldContent, progress, "Approve"); !errors.Is(err, ErrStaleHumanTurn) {
 			return fmt.Errorf("approval with old state snapshot error = %v, want ErrStaleHumanTurn", err)
 		}
-		if err := audit.Append(context.Background(), guard, fixture.projectRoot, fixture.recordRoot, []audit.Event{{
-			Event:  "HUMAN_TURN",
-			Fields: map[string]string{"Prompt": "approval"},
-		}}); err != nil {
-			return fmt.Errorf("append HUMAN_TURN: %w", err)
-		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateIntegrationAppendHumanTurn(t, fixture)
+	err = recordlock.With(context.Background(), fixture.identity, func(guard *recordlock.Guard) error {
 		if _, err := validateApprovalGateDecision(context.Background(), fixture.identity, guard, fixture.projectRoot, fixture.recordRoot, oldContent, progress, "Approve"); err != nil {
 			return fmt.Errorf("approval with fresh ledger error = %w", err)
 		}
@@ -575,12 +592,7 @@ func TestApprovalValidationIntegrationRejectsUnboundRootOrGuard(t *testing.T) {
 
 func gateIntegrationAppendHumanTurn(t *testing.T, fixture gateIntegrationFixture) {
 	t.Helper()
-	err := recordlock.With(context.Background(), fixture.identity, func(guard *recordlock.Guard) error {
-		return audit.Append(context.Background(), guard, fixture.projectRoot, fixture.recordRoot, []audit.Event{{
-			Event:  "HUMAN_TURN",
-			Fields: map[string]string{"Prompt": "approval"},
-		}})
-	})
+	err := audit.RecordHumanTurn(context.Background(), fixture.identity, fixture.projectRoot, fixture.recordRoot)
 	if err != nil {
 		t.Fatalf("append HUMAN_TURN: %v", err)
 	}
