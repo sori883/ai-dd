@@ -1,5 +1,17 @@
 # 配布E2Eテスト
 
+## OKF検索のfresh non-live journey
+
+`TestKnowledgeSearchFreshNonLiveJourney`はrepository外へbinaryとreceiverを配置し、active Spaceの
+OKF Bundleを検索します。既定4件、別queryによる追加検索、返却pathからの選択本文読込、file変更後の
+fresh scan、個別warning、run-stage narration、本文非注入を確認します。外部live Codexは起動しません。
+
+```text
+go test -tags=integration -count=1 -run '^TestKnowledgeSearchFreshNonLiveJourney$' ./src/cmd/aidlc
+```
+
+これはCLIと配置物の契約検証であり、実際のAIが適切なfilterや本文を選ぶ精度の検証ではありません。
+
 ## 目的
 
 AI-DLCの実行物をrepository外へ配布し、配布先から起動して利用者に見える挙動を確認する。

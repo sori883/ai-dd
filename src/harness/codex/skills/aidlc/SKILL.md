@@ -61,6 +61,16 @@ token. Do not choose a path, slot, part, or replacement input yourself.
 
 Ordinary run-stage directives remain read-only context handoffs.
 
+When narration enables OKF Space knowledge discovery, use `aidlc knowledge search`
+with explicitly chosen `--tag`, `--type`, or `--query` filters as needed before
+finishing the context handoff. You may repeat searches and selectively read
+only returned paths with the normal file reader. Do not generate filters automatically
+from Stage or agent identity. The default 4 results apply per search, not as a
+Stage-wide or agent-lifetime cap. Search is not access control; selected bodies
+have no product byte or line cap. OKF bodies are not automatically included in read-context.
+This separate discovery path does not change the declared context chunk order.
+Retain search warnings and stop on search or selected-file read failures.
+
 For an ordinary invocation of `run-stage`, when every context chunk has been
 received, return exactly `context ready` and stop. If and only if the caller explicitly
 supplies a machine-readable read receipt request together with an output

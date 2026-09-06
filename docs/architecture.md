@@ -2,7 +2,27 @@
 
 ## 方針
 
-ai-ddは、単一のGo moduleと単一の実行ファイルを保ちながら、責務をpackage境界で分離するモジュラーモノリスです。現段階では抽象化を増やさず、Go標準ライブラリと手動dependency injectionだけを使用します。
+ai-ddは、単一のGo moduleと単一の実行ファイルを保ちながら、責務をpackage境界で分離するモジュラーモノリスです。Go標準ライブラリと手動dependency injectionを基本とし、OKF frontmatterの完全YAML解析には承認済みの`go.yaml.in/yaml/v3 v3.0.5`を使用します。
+
+active Spaceの`aidlc/spaces/<space>/knowledge/okf/`が存在すると、`run-stage`はlegacy Space
+knowledgeを自動投入せず、narrationで明示filterによる`aidlc knowledge search`を案内します。
+空Bundleや全Concept不正でもfallbackしません。不在時だけ既存rosterを維持し、unsafeなrootはerrorにします。
+framework persona／knowledge、protocol、Stage、consumes、rulesの供給は維持します。
+
+`src/internal/okf`はcaller-rootedな`fs.FS`からmetadataだけを走査するpure APIです。予約fileを除く
+`.md`のBundle相対pathからConcept IDを導出し、YAML標準fieldを検証します。未知type・fieldと任意field欠落は
+許容し、本文やMarkdown linkは検索・返却しません。本文は固定bufferでUTF-8だけを検査します。
+frontmatter上限は閉じdelimiterを含む64 KiB、候補上限は4,096件です。4,097件目は部分結果なしのerror、
+個別不正はJSON互換6,144-byte予算のpath／reason warningへ隔離します。永続indexやcacheはありません。
+
+順位はdistinct query token一致数、stable fresh／stable stale／draft fresh／draft stale、generated.at降順、
+日時欠落を後、Concept IDのUTF-16 code-unit昇順です。deprecatedは除外し、stale判定のnowは1検索内で固定します。
+AIは必要に応じ検索を繰り返し、返却pathだけを通常file readerで段階的に読みます。既定4件は1検索の件数であり、
+Stage／agent lifetimeの上限やaccess controlではありません。OKF本文は`read-context`へ自動注入しません。
+
+固定AI-DLC 2.6.123のSpace knowledge全件読込から、このopt-in時のmetadata検索へ変える意図的差分は
+[承認済み計画](ram/decisions/2026-09-07-okf-metadata-knowledge-search-plan.md)に記録しています。
+OKFの参照版はv0.2 commit `ad30107c31c06aec8a7d5636e0d1058118604e6f`です。
 
 ```text
 src/cmd/aidlc/main.go
