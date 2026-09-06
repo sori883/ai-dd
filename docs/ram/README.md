@@ -57,7 +57,8 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [検証頻度をloop・review・finalへ分離する](decisions/2026-09-02-validation-cadence.md) | Accepted（Issue #39、修正中はtargeted、差分安定後に全検証を1回） |
 | 意思決定 | [Go TDDの依頼をREDとGREENへ分離する](decisions/2026-09-04-tdd-phase-handoff-plan.md) | Superseded（履歴は保持。1項目ごとの親子往復は下記work unit方式へ置換） |
 | 意思決定 | [Go TDDを作業単位の連続実装へ変更する](decisions/2026-09-05-tdd-work-unit-handoff.md) | Implemented（Issue #110、各項目のtest-firstを維持し、全項目完了後に1回返却。隔離forward test成功） |
-| 意思決定 | [go_tdd_implementerをLuna / maxで運用する](decisions/2026-09-02-go-tdd-implementer-luna-max.md) | Accepted（Issue #41、実装担当のみLuna / maxへ固定） |
+| 意思決定 | [go_tdd_implementerをLuna / maxで運用する](decisions/2026-09-02-go-tdd-implementer-luna-max.md) | Superseded（履歴は保持。下記Astra / low運用へ置換） |
+| 意思決定 | [go_tdd_implementerをGPT-6 Astra / lowで運用する](decisions/2026-09-06-go-tdd-implementer-astra-low.md) | Accepted（Issue #121、新規起動する実装担当をAstra / lowへ固定） |
 | 意思決定 | [サブエージェントhandoffのコンテキスト予算](decisions/2026-09-03-subagent-context-budget.md) | Accepted（Issue #59、全文継承を例外化し、調査担当はTerra / mediumを維持） |
 | 意思決定 | [本家AI-DLCとの差分を自発的に提示する](decisions/2026-08-31-upstream-difference-reporting.md) | Superseded（下記の意図的な差分に限定する方針へ置換） |
 | 意思決定 | [本家との差分提示を意図的な仕様・挙動の変更に限定する](decisions/2026-08-31-intentional-upstream-difference-reporting.md) | Accepted |
