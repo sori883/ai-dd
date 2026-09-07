@@ -14,6 +14,14 @@ import (
 
 const intentCaptureFIFOSubprocessTimeout = 10 * time.Second
 
+func TestStageQuestionsReaderFIFOReplacement(t *testing.T) {
+	fixture := newHumanTurnWorkspaceFixture(t)
+	testAuditLeafFIFOReplacement(t, fixture, "stage questions", "ideation/market-research/market-research-questions.md", func() error {
+		_, _, err := readStageQuestions(fixture.recordRoot, "ideation/market-research/market-research-questions.md")
+		return err
+	})
+}
+
 func TestIntentCaptureReadersRejectFIFOReplacementWithoutBlocking(t *testing.T) {
 	if os.Getenv("AIDLC_AUDIT_FIFO_HELPER") == "1" {
 		t.Skip("helper process is exercised by the parent test")
