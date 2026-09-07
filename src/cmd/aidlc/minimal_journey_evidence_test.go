@@ -59,6 +59,11 @@ func verifyJourneyEvents(events []journeyObservation, testCommand string) error 
 				return fmt.Errorf("unmatched Post %s", key)
 			}
 			delete(pending, key)
+			retainedKey := session + "/" + pre.Before.Tool
+			retained, retainedOK := pending[retainedKey]
+			if retainedOK && retained.Input.Tool == "apply_patch" && strings.Contains(pre.Input.Input.Command, " session bind ") && strings.Contains(pre.Input.Input.Command, " --recover") && e.After.Tool == "" && e.After.Dirty && e.After.Intent == pre.Before.Intent && e.After.Space == pre.Before.Space {
+				delete(pending, retainedKey)
+			}
 			if pre.Before.Intent == "" && e.After.Intent != "" && e.After.RuleHash != "" {
 				if !p.started {
 					return fmt.Errorf("bind without SessionStart")
@@ -356,5 +361,30 @@ func TestMinimalJourneyRejectsDifferentResumeContent(t *testing.T) {
 	}
 	if verifyJourneyEvents(events, "fixture-go-test") == nil {
 		t.Fatal("resume did not read previous recorded content")
+	}
+}
+
+func TestMinimalJourneyAcceptsExplicitEditRecovery(t *testing.T) {
+	events := journeyGoodEvidence()
+	at := 0
+	for i, e := range events {
+		if e.Input.Session == "one" && e.Input.Event == "PostToolUse" && e.Input.ID == "bind" {
+			at = i + 1
+			break
+		}
+	}
+	state := events[at-1].After
+	running := state
+	running.Tool = "failed-edit"
+	failed := journeyObservation{Input: minimal.HookInput{Event: "PreToolUse", Session: "one", ID: "failed-edit", Tool: "apply_patch"}, Before: state, After: running, Documents: events[at-1].Documents}
+	failed.Input.Input.Command = journeyFailedPatch
+	recoverPre := journeyObservation{Input: minimal.HookInput{Event: "PreToolUse", Session: "one", ID: "recover", Tool: "Bash"}, Before: running, After: running, Documents: failed.Documents}
+	recoverPre.Input.Input.Command = "aidlc session bind same-id --space default --session one --recover"
+	recoverPost := journeyObservation{Input: minimal.HookInput{Event: "PostToolUse", Session: "one", ID: "recover", Tool: "Bash"}, Before: state, After: state, Documents: failed.Documents}
+	tail := append([]journeyObservation{}, events[at:]...)
+	events = append(events[:at], failed, recoverPre, recoverPost)
+	events = append(events, tail...)
+	if err := verifyJourneyEvents(events, "fixture-go-test"); err != nil {
+		t.Fatal(err)
 	}
 }

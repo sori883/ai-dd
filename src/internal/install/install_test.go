@@ -64,3 +64,39 @@ func TestInstallRejectsSymlink(t *testing.T) {
 		t.Fatal("wrote outside project")
 	}
 }
+
+func TestInstallRecoveryGuidanceAndContextLimit(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Codex(root, "/opt/aidlc"); err != nil {
+		t.Fatal(err)
+	}
+	skill, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skill) > 4096 || !strings.Contains(string(skill), "session bind <id> --space <space> --session <session> --recover") {
+		t.Fatalf("missing bounded recovery syntax: %s", skill)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, ".codex/hooks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Hooks map[string][]struct {
+			Hooks []map[string]any `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(raw, &config); err != nil {
+		t.Fatal(err)
+	}
+	for event, groups := range config.Hooks {
+		for _, group := range groups {
+			for _, handler := range group.Hooks {
+				_, present := handler["additionalContextLimit"]
+				if present != (event == "SessionStart") {
+					t.Errorf("unexpected context limit for %s: %v", event, handler)
+				}
+			}
+		}
+	}
+}

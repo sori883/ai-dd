@@ -21,7 +21,15 @@ hookが案内するsession IDと会話専用draft pathを使い、利用者にID
 
 欠落・破損はshow --rawで現物を確認し、同じIDへrepairする。正常本文は保ち、復旧後に通常updateで経緯を書く。
 競合や部分保存失敗では再読込みし、無条件の上書き・新ID作成・resetをしない。
-未記録の別Intentへ切り替えず、同じKDRへ戻る。残留toolは実process停止を確認してからbind --recoverする。
+未記録の別Intentへ切り替えず、同じKDRへ戻る。
+編集toolが失敗を返し、処理が終了したのに実行中IDが残る場合は、AIが失敗終了を確認する。
+同じ会話・Space・Intentの `aidlc session bind <id> --space <space> --session <session> --recover` を単独で実行する。
+利用者へ毎回復旧操作を依頼しない。動作中Bashは解除せずwrite_stdinで終端までpollする。
+復旧だけでは未記録のまま。失敗原因を修正して再試行し、検証と同じKDRへの保存まで続ける。
+
+最後の一般操作（git status等の確認も含む）を終えてからKDRを更新する。
+保存後に追加確認したら再び未記録なので、その結果を同じKDRへ再記録する。
+Stopが補完を求めたら保存成功まで続ける。保存できない場合は未記録と理由を明示し、記録済み・完了と主張しない。
 
 独立レビューは固定コード版の別Git checkout・別root会話でread-only sandboxを使う。
 レビュー先にはwriter hookを配置せず、同じKDR・必須ルール・差分を読ませ、結果をwriterがKDRへ記録する。

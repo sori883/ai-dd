@@ -483,3 +483,75 @@ func TestSessionBookkeepingActiveEntries(t *testing.T) {
 		})
 	}
 }
+
+func TestHookEditFailureRecovery(t *testing.T) {
+	s, saved := setup(t)
+	hook(t, s, "UserPromptSubmit", "", "", "", false)
+	bind(t, s, saved.ID)
+	hook(t, s, "PreToolUse", "apply_patch", "failed-edit", "*** Begin Patch\n*** Update File: absent.go\n@@\n-no matching line\n+replacement\n*** End Patch", false)
+	current, _ := s.Inspect("session")
+	if current.Tool != "failed-edit" {
+		t.Fatal("failed edit did not retain slot without Post")
+	}
+	base := "/opt/aidlc session bind " + saved.ID + " --space default --session session"
+	if out := hook(t, s, "PreToolUse", "Bash", "recover", base+" --recover", false); deny(out) {
+		t.Fatalf("same-session explicit recover blocked: %v", out)
+	}
+	for _, command := range []string{base, strings.Replace(base, "session session", "session other", 1) + " --recover", strings.Replace(base, "space default", "space other", 1) + " --recover", strings.Replace(base, saved.ID, strings.Repeat("a", 32), 1) + " --recover", base + " --recover; true", "echo unsafe"} {
+		if out := hook(t, s, "PreToolUse", "Bash", "other", command, false); !deny(out) {
+			t.Errorf("accepted while slot retained: %s", command)
+		}
+	}
+	oldHash := current.RuleHash
+	rulePath := filepath.Join(s.Root, "aidlc/spaces/default/knowledge/rules/rule.md")
+	rule, err := os.ReadFile(rulePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rulePath, append(rule, []byte("\nNew required verification note.\n")...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Execute(cli.MinimalRequest{Command: "session", Action: "bind", Target: saved.ID, Space: "default", Session: "session", Recover: true}); err != nil {
+		t.Fatal(err)
+	}
+	current, _ = s.Inspect("session")
+	if current.Tool != "" || !current.Dirty || current.RuleHash == "" || current.RuleHash == oldHash || current.Intent != saved.ID {
+		t.Fatalf("bad recovery: %+v", current)
+	}
+	hook(t, s, "PreToolUse", "Bash", "retry", "echo verified", false)
+	hook(t, s, "PostToolUse", "Bash", "retry", "", false)
+	raw := strings.Replace(string(saved.Raw), "Write tests.", "Edit failed, explicitly recovered, retry verified.", 1)
+	file := filepath.Join(s.Root, "aidlc/.runtime/drafts/session.md")
+	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Execute(cli.MinimalRequest{Command: "kdr", Action: "update", Target: saved.ID, Space: "default", Session: "session", File: file, Actor: "process:test", Expect: saved.Hash}); err != nil {
+		t.Fatal(err)
+	}
+	current, _ = s.Inspect("session")
+	if current.Dirty {
+		t.Fatal("successful recording remains dirty")
+	}
+}
+
+func TestHookRecoveryDiagnostic(t *testing.T) {
+	s, saved := setup(t)
+	hook(t, s, "UserPromptSubmit", "", "", "", false)
+	bind(t, s, saved.ID)
+	hook(t, s, "PreToolUse", "Bash", "retained", "echo work", false)
+	out := hook(t, s, "PreToolUse", "Bash", "blocked", "echo retry", false)
+	raw, _ := json.Marshal(out)
+	for _, want := range []string{"session bind", saved.ID, "--space", "default", "--session", "--recover"} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("diagnostic lacks %s: %s", want, raw)
+		}
+	}
+	stop := hook(t, s, "Stop", "", "", "", false)
+	raw, _ = json.Marshal(stop)
+	if !strings.Contains(string(raw), "unrecorded=true") {
+		t.Fatalf("Stop omits current state: %s", raw)
+	}
+}

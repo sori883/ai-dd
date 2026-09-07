@@ -21,14 +21,15 @@ import (
 )
 
 type journeyObservation struct {
-	Input         minimal.HookInput
-	Before, After minimal.Session
-	Output        map[string]any
-	Documents     map[string]string
-	Response      string
-	Error         string
-	Phase         string
-	Files         map[string]string
+	Input          minimal.HookInput
+	Before, After  minimal.Session
+	Output         map[string]any
+	Documents      map[string]string
+	Response       string
+	TranscriptPath string
+	Error          string
+	Phase          string
+	Files          map[string]string
 }
 
 func TestMinimalJourneyRejectsMissingDenial(t *testing.T) {
@@ -115,7 +116,8 @@ func TestMinimalJourneyRelay(t *testing.T) {
 		t.Fatalf("invalid product response: %s %s", output, stderr.String())
 	}
 	var wire struct {
-		Response string `json:"tool_response"`
+		Response       string `json:"tool_response"`
+		TranscriptPath string `json:"transcript_path"`
 	}
 	if err := json.Unmarshal(raw, &wire); err != nil {
 		t.Fatal(err)
@@ -123,7 +125,7 @@ func TestMinimalJourneyRelay(t *testing.T) {
 	documents := journeyDocuments(t, root)
 	phase, _ := os.ReadFile(filepath.Join(evidence, "phase"))
 	files := map[string]string{}
-	for _, name := range []string{"boundary-terminal", "boundary-followup", "aidlc/spaces/default/knowledge/rules/rule.md"} {
+	for _, name := range []string{"boundary-edit.txt", "boundary-terminal", "boundary-followup", "aidlc/spaces/default/knowledge/rules/rule.md"} {
 		if raw, err := os.ReadFile(filepath.Join(root, name)); err == nil {
 			files[name] = string(raw)
 		}
@@ -132,7 +134,7 @@ func TestMinimalJourneyRelay(t *testing.T) {
 		journeyObservation
 		Raw    json.RawMessage
 		Stderr string
-	}{journeyObservation{Input: in, Before: before, After: after, Output: decision, Documents: documents, Response: wire.Response, Error: journeyError(runErr), Phase: strings.TrimSpace(string(phase)), Files: files}, raw, stderr.String()}
+	}{journeyObservation{Input: in, Before: before, After: after, Output: decision, Documents: documents, Response: wire.Response, TranscriptPath: wire.TranscriptPath, Error: journeyError(runErr), Phase: strings.TrimSpace(string(phase)), Files: files}, raw, stderr.String()}
 	data, err := json.Marshal(record)
 	if err != nil {
 		t.Fatal(err)

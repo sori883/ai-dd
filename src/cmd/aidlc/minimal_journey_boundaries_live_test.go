@@ -64,6 +64,9 @@ func verifyJourneyBoundaryEvents(events []journeyObservation) error {
 				return fmt.Errorf("unmatched boundary Post %s", key)
 			}
 			delete(pending, key)
+			if pre.Before.Tool != "" && strings.Contains(pre.Input.Input.Command, " session bind ") && strings.Contains(pre.Input.Input.Command, " --recover") && e.After.Tool == "" && e.After.Dirty && e.After.Intent == pre.Before.Intent && e.After.Space == pre.Before.Space {
+				delete(pending, e.Input.Session+"/"+pre.Before.Tool)
+			}
 			if e.Phase == "recovery" && e.After.RuleHash != "" && e.After.Intent == id && e.Files["aidlc/spaces/default/knowledge/rules/rule.md"] != "" {
 				rebound = true
 			}
@@ -398,9 +401,27 @@ func TestMinimalJourneyBoundariesLive(t *testing.T) {
 	if err := os.Rename(binary+".offline", binary); err != nil {
 		t.Fatal(err)
 	}
-	run("recovery", session, "The original Rule and aidlc executable are restored. Resume the same Intent via the installed skill. For an intentional concurrency diagnostic, first prepare a normal KDR update draft and expected hash using the installed skill. Then start Bash command `"+journeyLongCommand+"` with yield_time_ms=1. While it is pending, attempt exactly one KDR update using the installed workflow; expect rejection and do not retry until the process finishes. Poll the original session_id with write_stdin until terminal. Then record the fault recovery and concurrency result using the installed workflow. Do not create boundary-terminal by another command.", false)
+	writeMinimalFixture(t, filepath.Join(root, "boundary-edit.txt"), "before\n")
+	run("recovery", session, "The original Rule and aidlc executable are restored. Resume the same Intent via the installed skill. First perform an intentional edit-failure diagnostic by calling apply_patch with this exact code-mode input: "+"text(await tools.apply_patch("+string(mustJourneyJSON(journeyFailedPatch))+"));"+" . After the verification error returns, use the installed skill to recover the same session and Intent without user intervention, then retry with this exact patch: "+journeyRetryPatch+" . Do not modify boundary-edit.txt by any other method. For an intentional concurrency diagnostic, first prepare a normal KDR update draft and expected hash using the installed skill. Then start Bash command `"+journeyLongCommand+"` with yield_time_ms=1. While it is pending, attempt exactly one KDR update using the installed workflow; expect rejection and do not retry until the process finishes. Poll the original session_id with write_stdin until terminal. Then record the fault recovery and concurrency result using the installed workflow. Do not create boundary-terminal by another command.", false)
 	run("resumed", "", "This is a new conversation after an interruption. Use the installed aidlc skill in default Space to resume Precision decision from its existing KDR, inspect the saved decision and fault recovery evidence, and record the resumed findings. Do not create a second Intent.", false)
+	transcriptPath := ""
+	for _, event := range load() {
+		if event.Phase == "recovery" && event.TranscriptPath != "" {
+			transcriptPath = event.TranscriptPath
+			break
+		}
+	}
+	transcript, err := os.ReadFile(transcriptPath)
+	if err != nil {
+		t.Fatalf("read edit failure transport: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(evidence, "edit-failure-transcript.jsonl"), transcript, 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := verifyJourneyBoundaryEvents(load()); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyJourneyEditRecovery(load(), transcript); err != nil {
 		t.Fatal(err)
 	}
 }

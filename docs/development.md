@@ -1453,3 +1453,13 @@ AIDLC_MINIMAL_JOURNEY_LIVE=1 go test -tags=integration -v -count=1 -timeout=35m 
 専用 temp の Rule と executable を test operator が一時的に除去・復旧し、製品の判断を変更せず観測します。
 CLI 自体が起動不能でも raw process 診断と未記録状態を残します。各 checkpoint の prompt、stdout/stderr、
 hook raw payload、前後状態は evidence directory に保存されます。実行不能や不足証拠を成功とは扱いません。
+
+編集 tool が検証エラーで終了し Post が届かない場合、AI は失敗終了を確認して、固定 executable の
+`session bind <id> --space <space> --session <session> --recover` を単独実行します。
+残留 slot があっても現在の会話・Space・Intent が一致する場合だけ通ります。動作中 Bash は poll し、
+時間経過だけで解除しません。復旧後も未記録で、Rule を全文再読込し、再試行・検証・同じ KDR 保存まで続けます。
+利用者に毎回復旧操作を要求しません。最後の一般確認後に KDR を更新し、保存後に git status 等を追加したら再記録します。
+保存に失敗した場合は未記録と理由を示し、保存済みとは主張しません。
+
+境界 live は意図した patch 検証失敗→失敗の raw transport→Post 不在→AI の明示 recover→patch 再試行の
+現物変更→同じ KDR 保存・clean Stop を追加で要求します。context limit は使用する SessionStart だけに設定します。

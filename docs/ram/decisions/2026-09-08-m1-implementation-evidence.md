@@ -161,3 +161,38 @@ production/hook/live harness は変更していない。gofmt 適用、diff chec
 main live の read-only 原因確認では、第二 session は同じ KDR の更新後に一般 Bash の git status/diff を実行し、
 再び未記録となった。その後の再 update がなく Stop(false) は block、Stop(true) は warning で終わった。
 したがって `sessions=1` は第二 session の clean 終了欠落を正しく拒否した結果であり、live 成功とは扱わない。
+
+## 編集失敗からの継続: m1-edit-failure-recovery
+
+開始 HEAD `0f82410f7ebf4b474a40815cdc8c2857de08cf28`、Issue #128。
+[直接承認された補足計画](2026-09-08-edit-failure-remains-in-progress.md)に従い、単独writerが loop で修正。
+
+1. `TestHookEditFailureRecovery` は同じ session/Space/Intent の明示 recover が残留 slot に拒否される
+   runnable RED（exit 1）を観測し、固定単独CLIだけの例外追加後 GREEN（exit 0）。
+   通常 bind、別対象、混在 shell、一般操作の拒否を維持。復旧後の未記録、変更された Rule の再読込、
+   再試行・同一 KDR 更新まで確認した。Rule 再読込の追加確認は既存Serviceで ALREADY_GREEN。
+2. `TestHookRecoveryDiagnostic` と `TestInstallRecoveryGuidanceAndContextLimit` は正確な文法・状態表示・
+   対応event限定 context limit の欠落で RED→GREEN。配置skillは原稿3086 bytesで4 KiB以内。
+   AIが失敗終了を確認し同じ対象へ recover、Bashはpoll、最後の一般操作後に保存、追加操作後は再保存と案内する。
+   Stop一回block/再入warnは維持。未記録のまま保存済み・完了とは主張しない。
+3. `TestMinimalJourneyEditRecoveryEvidence` は失敗応答、Post不在、正しいsession復旧、未記録維持、
+   再試行・file変更、KDR保存、clean Stop の不足を runnable RED→GREEN で拒否する。
+   `TestMinimalJourneyAcceptsExplicitEditRecovery` はmain判定器に残る失敗編集のpendingを
+   正しい明示復旧後に完了扱いできない RED→GREEN。復旧をPost受信と取り違えない。
+   boundary live の既存recovery checkpoint内に意図したpatch検証失敗と再試行を追加した。
+   外側call IDで結び付いた固定版の raw failure response と、製品 hook ID のPost不在・復旧を別々に検査する。
+   raw transcript の複製はtest evidenceのみで、製品の状態や判断に依存させない。
+
+loopではliveを起動していない。親の起動入口は引き続き次の2件。
+
+```sh
+AIDLC_MINIMAL_JOURNEY_LIVE=1 go test -tags=integration -v -count=1 -timeout=20m ./src/cmd/aidlc -run '^TestMinimalJourneyLive$'
+AIDLC_MINIMAL_JOURNEY_LIVE=1 go test -tags=integration -v -count=1 -timeout=35m ./src/cmd/aidlc -run '^TestMinimalJourneyBoundariesLive$'
+```
+
+新API/永続状態/依存module/権限は追加していない。終了を推測する自動解除も追加していない。
+
+末尾targetedは `go test -count=1 ./src/internal/minimal -run '^Test(Session|Hook|Rules)'`、
+`go test -count=1 ./src/internal/install -run '^TestInstall'`、
+`go test -tags=integration -count=1 ./src/cmd/aidlc -run '^TestMinimalJourney'` が全て exit 0
+（1.558s、0.393s、9.970s）。gofmt・diff check 成功。全final・live・GitHub操作・commitは未実施。

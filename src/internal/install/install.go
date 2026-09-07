@@ -64,7 +64,10 @@ func Codex(root, binary string) (result Result, err error) {
 	}
 	hooks := map[string]any{}
 	for _, event := range []string{"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"} {
-		group := map[string]any{"hooks": []any{map[string]any{"type": "command", "command": shellQuote(binary) + " __minimal-hook --project-dir " + shellQuote(root), "timeout": 10, "additionalContextLimit": 8192}}}
+		group := map[string]any{"hooks": []any{map[string]any{"type": "command", "command": shellQuote(binary) + " __minimal-hook --project-dir " + shellQuote(root), "timeout": 10}}}
+		if event == "SessionStart" {
+			group["hooks"].([]any)[0].(map[string]any)["additionalContextLimit"] = 8192
+		}
 		if event == "PreToolUse" || event == "PostToolUse" {
 			group["matcher"] = "^(Bash|apply_patch)$"
 		}

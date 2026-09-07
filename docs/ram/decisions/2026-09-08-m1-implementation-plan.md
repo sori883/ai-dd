@@ -1,5 +1,7 @@
 # M1: 単一バイナリでOKF・KDR・hookの作業を一周させる実装計画
 
+編集失敗で終了通知がない場合の対応は、直接承認済みの[作業継続の補足計画](2026-09-08-edit-failure-remains-in-progress.md)で具体化した。
+
 - 日付: 2026-09-08
 - 状態: Accepted / 実装着手
 - 対応Issue: [#128](https://github.com/sori883/ai-dd/issues/128)

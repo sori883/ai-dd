@@ -50,7 +50,7 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 				return nil, nil
 			}
 			if state.Tool != "" {
-				return nil, invalid("another tool is still running; poll it to completion")
+				return nil, invalid("another tool is still running. " + s.recoveryHint(input.Session, state))
 			}
 			if state.Intent == "" || state.Space == "" {
 				return nil, invalid("select an Intent and read its KDR and Rules first")
@@ -86,7 +86,7 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 					out["systemMessage"] = "KDR is still unrecorded or a tool is running. Stopping with a warning; this is not a completion claim."
 				} else {
 					out["decision"] = "block"
-					out["reason"] = "Record the current findings, verification and remaining work in the same KDR using the aidlc skill. Poll any running tool first. Then finish; do not repeat completed work."
+					out["reason"] = fmt.Sprintf("unrecorded=%t; running_tool=%q. Finish all general operations, then save the findings and remaining work to this same KDR with the installed skill. Any general check after saving requires another update. Do not claim recorded completion until saving succeeds. %s", state.Dirty, state.Tool, s.recoveryHint(input.Session, state))
 				}
 			}
 			return nil, nil
@@ -147,6 +147,9 @@ func (s Service) exception(input HookInput, state *Session) bool {
 	case "kdr/create", "intent/create":
 		return state.Tool == "" && s.sameDraft(r.File, input.Session)
 	case "session/bind", "intent/switch":
+		if r.Command == "session" && r.Recover && r.Session == input.Session && r.Space == state.Space && r.Target == state.Intent && state.Intent != "" {
+			return true
+		}
 		return state.Tool == "" && r.Session == input.Session
 	case "kdr/repair":
 		return state.Tool == "" && r.Session == input.Session && s.sameDraft(r.File, input.Session)
@@ -247,4 +250,12 @@ func (s Service) protectedPatch(patch string) bool {
 		}
 	}
 	return false
+}
+
+func (s Service) recoveryHint(session string, state *Session) string {
+	if state.Tool == "" {
+		return "No running tool slot; update the KDR after the final general operation."
+	}
+	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
+	return "Poll a running Bash process to terminal. Only after an edit tool returned a failure and you confirmed it ended, run the same-session recovery as one command: " + quote(s.Binary) + " session bind " + quote(state.Intent) + " --space " + quote(state.Space) + " --session " + quote(session) + " --recover. Recovery keeps the work unrecorded; retry, verify, and save the same KDR."
 }

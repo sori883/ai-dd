@@ -33,7 +33,8 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 
 | 種別 | 記録 | 状態 |
 | --- | --- | --- |
-| 調査 | [編集失敗時の終了通知欠落と明示復旧の確認](research/2026-09-08-minimal-live-failure-recovery-gate.md) | 確認待ち（固定Codexの失敗patchにPostなし。M1実機検証は未完了） |
+| 意思決定 | [編集失敗後も同じIntentで作業を続ける](decisions/2026-09-08-edit-failure-remains-in-progress.md) | Accepted（AIが停止を確認して復旧・再試行。未記録を保持し同じKDRへ保存） |
+| 調査 | [編集失敗時の終了通知欠落と明示復旧の確認](research/2026-09-08-minimal-live-failure-recovery-gate.md) | Resolved（上記の継続方針を承認。失敗の実機証拠は保持） |
 | 意思決定 | [M1最小Intent実装の検証証拠](decisions/2026-09-08-m1-implementation-evidence.md) | Review修正のLoop完了（索引破損判定・実機証拠の補強。再review・finalは後続gate） |
 | 意思決定 | [初回の操作案内をSessionStartから渡す](decisions/2026-09-08-minimal-bootstrap-context.md) | Accepted implementation detail（配置済み最小skillだけ、必須Rule本文はCLI読込を維持） |
 | 意思決定 | [CLIとhookの一時保存先をworktreeへ揃える](decisions/2026-09-08-minimal-runtime-workspace-path.md) | Accepted implementation detail（aidlc/.runtime、Git対象外。正本・権限は維持） |
