@@ -293,10 +293,24 @@ func duplicateStageShard(t *testing.T, f humanTurnWorkspaceFixture) {
 	}
 }
 
+// This tracked fixture projects the seven Ideation stages and scope cells from
+// AI-DLC 2.6.123. It preserves identity, execution, placement, dependency, and
+// summary metadata; unrelated prose, review, sensor, and rule data are omitted.
+// Tests never require the developer's ignored distribution snapshot at runtime.
+const stageReceiptCatalogFixture = "testdata/ideation-2.6.123"
+
 func TestStageSummaryContractFixedCatalog(t *testing.T) {
-	catalog, err := graph.Load(os.DirFS("../../../docs/配布_ai-dlc/.codex/tools/data"))
+	catalog, err := graph.Load(os.DirFS(stageReceiptCatalogFixture))
 	if err != nil {
 		t.Fatal(err)
+	}
+	wantStages := []string{"intent-capture", "market-research", "feasibility", "scope-definition", "team-formation", "rough-mockups", "approval-handoff"}
+	gotStages := make([]string, 0, len(catalog.Stages()))
+	for _, stage := range catalog.Stages() {
+		gotStages = append(gotStages, stage.Slug)
+	}
+	if !reflect.DeepEqual(gotStages, wantStages) {
+		t.Fatalf("fixture stages = %v, want %v", gotStages, wantStages)
 	}
 	for _, stage := range catalog.Stages() {
 		if stage.Phase != "ideation" {
@@ -430,7 +444,7 @@ func newStageReceiptFixture(t *testing.T, stage string) humanTurnWorkspaceFixtur
 		t.Fatal(err)
 	}
 	for _, name := range []string{"stage-graph.json", "scope-grid.json"} {
-		data, err := os.ReadFile(filepath.Join("../../../docs/配布_ai-dlc/.codex/tools/data", name))
+		data, err := os.ReadFile(filepath.Join(stageReceiptCatalogFixture, name))
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -1,0 +1,123 @@
+{
+  "bugfix": {
+    "stages": {
+      "intent-capture": "SKIP",
+      "market-research": "SKIP",
+      "feasibility": "SKIP",
+      "scope-definition": "SKIP",
+      "team-formation": "SKIP",
+      "rough-mockups": "SKIP",
+      "approval-handoff": "SKIP"
+    }
+  },
+  "classic": {
+    "stages": {
+      "intent-capture": "SKIP",
+      "market-research": "SKIP",
+      "feasibility": "SKIP",
+      "scope-definition": "SKIP",
+      "team-formation": "SKIP",
+      "rough-mockups": "SKIP",
+      "approval-handoff": "SKIP"
+    }
+  },
+  "enterprise": {
+    "stages": {
+      "intent-capture": "EXECUTE",
+      "market-research": "EXECUTE",
+      "feasibility": "EXECUTE",
+      "scope-definition": "EXECUTE",
+      "team-formation": "EXECUTE",
+      "rough-mockups": "EXECUTE",
+      "approval-handoff": "EXECUTE"
+    }
+  },
+  "express": {
+    "stages": {
+      "intent-capture": "SKIP",
+      "market-research": "SKIP",
+      "feasibility": "SKIP",
+      "scope-definition": "SKIP",
+      "team-formation": "SKIP",
+      "rough-mockups": "SKIP",
+      "approval-handoff": "SKIP"
+    }
+  },
+  "feature": {
+    "stages": {
+      "intent-capture": "EXECUTE",
+      "market-research": "EXECUTE",
+      "feasibility": "EXECUTE",
+      "scope-definition": "EXECUTE",
+      "team-formation": "EXECUTE",
+      "rough-mockups": "EXECUTE",
+      "approval-handoff": "EXECUTE"
+    }
+  },
+  "infra": {
+    "stages": {
+      "intent-capture": "SKIP",
+      "market-research": "SKIP",
+      "feasibility": "SKIP",
+      "scope-definition": "SKIP",
+      "team-formation": "SKIP",
+      "rough-mockups": "SKIP",
+      "approval-handoff": "SKIP"
+    }
+  },
+  "mvp": {
+    "stages": {
+      "intent-capture": "EXECUTE",
+      "market-research": "SKIP",
+      "feasibility": "EXECUTE",
+      "scope-definition": "EXECUTE",
+      "team-formation": "SKIP",
+      "rough-mockups": "EXECUTE",
+      "approval-handoff": "SKIP"
+    }
+  },
+  "poc": {
+    "stages": {
+      "intent-capture": "EXECUTE",
+      "market-research": "SKIP",
+      "feasibility": "SKIP",
+      "scope-definition": "SKIP",
+      "team-formation": "SKIP",
+      "rough-mockups": "SKIP",
+      "approval-handoff": "SKIP"
+    }
+  },
+  "refactor": {
+    "stages": {
+      "intent-capture": "SKIP",
+      "market-research": "SKIP",
+      "feasibility": "SKIP",
+      "scope-definition": "SKIP",
+      "team-formation": "SKIP",
+      "rough-mockups": "SKIP",
+      "approval-handoff": "SKIP"
+    }
+  },
+  "security-patch": {
+    "stages": {
+      "intent-capture": "SKIP",
+      "market-research": "SKIP",
+      "feasibility": "SKIP",
+      "scope-definition": "SKIP",
+      "team-formation": "SKIP",
+      "rough-mockups": "SKIP",
+      "approval-handoff": "SKIP"
+    }
+  },
+  "workshop": {
+    "stages": {
+      "intent-capture": "SKIP",
+      "market-research": "SKIP",
+      "feasibility": "SKIP",
+      "scope-definition": "SKIP",
+      "team-formation": "SKIP",
+      "rough-mockups": "SKIP",
+      "approval-handoff": "SKIP"
+    }
+  }
+}
