@@ -33,4 +33,10 @@ Stopが補完を求めたら保存成功まで続ける。保存できない場�
 
 独立レビューは固定コード版の別Git checkout・別root会話でread-only sandboxを使う。
 レビュー先にはwriter hookを配置せず、同じKDR・必須ルール・差分を読ませ、結果をwriterがKDRへ記録する。
-共有知識の採用は必須ルールの合意に従いmemory create/updateを使う。
+共有知識は必須ルールの合意後に保存する。Concept IDは拡張子なしのBundle相対名（例 knowledge/addition-test）。
+draftは本文とmetadataを持つOKF Markdown、actorは実際の実行者。
+`aidlc memory create <concept-id> --space <space> --file <draft> --actor <actor>`
+`aidlc memory show <concept-id> --space <space>` のJSONで原本contentとhashを読む。
+contentのmetadataを保持してdraftを更新し、そのhashを期待値に使う。
+`aidlc memory update <concept-id> --space <space> --file <draft> --actor <actor> --expect <hash>`
+`aidlc memory search [query] --space <space> [--intent-id <id>]` はmetadata検索で、選択を変えない。

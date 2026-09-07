@@ -196,3 +196,21 @@ AIDLC_MINIMAL_JOURNEY_LIVE=1 go test -tags=integration -v -count=1 -timeout=35m 
 `go test -count=1 ./src/internal/install -run '^TestInstall'`、
 `go test -tags=integration -count=1 ./src/cmd/aidlc -run '^TestMinimalJourney'` が全て exit 0
 （1.558s、0.393s、9.970s）。gofmt・diff check 成功。全final・live・GitHub操作・commitは未実施。
+
+## final2 と memory 文法案内: m1-memory-cli-guidance
+
+開始 HEAD `de97182`、Issue #128、既存承認範囲の配置案内修正。
+親のfinal2では全nonlive検証が成功し、境界liveは全6 phaseを543秒で完了してPASSした。
+編集失敗→recover→retry、async更新競合、同会話の回答・別会話の再開を実機確認できた。
+境界evidence: `/private/var/folders/9w/921pjkys39q28sk4xsc0hs000000gn/T/aidlc-minimal-boundaries-765011879`。
+
+mainは外側timeout（308秒、exit 1）で未合格。
+`/private/var/folders/9w/921pjkys39q28sk4xsc0hs000000gn/T/aidlc-minimal-journey-3707071674` のrawを
+read-only確認したところ、memory文法探索で4回の入力エラーがあり、create/show/updateと最後のKDR保存に時間を使った。
+最新raw末尾にはDirty=falseのStopとturn.completedも残るが、外側timeoutの失敗を成功へ読み替えない。
+
+`TestInstallMemoryCommandGuidance` は完全な文法と拡張子なしConcept ID説明の欠落によるrunnable RED
+（exit 1）を確認した。配置skillへ create/update/show/search の文法、`knowledge/addition-test` の例、
+actor/draft、showのcontent/hashからupdateのexpectへ渡す方法を追加後GREEN（exit 0）。
+skill原稿3691 bytes、実行ファイルpathを展開した実配布本文も4096 bytes以内で検査する。
+製品policy、live判定器、timeoutは変更していない。live/全final/GitHub/commitはこのloopでは未実施。

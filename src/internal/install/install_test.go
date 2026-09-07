@@ -100,3 +100,29 @@ func TestInstallRecoveryGuidanceAndContextLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestInstallMemoryCommandGuidance(t *testing.T) {
+	root := t.TempDir()
+	binary := "/private/var/folders/example/aidlc-minimal-journey-1234567890/bin/aidlc"
+	if _, err := Codex(root, binary); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) > 4096 {
+		t.Fatalf("deployed skill is %d bytes, limit 4096", len(raw))
+	}
+	for _, want := range []string{
+		"memory create <concept-id> --space <space> --file <draft> --actor <actor>",
+		"memory update <concept-id> --space <space> --file <draft> --actor <actor> --expect <hash>",
+		"memory show <concept-id> --space <space>",
+		"memory search [query] --space <space> [--intent-id <id>]",
+		"knowledge/addition-test", "拡張子なし", "hash", "content",
+	} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("deployed skill lacks %q", want)
+		}
+	}
+}

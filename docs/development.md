@@ -1463,3 +1463,8 @@ hook raw payload、前後状態は evidence directory に保存されます。�
 
 境界 live は意図した patch 検証失敗→失敗の raw transport→Post 不在→AI の明示 recover→patch 再試行の
 現物変更→同じ KDR 保存・clean Stop を追加で要求します。context limit は使用する SessionStart だけに設定します。
+
+配置 aidlc skill には memory create/update/show/search の完全な文法も含まれます。
+Concept ID は `knowledge/addition-test` のような拡張子なしの Bundle 相対名です。
+create は `--space`、`--file`、`--actor` を指定し、update は show が返した原本 `content` の metadata を
+保持した draft と `hash` を `--expect` に渡します。知識採用には引き続き必須 Rule に沿った合意が必要です。
