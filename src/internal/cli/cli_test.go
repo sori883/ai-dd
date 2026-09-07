@@ -36,6 +36,19 @@ const wantHelp = `AI-DLC command-line interface
 
 Usage:
   aidlc <command>
+  aidlc install codex --project-dir <root>
+  aidlc intent create <name> --space <space> --file <draft> --actor <actor>
+  aidlc intent list --space <space>
+  aidlc intent switch <name> --space <space> --session <session>
+  aidlc kdr template --space <space>
+  aidlc kdr create --space <space> --file <draft> --actor <actor>
+  aidlc kdr list --space <space>
+  aidlc kdr show <id> --space <space> [--raw]
+  aidlc kdr check <id> --space <space>
+  aidlc kdr update <id> --space <space> --file <draft> --expect <hash> --session <session> --actor <actor>
+  aidlc kdr repair <id> --space <space> --file <draft> --expect <hash|missing> --session <session> --actor <actor>
+  aidlc memory <search|show|rules|check|create|update> --space <space>
+  aidlc session <bind|inspect> --session <session>
   aidlc knowledge search [--tag <tag>]... [--type <type>]... [--query <text>] [--limit <1..100>] [--project-dir <path>]
   aidlc next [--project-dir <path>]
   aidlc continue <token> [--project-dir <path>]

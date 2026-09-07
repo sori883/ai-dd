@@ -147,3 +147,17 @@ go test -tags=integration -count=1 ./src/cmd/aidlc -run '^TestMinimalJourney'
 修正末尾の上記4 command はすべて exit 0（okfmemory 0.725s、kdr 0.528s、minimal 2.100s、
 cmd/aidlc 11.070s）。gofmt 適用と `git diff --check` 成功。HEAD は開始時のまま。
 全体 test/race/vet/cross-build/live は実行していない。
+
+## final で判明した既存期待値の更新: m1-final-expectations
+
+開始 HEAD は `3fb1cbc`、Issue #128 の新 help/Space 契約に直接対応する test expectation だけを更新した。
+`go test -count=1 ./src/internal/cli -run '^TestRun_(Help|HelpWriteError|UnknownArguments)$'` は旧 help 全文との差で
+exit 1 を再現し、明示 literal の期待値へ新公開 command を追加後 exit 0。
+`go test -count=1 ./src/cmd/aidlc -run '^TestMainSpaceCreateClosedPipes$'` は旧 scaffold 期待で exit 1 を再現し、
+新 OKF の6 directory・6 file の本文を検査する期待へ更新後 exit 0。
+閉 pipe の exit 1、出力境界、完成 Space 保持、再試行の EEXIST と全 tree 不変の検査は維持した。
+production/hook/live harness は変更していない。gofmt 適用、diff check 成功。
+
+main live の read-only 原因確認では、第二 session は同じ KDR の更新後に一般 Bash の git status/diff を実行し、
+再び未記録となった。その後の再 update がなく Stop(false) は block、Stop(true) は warning で終わった。
+したがって `sessions=1` は第二 session の clean 終了欠落を正しく拒否した結果であり、live 成功とは扱わない。
