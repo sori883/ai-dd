@@ -16,6 +16,19 @@ const helpText = `AI-DLC command-line interface
 
 Usage:
   aidlc <command>
+  aidlc install codex --project-dir <root>
+  aidlc intent create <name> --space <space> --file <draft> --actor <actor>
+  aidlc intent list --space <space>
+  aidlc intent switch <name> --space <space> --session <session>
+  aidlc kdr template --space <space>
+  aidlc kdr create --space <space> --file <draft> --actor <actor>
+  aidlc kdr list --space <space>
+  aidlc kdr show <id> --space <space> [--raw]
+  aidlc kdr check <id> --space <space>
+  aidlc kdr update <id> --space <space> --file <draft> --expect <hash> --session <session> --actor <actor>
+  aidlc kdr repair <id> --space <space> --file <draft> --expect <hash|missing> --session <session> --actor <actor>
+  aidlc memory <search|show|rules|check|create|update> --space <space>
+  aidlc session <bind|inspect> --session <session>
   aidlc knowledge search [--tag <tag>]... [--type <type>]... [--query <text>] [--limit <1..100>] [--project-dir <path>]
   aidlc next [--project-dir <path>]
   aidlc continue <token> [--project-dir <path>]
@@ -61,6 +74,7 @@ func isHumanTurnHookCommand(args []string) bool {
 // Dependencies groups the workspace operations used by Run. Nil callbacks are
 // valid for commands that do not invoke the corresponding operation.
 type Dependencies struct {
+	Minimal          func(MinimalRequest) ([]byte, error)
 	SearchKnowledge  func(okf.SearchOptions, string) (okf.SearchResult, error)
 	CreateSpace      func(rawName, explicitDir string) (string, error)
 	ListSpaces       func(explicitDir string) ([]workspace.Space, error)
@@ -117,6 +131,9 @@ func Run(
 				fmt.Sprintf("aidlc %s (commit %s)\n", info.Version, info.Commit),
 			)
 		}
+	}
+	if isMinimal(args) {
+		return runMinimal(args, stdout, stderr, dependencies)
 	}
 	if isHumanTurnHookCommand(args) {
 		if dependencies.PrepareOutput != nil {

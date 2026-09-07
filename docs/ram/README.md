@@ -33,6 +33,29 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 
 | 種別 | 記録 | 状態 |
 | --- | --- | --- |
+| 意思決定 | [編集失敗後も同じIntentで作業を続ける](decisions/2026-09-08-edit-failure-remains-in-progress.md) | Accepted（AIが停止を確認して復旧・再試行。未記録を保持し同じKDRへ保存） |
+| 調査 | [編集失敗時の終了通知欠落と明示復旧の確認](research/2026-09-08-minimal-live-failure-recovery-gate.md) | Resolved（上記の継続方針を承認。失敗の実機証拠は保持） |
+| 意思決定 | [M1最小Intent実装の検証証拠](decisions/2026-09-08-m1-implementation-evidence.md) | Review修正のLoop完了（索引破損判定・実機証拠の補強。再review・finalは後続gate） |
+| 意思決定 | [初回の操作案内をSessionStartから渡す](decisions/2026-09-08-minimal-bootstrap-context.md) | Accepted implementation detail（配置済み最小skillだけ、必須Rule本文はCLI読込を維持） |
+| 意思決定 | [CLIとhookの一時保存先をworktreeへ揃える](decisions/2026-09-08-minimal-runtime-workspace-path.md) | Accepted implementation detail（aidlc/.runtime、Git対象外。正本・権限は維持） |
+| 調査 | [固定Codexの最小hook実機確認](research/2026-09-08-minimal-hook-live-preflight.md) | Preflight passed（15 hook入力・8 transport呼出し、Pre拒否・非同期Post・Stop再入を実証） |
+| 意思決定 | [M1実装計画と直接承認](decisions/2026-09-08-m1-implementation-plan.md) | Accepted / 実装着手（OKF・KDR・hook・名前操作・ID検索。固定hook実証を先頭gateとする） |
+| 意思決定 | [OKF検索でintent_idを指定できるようにする](decisions/2026-09-08-okf-intent-id-search.md) | Accepted（Space内のfrontmatter完全一致検索。標準metadata利用も採用） |
+| 意思決定 | [KDRでもOKFの標準metadataを利用する](decisions/2026-09-08-kdr-okf-metadata-clarification.md) | Clarified（description・tags・generated・status等の用途を補足。識別3項目に限定しない） |
+| 意思決定 | [Intentを名前で選び、KDRのfrontmatterに識別情報を保存する](decisions/2026-09-08-intent-name-frontmatter-accepted.md) | Accepted（名前で作成・選択、intent_idとtitleを保存。会話との対応は内部管理） |
+| 意思決定 | [M1着手前の確認とIntent操作の未決事項](decisions/2026-09-08-m1-readiness-intent-operation-question.md) | Resolved（質問履歴。上記の名前操作・frontmatterの合意で解消） |
+| 意思決定 | [OKF・初期資産の内包、OKF Space作成、rule.md継承を採用する](decisions/2026-09-08-single-binary-space-rule-accepted.md) | Accepted（3点ともA。組織Ruleはrules/rule.mdを作成時コピー） |
+| 意思決定 | [Goシングルバイナリ継続とAI-DLC準拠範囲の確認](decisions/2026-09-08-single-binary-and-conformance-questions.md) | Resolved（質問履歴。回答は上記の採用記録） |
+| 意思決定 | [Space作成もAI-DLCに準拠する](decisions/2026-09-07-minimal-space-creation-conformance.md) | Accepted（作成契約を固定本家基準とし、OKF初期化との接続をM1計画で具体化） |
+| 意思決定 | [Space内の配置案を採用し、配布の仕組みはAI-DLCに準拠する](decisions/2026-09-07-minimal-layout-distribution-conformance.md) | Accepted（下位分類を含む配置案を採用。本家の生成・配置方式を配布設計へ反映） |
+| 意思決定 | [SpaceのknowledgeへKnowledge・KDR・RuleをOKFとして集約する](decisions/2026-09-07-space-knowledge-okf-unification.md) | Accepted（配置・全文書のOKF対応を直接指定。M1実装は未承認） |
+| 意思決定 | [OKF Go実装のローカル参照先](decisions/2026-09-07-okf-local-implementation-reference.md) | Accepted（`docs/実装_okf-agent-memory/`を実装参考に指定。元commitは未確認） |
+| 意思決定 | [M0最小契約を具体化した案と、未承認のM1境界](decisions/2026-09-07-minimal-product-contract-proposal.md) | Proposed（Intent/KDR/CLI/hook/OKFとM1対象・検証を具体化。契約採用・M1実装は未承認） |
+| 意思決定 | [新方式では既存Intent・stateの移行を要件にしない](decisions/2026-09-07-minimal-product-no-legacy-migration.md) | Accepted（既存は無視してよいとの回答。移行・互換性・新旧二重運用を要求しない） |
+| 意思決定 | [現在のGo実装からOKF・Intent KDRへ移るマイルストーン案](decisions/2026-09-07-minimal-product-milestones.md) | Proposed（mainとPR履歴を棚卸し。M0契約→M1一周実証→M2運用→M3配布・縮小。既存移行不要の回答を反映） |
+| 意思決定 | [Intent単位のKDR記録とhookの保証範囲](decisions/2026-09-07-intent-kdr-hook-boundary.md) | Accepted（Intentごとの作成・記録を必須化。通常のAI操作の記録漏れ防止。実装計画全体は未承認） |
+| 意思決定 | [OKF・KDR・hookへ製品構成を絞る方針](decisions/2026-09-07-okf-kdr-minimal-product-direction.md) | 方向性を記録、具体設計はProposed（hookの保証範囲・KDR保存単位は後続決定で確定） |
+| 意思決定 | [合意・成果物・検証・再開を中心にするworkflowの設計検討](decisions/2026-09-07-artifact-centered-workflow-proposal.md) | Proposed（ユーザーの設計依頼。Stageを案内へ変更する案、共有成果物・再開・根拠・監査・移行を検討。実装は未承認） |
 | 意思決定 | [初期実装の境界](decisions/2026-08-29-initial-implementation-boundaries.md) | Accepted |
 | 意思決定 | [プロジェクトRAMの記録運用](decisions/2026-08-29-project-ram-policy.md) | Accepted |
 | 意思決定 | [Project root解決の初期契約](decisions/2026-08-30-project-root-resolution.md) | Accepted |

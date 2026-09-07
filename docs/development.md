@@ -1384,3 +1384,87 @@ snapshot不変、Stage canary不在を確認して成功しました。永続mod
 実装・受入条件・後続Stage境界は
 [Codex receiverの計画](ram/decisions/2026-09-05-codex-receiver-read-plan.md)と[安全なcontext読込契約](ram/decisions/2026-09-05-codex-safe-context-read-contract.md)
 を参照してください。
+
+## 名前による最小 Intent の作業
+
+新しい Git repository で `aidlc install codex --project-dir <絶対path>` を実行すると、
+単一 binary 内の標準 Rule、KDR template、aidlc skill、read-only reviewer 設定、Codex hook が配置されます。
+既存の同名配置先は上書きせず診断します。binary を移動した場合は hook の固定 executable path も確認してください。
+新しい Space は `aidlc space create "Team Alpha" --project-dir <root>` で `team-alpha` に正規化され、
+`knowledge/` 直下の OKF v0.2 Bundle を作ります。default の Rule はコピーされ、後の変更は独立します。
+
+Codex では配置済み aidlc skill を入口にし、対象 Space と目的を自然な名前で指示します。
+`intent create <name> --space <space> --file <draft> --actor <actor>` は KDR を作成し、
+`intent switch <name> --space <space> --session <session>` はその会話へ選択し、KDR と必須 Rule を全文返します。
+同名が複数ある場合は候補を確認して `--id <32桁ID>` を使います。検索・作成・一覧は選択を変えません。
+`--space` のない従来の Intent command は既存経路です。
+
+KDR の `show` は hash、読みやすい `content` と原本 byte 列の Base64 `Raw` を返します。
+`update` は `--expect <hash>` と同じ ID を要求し、未知 metadata と既存 metadata を脱落させません。
+質問待ちも KDR の不明点・理由・再開点に記録します。成功した更新だけが会話の未記録状態を解除します。
+その後の利用者入力・一般 tool 操作で再び未記録になります。
+共有知識は利用者の合意に従い `memory create/update <Concept ID> --space <space> --file <draft> --actor <actor>`
+で保存します（update は `--expect` も必須）。`memory search [query] --space <space> [--intent-id <id>]`
+は metadata の AND 検索で、Intent ID は完全一致です。本文は `memory show <Concept ID>` で読みます。
+
+本文・親 index・root log は別々の原子的 file 保存です。途中で失敗したときは、返された保存先と hash を確認し、
+KDR を `show --raw` で読み直して `repair --expect <hash|missing>` で同じ ID に復旧します。
+正常な本文は repair で変更されません。復旧経緯は通常 update で記録します。
+`aidlc/.runtime/` の session、draft、lock は内部 `.gitignore` で Git から除外します。
+lock は自動で横取りしません。異常終了で lock が残った場合は、所有 process が停止したことを確認してから
+該当 lock directory を除去します。tool slot の残留は停止を確認後 `session bind --recover` で明示復旧します。
+
+正常終了は exit 0、入力・競合の診断は exit 2、保存や読込などの実行失敗は exit 1 です。
+hook の拒否は有効 JSON で返され、一般操作の許可経路だけが tool slot を取得します。
+長時間 Bash は write_stdin で終端まで poll し、途中で別一般操作や KDR update を開始しません。
+
+通常の新機能一周は `go test -tags=integration -count=1 ./src/cmd/aidlc -run '^TestMinimalJourney$'` です。
+実 model の確認は親の final gate でのみ、次の opt-in test を起動します。
+
+```sh
+AIDLC_MINIMAL_JOURNEY_LIVE=1 go test -tags=integration -v -count=1 -timeout=20m ./src/cmd/aidlc -run '^TestMinimalJourneyLive$'
+```
+
+固定 Codex 0.153.4 / macOS arm64、gpt-6-astra / medium、通常 workspace-write、approval never を使います。
+認証と HOME/CODEX_HOME は既存環境を継承します。test 専用 project hook の trust bypass だけを使い、
+ユーザー設定を変更しません。別 checkout で実際の read-only model review を行い、その結果を再開会話へ渡します。
+raw hook、前後 session、stdout/stderr、レビュー本文は表示される一時 evidence directory に残ります。
+通常 CI では live は skip されます。live の成功はモデルの意図説明ではなく、hook pairing、未記録解除、
+別 session、canary 不在、実際の Go test、同じ KDR と採用 Knowledge の保存で判定します。
+
+`TestMinimalJourneyBoundaries` は実 binary で質問待ち→次の入力、Stop 再入、実行中 process と更新競合、
+Rule 欠落→復旧、CLI executable 消失→診断→復旧、別会話への再開を deterministic に確認します。
+`go test -tags=integration -count=1 ./src/cmd/aidlc -run '^TestMinimalJourney'` で main 一周と併せて実行できます。
+CLI 消失時の診断は process 起動失敗であり、hook が壊れた環境での OS 強制停止を保証するものではありません。
+導入時には hook の発火を確認し、故障を検知したら作業を止めて executable・配置・設定を復旧してください。
+`memory show` は原本の `content` と `hash` を JSON で返すため、その hash を update の期待値に使えます。
+
+review 修正後の live main は、model が固定 Go test helper を起動し、実際の TestAdd run/fail/pass と
+process exit、変更前後の source、同じ test bytes を確認します。`go test` のテスト不在成功では通りません。
+二つの writer session それぞれで同じ KDR 本文の bind、内容 update、clean Stop が必要です。
+
+質問待ち・故障・長時間競合の実 model checkpoint は別入口です。
+
+```sh
+AIDLC_MINIMAL_JOURNEY_LIVE=1 go test -tags=integration -v -count=1 -timeout=35m ./src/cmd/aidlc -run '^TestMinimalJourneyBoundariesLive$'
+```
+
+質問の回答と故障復旧は明示した同じ Codex session を resume し、最後の再開だけを別 session にします。
+専用 temp の Rule と executable を test operator が一時的に除去・復旧し、製品の判断を変更せず観測します。
+CLI 自体が起動不能でも raw process 診断と未記録状態を残します。各 checkpoint の prompt、stdout/stderr、
+hook raw payload、前後状態は evidence directory に保存されます。実行不能や不足証拠を成功とは扱いません。
+
+編集 tool が検証エラーで終了し Post が届かない場合、AI は失敗終了を確認して、固定 executable の
+`session bind <id> --space <space> --session <session> --recover` を単独実行します。
+残留 slot があっても現在の会話・Space・Intent が一致する場合だけ通ります。動作中 Bash は poll し、
+時間経過だけで解除しません。復旧後も未記録で、Rule を全文再読込し、再試行・検証・同じ KDR 保存まで続けます。
+利用者に毎回復旧操作を要求しません。最後の一般確認後に KDR を更新し、保存後に git status 等を追加したら再記録します。
+保存に失敗した場合は未記録と理由を示し、保存済みとは主張しません。
+
+境界 live は意図した patch 検証失敗→失敗の raw transport→Post 不在→AI の明示 recover→patch 再試行の
+現物変更→同じ KDR 保存・clean Stop を追加で要求します。context limit は使用する SessionStart だけに設定します。
+
+配置 aidlc skill には memory create/update/show/search の完全な文法も含まれます。
+Concept ID は `knowledge/addition-test` のような拡張子なしの Bundle 相対名です。
+create は `--space`、`--file`、`--actor` を指定し、update は show が返した原本 `content` の metadata を
+保持した draft と `hash` を `--expect` に渡します。知識採用には引き続き必須 Rule に沿った合意が必要です。
