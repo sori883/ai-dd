@@ -121,6 +121,31 @@ func TestStageReceiptCompletedEpochReopensAndIgnoresOtherStages(t *testing.T) {
 	}
 }
 
+func TestStageReceiptCompletedEpochRejectsDirectFingerprintAnswer(t *testing.T) {
+	f := newStageReceiptFixture(t, "intent-capture")
+	ctx := context.Background()
+	decision := IntentCaptureDecision{
+		Stage: "intent-capture", DecisionID: "q1", Fingerprint: "question-v1",
+	}
+	if err := RecordIntentCaptureDecision(ctx, f.identity, f.projectRoot, f.recordRoot, decision); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordHumanTurn(ctx, f.identity, f.projectRoot, f.recordRoot); err != nil {
+		t.Fatal(err)
+	}
+	appendStageReceiptEvent(t, f, Event{
+		Event: "STAGE_COMPLETED", Fields: map[string]string{"Stage": "intent-capture"},
+	})
+	before := stageReceiptRecords(t, f)
+	err := RecordIntentCaptureAnswer(ctx, f.identity, f.projectRoot, f.recordRoot, decision, "yes")
+	if !errors.Is(err, ErrIntentCaptureStale) {
+		t.Fatalf("direct fingerprint answer after completion: %v, want stale", err)
+	}
+	if after := stageReceiptRecords(t, f); !reflect.DeepEqual(before, after) {
+		t.Fatal("direct fingerprint answer after completion changed audit")
+	}
+}
+
 func TestStageSummaryConfirmationLifecycle(t *testing.T) {
 	for _, stage := range []string{"intent-capture", "market-research", "scope-definition"} {
 		t.Run(stage, func(t *testing.T) {
