@@ -1195,76 +1195,7 @@ type IntentCaptureDecision struct {
 // RecordIntentCaptureDecision records the decision boundary before its human
 // response. It deliberately does not mint a HUMAN_TURN event.
 func RecordIntentCaptureDecision(ctx context.Context, identity recordlock.Identity, projectRoot, recordRoot *os.Root, decision IntentCaptureDecision) error {
-	if err := validateIntentCaptureDecision(decision); err != nil {
-		return err
-	}
-	return recordlock.With(ctx, identity, func(guard *recordlock.Guard) error {
-		document, err := state.ReadDocument(recordRoot)
-		if err != nil {
-			return fmt.Errorf("record intent-capture decision: read state: %w", err)
-		}
-		if document.State.CurrentStage() != decision.Stage {
-			return fmt.Errorf("record intent-capture decision: current stage changed: %w", ErrIntentCaptureStale)
-		}
-		records, err := ReadEvents(ctx, identity, guard, projectRoot, recordRoot)
-		if err != nil {
-			return fmt.Errorf("record intent-capture decision: read audit: %w", err)
-		}
-		ordered, err := orderIntentCaptureRecords(records)
-		if err != nil {
-			return fmt.Errorf("record intent-capture decision: order audit: %w", err)
-		}
-		anchor := latestIntentCaptureStageEpochIndex(ordered, decision.Stage)
-		currentSummaryDigest := ""
-		if decision.DecisionID == "summary" {
-			questions, _, readErr := readIntentCaptureQuestions(recordRoot)
-			if readErr != nil {
-				return fmt.Errorf("record intent-capture summary decision: read questions: %w", readErr)
-			}
-			if _, err := summaryConfirmationCanonicalContent(questions, false); err != nil {
-				return fmt.Errorf("record intent-capture summary decision: validate questions: %w", err)
-			}
-			if digest, digestErr := summaryConfirmationContentHash(questions); digestErr == nil {
-				currentSummaryDigest = digest
-			}
-		}
-		for index, record := range ordered {
-			if index <= anchor {
-				continue
-			}
-			if record.Event == "DECISION_RECORDED" && record.Fields["Stage"] == decision.Stage && record.Fields["Decision"] == decision.DecisionID {
-				if decision.DecisionID == "summary" && currentSummaryDigest != "" && !summaryConfirmationMatchesAfter(ordered, index, currentSummaryDigest) {
-					continue
-				}
-				return fmt.Errorf("record intent-capture decision: duplicate decision %q: %w", decision.DecisionID, ErrIntentCaptureStale)
-			}
-		}
-		fields := map[string]string{
-			"Stage":    decision.Stage,
-			"Decision": decision.DecisionID,
-		}
-		if decision.Options != "" {
-			fields["Options"] = decision.Options
-		}
-		if decision.DecisionID == "summary" {
-			questions, _, readErr := readIntentCaptureQuestions(recordRoot)
-			if readErr != nil {
-				return fmt.Errorf("record intent-capture summary decision: read questions: %w", readErr)
-			}
-			if _, err := summaryConfirmationCanonicalContent(questions, false); err != nil {
-				return fmt.Errorf("record intent-capture summary decision: validate questions: %w", err)
-			}
-			fields["Checkpoint"] = "Consolidated Summary Confirmation"
-			fields["Questions File"] = intentCaptureQuestionsFile
-			fields["Options"] = intentCaptureSummaryOptions
-		} else {
-			fields["Question Fingerprint"] = decision.Fingerprint
-		}
-		return appendIntentCaptureForIdentity(ctx, identity, guard, projectRoot, recordRoot, []Event{{
-			Event:  "DECISION_RECORDED",
-			Fields: fields,
-		}})
-	})
+	return recordStageDecision(ctx, identity, projectRoot, recordRoot, decision, legacyIntentSummaryContract)
 }
 
 func summaryConfirmationMatchesAfter(records []AuditRecord, decisionIndex int, digest string) bool {
@@ -1288,182 +1219,29 @@ func RecordIntentCaptureDecisionFromQuestions(ctx context.Context, identity reco
 // derived while the record lock is held; the caller may provide only the
 // rendered options, never an authority fingerprint or audit position.
 func RecordIntentCaptureDecisionFromQuestionsWithOptions(ctx context.Context, identity recordlock.Identity, projectRoot, recordRoot *os.Root, stage, decisionID, options string) error {
-	if !validIntentCaptureToken(stage) || !validIntentCaptureToken(decisionID) {
-		return fmt.Errorf("record intent-capture decision: invalid stage or decision id: %w", ErrIntentCaptureAmbiguous)
-	}
-	return recordlock.With(ctx, identity, func(guard *recordlock.Guard) error {
-		document, err := state.ReadDocument(recordRoot)
-		if err != nil {
-			return fmt.Errorf("record intent-capture decision: read state: %w", err)
-		}
-		if document.State.CurrentStage() != stage {
-			return fmt.Errorf("record intent-capture decision: current stage changed: %w", ErrIntentCaptureStale)
-		}
-		_, fingerprint, err := readIntentCaptureQuestions(recordRoot)
-		if err != nil {
-			return fmt.Errorf("record intent-capture decision: read questions: %w", err)
-		}
-		records, err := ReadEvents(ctx, identity, guard, projectRoot, recordRoot)
-		if err != nil {
-			return fmt.Errorf("record intent-capture decision: read audit: %w", err)
-		}
-		ordered, err := orderIntentCaptureRecords(records)
-		if err != nil {
-			return fmt.Errorf("record intent-capture decision: order audit: %w", err)
-		}
-		anchor := latestIntentCaptureStageEpochIndex(ordered, stage)
-		for index, record := range ordered {
-			if index > anchor && record.Event == "DECISION_RECORDED" && record.Fields["Stage"] == stage && record.Fields["Decision"] == decisionID {
-				return fmt.Errorf("record intent-capture decision: duplicate decision %q: %w", decisionID, ErrIntentCaptureStale)
-			}
-		}
-		return appendIntentCaptureForIdentity(ctx, identity, guard, projectRoot, recordRoot, []Event{{
-			Event: "DECISION_RECORDED",
-			Fields: map[string]string{
-				"Stage": stage, "Decision": decisionID, "Question Fingerprint": fingerprint, "Options": options,
-			},
-		}})
-	})
+	return recordStageQuestionDecision(ctx, identity, projectRoot, recordRoot, stage, decisionID, options, legacyIntentSummaryContract)
 }
 
 // RecordIntentCaptureAnswer records a question answer only after exactly one
 // fresh HUMAN_TURN follows the matching decision. A second turn, an already
 // answered decision, or ambiguous cross-shard ordering fails closed.
 func RecordIntentCaptureAnswer(ctx context.Context, identity recordlock.Identity, projectRoot, recordRoot *os.Root, decision IntentCaptureDecision, answer string) error {
-	if err := validateIntentCaptureDecision(decision); err != nil {
-		return err
-	}
-	if answer == "" {
-		return fmt.Errorf("record intent-capture answer: empty answer: %w", ErrIntentCaptureAmbiguous)
-	}
-	return recordlock.With(ctx, identity, func(guard *recordlock.Guard) error {
-		document, err := state.ReadDocument(recordRoot)
-		if err != nil {
-			return fmt.Errorf("record intent-capture answer: read state: %w", err)
-		}
-		if document.State.CurrentStage() != decision.Stage {
-			return fmt.Errorf("record intent-capture answer: current stage changed: %w", ErrIntentCaptureStale)
-		}
-		records, err := ReadEvents(ctx, identity, guard, projectRoot, recordRoot)
-		if err != nil {
-			return fmt.Errorf("record intent-capture answer: read audit: %w", err)
-		}
-		if err := validateIntentCaptureDecisionAnswer(records, decision); err != nil {
-			return err
-		}
-		return appendIntentCaptureForIdentity(ctx, identity, guard, projectRoot, recordRoot, []Event{{
-			Event: "QUESTION_ANSWERED",
-			Fields: map[string]string{
-				"Stage":                decision.Stage,
-				"Decision":             decision.DecisionID,
-				"Answer":               answer,
-				"Details":              answer,
-				"Question Fingerprint": decision.Fingerprint,
-			},
-		}})
-	})
+	return recordStageAnswer(ctx, identity, projectRoot, recordRoot, decision, answer)
 }
 
 // RecordIntentCaptureAnswerByID is the hidden-bridge answer entry point. The
 // backend resolves the latest current-attempt decision and its fingerprint
 // from the locked ledger, so callers cannot supply a digest or stale receipt.
 func RecordIntentCaptureAnswerByID(ctx context.Context, identity recordlock.Identity, projectRoot, recordRoot *os.Root, stage, decisionID, answer string) error {
-	if !validIntentCaptureToken(stage) || !validIntentCaptureToken(decisionID) {
-		return fmt.Errorf("record intent-capture answer: invalid stage or decision id: %w", ErrIntentCaptureAmbiguous)
-	}
-	if answer == "" {
-		return fmt.Errorf("record intent-capture answer: empty answer: %w", ErrIntentCaptureAmbiguous)
-	}
-	return recordlock.With(ctx, identity, func(guard *recordlock.Guard) error {
-		document, err := state.ReadDocument(recordRoot)
-		if err != nil {
-			return fmt.Errorf("record intent-capture answer: read state: %w", err)
-		}
-		if document.State.CurrentStage() != stage {
-			return fmt.Errorf("record intent-capture answer: current stage changed: %w", ErrIntentCaptureStale)
-		}
-		records, err := ReadEvents(ctx, identity, guard, projectRoot, recordRoot)
-		if err != nil {
-			return fmt.Errorf("record intent-capture answer: read audit: %w", err)
-		}
-		ordered, err := orderIntentCaptureRecords(records)
-		if err != nil {
-			return fmt.Errorf("record intent-capture answer: order audit: %w", err)
-		}
-		anchor := latestIntentCaptureStageEpochIndex(ordered, stage)
-		decisionIndex := -1
-		fingerprint := ""
-		for index, record := range ordered {
-			if index <= anchor || record.Event != "DECISION_RECORDED" || record.Fields["Stage"] != stage || record.Fields["Decision"] != decisionID || record.Fields["Checkpoint"] != "" {
-				continue
-			}
-			decisionIndex = index
-			fingerprint = record.Fields["Question Fingerprint"]
-		}
-		if decisionIndex < 0 || fingerprint == "" {
-			return fmt.Errorf("record intent-capture answer: decision %q is missing: %w", decisionID, ErrIntentCaptureStale)
-		}
-		decision := IntentCaptureDecision{Stage: stage, DecisionID: decisionID, Fingerprint: fingerprint}
-		if err := validateIntentCaptureDecisionAnswer(ordered, decision); err != nil {
-			return err
-		}
-		return appendIntentCaptureForIdentity(ctx, identity, guard, projectRoot, recordRoot, []Event{{
-			Event: "QUESTION_ANSWERED",
-			Fields: map[string]string{
-				"Stage": stage, "Decision": decisionID, "Answer": answer, "Details": answer, "Question Fingerprint": fingerprint,
-			},
-		}})
-	})
+	return recordStageQuestionAnswer(ctx, identity, projectRoot, recordRoot, stage, decisionID, answer, legacyIntentSummaryContract)
 }
 
 // RecordSummaryConfirmation records the exact consolidated-summary response
 // after its own decision and fresh human turn. The hash scope is a fixed
 // protocol token, not a caller-selected authority mode.
 func RecordSummaryConfirmation(ctx context.Context, identity recordlock.Identity, projectRoot, recordRoot *os.Root, decision IntentCaptureDecision, answer, contentFingerprint string) error {
-	if err := validateIntentCaptureDecision(decision); err != nil {
-		return err
-	}
-	if answer != "Looks correct" {
-		return fmt.Errorf("summary confirmation answer %q is not exact: %w", answer, ErrIntentCaptureAmbiguous)
-	}
 	_ = contentFingerprint // retained for source compatibility; never authority
-	return recordlock.With(ctx, identity, func(guard *recordlock.Guard) error {
-		document, err := state.ReadDocument(recordRoot)
-		if err != nil {
-			return fmt.Errorf("record summary confirmation: read state: %w", err)
-		}
-		if document.State.CurrentStage() != decision.Stage {
-			return fmt.Errorf("record summary confirmation: current stage changed: %w", ErrIntentCaptureStale)
-		}
-		questions, _, err := readIntentCaptureQuestions(recordRoot)
-		if err != nil {
-			return fmt.Errorf("record summary confirmation: read questions: %w", err)
-		}
-		questionsDigest, err := summaryConfirmationContentHash(questions)
-		if err != nil {
-			return fmt.Errorf("record summary confirmation: validate questions: %w", err)
-		}
-		records, err := ReadEvents(ctx, identity, guard, projectRoot, recordRoot)
-		if err != nil {
-			return fmt.Errorf("record summary confirmation: read audit: %w", err)
-		}
-		resolved := decision
-		resolved.Fingerprint = "summary"
-		if err := validateIntentCaptureDecisionAnswer(records, resolved); err != nil {
-			return err
-		}
-		return appendIntentCaptureForIdentity(ctx, identity, guard, projectRoot, recordRoot, []Event{{
-			Event: "SUMMARY_CONFIRMATION_RECORDED",
-			Fields: map[string]string{
-				"Stage":             decision.Stage,
-				"Details":           "Looks correct",
-				"Checkpoint":        "Consolidated Summary Confirmation",
-				"Questions File":    intentCaptureQuestionsFile,
-				"Questions SHA-256": questionsDigest,
-				"Hash Scope":        intentCaptureHashScope,
-			},
-		}})
-	})
+	return recordStageSummaryConfirmation(ctx, identity, projectRoot, recordRoot, decision, answer, legacyIntentSummaryContract)
 }
 
 const (
@@ -1671,80 +1449,13 @@ func summaryHeadings(lines, visible []string) []summaryHeading {
 }
 
 func readIntentCaptureQuestions(recordRoot *os.Root) ([]byte, string, error) {
-	if recordRoot == nil {
-		return nil, "", fmt.Errorf("questions root is nil: %w", ErrInvalidRoot)
-	}
-	pathInfo, err := recordRoot.Lstat(intentCaptureQuestionsFile)
-	if err != nil {
-		return nil, "", err
-	}
-	if pathInfo == nil || pathInfo.Mode()&fs.ModeSymlink != 0 || !pathInfo.Mode().IsRegular() {
-		return nil, "", fmt.Errorf("questions file must be a regular non-symlink file: %w", ErrIntentCaptureAmbiguous)
-	}
-	if err := auditLeafAfterLstat(recordRoot, intentCaptureQuestionsFile); err != nil {
-		return nil, "", fmt.Errorf("questions pre-open validation: %w", err)
-	}
-	file, err := openAuditLeaf(recordRoot, intentCaptureQuestionsFile)
-	if err != nil {
-		return nil, "", err
-	}
-	if file == nil {
-		return nil, "", fmt.Errorf("questions file open returned nil: %w", ErrIntentCaptureAmbiguous)
-	}
-	defer file.Close()
-	opened, err := file.Stat()
-	if err != nil {
-		return nil, "", err
-	}
-	if opened == nil || !opened.Mode().IsRegular() || !os.SameFile(pathInfo, opened) {
-		return nil, "", fmt.Errorf("questions file changed identity before read: %w", ErrIntentCaptureStale)
-	}
-	content, err := io.ReadAll(io.LimitReader(file, maxIntentCaptureQuestions+1))
-	if err != nil {
-		return nil, "", err
-	}
-	if len(content) > maxIntentCaptureQuestions {
-		return nil, "", fmt.Errorf("questions file exceeds %d bytes: %w", maxIntentCaptureQuestions, ErrIntentCaptureAmbiguous)
-	}
-	if !utf8.Valid(content) {
-		return nil, "", fmt.Errorf("questions file is not valid UTF-8: %w", ErrIntentCaptureAmbiguous)
-	}
-	final, err := file.Stat()
-	if err != nil {
-		return nil, "", err
-	}
-	current, err := recordRoot.Lstat(intentCaptureQuestionsFile)
-	if err != nil {
-		return nil, "", err
-	}
-	if final == nil || current == nil || !final.Mode().IsRegular() || current.Mode()&fs.ModeSymlink != 0 || !current.Mode().IsRegular() || !os.SameFile(pathInfo, final) || !os.SameFile(pathInfo, current) {
-		return nil, "", fmt.Errorf("questions file changed identity during read: %w", ErrIntentCaptureStale)
-	}
-	digest := sha256.Sum256(content)
-	return content, hex.EncodeToString(digest[:]), nil
+	return readStageQuestions(recordRoot, intentCaptureQuestionsFile)
 }
 
 // ValidateSummaryConfirmationCurrent verifies the fixed questions leaf and
 // canonical confirmation fields against a previously recorded receipt.
 func ValidateSummaryConfirmationCurrent(recordRoot *os.Root, record AuditRecord) error {
-	if record.Event != "SUMMARY_CONFIRMATION_RECORDED" || record.Fields["Details"] != "Looks correct" || record.Fields["Checkpoint"] != "Consolidated Summary Confirmation" || record.Fields["Questions File"] != intentCaptureQuestionsFile {
-		return fmt.Errorf("summary confirmation fields are incomplete: %w", ErrIntentCaptureStale)
-	}
-	questions, _, err := readIntentCaptureQuestions(recordRoot)
-	if err != nil {
-		return fmt.Errorf("validate summary confirmation questions: %w", err)
-	}
-	if record.Fields["Hash Scope"] != intentCaptureHashScope {
-		return fmt.Errorf("summary confirmation hash scope is unsupported: %w", ErrIntentCaptureStale)
-	}
-	digest, err := summaryConfirmationContentHash(questions)
-	if err != nil {
-		return fmt.Errorf("validate summary confirmation questions: %w", err)
-	}
-	if digest != record.Fields["Questions SHA-256"] {
-		return fmt.Errorf("summary confirmation questions digest changed: %w", ErrIntentCaptureStale)
-	}
-	return nil
+	return validateStageSummaryContent(recordRoot, record, stageSummaryContract{questionsFile: intentCaptureQuestionsFile})
 }
 
 // ValidateReviewReceiptCurrent verifies the latest request/completion pair

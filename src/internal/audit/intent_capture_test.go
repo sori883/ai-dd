@@ -9,11 +9,75 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/sori883/ai-dd/src/internal/recordlock"
 )
+
+func TestIntentCaptureStageCoreCompatibility(t *testing.T) {
+	ctx := context.Background()
+	legacy := newStageReceiptFixture(t, "intent-capture")
+	generic := newStageReceiptFixture(t, "intent-capture")
+	if err := RecordIntentCaptureDecisionFromQuestionsWithOptions(ctx, legacy.identity, legacy.projectRoot, legacy.recordRoot, "intent-capture", "q1", "yes,no"); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordStageQuestionDecision(ctx, generic.identity, generic.projectRoot, generic.recordRoot, "intent-capture", "q1", "yes,no"); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []humanTurnWorkspaceFixture{legacy, generic} {
+		if err := RecordHumanTurn(ctx, f.identity, f.projectRoot, f.recordRoot); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := RecordIntentCaptureAnswerByID(ctx, legacy.identity, legacy.projectRoot, legacy.recordRoot, "intent-capture", "q1", "yes"); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordStageQuestionAnswer(ctx, generic.identity, generic.projectRoot, generic.recordRoot, "intent-capture", "q1", "yes"); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []humanTurnWorkspaceFixture{legacy, generic} {
+		writeStageQuestions(t, f, "intent-capture", stageSummaryBlank)
+	}
+	decision := IntentCaptureDecision{Stage: "intent-capture", DecisionID: "summary", Fingerprint: "caller-value", Options: "forged"}
+	if err := RecordIntentCaptureDecision(ctx, legacy.identity, legacy.projectRoot, legacy.recordRoot, decision); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordStageSummaryDecision(ctx, generic.identity, generic.projectRoot, generic.recordRoot, "intent-capture"); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []humanTurnWorkspaceFixture{legacy, generic} {
+		if err := RecordHumanTurn(ctx, f.identity, f.projectRoot, f.recordRoot); err != nil {
+			t.Fatal(err)
+		}
+		writeStageQuestions(t, f, "intent-capture", strings.Replace(stageSummaryBlank, "[Answer]: \n", "[Answer]: Looks correct\n", 1))
+	}
+	if err := RecordSummaryConfirmation(ctx, legacy.identity, legacy.projectRoot, legacy.recordRoot, decision, "Looks correct", "forged"); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordStageSummaryConfirmation(ctx, generic.identity, generic.projectRoot, generic.recordRoot, "intent-capture", "Looks correct"); err != nil {
+		t.Fatal(err)
+	}
+	want, got := stageReceiptRecords(t, legacy), stageReceiptRecords(t, generic)
+	if len(want) != len(got) {
+		t.Fatalf("record count: %d != %d", len(want), len(got))
+	}
+	for index := range want {
+		if want[index].Event != got[index].Event || !reflect.DeepEqual(want[index].Fields, got[index].Fields) {
+			t.Fatalf("record %d differs: %#v != %#v", index, want[index], got[index])
+		}
+	}
+	if err := ValidateSummaryConfirmationCurrent(legacy.recordRoot, want[len(want)-1]); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordSummaryConfirmation(ctx, legacy.identity, legacy.projectRoot, legacy.recordRoot, decision, "Looks correct", "forged"); !errors.Is(err, ErrIntentCaptureStale) {
+		t.Fatalf("legacy stale chain: %v", err)
+	}
+	if err := RecordStageSummaryConfirmation(ctx, generic.identity, generic.projectRoot, generic.recordRoot, "intent-capture", "Looks correct"); !errors.Is(err, ErrIntentCaptureStale) {
+		t.Fatalf("generic stale chain: %v", err)
+	}
+}
 
 func TestSummaryConfirmationDerivesAndRevalidatesQuestionsDigest(t *testing.T) {
 	fixture := newHumanTurnWorkspaceFixture(t)

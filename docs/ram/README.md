@@ -69,6 +69,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 意思決定 | [OKF v0.2参照基盤と初期統合境界](decisions/2026-09-03-okf-reference-boundaries.md) | Partially Superseded（Issue #53、Stage実行中固定はin-flight recompose方針で置換、その他のOKF境界は維持） |
 | 意思決定 | [Space固有knowledgeをOKF metadataで段階的に検索する](decisions/2026-09-07-okf-metadata-knowledge-search-plan.md) | Accepted（Bundle root、検索・順位・上限、YAML module、legacy cutover、本家との差分を2026-09-07に直接承認） |
 | 意思決定 | [AI-DLC Go実装ロードマップ（概要）](decisions/2026-09-03-aidlc-implementation-roadmap.md) | Partially Superseded（全体順序は維持、Stage実行中固定とPRごとの承認待ちは後続決定で置換） |
+| 意思決定 | [Ideation Stage共通の質問・summary receipt基盤を作る](decisions/2026-09-07-stage-generic-summary-receipt-plan.md) | Accepted（Issue #126、ロードマップ第4段階の最初の共通基盤。固定2.6.123のreceipt schemaを維持し、非intent Stageのproduction gateは開かない） |
 | 意思決定 | [Stage catalog metadataの実装計画](decisions/2026-09-03-stage-catalog-metadata-plan.md) | Accepted（Issue #55、TDD・loop検証・独立review・final gateを記録） |
 | 意思決定 | [Intent開始時Stage Plan builderの実装計画](decisions/2026-09-03-stage-plan-builder-plan.md) | Accepted（Issue #57、ユーザー明示承認済み） |
 | 意思決定 | [StartIntent内部接続の実装計画](decisions/2026-09-03-start-intent-plan.md) | Accepted（Issue #61、ユーザー明示承認済み） |
@@ -131,4 +132,5 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 | 調査 | [Stage completion artifact presenceの参照契約](research/2026-09-03-stage-artifact-presence-contracts.md) | Current for local v2.6.123 snapshot（通常Stage any-of存在、filename例外、段階的境界） |
 | 調査 | [薄いライフサイクルのreport・approval・state遷移契約](research/2026-09-03-thin-lifecycle-transition-contracts.md) | Current for local v2.6.123 snapshot（guard順、marker、audit-first、state advance、PR6接続確認） |
 | 調査 | [知識配信を工程へ接続する前提調査](research/2026-09-05-context-delivery-stage-prerequisites.md) | Current for local v2.6.123 snapshot（Depth、artifact path、固定catalogと現在のgate能力境界） |
+| 調査 | [固定AI-DLC 2.6.123の33 StageとGo production能力の対応調査](research/2026-09-07-stage-phase-production-capability-matrix.md) | Current for repository-pinned v2.6.123（5 phase・33 Stageのdelivery/completion/artifact/summary/review/sensor/pipeline/per-unit/CodeKBと不足） |
 | 調査 | [Intent候補列挙・現在intent解決の参照契約](research/2026-08-31-intent-reading-contracts.md) | Current for local v2.6.123 snapshot |
