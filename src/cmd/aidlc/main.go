@@ -23,6 +23,7 @@ func main() {
 		os.Stderr,
 		buildinfo.Current(),
 		cli.Dependencies{
+			Minimal:         minimalCommand,
 			SearchKnowledge: knowledgeSearcher(os.Getwd, os.Getenv, time.Now),
 			CreateSpace:     spaceCreator(os.Getwd, os.Getenv, workspace.CreateSpace),
 			ListSpaces:      spaceLister(os.Getwd, os.Getenv, workspace.ReadSpaces),

@@ -1,8 +1,11 @@
 package workspace
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	core "github.com/sori883/ai-dd/src/core/minimal"
+	"github.com/sori883/ai-dd/src/internal/okf"
 	"io"
 	"io/fs"
 	"os"
@@ -70,41 +73,69 @@ func createSpace(
 }
 
 func populateSpace(root *os.Root, targetPath string) error {
-	for _, relative := range []string{
-		"memory", "memory/phases", "memory/templates", "intents", "codekb", "knowledge",
-	} {
-		name := filepath.Join(targetPath, filepath.FromSlash(relative))
-		if err := root.Mkdir(name, 0o777); err != nil {
-			return fmt.Errorf("create space directory %q: %w", name, err)
-		}
-	}
-	orgContent, err := readDefaultOrganization(func(name string) (io.ReadCloser, error) {
-		return root.Open(name)
-	})
+	rule, err := readDefaultRule(root)
 	if err != nil {
 		return err
 	}
-	files := []struct {
-		name    string
-		content string
-	}{
-		{name: "memory/org.md", content: orgContent},
-		{name: "memory/team.md", content: "# Team practices\n"},
-		{name: "memory/project.md", content: "# Project overrides\n"},
-		{name: "memory/templates/.gitkeep"},
-		{name: "codekb/.gitkeep"},
-		{name: "knowledge/.gitkeep"},
-	}
-	openFile := func(name string, flags int, mode fs.FileMode) (io.WriteCloser, error) {
-		return root.OpenFile(name, flags, mode)
-	}
-	for _, file := range files {
-		name := filepath.Join(targetPath, filepath.FromSlash(file.name))
-		if err := writeSpaceFile(name, file.content, openFile); err != nil {
+	return fs.WalkDir(core.Files, "knowledge", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		destination := filepath.Join(targetPath, filepath.FromSlash(path))
+		if entry.IsDir() {
+			return root.Mkdir(destination, 0777)
+		}
+		data, err := core.Files.ReadFile(path)
+		if err != nil {
 			return err
 		}
+		if path == "knowledge/rules/rule.md" {
+			data = rule
+		}
+		return writeSpaceFile(destination, string(data), func(name string, flags int, mode fs.FileMode) (io.WriteCloser, error) {
+			return root.OpenFile(name, flags, mode)
+		})
+	})
+}
+
+func readDefaultRule(root *os.Root) ([]byte, error) {
+	path := "aidlc/spaces/default/knowledge/rules/rule.md"
+	parts := strings.Split(path, "/")
+	for i := range parts {
+		info, err := root.Lstat(filepath.Join(parts[:i+1]...))
+		if errors.Is(err, fs.ErrNotExist) {
+			return core.Files.ReadFile("knowledge/rules/rule.md")
+		}
+		if err != nil {
+			return nil, err
+		}
+		if i >= 2 && info.Mode()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("default Rule symlink: %w", fs.ErrInvalid)
+		}
+		if i == len(parts)-1 && !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("default Rule is not regular: %w", fs.ErrInvalid)
+		}
 	}
-	return nil
+	file, err := root.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, 16*1024+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > 16*1024 {
+		return nil, fmt.Errorf("default Rule exceeds 16 KiB: %w", fs.ErrInvalid)
+	}
+	concept, err := okf.ParseConcept(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("invalid default Rule: %w", err)
+	}
+	if concept.Type != "Rule" {
+		return nil, fmt.Errorf("default Rule type must be Rule: %w", fs.ErrInvalid)
+	}
+	return data, nil
 }
 
 func readDefaultOrganization(openFile func(string) (io.ReadCloser, error)) (content string, err error) {

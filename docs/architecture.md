@@ -1471,3 +1471,23 @@ receipt/schema要求だけに限定し、routing、読込順、stop、canaryを�
 通常CIでは明示skipを維持します。2026-09-06に`codex-cli 0.153.4`と一回限りの`gpt-5.6-luna` overrideでlive testを実行し、
 compact proof、配信順、snapshot不変、Stage canary不在を確認して成功しました。詳細な証拠、credentialを扱わない境界、
 Stage実行を後続へ残す理由は[安全なcontext読込契約](ram/decisions/2026-09-05-codex-safe-context-read-contract.md)を参照してください。
+
+## 最小 Intent と Space OKF Bundle
+
+明示 `--space` の Intent/KDR/memory command は `internal/minimal` が調停します。
+`internal/kdr` は固定 ID の正本・hash 競合・repair、`internal/okfmemory` は YAML metadata 保持、
+Bundle 検査、検索、index/log 保存、`internal/install` は single binary 内 asset の配置を担当します。
+標準 Rule と template は `core/minimal`、Codex skill と reviewer は `harness/codex/minimal` が各一度 embed します。
+
+新しい Space の Bundle root は `aidlc/spaces/<space>/knowledge/` です。
+KDR はその `kdr/<intent_id>.md` に置き、名前は frontmatter title で扱います。
+session の一時選択状態は `aidlc/.runtime/sessions/`、会話専用 draft は `drafts/`、
+排他 lock は `locks/` に保存します。session lock → Space Bundle lock の順序を固定します。
+本文保存後に index/log 更新が失敗した場合、保存済み本文を隠さず同じ ID で repair します。
+
+SessionStart は配置済みの 4 KiB 以下の skill を bootstrap context として読みます。
+必須 Rule は別の全文読込（最大 16 KiB）と hash 確認を要求し、開始 hook だけでは読込済みにしません。
+PreToolUse が一般操作を許可すると slot を取得し、同じ hook tool_use_id の PostToolUse で解放します。
+Bash の Post は stdout のみなので成功/失敗 exit 判定はせず、どちらも未記録を維持します。
+code-mode outer call ID や transcript に製品状態を依存させません。
+Stop の最初の未記録拒否後、stop_hook_active の再入では警告を返し、記録済みにはしません。

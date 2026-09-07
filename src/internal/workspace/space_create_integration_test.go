@@ -4,6 +4,7 @@ package workspace
 
 import (
 	"errors"
+	core "github.com/sori883/ai-dd/src/core/minimal"
 	"io"
 	"io/fs"
 	"maps"
@@ -133,7 +134,7 @@ func TestCreateSpaceExistingTarget(t *testing.T) {
 		{name: "directory", dirs: []string{"aidlc/spaces/team"}},
 		{
 			name:  "populated directory",
-			files: map[string]string{"aidlc/spaces/team/memory/org.md": "preserve existing organization"},
+			files: map[string]string{"aidlc/spaces/team/knowledge/rules/rule.md": "preserve existing organization"},
 		},
 		{name: "file", files: map[string]string{"aidlc/spaces/team": "existing file"}},
 		{name: "directory link", dirs: []string{"elsewhere"}, linkTarget: "elsewhere"},
@@ -214,8 +215,8 @@ func TestCreateSpaceCopiesOnlyDefaultOrganization(t *testing.T) {
 		name    string
 		content string
 	}{
-		{name: "organization text", content: "\ufeff# 会社の規約\r\nCustom defaults.\n"},
-		{name: "empty organization file"},
+		{name: "organization text", content: "---\ntype: Rule\n---\n会社の規約\nCustom defaults.\n"},
+		{name: "minimal Rule", content: "---\ntype: Rule\n---\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -228,7 +229,7 @@ func TestCreateSpaceCopiesOnlyDefaultOrganization(t *testing.T) {
 				nil,
 				map[string]string{
 					"aidlc/active-space":                              "other\n",
-					"aidlc/spaces/default/memory/org.md":              tt.content,
+					"aidlc/spaces/default/knowledge/rules/rule.md":    tt.content,
 					"aidlc/spaces/default/memory/team.md":             "do not copy team",
 					"aidlc/spaces/default/memory/project.md":          "do not copy project",
 					"aidlc/spaces/default/memory/phases/custom.md":    "do not copy phase",
@@ -252,8 +253,8 @@ func TestCreateSpaceCopiesOnlyDefaultOrganization(t *testing.T) {
 				tt.content,
 			)
 			after := snapshotSpaceTree(t, projectPath)
-			if len(after) != len(before)+13 {
-				t.Errorf("created %d entries, want exactly 13", len(after)-len(before))
+			if len(after) != len(before)+12 {
+				t.Errorf("created %d entries, want exactly 12", len(after)-len(before))
 			}
 			for name, expected := range before {
 				actual, ok := after[name]
@@ -579,7 +580,7 @@ func TestCreateSpaceSymlinkBoundaries(t *testing.T) {
 						writeSpaceFixture(
 							t,
 							projectPath,
-							[]string{"aidlc/spaces/default/memory"},
+							[]string{"aidlc/spaces/default/knowledge/rules"},
 							nil,
 						)
 						linkPath = filepath.Join(
@@ -587,8 +588,9 @@ func TestCreateSpaceSymlinkBoundaries(t *testing.T) {
 							"aidlc",
 							"spaces",
 							"default",
-							"memory",
-							"org.md",
+							"knowledge",
+							"rules",
+							"rule.md",
 						)
 						targetPath = filepath.Join(targetRoot, "shared-org.md")
 						if !tt.broken {
@@ -625,7 +627,7 @@ func TestCreateSpaceSymlinkBoundaries(t *testing.T) {
 					outsideBefore := snapshotSpaceTree(t, outsidePath)
 					got, err := CreateSpace(RootInput{ExplicitDir: projectPath}, "team")
 					// A missing internal parent may be created; a missing internal seed uses the default text.
-					wantSuccess := !tt.outside && !tt.absolute
+					wantSuccess := boundary == "creation parent" && !tt.outside && !tt.absolute
 					if wantSuccess {
 						if got != "team" || err != nil {
 							t.Fatalf("CreateSpace() = (%q, %v), want (team, nil)", got, err)
@@ -662,7 +664,7 @@ func TestCreateSpaceOrganizationDirectoryIsError(t *testing.T) {
 	writeSpaceFixture(
 		t,
 		projectPath,
-		[]string{"aidlc/spaces/default/memory/org.md"},
+		[]string{"aidlc/spaces/default/knowledge/rules/rule.md"},
 		nil,
 	)
 	got, err := CreateSpace(RootInput{ExplicitDir: projectPath}, "team")
@@ -674,11 +676,10 @@ func TestCreateSpaceOrganizationDirectoryIsError(t *testing.T) {
 		"aidlc",
 		"spaces",
 		"team",
-		"memory",
 	)); err != nil {
 		t.Errorf("claimed target should remain after read failure: %v", err)
 	}
-	orgPath := filepath.Join(projectPath, filepath.FromSlash("aidlc/spaces/team/memory/org.md"))
+	orgPath := filepath.Join(projectPath, filepath.FromSlash("aidlc/spaces/team/knowledge/rules/rule.md"))
 	if _, err := os.Stat(orgPath); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("failed source read wrote a fallback file: %v", err)
 	}
@@ -698,22 +699,25 @@ func assertSpaceScaffold(t *testing.T, projectPath, name, orgContent string) {
 		dir     bool
 		content string
 	}{
-		".":                         {dir: true},
-		"memory":                    {dir: true},
-		"memory/phases":             {dir: true},
-		"memory/templates":          {dir: true},
-		"intents":                   {dir: true},
-		"codekb":                    {dir: true},
-		"knowledge":                 {dir: true},
-		"memory/org.md":             {content: orgContent},
-		"memory/team.md":            {content: "# Team practices\n"},
-		"memory/project.md":         {content: "# Project overrides\n"},
-		"memory/templates/.gitkeep": {},
-		"codekb/.gitkeep":           {},
-		"knowledge/.gitkeep":        {},
+		".": {dir: true}, "knowledge": {dir: true}, "knowledge/knowledge": {dir: true}, "knowledge/design": {dir: true}, "knowledge/kdr": {dir: true}, "knowledge/rules": {dir: true},
 	}
+	for _, path := range []string{"knowledge/index.md", "knowledge/knowledge/index.md", "knowledge/design/index.md", "knowledge/kdr/index.md", "knowledge/rules/entry.md", "knowledge/rules/rule.md"} {
+		data, err := core.Files.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := string(data)
+		if path == "knowledge/rules/rule.md" && orgContent != "# Organization defaults\n" {
+			content = orgContent
+		}
+		want[path] = struct {
+			dir     bool
+			content string
+		}{content: content}
+	}
+
 	if len(actual) != len(want) {
-		t.Errorf("new space contains %d entries, want 7 directories and 6 files", len(actual))
+		t.Errorf("new space contains %d entries, want 6 directories and 6 files", len(actual))
 	}
 	for relative, expected := range want {
 		entry, ok := actual[filepath.Join(target, filepath.FromSlash(relative))]
