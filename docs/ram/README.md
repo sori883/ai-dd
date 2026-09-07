@@ -33,7 +33,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 
 | 種別 | 記録 | 状態 |
 | --- | --- | --- |
-| 意思決定 | [M1最小Intent実装の検証証拠](decisions/2026-09-08-m1-implementation-evidence.md) | Loop完了（対象テスト成功。独立review・finalは後続gate） |
+| 意思決定 | [M1最小Intent実装の検証証拠](decisions/2026-09-08-m1-implementation-evidence.md) | Review修正のLoop完了（索引破損判定・実機証拠の補強。再review・finalは後続gate） |
 | 意思決定 | [初回の操作案内をSessionStartから渡す](decisions/2026-09-08-minimal-bootstrap-context.md) | Accepted implementation detail（配置済み最小skillだけ、必須Rule本文はCLI読込を維持） |
 | 意思決定 | [CLIとhookの一時保存先をworktreeへ揃える](decisions/2026-09-08-minimal-runtime-workspace-path.md) | Accepted implementation detail（aidlc/.runtime、Git対象外。正本・権限は維持） |
 | 調査 | [固定Codexの最小hook実機確認](research/2026-09-08-minimal-hook-live-preflight.md) | Preflight passed（15 hook入力・8 transport呼出し、Pre拒否・非同期Post・Stop再入を実証） |

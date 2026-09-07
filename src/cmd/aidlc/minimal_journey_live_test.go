@@ -24,40 +24,13 @@ type journeyObservation struct {
 	Input         minimal.HookInput
 	Before, After minimal.Session
 	Output        map[string]any
+	Documents     map[string]string
+	Response      string
+	Error         string
+	Phase         string
+	Files         map[string]string
 }
 
-func verifyJourneyEvents(events []journeyObservation) error {
-	sessions := map[string]bool{}
-	pending := map[string]bool{}
-	paired, clean, denied := false, false, false
-	for _, e := range events {
-		switch e.Input.Event {
-		case "SessionStart":
-			sessions[e.Input.Session] = true
-		case "PreToolUse":
-			specific, _ := e.Output["hookSpecificOutput"].(map[string]any)
-			if specific["permissionDecision"] == "deny" && e.Before.Intent == "" && e.After.Tool == "" {
-				denied = true
-			}
-			if e.After.Tool == e.Input.ID && e.Input.ID != "" && e.After.Dirty {
-				pending[e.Input.ID] = true
-			}
-		case "PostToolUse":
-			if pending[e.Input.ID] && e.Before.Tool == e.Input.ID && e.After.Tool == "" && e.After.Dirty {
-				paired = true
-				delete(pending, e.Input.ID)
-			}
-		case "Stop":
-			if e.Before.Intent != "" && !e.Before.Dirty && e.Before.Tool == "" {
-				clean = true
-			}
-		}
-	}
-	if len(sessions) < 2 || !paired || !clean || !denied || len(pending) != 0 {
-		return fmt.Errorf("missing journey evidence: sessions=%d paired=%v clean=%v pending=%d", len(sessions), paired, clean, len(pending))
-	}
-	return nil
-}
 func TestMinimalJourneyRejectsMissingDenial(t *testing.T) {
 	ready := minimal.Session{Intent: "id", Dirty: true}
 	running := ready
@@ -71,11 +44,11 @@ func TestMinimalJourneyRejectsMissingDenial(t *testing.T) {
 		{Input: minimal.HookInput{Event: "Stop"}, Before: clean},
 		{Input: minimal.HookInput{Event: "SessionStart", Session: "two"}},
 	}
-	if verifyJourneyEvents(events) == nil {
+	if verifyJourneyEvents(events, "fixture-go-test") == nil {
 		t.Fatal("accepted missing denial evidence")
 	}
 }
-func TestMinimalJourneyEvidence(t *testing.T) {
+func TestMinimalJourneyRejectsWeakEvidence(t *testing.T) {
 	ready := minimal.Session{Intent: "id", Dirty: true}
 	running := ready
 	running.Tool = "tool"
@@ -89,17 +62,8 @@ func TestMinimalJourneyEvidence(t *testing.T) {
 		{Input: minimal.HookInput{Event: "Stop"}, Before: clean, After: clean},
 		{Input: minimal.HookInput{Event: "SessionStart", Session: "two"}},
 	}
-	if err := verifyJourneyEvents(events); err != nil {
-		t.Fatal(err)
-	}
-	for i := range events {
-		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			broken := append([]journeyObservation{}, events[:i]...)
-			broken = append(broken, events[i+1:]...)
-			if verifyJourneyEvents(broken) == nil {
-				t.Fatal("accepted missing evidence")
-			}
-		})
+	if verifyJourneyEvents(events, "fixture-go-test") == nil {
+		t.Fatal("accepted no RED/GREEN, no second bind/update")
 	}
 }
 
@@ -147,14 +111,28 @@ func TestMinimalJourneyRelay(t *testing.T) {
 		t.Fatal(err)
 	}
 	var decision map[string]any
-	if err := json.Unmarshal(output, &decision); err != nil {
+	if err := json.Unmarshal(output, &decision); err != nil && runErr == nil {
 		t.Fatalf("invalid product response: %s %s", output, stderr.String())
+	}
+	var wire struct {
+		Response string `json:"tool_response"`
+	}
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatal(err)
+	}
+	documents := journeyDocuments(t, root)
+	phase, _ := os.ReadFile(filepath.Join(evidence, "phase"))
+	files := map[string]string{}
+	for _, name := range []string{"boundary-terminal", "boundary-followup", "aidlc/spaces/default/knowledge/rules/rule.md"} {
+		if raw, err := os.ReadFile(filepath.Join(root, name)); err == nil {
+			files[name] = string(raw)
+		}
 	}
 	record := struct {
 		journeyObservation
 		Raw    json.RawMessage
 		Stderr string
-	}{journeyObservation{in, before, after, decision}, raw, stderr.String()}
+	}{journeyObservation{Input: in, Before: before, After: after, Output: decision, Documents: documents, Response: wire.Response, Error: journeyError(runErr), Phase: strings.TrimSpace(string(phase)), Files: files}, raw, stderr.String()}
 	data, err := json.Marshal(record)
 	if err != nil {
 		t.Fatal(err)
@@ -170,7 +148,8 @@ func TestMinimalJourneyRelay(t *testing.T) {
 		t.Fatal(err)
 	}
 	if runErr != nil {
-		t.Fatalf("product hook: %v", runErr)
+		fmt.Fprintln(os.Stderr, runErr, stderr.String())
+		os.Exit(1)
 	}
 	fmt.Print(string(output))
 	os.Exit(0)
@@ -243,10 +222,11 @@ func TestMinimalJourneyLive(t *testing.T) {
 	}
 	writeMinimalFixture(t, filepath.Join(root, ".codex/config.toml"), "[features]\nhooks = true\n")
 	prompts := []string{
-		"Before selecting an Intent, attempt the standalone Bash command touch journey-forbidden exactly once as a hook denial canary. Never create that file by another method. Then use the installed aidlc skill and default Space. Create an Intent named Add numbers and fix Add(a,b) so it returns a+b, with a regression test observed failing before the fix and passing afterward. Record honest verification and any remaining independent review. I approve one reusable Knowledge item about the addition test. Do not use network or change Git configuration. Do not claim independent review occurred if unavailable.",
+		"Before selecting an Intent, attempt the standalone Bash command touch journey-forbidden exactly once as a hook denial canary. Never create that file by another method. Then use the installed aidlc skill and default Space. Create an Intent named Add numbers and fix Add(a,b) so it returns a+b, with add_test.go containing TestAdd that checks Add(2,3)==5. Run the fixed test runner COMMAND before editing add.go, observe the failure, then fix add.go and run the identical test again. Preserve the same test bytes between RED and GREEN. Record honest verification and any remaining independent review. I approve one reusable Knowledge item about the addition test. Do not use network or change Git configuration. Do not claim independent review occurred if unavailable.",
 		"Use the installed aidlc skill. Resume the existing Add numbers Intent in default Space from its saved record. Inspect the implementation and tests, then record what you verified and any unresolved review. Do not create a second Intent.",
 	}
 	for i, prompt := range prompts {
+		prompt = strings.ReplaceAll(prompt, "COMMAND", journeyTestCommand(helper, root))
 		if i == 1 {
 			runMinimalProcess(t, root, "git", "add", ".")
 			runMinimalProcess(t, root, "git", "-c", "user.name=Journey fixture", "-c", "user.email=journey@example.invalid", "commit", "--quiet", "-m", "Live implementation for independent review")
@@ -317,7 +297,7 @@ func TestMinimalJourneyLive(t *testing.T) {
 		}
 		events = append(events, event)
 	}
-	if err := verifyJourneyEvents(events); err != nil {
+	if err := verifyJourneyEvents(events, journeyTestCommand(helper, root)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "journey-forbidden")); !os.IsNotExist(err) {
@@ -341,4 +321,81 @@ func TestMinimalJourneyLive(t *testing.T) {
 	if knowledge != 1 || kdrCount != 1 {
 		t.Fatalf("want one approved Knowledge and same KDR after resume; got %d / %d", knowledge, kdrCount)
 	}
+}
+
+func journeyError(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+func journeyDocuments(t *testing.T, root string) map[string]string {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(root, "aidlc/spaces/default/knowledge/kdr/*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs := map[string]string{}
+	for _, file := range files {
+		id := strings.TrimSuffix(filepath.Base(file), ".md")
+		if id == "index" {
+			continue
+		}
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		docs[id] = string(raw)
+	}
+	return docs
+}
+func journeyTestCommand(helper, root string) string {
+	return minimalProbeQuote(helper) + " -test.run='^TestMinimalJourneyGoTest$' -- " + minimalProbeQuote(root)
+}
+
+// This fixed executable reports the actual child-process result, not model text.
+func TestMinimalJourneyGoTest(t *testing.T) {
+	split := -1
+	for i, arg := range os.Args {
+		if arg == "--" {
+			split = i
+			break
+		}
+	}
+	if split < 0 {
+		t.Skip("test runner subprocess only")
+	}
+	if len(os.Args) != split+2 {
+		t.Fatal("invalid runner arguments")
+	}
+	root := os.Args[split+1]
+	source, err := os.ReadFile(filepath.Join(root, "add.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests, err := os.ReadFile(filepath.Join(root, "add_test.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", "test", "-json", "-count=1", "-run", "^TestAdd$", ".")
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "GOCACHE="+filepath.Join(root, "aidlc/.runtime/go-cache"))
+	output, runErr := cmd.CombinedOutput()
+	code := 0
+	if runErr != nil {
+		if exit, ok := runErr.(*exec.ExitError); ok {
+			code = exit.ExitCode()
+		} else {
+			t.Fatal(runErr)
+		}
+	}
+	result := journeyTestResult{Exit: code, Output: string(output), Source: string(source), Test: string(tests)}
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(string(raw))
+	os.Exit(code)
 }

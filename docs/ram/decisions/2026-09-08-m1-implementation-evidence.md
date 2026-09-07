@@ -86,3 +86,64 @@ live による hook transport の成立は既存 preflight 証拠に分離して
 全package test、race、vet、cross-build、配布E2E、live model は loop では起動していない。
 既存 CI gate を保持し、TestMinimalJourney prefix の非live integration を追加した。
 独立 review、read-only final、GitHub checks、PR/merge は親が担当する。
+
+## 独立 review 修正: m1-review-repairs
+
+開始 HEAD `362d311cf44acae13ca0189413fd1d684de61e3b`、Issue #128、同計画の直接承認内。
+以下は前節の初期 live 判定器および「境界は deterministic のみ」の説明を置換する。
+`verification_mode=loop` の単独 writer による修正であり、live model は起動していない。
+
+1. P2: `checkBookkeeping` の単なる substring 判定を修正した。
+   `TestSessionRejectsCommentOnlyBookkeeping` は comment 内の ID だけで check/bind が通ることを
+   runnable assertion RED（exit 1）で確認し、実 link 行と日付付き action を確認する実装後 GREEN（exit 0）。
+   `TestSessionBookkeepingActiveEntries` は正常な Creation、未日付、不正日付、未知 action、fence、
+   未閉鎖 comment を区別する。未閉鎖 comment の拒否と同 ID repair 復旧も実 RED→GREEN。
+   修復項目を comment の外へ置き、`TestBookkeepingRootIndexFrontmatter` の RED→GREEN で
+   root index の OKF frontmatter を先頭に保つことも確認した。独自 audit は追加していない。
+2. P1: live main の成功条件を強化した。
+   `TestMinimalJourneyRejectsWeakEvidence` は旧判定器が空の二会話を成功にする RED を確認。
+   `TestMinimalJourneyEvidence` は実行 RED/GREEN 欠落、test 不在、exit 不一致、source 不変、test 差替え、
+   第二 session の bind/update/clean Stop 欠落、異なる ID、誤 Post ID を RED→GREEN で拘束する。
+   metadata だけの変更と再開時の本文差替えも `TestMinimalJourneyRejectsMetadataOnlyRecord`、
+   `TestMinimalJourneyRejectsDifferentResumeContent` で実 RED→GREEN。
+   model が固定 Go helper executable を Bash から起動し、helper 内の実際の
+   `go test -json -count=1 -run '^TestAdd$' .` の exit/stdout、source/test bytes を JSON で返す。
+   同じ固定 command の実 Pre/Post と raw Post stdout に結び付け、TestAdd の run/fail/pass を確認する。
+   helper の観測は製品の権威・判断・永続状態には使わない。モデル自己申告の検証結果は採用しない。
+   `TestMinimalJourneyRunner` は実 subprocess で RED/GREEN の process 証拠を確認（ALREADY_GREEN）。
+3. 計画の live 境界を `TestMinimalJourneyBoundariesLive` に実装した。
+   6 checkpoint は「質問待ち」「同 session resume による回答・記録後の追加操作と再要求」
+   「Rule 欠落」「CLI executable 消失」「同 session の復旧・20秒 Bash と KDR update 競合」
+   「別 session の同 ID 再開」。各 model 呼出は最大5分で、故障は専用 temp だけへ注入する。
+   relay は製品の判断を変更せず、失敗時も raw 入力・process 診断・前後状態を記録する。
+   `TestMinimalJourneyBoundaryEvidence` は phase 欠落、同 session 違反、早期終端、ID 不一致、競合欠落を
+   runnable assertion RED→GREEN で検査。回答後の clean Stop 欠落も RED→GREEN。
+   `TestMinimalJourneyRelayDiagnostics` は実行不能 CLI の raw 診断と未記録保持を実 subprocess で確認した
+   （ALREADY_GREEN）。OS 強制停止保証は置かない。
+
+最初の boundary fixture の試験時に unused import による compile failure が一度あり、RED として数えていない。
+削除後に実行された assertion failure を上記 RED 証拠とした。
+
+親が行う live command は二つに分ける。
+
+```sh
+AIDLC_MINIMAL_JOURNEY_LIVE=1 go test -tags=integration -v -count=1 -timeout=20m ./src/cmd/aidlc -run '^TestMinimalJourneyLive$'
+AIDLC_MINIMAL_JOURNEY_LIVE=1 go test -tags=integration -v -count=1 -timeout=35m ./src/cmd/aidlc -run '^TestMinimalJourneyBoundariesLive$'
+```
+
+前者は実 RED→実装変更→GREEN、独立 reviewer、二 session の同じ本文/ID の bind と内容更新・終了を確認する。
+後者は計画の質問・再要求・Rule/CLI 故障・長時間競合・再開を実 Codex hook 環境で確認する。
+いずれも未実行であり、成功とは主張しない。不明な payload/不足 event は失敗として evidence を残す。
+
+修正末尾の affected targeted command:
+
+```sh
+go test -count=1 ./src/internal/okfmemory -run '^Test(Parse|Search|Validate|Bookkeeping)'
+go test -count=1 ./src/internal/kdr -run '^Test(Document|Resolve|Store|Repair)'
+go test -count=1 ./src/internal/minimal -run '^Test(Session|Hook|Rules)'
+go test -tags=integration -count=1 ./src/cmd/aidlc -run '^TestMinimalJourney'
+```
+
+修正末尾の上記4 command はすべて exit 0（okfmemory 0.725s、kdr 0.528s、minimal 2.100s、
+cmd/aidlc 11.070s）。gofmt 適用と `git diff --check` 成功。HEAD は開始時のまま。
+全体 test/race/vet/cross-build/live は実行していない。

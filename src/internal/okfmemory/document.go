@@ -331,15 +331,30 @@ func Bookkeeping(root string, doc Document, action string, now time.Time) error 
 	link := "(" + path.Base(name) + ")"
 	line := "- [" + title + "]" + link + ": " + strings.ReplaceAll(doc.String("description"), "\n", " ")
 	lines := strings.Split(strings.TrimRight(string(index), "\n"), "\n")
+	active := map[string]bool{}
+	for _, line := range BookkeepingLines(string(index)) {
+		active[line] = true
+	}
 	found := false
 	for i, current := range lines {
-		if strings.HasPrefix(current, "- [") && strings.Contains(current, link) {
+		if active[current] && strings.HasPrefix(current, "- [") && strings.Contains(current, link) {
 			lines[i] = line
 			found = true
 		}
 	}
 	if !found {
-		lines = append(lines, line)
+		at := 0
+		if len(lines) > 0 && lines[0] == "---" {
+			for i := 1; i < len(lines); i++ {
+				if lines[i] == "---" {
+					at = i + 1
+					break
+				}
+			}
+		}
+		lines = append(lines, "")
+		copy(lines[at+1:], lines[at:])
+		lines[at] = line
 	}
 	if err := WriteFile(root, indexPath, []byte(strings.Join(lines, "\n")+"\n")); err != nil {
 		return fmt.Errorf("parent index %s: %w", indexPath, err)
@@ -353,4 +368,26 @@ func Bookkeeping(root string, doc Document, action string, now time.Time) error 
 		return fmt.Errorf("log.md: %w", err)
 	}
 	return nil
+}
+
+// BookkeepingLines excludes Markdown comments and fenced examples from active entries.
+func BookkeepingLines(raw string) []string {
+	raw = regexp.MustCompile(`(?s)<!--(?:.*?-->|.*$)`).ReplaceAllString(raw, "")
+	var lines []string
+	fence := ""
+	for _, line := range strings.Split(raw, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			if fence == "" {
+				fence = trimmed[:3]
+			} else if strings.HasPrefix(trimmed, fence) {
+				fence = ""
+			}
+			continue
+		}
+		if fence == "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }

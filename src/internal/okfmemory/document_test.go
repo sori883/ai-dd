@@ -128,3 +128,20 @@ func TestValidateReservedFiles(t *testing.T) {
 		})
 	}
 }
+
+func TestBookkeepingRootIndexFrontmatter(t *testing.T) {
+	root := t.TempDir()
+	header := "---\nokf_version: '0.2'\n---\n"
+	writeTestDoc(t, root, "index", header+"# Index\n")
+	doc := Document{ID: "root-concept", Metadata: map[string]any{"type": "Knowledge", "title": "Root concept"}, Body: "Body\n"}
+	if err := Bookkeeping(root, doc, "Creation", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "index.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(raw), header) {
+		t.Fatalf("root frontmatter displaced: %s", raw)
+	}
+}

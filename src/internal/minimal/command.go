@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -241,11 +242,29 @@ func (s Service) checkBookkeeping(store kdr.Store, id string) error {
 	if err != nil {
 		return err
 	}
-	if !strings.Contains(string(index), "("+id+".md)") || !strings.Contains(string(log), "`kdr/"+id+"`") {
+	indexItem := regexp.MustCompile(`^- \[[^\]\n]+\]\(` + regexp.QuoteMeta(id) + `\.md\)(?::.*)?$`)
+	logItem := regexp.MustCompile("^- (Creation|Create|Update|Repair): `kdr/" + regexp.QuoteMeta(id) + "`\\.$")
+	indexed, logged, dated := false, false, false
+	for _, line := range okfmemory.BookkeepingLines(string(index)) {
+		if indexItem.MatchString(line) {
+			indexed = true
+		}
+	}
+	for _, line := range okfmemory.BookkeepingLines(string(log)) {
+		if strings.HasPrefix(line, "## ") {
+			_, err := time.Parse("2006-01-02", strings.TrimPrefix(line, "## "))
+			dated = err == nil
+		}
+		if dated && logItem.MatchString(line) {
+			logged = true
+		}
+	}
+	if !indexed || !logged {
 		return invalid("KDR index/log missing; use repair")
 	}
 	return nil
 }
+
 func (s Service) memoryWrite(r cli.MinimalRequest) ([]byte, error) {
 	if r.Target == "kdr" || strings.HasPrefix(r.Target, "kdr/") {
 		return nil, invalid("use KDR operations for kdr Concepts")

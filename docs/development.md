@@ -1438,3 +1438,18 @@ Rule 欠落→復旧、CLI executable 消失→診断→復旧、別会話への
 CLI 消失時の診断は process 起動失敗であり、hook が壊れた環境での OS 強制停止を保証するものではありません。
 導入時には hook の発火を確認し、故障を検知したら作業を止めて executable・配置・設定を復旧してください。
 `memory show` は原本の `content` と `hash` を JSON で返すため、その hash を update の期待値に使えます。
+
+review 修正後の live main は、model が固定 Go test helper を起動し、実際の TestAdd run/fail/pass と
+process exit、変更前後の source、同じ test bytes を確認します。`go test` のテスト不在成功では通りません。
+二つの writer session それぞれで同じ KDR 本文の bind、内容 update、clean Stop が必要です。
+
+質問待ち・故障・長時間競合の実 model checkpoint は別入口です。
+
+```sh
+AIDLC_MINIMAL_JOURNEY_LIVE=1 go test -tags=integration -v -count=1 -timeout=35m ./src/cmd/aidlc -run '^TestMinimalJourneyBoundariesLive$'
+```
+
+質問の回答と故障復旧は明示した同じ Codex session を resume し、最後の再開だけを別 session にします。
+専用 temp の Rule と executable を test operator が一時的に除去・復旧し、製品の判断を変更せず観測します。
+CLI 自体が起動不能でも raw process 診断と未記録状態を残します。各 checkpoint の prompt、stdout/stderr、
+hook raw payload、前後状態は evidence directory に保存されます。実行不能や不足証拠を成功とは扱いません。

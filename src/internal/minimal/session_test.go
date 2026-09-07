@@ -413,3 +413,73 @@ func TestSessionMemoryShowOriginalHash(t *testing.T) {
 		t.Fatalf("show changed bytes or hash: %s", out)
 	}
 }
+
+func TestSessionRejectsCommentOnlyBookkeeping(t *testing.T) {
+	for _, name := range []string{"index", "log"} {
+		t.Run(name, func(t *testing.T) {
+			s, saved := setup(t)
+			store := s.store("default")
+			path, raw := "kdr/index.md", "<!-- ("+saved.ID+".md) -->\n"
+			if name == "log" {
+				path = "log.md"
+				raw = "<!-- `kdr/" + saved.ID + "` -->\n"
+			}
+			if err := os.WriteFile(filepath.Join(store.Bundle, path), []byte(raw), 0600); err != nil {
+				t.Fatal(err)
+			}
+			for _, action := range []string{"check", "bind"} {
+				command := "kdr"
+				if action == "bind" {
+					command = "session"
+				}
+				if _, err := s.Execute(cli.MinimalRequest{Command: command, Action: action, Target: saved.ID, Space: "default", Session: "session"}); err == nil {
+					t.Errorf("%s accepted comment-only %s", action, name)
+				}
+			}
+			if _, err := store.Repair(saved.ID, saved.Raw, saved.Hash, "process:test"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.Execute(cli.MinimalRequest{Command: "kdr", Action: "check", Target: saved.ID, Space: "default"}); err != nil {
+				t.Fatal(err)
+			}
+			bind(t, s, saved.ID)
+		})
+	}
+}
+
+func TestSessionBookkeepingActiveEntries(t *testing.T) {
+	for _, name := range []string{"undated", "invalid_date", "unknown_action", "fenced", "open_comment"} {
+		t.Run(name, func(t *testing.T) {
+			s, saved := setup(t)
+			store := s.store("default")
+			if _, err := s.Execute(cli.MinimalRequest{Command: "kdr", Action: "check", Target: saved.ID, Space: "default"}); err != nil {
+				t.Fatalf("valid initial bookkeeping rejected: %v", err)
+			}
+			item := "- Update: `kdr/" + saved.ID + "`.\n"
+			path, raw := "log.md", item
+			switch name {
+			case "invalid_date":
+				raw = "## 2026-02-30\n" + item
+			case "unknown_action":
+				raw = "## 2026-09-08\n- Something: `kdr/" + saved.ID + "`.\n"
+			case "fenced":
+				raw = "```md\n## 2026-09-08\n" + item + "```\n"
+			case "open_comment":
+				path = "kdr/index.md"
+				raw = "<!--\n- [Work](" + saved.ID + ".md): description\n"
+			}
+			if err := os.WriteFile(filepath.Join(store.Bundle, path), []byte(raw), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.Execute(cli.MinimalRequest{Command: "kdr", Action: "check", Target: saved.ID, Space: "default"}); err == nil {
+				t.Fatal("accepted inactive/invalid bookkeeping")
+			}
+			if _, err := store.Repair(saved.ID, saved.Raw, saved.Hash, "process:test"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.Execute(cli.MinimalRequest{Command: "kdr", Action: "check", Target: saved.ID, Space: "default"}); err != nil {
+				t.Fatalf("same-ID repair did not restore bookkeeping: %v", err)
+			}
+		})
+	}
+}
