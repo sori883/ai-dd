@@ -63,7 +63,11 @@ func recordStageAnswer(ctx context.Context, identity recordlock.Identity, projec
 		if err != nil {
 			return fmt.Errorf("record intent-capture answer: read audit: %w", err)
 		}
-		if err := validateIntentCaptureDecisionAnswer(records, decision); err != nil {
+		ordered, err := orderOpenStageReceiptRecords(records, decision.Stage)
+		if err != nil {
+			return err
+		}
+		if err := validateIntentCaptureDecisionAnswer(ordered, decision); err != nil {
 			return err
 		}
 		return appendIntentCaptureForIdentity(ctx, identity, guard, projectRoot, recordRoot, []Event{{
@@ -111,7 +115,7 @@ func ValidateStageSummaryConfirmationCurrent(ctx context.Context, identity recor
 		if err != nil {
 			return err
 		}
-		ordered, err := orderIntentCaptureRecords(records)
+		ordered, err := orderOpenStageReceiptRecords(records, stage)
 		if err != nil {
 			return err
 		}
@@ -143,7 +147,7 @@ func validateStageSummaryDecisionAnswer(records []AuditRecord, decision IntentCa
 	if err := validateIntentCaptureDecisionAnswer(records, decision); err != nil {
 		return err
 	}
-	ordered, err := orderIntentCaptureRecords(records)
+	ordered, err := orderOpenStageReceiptRecords(records, decision.Stage)
 	if err != nil {
 		return err
 	}
@@ -201,7 +205,7 @@ func recordStageDecision(ctx context.Context, identity recordlock.Identity, proj
 		if err != nil {
 			return fmt.Errorf("record intent-capture decision: read audit: %w", err)
 		}
-		ordered, err := orderIntentCaptureRecords(records)
+		ordered, err := orderOpenStageReceiptRecords(records, decision.Stage)
 		if err != nil {
 			return fmt.Errorf("record intent-capture decision: order audit: %w", err)
 		}
@@ -345,7 +349,7 @@ func recordStageQuestionDecision(ctx context.Context, identity recordlock.Identi
 		if err != nil {
 			return fmt.Errorf("record intent-capture decision: read audit: %w", err)
 		}
-		ordered, err := orderIntentCaptureRecords(records)
+		ordered, err := orderOpenStageReceiptRecords(records, stage)
 		if err != nil {
 			return fmt.Errorf("record intent-capture decision: order audit: %w", err)
 		}
@@ -386,7 +390,7 @@ func recordStageQuestionAnswer(ctx context.Context, identity recordlock.Identity
 		if err != nil {
 			return fmt.Errorf("record intent-capture answer: read audit: %w", err)
 		}
-		ordered, err := orderIntentCaptureRecords(records)
+		ordered, err := orderOpenStageReceiptRecords(records, stage)
 		if err != nil {
 			return fmt.Errorf("record intent-capture answer: order audit: %w", err)
 		}
@@ -508,4 +512,26 @@ func resolveStageSummaryContract(stage graph.Stage, catalog graph.Snapshot) (sta
 		return stageSummaryContract{}, fmt.Errorf("stage %q has %d mandatory questions artifacts: %w", stage.Slug, count, ErrIntentCaptureAmbiguous)
 	}
 	return stageSummaryContract{questionsFile: questionsFile}, nil
+}
+
+// A completion closes receipt authority until a later start opens a new epoch.
+// Order first so a tie across shards cannot reopen an ambiguously closed epoch.
+func orderOpenStageReceiptRecords(records []AuditRecord, stage string) ([]AuditRecord, error) {
+	ordered, err := orderIntentCaptureRecords(records)
+	if err != nil {
+		return nil, err
+	}
+	for index := len(ordered) - 1; index >= 0; index-- {
+		record := ordered[index]
+		if record.Fields["Stage"] != stage {
+			continue
+		}
+		switch record.Event {
+		case "STAGE_STARTED":
+			return ordered, nil
+		case "STAGE_COMPLETED":
+			return nil, fmt.Errorf("stage %q receipt epoch is completed: %w", stage, ErrIntentCaptureStale)
+		}
+	}
+	return ordered, nil
 }

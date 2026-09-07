@@ -19,6 +19,108 @@ import (
 
 const stageSummaryBlank = "# Questions\n\n## Q1\nGoal?\n[Answer]: ship\n\n## Consolidated Summary Confirmation\n- Looks correct\n- Request changes\n[Answer]: \n"
 
+func TestStageReceiptCompletedEpochRejectsOperations(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		for _, operation := range []string{"question decision", "question answer", "summary decision", "summary confirmation", "current validation"} {
+			t.Run(fmt.Sprintf("legacy=%t/%s", legacy, operation), func(t *testing.T) {
+				stage := "market-research"
+				if legacy {
+					stage = "intent-capture"
+				}
+				f := newStageReceiptFixture(t, stage)
+				ctx := context.Background()
+				answered := strings.Replace(stageSummaryBlank, "[Answer]: \n", "[Answer]: Looks correct\n", 1)
+				writeStageQuestions(t, f, stage, answered)
+				if err := RecordStageSummaryDecision(ctx, f.identity, f.projectRoot, f.recordRoot, stage); err != nil {
+					t.Fatal(err)
+				}
+				if err := RecordHumanTurn(ctx, f.identity, f.projectRoot, f.recordRoot); err != nil {
+					t.Fatal(err)
+				}
+				if err := RecordStageSummaryConfirmation(ctx, f.identity, f.projectRoot, f.recordRoot, stage, "Looks correct"); err != nil {
+					t.Fatal(err)
+				}
+				if operation == "question answer" {
+					if err := RecordStageQuestionDecision(ctx, f.identity, f.projectRoot, f.recordRoot, stage, "q2", ""); err != nil {
+						t.Fatal(err)
+					}
+					if err := RecordHumanTurn(ctx, f.identity, f.projectRoot, f.recordRoot); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if operation == "summary decision" || operation == "summary confirmation" {
+					writeStageQuestions(t, f, stage, strings.Replace(answered, "ship", "revised", 1))
+				}
+				if operation == "summary confirmation" {
+					if err := RecordStageSummaryDecision(ctx, f.identity, f.projectRoot, f.recordRoot, stage); err != nil {
+						t.Fatal(err)
+					}
+					if err := RecordHumanTurn(ctx, f.identity, f.projectRoot, f.recordRoot); err != nil {
+						t.Fatal(err)
+					}
+				}
+				appendStageReceiptEvent(t, f, Event{Event: "STAGE_COMPLETED", Fields: map[string]string{"Stage": stage}})
+				before := stageReceiptRecords(t, f)
+				var err error
+				decision := IntentCaptureDecision{Stage: stage, DecisionID: "summary", Fingerprint: "summary"}
+				switch operation {
+				case "question decision":
+					if legacy {
+						err = RecordIntentCaptureDecisionFromQuestions(ctx, f.identity, f.projectRoot, f.recordRoot, stage, "q3")
+					} else {
+						err = RecordStageQuestionDecision(ctx, f.identity, f.projectRoot, f.recordRoot, stage, "q3", "")
+					}
+				case "question answer":
+					if legacy {
+						err = RecordIntentCaptureAnswerByID(ctx, f.identity, f.projectRoot, f.recordRoot, stage, "q2", "yes")
+					} else {
+						err = RecordStageQuestionAnswer(ctx, f.identity, f.projectRoot, f.recordRoot, stage, "q2", "yes")
+					}
+				case "summary decision":
+					if legacy {
+						err = RecordIntentCaptureDecision(ctx, f.identity, f.projectRoot, f.recordRoot, decision)
+					} else {
+						err = RecordStageSummaryDecision(ctx, f.identity, f.projectRoot, f.recordRoot, stage)
+					}
+				case "summary confirmation":
+					if legacy {
+						err = RecordSummaryConfirmation(ctx, f.identity, f.projectRoot, f.recordRoot, decision, "Looks correct", "")
+					} else {
+						err = RecordStageSummaryConfirmation(ctx, f.identity, f.projectRoot, f.recordRoot, stage, "Looks correct")
+					}
+				case "current validation":
+					err = ValidateStageSummaryConfirmationCurrent(ctx, f.identity, f.projectRoot, f.recordRoot, stage)
+				}
+				if !errors.Is(err, ErrIntentCaptureStale) {
+					t.Errorf("completed epoch %s: %v, want stale", operation, err)
+				}
+				if after := stageReceiptRecords(t, f); !reflect.DeepEqual(before, after) {
+					t.Error("completed epoch operation changed audit")
+				}
+			})
+		}
+	}
+}
+
+func TestStageReceiptCompletedEpochReopensAndIgnoresOtherStages(t *testing.T) {
+	for _, name := range []string{"reopened", "other stage"} {
+		t.Run(name, func(t *testing.T) {
+			f := newStageReceiptFixture(t, "market-research")
+			completedStage := "market-research"
+			if name == "other stage" {
+				completedStage = "scope-definition"
+			}
+			appendStageReceiptEvent(t, f, Event{Event: "STAGE_COMPLETED", Fields: map[string]string{"Stage": completedStage}})
+			if name == "reopened" {
+				appendStageReceiptEvent(t, f, Event{Event: "STAGE_STARTED", Fields: map[string]string{"Stage": "market-research"}})
+			}
+			if err := RecordStageQuestionDecision(context.Background(), f.identity, f.projectRoot, f.recordRoot, "market-research", "q1", ""); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestStageSummaryConfirmationLifecycle(t *testing.T) {
 	for _, stage := range []string{"intent-capture", "market-research", "scope-definition"} {
 		t.Run(stage, func(t *testing.T) {
