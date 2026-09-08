@@ -21,3 +21,13 @@ Knowledge/ADRは調整役だけが内容確認して保存する。WORKFLOW、Ru
 既存利用先への自動更新は行わない。4定義と新手順の配置が利用条件となる。
 固定Codex0.153.4で4 named agentの実spawnは親のfinalへ残し、このloopでは未観測。
 配置とTOML検査を実model起動や任意の調査品質の保証とは扱わない。
+
+## finalで検出した旧fixtureの修復
+
+TestMainSpaceCreateClosedPipesが複製していた旧Rule全文と、承認済み新配布原稿が不一致だった。
+これはINVALID_TEST_FIXTUREであり製品のREDとは数えない。
+`go test -count=1 ./src/cmd/aidlc -run '^TestMainSpaceCreateClosedPipes$'` でexit 1を再現後、
+Ruleの期待bytesだけをcore/minimalのembed原稿から取得し、同commandでexit 0を確認した。
+ログは `/tmp/product-agents-pipe-before.log` と `/tmp/product-agents-pipe-after.log`。
+file残存、完全bytes一致、権限・時刻を含む再実行不変のassertは維持し、Go本体は変更していない。
+gofmtとgit diff --checkを実施した。親の全体finalは修正後に再確認が必要。

@@ -57,6 +57,8 @@ src/harness/codex/minimal/WORKFLOW.mdで4担当の依頼・返却・OKF保存の
 src/core/minimal/knowledge/rules/rule.mdの担当分担を整合させる。
 SKILL原稿は現状のWORKFLOW全文読込みで到達できるため変更しない。relocateの既知原稿判別を保つ。
 docs/development.mdに配布後の利用方法、docs/ramへ採用/実装証拠と索引を記録する。
+全体検証でsrc/cmd/aidlc/main_unix_test.goに複製された旧Rule本文との不一致を検出した。
+この保存失敗テストの期待値を配布原稿から取得するよう修復し、残存ファイルと再試行時の保全検査を維持する。
 このrepo自体の.codex/agentsにある開発担当は変更しない。
 
 fresh installは4定義を配布する。既存配置への一括更新は保留中の配布更新機能の範囲なので自動上書きしない。

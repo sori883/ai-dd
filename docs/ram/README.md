@@ -1,6 +1,6 @@
 # 開発プロジェクトRAM
 
-- [製品4担当の実装証拠](decisions/2026-09-08-product-agent-roles-evidence.md): 4原稿の配置RED/GREEN、TOML構造、委譲手順と共有writer境界。実spawnはfinal待ち。
+- [製品4担当の実装証拠](decisions/2026-09-08-product-agent-roles-evidence.md): 4原稿の配置RED/GREEN、TOML構造、委譲手順と共有writer境界。閉pipe試験の旧Rule期待値も原稿参照へ修復。実spawnはfinalで確認。
 
 - [ステージ拡張より先に製品4担当を定義する](decisions/2026-09-08-product-four-agents-approved.md): 調査・要件整理・worker・reviewerの直接実装依頼。Sensorの2問と配布更新は後続へ保留。
 
