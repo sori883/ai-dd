@@ -57,7 +57,7 @@ go test -count=1 ./src/cmd/aidlc -run '^TestFlowCommand'
 
 ```sh
 go test -tags=integration -count=1 ./src/cmd/aidlc -run '^TestFlowJourney$'
-AIDLC_FLOW_LIVE=1 go test -tags=integration -v -count=1 -timeout=35m ./src/cmd/aidlc -run '^TestFlowJourneyLive$'
+AIDLC_FLOW_LIVE=1 go test -tags=integration -v -count=1 -timeout=50m ./src/cmd/aidlc -run '^TestFlowJourneyLive$'
 ```
 
 liveはCodex CLI 0.153.4、gpt-6-astra/medium、workspace-write、approval=neverを使用します。

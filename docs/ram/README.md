@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [四段階liveの再開と証拠集計の修正](decisions/2026-09-08-flow-live-repair-evidence.md): 失敗出力、inactive手順読取、会話別再完了の実証。
+
 - [四段階final失敗の修正証拠](decisions/2026-09-08-flow-final-repair-evidence.md): 未知Intent操作のSIGPIPE境界と同一binaryのpath表記差。
 
 - [四段階の独立レビュー修正証拠](decisions/2026-09-08-four-stage-review-repair-evidence.md): Unit進捗・依存base・review checkout・stage別成果物・live実報告照合・日本語手順。

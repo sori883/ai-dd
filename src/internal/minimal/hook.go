@@ -63,15 +63,16 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 			if err != nil {
 				return nil, err
 			}
-			if selected.Status != "active" {
-				return nil, invalid("Intent is waiting, paused or finished; resume or reopen explicitly")
-			}
 			_, hash, err := s.rules(state.Space)
 			if err != nil {
 				return nil, err
 			}
 			if hash != state.RuleHash {
 				return nil, invalid("required Rules changed; select the Intent again to reread")
+			}
+
+			if selected.Status != "active" && !s.workflowRead(input) {
+				return nil, invalid("Intent is waiting, paused or finished; read the deployed procedure with cat .agents/skills/aidlc/WORKFLOW.md, then resume or reopen explicitly")
 			}
 
 			state.Tool = input.ID
@@ -274,4 +275,25 @@ func sameBinary(command, configured string) bool {
 	}
 	expected, err := os.Stat(configured)
 	return err == nil && actual.Mode().IsRegular() && expected.Mode().IsRegular() && os.SameFile(actual, expected)
+}
+
+// workflowRead permits only the deployed procedure, after selection and Rules checks.
+// It uses a normal tool slot; this is not an exception to in-flight protection.
+func (s Service) workflowRead(input HookInput) bool {
+	if input.Tool != "Bash" {
+		return false
+	}
+	argv, ok := shellWords(input.Input.Command)
+	if !ok || len(argv) < 2 || len(argv) > 3 || argv[0] != "cat" {
+		return false
+	}
+	for _, name := range argv[1:] {
+		if name != ".agents/skills/aidlc/SKILL.md" && name != ".agents/skills/aidlc/WORKFLOW.md" {
+			return false
+		}
+		if _, err := okfmemory.ReadFile(s.Root, name); err != nil {
+			return false
+		}
+	}
+	return true
 }

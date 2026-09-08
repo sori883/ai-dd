@@ -508,7 +508,7 @@ func TestFlowJourneyLive(t *testing.T) {
 	writeMinimalFixture(t, filepath.Join(root, "aidlc/spaces/default/knowledge/knowledge/current.md"), "---\ntype: Design\ntitle: Arithmetic\ndescription: Current arithmetic behavior\n---\nAdd(0,x) returns 0. Mul multiplies. Combine sums Add and Mul.\n")
 	runMinimalProcess(t, root, "git", "add", ".gitignore")
 	runMinimalProcess(t, root, "git", "-c", "user.name=Flow", "-c", "user.email=flow@example.invalid", "commit", "-qm", "fixture exclusions")
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Minute)
+	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Minute)
 	defer cancel()
 	proof := flowProof{Binary: binary}
 	seen := map[string]bool{}
@@ -594,6 +594,11 @@ This fixture's Git operations need host support under the normal sandbox. The te
 
 		if record.Bound {
 			bound[record.Session] = true
+			if record.Session == first.Session || record.Session == second.Session {
+				for _, state := range record.States {
+					proof.Progress = append(proof.Progress, flowProgress{Session: record.Session, State: state})
+				}
+			}
 		}
 
 	}

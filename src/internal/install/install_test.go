@@ -131,3 +131,22 @@ func TestInstallMemoryCommandGuidance(t *testing.T) {
 		}
 	}
 }
+
+func TestFlowInstallInactiveResumeGuidance(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Codex(root, "/private/var/folders/example/aidlc"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) > 4096 {
+		t.Fatalf("deployed skill %d bytes exceeds 4096", len(raw))
+	}
+	for _, want := range []string{"cat .agents/skills/aidlc/WORKFLOW.md", "intent resume ID --space SPACE --expect R --reason TEXT", "intent reopen ID --space SPACE --expect R --reason TEXT --stage STAGE"} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("missing inactive bootstrap grammar %q", want)
+		}
+	}
+}

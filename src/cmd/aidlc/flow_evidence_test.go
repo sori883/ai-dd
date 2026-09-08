@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/sori883/ai-dd/src/internal/cli"
 	"github.com/sori883/ai-dd/src/internal/flow"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -26,7 +27,12 @@ type flowCLIProof struct {
 	Request                          flow.ReviewRequest
 	Before                           uint64
 }
+type flowProgress struct {
+	Session string
+	State   flow.State
+}
 type flowProof struct {
+	Progress      []flowProgress
 	Binary        string
 	CLI           []flowCLIProof
 	Actions       []string
@@ -65,6 +71,7 @@ func verifyFlowProof(p flowProof) error {
 	}
 
 	accepted := map[string]bool{}
+	acceptedPass := map[string]map[string]uint64{}
 	staleRejected := false
 	seenItems := map[string]bool{}
 	for _, execution := range p.CLI {
@@ -91,6 +98,11 @@ func verifyFlowProof(p flowProof) error {
 			staleRejected = true
 			continue
 		}
+
+		expect, err := strconv.ParseUint(request.Expect, 10, 64)
+		if execution.Exit == 2 && strings.TrimSpace(execution.Output) == "aidlc: revision conflict: invalid argument" && err == nil && execution.Before > 0 && expect != execution.Before {
+			continue // A proved CAS rejection is not a stale-review or accepted-review receipt.
+		}
 		if execution.Exit != 0 {
 			return fail()
 		}
@@ -99,10 +111,53 @@ func verifyFlowProof(p flowProof) error {
 			return fail()
 		}
 		accepted[execution.Request.Session+"/"+execution.Request.Target] = true
+		if execution.Request.Status == "pass" {
+			if acceptedPass[execution.Session] == nil {
+				acceptedPass[execution.Session] = map[string]uint64{}
+			}
+			acceptedPass[execution.Session][execution.Request.Session] = saved.Revision
+		}
+
 	}
 	if !staleRejected {
 		return fail()
 	}
+	firstCompleted, selectedCompleted, reopened := uint64(0), uint64(0), uint64(0)
+	resumedComplete := false
+	for _, observation := range p.Progress {
+		st := observation.State
+		if st.ID != id {
+			return fail()
+		}
+		if observation.Session == p.Sessions[0] && st.Stage == "integration" && st.Status == "completed" {
+			for _, revision := range acceptedPass[p.Sessions[0]] {
+				if st.Revision > revision {
+					firstCompleted = st.Revision
+				}
+			}
+		}
+		if observation.Session != p.Sessions[1] || st.Stage != "integration" {
+			continue
+		}
+		if selectedCompleted == 0 && st.Status == "completed" && firstCompleted != 0 && st.Revision >= firstCompleted {
+			selectedCompleted = st.Revision
+			continue
+		}
+		if selectedCompleted != 0 && st.Status == "active" && st.Revision > selectedCompleted && reopened == 0 {
+			reopened = st.Revision
+		}
+		if reopened != 0 && st.Status == "completed" {
+			for reviewer, revision := range acceptedPass[p.Sessions[1]] {
+				if _, reused := acceptedPass[p.Sessions[0]][reviewer]; !reused && revision > reopened && st.Revision > revision {
+					resumedComplete = true
+				}
+			}
+		}
+	}
+	if !resumedComplete {
+		return fail()
+	}
+
 	reviewFail, reviewPass := false, false
 	workers := map[string]flowProofJob{}
 	for _, j := range p.Jobs {
@@ -177,6 +232,17 @@ func validFlowProof() flowProof {
 	stale.Exit = 2
 	stale.Output = "aidlc: unassigned or stale review: invalid argument\n"
 	p.CLI = append(p.CLI, stale)
+	fresh := flowProofJob{Kind: "review", Root: "review-three", Session: "r3", Target: "hash3", Status: "pass", Summary: "reverified", Commit: strings.Repeat("c", 40), CodeHash: "fixed-code"}
+	p.Jobs = append(p.Jobs, fresh)
+	request := flow.ReviewRequest{Action: "accept", Session: fresh.Session, Root: fresh.Root, Target: fresh.Target, Status: fresh.Status, Summary: fresh.Summary}
+	saved, _ := json.Marshal(flow.State{ID: "same", Revision: 6, Review: flow.Gate{Target: fresh.Target, Status: fresh.Status, Summary: fresh.Summary}})
+	p.CLI = append(p.CLI, flowCLIProof{Session: "two", Command: "/bin/aidlc intent review same --space default --expect 5 --file /draft", ItemID: "fresh", Request: request, Before: 5, Output: string(saved)})
+	p.Progress = []flowProgress{
+		{Session: "one", State: flow.State{ID: "same", Stage: "integration", Status: "completed", Revision: 4}},
+		{Session: "two", State: flow.State{ID: "same", Stage: "integration", Status: "completed", Revision: 4}},
+		{Session: "two", State: flow.State{ID: "same", Stage: "integration", Status: "active", Revision: 5}},
+		{Session: "two", State: flow.State{ID: "same", Stage: "integration", Status: "completed", Revision: 7}},
+	}
 	return p
 }
 func TestFlowCommandEvidenceVerifier(t *testing.T) {
@@ -348,5 +414,55 @@ func TestFlowCommandTransportReviewEvidence(t *testing.T) {
 	got, err := flowExecutions([]byte(wire), []flowReviewObservation{{Session: "coordinator", Command: command, Before: 1, Request: r}}, "/bin/aidlc")
 	if err != nil || len(got) != 1 || got[0].Exit != 2 || got[0].Request.Target != "target" || got[0].ItemID != "item-1" {
 		t.Fatalf("transport proof %+v %v", got, err)
+	}
+}
+
+func TestFlowCommandConflictRequiresObservedRevision(t *testing.T) {
+	conflict := func(p *flowProof) {
+		e := p.CLI[1]
+		e.ItemID = "conflict"
+		e.Command = "/bin/aidlc intent review same --space default --expect 7 --file /draft"
+		e.Before = 6
+		e.Exit = 2
+		e.Output = "aidlc: revision conflict: invalid argument\n"
+		p.CLI = append(p.CLI, e)
+	}
+	p := validFlowProof()
+	conflict(&p)
+	if err := verifyFlowProof(p); err != nil {
+		t.Fatalf("observed rejected conflict prevents later valid evidence: %v", err)
+	}
+	for _, change := range []func(*flowProof){
+		func(p *flowProof) { p.CLI[len(p.CLI)-1].Before = 7 },
+		func(p *flowProof) { p.CLI[len(p.CLI)-1].Before = 0 },
+		func(p *flowProof) { p.CLI[len(p.CLI)-1].Exit = 0 },
+		func(p *flowProof) { p.CLI[len(p.CLI)-1].Output = "prefix aidlc: revision conflict: invalid argument" },
+		func(p *flowProof) { p.CLI = p.CLI[:2]; p.StaleRejected = true },
+	} {
+		p := validFlowProof()
+		conflict(&p)
+		change(&p)
+		if verifyFlowProof(p) == nil {
+			t.Fatal("unproven conflict or missing stale accepted")
+		}
+	}
+}
+
+func TestFlowCommandRequiresSecondSessionCompletion(t *testing.T) {
+	for _, change := range []func(*flowProof){
+		func(p *flowProof) { p.Progress = nil },
+		func(p *flowProof) { p.CLI = p.CLI[:3] },
+		func(p *flowProof) { p.Progress = p.Progress[:3] },
+		func(p *flowProof) { p.Progress[2].State.Status = "completed" },
+		func(p *flowProof) { p.Progress[3].State.Revision = 6 },
+		func(p *flowProof) { p.CLI[3].Session = "one" },
+		func(p *flowProof) { p.Progress[1].State.ID = "different" },
+		func(p *flowProof) { p.Progress[1].State.Status = "active" },
+	} {
+		p := validFlowProof()
+		change(&p)
+		if verifyFlowProof(p) == nil {
+			t.Fatal("bind-only or incomplete second-session evidence accepted")
+		}
 	}
 }

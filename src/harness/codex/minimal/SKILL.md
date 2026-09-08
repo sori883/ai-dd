@@ -14,7 +14,11 @@ SessionStartが示すsession IDとdraftパスを使い、別の実行ファイ�
 出力には現在のstate、必須Rule全文、draftパスがある。Ruleを読み、その内容に従う。
 この入口の読込だけでRuleを読んだことにはならない。
 
-選択後、配置済み `.agents/skills/aidlc/WORKFLOW.md` を通常のfile読込で**全文**読む。
+選択後、`cat .agents/skills/aidlc/WORKFLOW.md` を単独で実行し、配置済み手順を**全文**読む。
+完了・質問待ち・中断中でも、この手順読込はできる。現在stateのrevisionを `R` とする。
+質問待ち・中断後は `A intent resume ID --space SPACE --expect R --reason TEXT`、
+完了後の再検証は `A intent reopen ID --space SPACE --expect R --reason TEXT --stage STAGE`。
+手順とRuleを読んでから明示的に再開し、通常作業へ進む。
 欠落時は診断し、過去の手順や内包された原稿で補わない。
 詳細手順にはconfig、Sensor、独立レビュー、Unit、Knowledge/ADRの正確な操作を記載している。
 段階は discovery → planning → tdd → integration。`intent review` とSensorの現在の合格が

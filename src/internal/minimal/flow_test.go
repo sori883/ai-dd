@@ -151,3 +151,102 @@ func TestFlowConfigureCannotForgeProgress(t *testing.T) {
 		})
 	}
 }
+
+func TestFlowInactiveWorkflowReadAndResume(t *testing.T) {
+	for _, status := range []string{"completed", "waiting", "paused"} {
+		t.Run(status, func(t *testing.T) {
+			s, st := setup(t)
+			store := flow.Store{Root: s.Root, Space: "default"}
+			st.Status = status
+			st.Stage = "integration"
+			var err error
+			st, err = store.Save(st, st.Revision)
+			if err != nil {
+				t.Fatal(err)
+			}
+			hook(t, s, "SessionStart", "", "", "", false)
+			hook(t, s, "UserPromptSubmit", "", "", "", false)
+			bind(t, s, st.ID)
+			for _, command := range []string{"cat .agents/skills/aidlc/WORKFLOW.md", "cat .agents/skills/aidlc/SKILL.md .agents/skills/aidlc/WORKFLOW.md"} {
+				if out := hook(t, s, "PreToolUse", "Bash", "read", command, false); deny(out) {
+					t.Fatalf("placed procedure denied: %+v", out)
+				}
+				session, err := s.Inspect("session")
+				if err != nil || session.Tool != "read" {
+					t.Fatalf("read did not hold tool slot: %+v %v", session, err)
+				}
+				if !deny(hook(t, s, "PreToolUse", "Bash", "overlap", command, false)) {
+					t.Fatal("overlap allowed")
+				}
+				hook(t, s, "PostToolUse", "Bash", "read", "", false)
+			}
+			for _, command := range []string{"touch code.go", "cat code.go", "cat .agents/skills/aidlc/WORKFLOW.md > code.go", "cat .agents/skills/aidlc/WORKFLOW.md; touch code.go", "cat .agents/skills/aidlc/WORKFLOW.md other.md", "cat .agents/skills/aidlc/../aidlc/WORKFLOW.md", "/opt/aidlc intent reopen --help", "/opt/aidlc intent reopen " + st.ID + " --space default --to integration --reason retry"} {
+				if !deny(hook(t, s, "PreToolUse", "Bash", "bad", command, false)) {
+					t.Fatalf("unsafe or invalid command allowed: %s", command)
+				}
+			}
+			action := "resume"
+			command := "/opt/aidlc intent resume " + st.ID + " --space default --expect " + strconv.FormatUint(st.Revision, 10) + " --reason retry"
+			if status == "completed" {
+				action = "reopen"
+				command = "/opt/aidlc intent reopen " + st.ID + " --space default --expect " + strconv.FormatUint(st.Revision, 10) + " --reason retry --stage integration"
+			}
+			if out := hook(t, s, "PreToolUse", "Bash", "resume", command, false); deny(out) {
+				t.Fatalf("valid resume denied: %+v", out)
+			}
+			_, err = s.Execute(cli.MinimalRequest{Command: "intent", Action: action, Target: st.ID, Space: "default", Expect: strconv.FormatUint(st.Revision, 10), Reason: "retry", Stage: "integration"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if out := hook(t, s, "PreToolUse", "Bash", "work", "go test ./...", false); deny(out) {
+				t.Fatalf("resumed operation denied: %+v", out)
+			}
+		})
+	}
+}
+
+func TestFlowWorkflowReadRequiresCurrentRulesAndRealFiles(t *testing.T) {
+	for _, mode := range []string{"unbound", "new turn", "changed Rule", "missing", "symlink"} {
+		t.Run(mode, func(t *testing.T) {
+			s, st := setup(t)
+			st.Status = "completed"
+			if _, err := (flow.Store{Root: s.Root, Space: "default"}).Save(st, st.Revision); err != nil {
+				t.Fatal(err)
+			}
+			hook(t, s, "UserPromptSubmit", "", "", "", false)
+			if mode != "unbound" {
+				bind(t, s, st.ID)
+			}
+			switch mode {
+			case "new turn":
+				hook(t, s, "UserPromptSubmit", "", "", "", false)
+			case "changed Rule":
+				file := filepath.Join(s.Root, "aidlc/spaces/default/knowledge/rules/rule.md")
+				raw, err := os.ReadFile(file)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(file, append(raw, []byte("\nChanged\n")...), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "missing", "symlink":
+				file := filepath.Join(s.Root, ".agents/skills/aidlc/WORKFLOW.md")
+				if err := os.Remove(file); err != nil {
+					t.Fatal(err)
+				}
+				if mode == "symlink" {
+					other := filepath.Join(t.TempDir(), "other.md")
+					if err := os.WriteFile(other, []byte("outside"), 0600); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Symlink(other, file); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if !deny(hook(t, s, "PreToolUse", "Bash", "read", "cat .agents/skills/aidlc/WORKFLOW.md", false)) {
+				t.Fatal("unsafe read allowed")
+			}
+		})
+	}
+}

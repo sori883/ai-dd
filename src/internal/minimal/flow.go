@@ -14,18 +14,24 @@ func (s Service) executeFlow(r cli.MinimalRequest) ([]byte, error) {
 	store := flow.Store{Root: s.Root, Space: r.Space}
 	if r.Action == "create" {
 		st, err := store.Create(r.Target)
-		out, _ := encode(st)
-		return out, err
+		if err != nil {
+			return nil, err
+		}
+		return encode(st)
 	}
 	if r.Action == "list" {
 		st, err := store.List()
-		out, _ := encode(st)
-		return out, err
+		if err != nil {
+			return nil, err
+		}
+		return encode(st)
 	}
 	if r.Action == "show" {
 		st, err := store.Read(r.Target)
-		out, _ := encode(st)
-		return out, err
+		if err != nil {
+			return nil, err
+		}
+		return encode(st)
 	}
 	if r.Action == "check" {
 		gate, err := store.Check(r.Target)
@@ -103,8 +109,10 @@ func (s Service) executeFlow(r cli.MinimalRequest) ([]byte, error) {
 	default:
 		result, err = store.Transition(r.Target, expect, flow.TransitionRequest{Action: r.Action, Reason: r.Reason, Stage: r.Stage, ResumeCondition: r.ResumeCondition})
 	}
-	out, _ := encode(result)
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	return encode(result)
 }
 func (s Service) decodeDraft(file string, value any) error {
 	raw, err := s.readDraft(file)
