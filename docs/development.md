@@ -78,3 +78,21 @@ Knowledge CLIだけの親final検証は次を使用します。liveはhelpの実
 go test -tags=integration -count=1 ./src/cmd/aidlc -run '^TestMemoryMetadataCommand'
 AIDLC_MEMORY_LIVE=1 go test -tags=integration -v -count=1 -timeout=15m ./src/cmd/aidlc -run '^TestMemoryMetadataLive$'
 ```
+
+## 日常運用の実CLI検証
+
+```sh
+go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestOperations'
+```
+
+複数Intent、別session再開、Git clone引継ぎ、同revision並列更新、Unit割当競合、
+実filesystem保存障害と復旧、Git競合の明示解消を一時fixtureで検証します。
+実CLIのstdout/stderr/exit、保存stateのhash/revisionと文書bytesを比較します。Git操作はtest runnerが行い、
+実AIによる運用完走の証拠とは区別します。権限障害が効かない環境では成功やskipにせず失敗します。
+
+Git cloneはstate・Knowledge・ADRを保持しますが、runtimeの会話・worker/reviewer割当は共有しません。
+新sessionでIntentを選択して再開しても、旧Unitのconfirmや旧reviewのacceptをそのまま引き継げません。
+また配置hook/Skillの絶対root/binary参照は自動で移転しません。この検証は配布設定を書き換えません。
+同時更新の拒否は先行する排他lock競合またはrevision競合です。旧revisionを再送せず現物を再読込します。
+Knowledgeの「Concept saved; bookkeeping failed」は本文保存済みの部分失敗です。返却hashとshowで確認し、
+索引障害を取り除いた後、明示した内容またはmetadata変更を現在hashで保存し補助索引を更新します。
