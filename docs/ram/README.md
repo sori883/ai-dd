@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [configure helpの実案件を四段階で完走](decisions/2026-09-08-configure-help-pilot-completed.md): 全境界のSensor・独立レビューを経て同一Intentがcompleted。実利用での拒否と修復も記録。
+
 - [configure help実案件のTDD証拠](decisions/2026-09-08-configure-help-pilot-evidence.md): Unitなし/ありのJSON例、型・置換説明、実CLIでplanning Sensor検証。
 
 - [configure helpの改善を実案件に採用](decisions/2026-09-08-configure-help-pilot-approved.md): 有効な設定JSON例を追加し、製品の4段階で完走する直接承認。
