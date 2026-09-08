@@ -139,3 +139,25 @@ func TestFlowUnitTwoParallelThenDependent(t *testing.T) {
 		t.Fatalf("dependent start %+v %v", st, err)
 	}
 }
+func TestFlowUnitRejectsPreIntegrationBase(t *testing.T) {
+	s, st, worker := unitFixture(t)
+	old := st.Config.CodeRevision
+	os.WriteFile(filepath.Join(s.Root, "a.txt"), []byte("integrated"), 0600)
+	flowGit(t, s.Root, "add", "a.txt")
+	flowGit(t, s.Root, "commit", "-qm", "dependency")
+	head := flowGit(t, s.Root, "rev-parse", "HEAD")
+	st.Config.Units[0].Status = "integrated"
+	st.Config.Units[0].ResultCommit = head
+	st.Config.Units[0].IntegratedCommit = head
+	st.Config.Units[1].Status = "integrated"
+	st.Config.Units[1].ResultCommit = head
+	st.Config.Units[1].IntegratedCommit = head
+	st.Config.Units[2].BaseCommit = old
+	st, err := s.Save(st, st.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Unit(st.ID, st.Revision, UnitRequest{Action: "claim", Unit: "c", Session: "worker-c", Root: worker}); err == nil {
+		t.Fatal("worker base excludes integrated dependencies")
+	}
+}

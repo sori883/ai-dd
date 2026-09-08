@@ -5,5 +5,5 @@ import "embed"
 
 // Files contains source assets mapped to Codex discovery paths by the installer.
 //
-//go:embed SKILL.md agents
+//go:embed SKILL.md WORKFLOW.md agents
 var Files embed.FS

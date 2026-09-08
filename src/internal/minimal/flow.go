@@ -65,18 +65,30 @@ func (s Service) executeFlow(r cli.MinimalRequest) ([]byte, error) {
 		}
 		result, err = store.Read(r.Target)
 		if err == nil {
+			previous := map[string]flow.Unit{}
 			for _, old := range result.Config.Units {
-				if old.Status != "running" && old.Status != "needs_confirmation" {
+				previous[old.ID] = old
+			}
+			for i, next := range config.Units {
+				old, exists := previous[next.ID]
+				if !exists {
+					if next.Status != "" && next.Status != "pending" || next.ResultCommit != "" || next.IntegratedCommit != "" {
+						return nil, invalid("new Unit must be pending with empty results")
+					}
+					config.Units[i].Status = "pending"
 					continue
 				}
-				found := false
-				for _, next := range config.Units {
-					if next.ID == old.ID {
-						found = reflect.DeepEqual(old, next)
-					}
+				if next.Status != old.Status || next.ResultCommit != old.ResultCommit || next.IntegratedCommit != old.IntegratedCommit {
+					return nil, invalid("Unit progress is managed by Unit operations")
 				}
-				if !found {
+				if (old.Status == "running" || old.Status == "needs_confirmation" || old.Status == "reported") && !reflect.DeepEqual(old, next) {
 					return nil, invalid("configure cannot replace an active Unit assignment")
+				}
+				delete(previous, next.ID)
+			}
+			for _, old := range previous {
+				if old.Status != "pending" && old.Status != "integrated" {
+					return nil, invalid("configure cannot remove an uncollected Unit")
 				}
 			}
 			result.Config = config

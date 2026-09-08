@@ -48,8 +48,8 @@ func Codex(root, binary string) (result Result, err error) {
 				destination = "aidlc/templates/adr.md"
 			case strings.HasPrefix(path, "knowledge/"):
 				destination = "aidlc/spaces/default/" + path
-			case path == "SKILL.md":
-				destination = ".agents/skills/aidlc/SKILL.md"
+			case path == "SKILL.md" || path == "WORKFLOW.md":
+				destination = ".agents/skills/aidlc/" + path
 			case strings.HasPrefix(path, "agents/"):
 				destination = ".codex/" + path
 			}

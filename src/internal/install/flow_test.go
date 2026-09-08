@@ -33,3 +33,25 @@ func TestFlowInstallAssets(t *testing.T) {
 		t.Fatal("obsolete KDR template deployed")
 	}
 }
+func TestFlowInstallJapaneseProcedure(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Codex(root, "/opt/aidlc"); err != nil {
+		t.Fatal(err)
+	}
+	skill, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skill) > 4096 || !strings.Contains(string(skill), "WORKFLOW.md") || !strings.Contains(string(skill), "全文") {
+		t.Fatal("Japanese bootstrap does not reach full procedure")
+	}
+	procedure, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/WORKFLOW.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, word := range []string{"実装計画", "独立レビュー", "intent review", "unit claim", "memory update"} {
+		if !strings.Contains(string(procedure), word) {
+			t.Errorf("missing %s", word)
+		}
+	}
+}

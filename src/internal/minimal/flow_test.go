@@ -108,3 +108,46 @@ func TestFlowConfigurePreservesActiveAssignment(t *testing.T) {
 		t.Fatal("removed active Unit assignment")
 	}
 }
+func TestFlowConfigureCannotForgeProgress(t *testing.T) {
+	for _, tc := range []struct {
+		name, status string
+		existing     bool
+		remove       bool
+	}{{"new integrated", "integrated", false, false}, {"new running", "running", false, false}, {"pending forged", "integrated", true, false}, {"reported removed", "reported", true, true}, {"integrated reset", "pending", true, false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			os.MkdirAll(filepath.Join(root, "aidlc/spaces/default"), 0700)
+			store := flow.Store{Root: root, Space: "default"}
+			st, err := store.Create("Work")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.existing {
+				status := "pending"
+				if tc.remove {
+					status = "reported"
+				}
+				if tc.name == "integrated reset" {
+					status = "integrated"
+				}
+				st.Config.Units = []flow.Unit{{ID: "a", Status: status, ResultCommit: "result", IntegratedCommit: "integration"}}
+				st, err = store.Save(st, st.Revision)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			config := st.Config
+			config.Units = []flow.Unit{{ID: "a", Status: tc.status}}
+			if tc.remove {
+				config.Units = nil
+			}
+			raw, _ := json.Marshal(config)
+			file := filepath.Join(root, "config.json")
+			os.WriteFile(file, raw, 0600)
+			_, err = (Service{Root: root}).Execute(cli.MinimalRequest{Command: "intent", Action: "configure", Space: "default", Target: st.ID, Expect: strconv.FormatUint(st.Revision, 10), File: file})
+			if err == nil {
+				t.Fatal("forged or lost progress")
+			}
+		})
+	}
+}

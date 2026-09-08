@@ -112,3 +112,23 @@ worker編集bytesのcommit・統合を担当する。モデルは実編集と実
 通常の調整役AIは実行環境で許可されたGit操作を使う。製品Goに起動・Git管理機能は追加しない。
 
 review.status の `pending` はローカル担当を割り当て、まだ結果を受理していない状態を表す。
+
+## 独立レビュー修正で明確化した境界
+
+configureはUnitの計画を扱う。新Unitはpending/空結果だけで、既存のstatus/result_commit/integrated_commitは
+専用Unit操作の結果を保持する。実行中・要確認・結果未回収のUnitを変更・除去しない。
+Unit IDは英数字で始まる英数字・`_`・`-`、80文字以内の単一componentとする。
+後続Unitのbase_commitには依存先の実integrated_commitが含まれていなければならない。
+
+review assign/acceptはいずれも、別Git worktreeのHEADと非ignoredコードbytesを調整rootと照合する。
+`aidlc/` の共有文書は調整rootから読むため、review rootへ全複製しない。
+artifactはkind/stage/pathを検査し、現在までの段階だけ存在・内容を要求する。
+将来stageの定義も対象hashに含むが、まだ存在しなくてよい。state/runtimeはartifactにできない。
+
+配置skillは日本語の4KiB以下の入口と、選択・Rule全文読込後に通常file読込で到達する
+`.agents/skills/aidlc/WORKFLOW.md` に分ける。上限超過時の切捨てや上限緩和はしない。
+
+test-only liveは、Pre時点のreview requestとモデルJSONLのcommand_executionの実exit/outputを照合する。
+実review報告のsession/root/target/status/summaryとCLI受理結果を一致させる。
+rawにstale診断文字列があるだけ、echo出力、別報告や別対象は証拠にしない。
+reviewer checkoutのcommitとbytes hashを保持し、review中の変化も拒否する。

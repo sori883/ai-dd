@@ -8,7 +8,7 @@ import (
 
 func passReview(t *testing.T, s Store, st State) State {
 	t.Helper()
-	root := t.TempDir()
+	root := flowReviewRoot(t, s.Root)
 	st, err := s.Review(st.ID, st.Revision, ReviewRequest{Action: "assign", CoordinatorSession: "coordinator", Session: "reviewer", Root: root})
 	if err != nil {
 		t.Fatal(err)

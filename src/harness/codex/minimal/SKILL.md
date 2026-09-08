@@ -1,16 +1,25 @@
 ---
 name: aidlc
-description: Four-stage Intent workflow with shared state, independent reviews and Unit workers.
+description: 目的の理解、実装計画、TDD、統合検証を、現在の状態と独立レビューで進める。
 ---
-Use @@BINARY@@ as A below. Never replace it with another executable. Session and draft path come from SessionStart. Read actual Rules each turn through bind; this bootstrap is not Rule acceptance.
+# 作業の入口
 
-Start: A intent create NAME --space default. Resume: A intent list --space default; A intent switch --id ID --space default --session SESSION. Or A session bind ID --space default --session SESSION. Output contains current state, complete Rules and draft path. Follow those Rules.
-Stages: discovery → planning → tdd → integration → completed. A intent show ID --space SPACE returns revision R. A intent configure ID --space SPACE --expect R --file FILE replaces config only; preserve fields. JSON config: objective, scope[], acceptance[], unknowns[] (only planning blockers), plan, code_revision (actual git HEAD), adr:{required,reason,refs[]}, artifacts:[{path,kind,stage}], units[], tests[], direct_commit. Artifact paths are project-relative; kind Knowledge accepts normal OKF types; ADR refs use aidlc/spaces/SPACE/knowledge/ADR/*.md. Direct implementation needs tests and final direct_commit. Read docs before deciding; ask questions and use intent wait with --reason and --resume-condition. Reply with intent resume --reason; interruption uses intent pause. Every mutation also needs --space SPACE --expect R. Re-read after conflicts.
+このプロジェクトでは @@BINARY@@ を使う。以下ではこの実行ファイルを `A` と記す。
+SessionStartが示すsession IDとdraftパスを使い、別の実行ファイルへ置き換えない。
 
-A intent check ID --space SPACE evaluates actual files. Spawn a separate read-only reviewer at a separate root for the fixed target, passing Rules, state and exact artifacts/code version. A intent review ID --space SPACE --expect R --file FILE: assign JSON {action:"assign",coordinator_session,session,root}; accept JSON {action:"accept",session,root,target,status:"pass"|"fail",summary}. Send only the assigned reviewer's actual report. Fix fail and repeat review; stale results cannot advance. A intent advance ID --space SPACE --expect R advances one boundary. Use intent reopen with --reason and --stage to revisit earlier work.
+最初は `A intent create NAME --space default` で目的を作る。
+再開時は `A intent list --space default` で既存IDを確認する。各会話で
+`A intent switch --id ID --space default --session SESSION` または
+`A session bind ID --space default --session SESSION` を実行する。
+出力には現在のstate、必須Rule全文、draftパスがある。Ruleを読み、その内容に従う。
+この入口の読込だけでRuleを読んだことにはならない。
 
-For parallel work, plan units [{id,bolt,base_commit,depends_on:[],scope:[],tests:[],status:"pending",result_commit:"",integrated_commit:""}]. Coordinator alone writes shared state; workers use separate worktrees and commits. A unit claim ID --space SPACE --expect R --file FILE uses {unit,session,root}; assignment lives under aidlc/.runtime/flow/units/SPACE/ID/UNIT.json with run_id. Spawn workers yourself; the CLI is not a scheduler. Return unit result with {unit,session,root,run_id,commit}; merge results then unit integrate with {unit,commit}. After interruption inspect the actual worker and use unit confirm with the same run identity and current commit. Do not restart unknown runs or overlap scopes.
+選択後、配置済み `.agents/skills/aidlc/WORKFLOW.md` を通常のfile読込で**全文**読む。
+欠落時は診断し、過去の手順や内包された原稿で補わない。
+詳細手順にはconfig、Sensor、独立レビュー、Unit、Knowledge/ADRの正確な操作を記載している。
+段階は discovery → planning → tdd → integration。`intent review` とSensorの現在の合格が
+各境界に必要で、`unit claim` は担当割当だけを行う。調整役AIがworker/reviewerを起動する。
 
-Knowledge: create a Markdown draft with OKF type/title/description and relevant metadata, then A memory create knowledge/NAME --space SPACE --file FILE --actor process:codex. Concept ID has no .md. A memory show knowledge/NAME --space SPACE returns content/hash. Update with A memory update knowledge/NAME --space SPACE --file FILE --actor process:codex --expect HASH; preserve metadata. A memory search QUERY --space SPACE [--intent-id ID]. ADR uses ADR/NAME and type ADR, only when needed. Keep current what/how in Knowledge and why in ADR.
-
-Poll async tools to terminal. If an edit returned failure and ended without Post, run A session bind ID --space SPACE --session SESSION --recover for that same selection, then retry and verify. This only clears its slot; never infer success. Stop is not workflow completion. Finish through reviewed integration advance; no per-operation KDR record is required.
+非同期toolは終端までpollする。編集が失敗終了しPostが来なかったことを確認した場合だけ、
+同じID/Space/sessionで `A session bind ID --space SPACE --session SESSION --recover` を実行し、
+再試行して検証する。実行中の処理を推測で解除しない。Stopは作業全体の完了ではない。

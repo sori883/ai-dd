@@ -114,12 +114,17 @@ func TestInstallMemoryCommandGuidance(t *testing.T) {
 	if len(raw) > 4096 {
 		t.Fatalf("deployed skill is %d bytes, limit 4096", len(raw))
 	}
+	procedure, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/WORKFLOW.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = append(raw, procedure...)
 	for _, want := range []string{
 		"memory create knowledge/NAME --space SPACE --file FILE --actor process:codex",
 		"memory update knowledge/NAME --space SPACE --file FILE --actor process:codex --expect HASH",
 		"memory show knowledge/NAME --space SPACE",
 		"memory search QUERY --space SPACE [--intent-id ID]",
-		"Concept ID has no .md", "ADR/NAME", "hash", "content",
+		"拡張子なし", "ADR/NAME", "hash", "content",
 	} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("deployed skill lacks %q", want)

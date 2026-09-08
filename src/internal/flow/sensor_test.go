@@ -200,3 +200,46 @@ func TestFlowSensorRejectsInventedIntegratedCommit(t *testing.T) {
 		t.Fatalf("invented result accepted %+v %v", gate, err)
 	}
 }
+func TestFlowSensorArtifactStageAndAuthority(t *testing.T) {
+	for _, tc := range []struct{ name, kind, stage, path, want string }{{"future", "test", "tdd", "future.txt", "pass"}, {"future escape", "test", "tdd", "../future", "fail"}, {"state", "test", "discovery", "STATE", "fail"}, {"runtime", "test", "discovery", "aidlc/.runtime/proof.txt", "fail"}, {"kind", "unknown", "discovery", "KNOWLEDGE", "fail"}, {"stage", "Knowledge", "tomorrow", "KNOWLEDGE", "fail"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, st := sensorFixture(t)
+			name := tc.path
+			if name == "STATE" {
+				name = s.path(st.ID)
+			}
+			if name == "KNOWLEDGE" {
+				name = st.Config.Artifacts[0].Path
+			}
+			if tc.name == "runtime" {
+				os.MkdirAll(filepath.Dir(filepath.Join(s.Root, name)), 0700)
+				os.WriteFile(filepath.Join(s.Root, name), []byte("proof"), 0600)
+			}
+			st.Config.Artifacts = append(st.Config.Artifacts, Artifact{Path: name, Kind: tc.kind, Stage: tc.stage})
+			st, err := s.Save(st, st.Revision)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gate, err := s.Check(st.ID)
+			if err != nil || gate.Status != tc.want {
+				t.Fatalf("want %s: %+v %v", tc.want, gate, err)
+			}
+		})
+	}
+}
+func TestFlowSensorUnitIDsAreComponents(t *testing.T) {
+	for _, id := range []string{"../escape", "a/b", "a\\b", ".", ""} {
+		s, st := sensorFixture(t)
+		st.Stage = "planning"
+		st.Config.Plan = "Plan"
+		st.Config.Units = []Unit{{ID: id, Bolt: "one", BaseCommit: st.Config.CodeRevision, Scope: []string{"a.go"}, Tests: []string{"test"}}}
+		st, err := s.Save(st, st.Revision)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gate, err := s.Check(st.ID)
+		if err != nil || gate.Status != "fail" {
+			t.Errorf("unsafe ID %q: %+v %v", id, gate, err)
+		}
+	}
+}

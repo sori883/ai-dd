@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -99,7 +100,19 @@ func TestFlowJourney(t *testing.T) {
 	call("configure", "--file", writeRequest("config.json", config))
 	review := func(status string) {
 		t.Helper()
-		reviewRoot := t.TempDir()
+		reviewRoot := filepath.Join(t.TempDir(), "review")
+		runMinimalProcess(t, root, "git", "worktree", "add", "--detach", reviewRoot, "HEAD")
+		files := runMinimalProcess(t, root, "git", "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+		for _, name := range strings.Split(string(files), "\x00") {
+			if name == "" || strings.HasPrefix(name, "aidlc/") {
+				continue
+			}
+			raw, err := os.ReadFile(filepath.Join(root, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeMinimalFixture(t, filepath.Join(reviewRoot, name), string(raw))
+		}
 		call("review", "--file", writeRequest("review.json", flow.ReviewRequest{Action: "assign", CoordinatorSession: "c", Session: "r", Root: reviewRoot}))
 		var gate flow.Gate
 		if err := json.Unmarshal(runMinimalCLI(t, binary, root, nil, "intent", "check", st.ID, "--space", "default"), &gate); err != nil {

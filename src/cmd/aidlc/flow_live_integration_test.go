@@ -33,6 +33,7 @@ type flowLiveJob struct {
 	Intent, Target, Session, Root, Commit string
 }
 type flowLiveRecord struct {
+	Review  *flowReviewObservation
 	Raw     json.RawMessage
 	Output  json.RawMessage
 	States  []flow.State
@@ -104,6 +105,32 @@ func TestFlowLiveHelper(t *testing.T) {
 		}
 		session, _ := (minimal.Service{Root: cfg.Root, Binary: cfg.Binary}).Inspect(h.Session)
 		record := flowLiveRecord{Raw: input, Output: out, States: states, Session: h.Session, Bound: session.Intent != ""}
+		if h.Event == "PreToolUse" && h.Tool == "Bash" {
+			r, _, ok := flowReviewCommand(cfg.Binary, h.Input.Command)
+			if ok {
+				file := r.File
+				if !filepath.IsAbs(file) {
+					file = filepath.Join(cfg.Root, file)
+				}
+				relative, relErr := filepath.Rel(cfg.Root, file)
+				if relErr != nil {
+					t.Fatal(relErr)
+				}
+				requestRaw, readErr := filestore.ReadFile(cfg.Root, filepath.ToSlash(relative))
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				var request flow.ReviewRequest
+				if err := json.Unmarshal(requestRaw, &request); err != nil {
+					t.Fatal(err)
+				}
+				current, readErr := (flow.Store{Root: cfg.Root, Space: r.Space}).Read(r.Target)
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				record.Review = &flowReviewObservation{Session: h.Session, Command: h.Input.Command, Before: current.Revision, Request: request}
+			}
+		}
 		if err := flowLiveSave(cfg.Evidence, "hook", record); err != nil {
 			t.Fatal(err)
 		}
@@ -372,8 +399,22 @@ func flowHostJob(ctx context.Context, cfg flowLiveConfig, request flowLiveJob) (
 		}
 		stateRaw, _ := json.Marshal(st)
 		prompt := "Read-only independent review of fixed target " + request.Target + ". Read actual code in this checkout, and the current artifacts and complete Rules in " + cfg.Root + ". State: " + string(stateRaw) + ". Check current stage acceptance, contradiction in Knowledge, ADR need/reason, real test evidence, and Unit integration. Return ONLY JSON {\"target\":\"" + request.Target + "\",\"status\":\"pass\" or \"fail\",\"summary\":\"specific findings with paths and evidence\"}. Do not mutate anything or trust coordinator self-report."
+		reviewCommit, err := flowHostGit(request.Root, "rev-parse", "HEAD")
+		if err != nil {
+			return nil, nil, err
+		}
+		codeHash, err := flowLiveCodeHash(request.Root)
+		if err != nil {
+			return nil, nil, err
+		}
 		job, err := flowRunModel(ctx, cfg, request.Root, "review-"+stamp, prompt, "read-only", request.Session)
 		job.Kind = "review"
+		job.Commit = reviewCommit
+		job.CodeHash = codeHash
+		afterHash, hashErr := flowLiveCodeHash(request.Root)
+		if hashErr != nil || afterHash != codeHash {
+			return nil, nil, fmt.Errorf("review checkout changed during review: %v", hashErr)
+		}
 		job.Target = request.Target
 		raw, _ := os.ReadFile(filepath.Join(cfg.Evidence, "review-"+stamp+"-last.json"))
 		var report struct{ Target, Status, Summary string }
@@ -387,7 +428,7 @@ func flowHostJob(ctx context.Context, cfg flowLiveConfig, request flowLiveJob) (
 		job.Summary = report.Summary
 		return report, []flowProofJob{job}, err
 	case "commit":
-		if _, err := flowHostGit(cfg.Root, "add", "aidlc/spaces/default", "go.mod", "a.go", "b.go", "c.go"); err != nil {
+		if _, err := flowHostGit(cfg.Root, "add", "--all"); err != nil {
 			return nil, nil, err
 		}
 		if _, err := flowHostGit(cfg.Root, "commit", "--allow-empty", "-m", "workflow artifacts"); err != nil {
@@ -465,14 +506,16 @@ func TestFlowJourneyLive(t *testing.T) {
 	os.WriteFile(hooksPath, hooksRaw, 0600)
 	writeMinimalFixture(t, filepath.Join(root, ".gitignore"), ".flow-*\nflow-helper\n.codex/\n.agents/\n")
 	writeMinimalFixture(t, filepath.Join(root, "aidlc/spaces/default/knowledge/knowledge/current.md"), "---\ntype: Design\ntitle: Arithmetic\ndescription: Current arithmetic behavior\n---\nAdd(0,x) returns 0. Mul multiplies. Combine sums Add and Mul.\n")
+	runMinimalProcess(t, root, "git", "add", ".gitignore")
+	runMinimalProcess(t, root, "git", "-c", "user.name=Flow", "-c", "user.email=flow@example.invalid", "commit", "-qm", "fixture exclusions")
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Minute)
 	defer cancel()
-	proof := flowProof{}
+	proof := flowProof{Binary: binary}
 	seen := map[string]bool{}
 	var coordinatorErr error
 	done := make(chan flowProofJob, 1)
 	prompt := `Use the installed aidlc skill and actual Rules to complete a fresh Intent for correct Add, Mul and Combine arithmetic. Requirements: Add(2,3)=5 and Add(0,4)=4; Mul(2,3)=6 and Mul(0,4)=0; Combine(2,3)=11. There is a seeded contradictory Knowledge statement: obtain an independent discovery review before correcting it, then correct and re-review. Exercise a stale-review rejection by changing a relevant Knowledge byte after a passing review is returned but before accepting it; then request a fresh review. Use ADR only if needed, otherwise review the no-ADR reason. Plan Units a and b in parallel and c dependent on both. Finish all four stages through actual CLI Sensor/review/advance; do not edit state.json.
-This fixture's Git operations need host support under the normal sandbox. The test-only tool ` + helper + ` request FILE submits a JSON host job and waits; use async polling for long jobs. It does not modify workflow state. Job shapes: {"Kind":"prepare","Units":["a","b"]} returns actual worker sessions/root; {"Kind":"workers","Units":["a","b"],"Intent":"ID"} starts those assigned workers concurrently and returns actual tests/commits; {"Kind":"integrate","Commit":"HASH"} integrates a worker commit; {"Kind":"prepare-review"} returns an independent read-only root/session; {"Kind":"review","Intent":"ID","Target":"HASH","Session":"SESSION","Root":"ROOT"} runs that assigned reviewer; {"Kind":"commit"} commits fixture artifacts and returns current HEAD. You must perform all intent/unit CLI operations yourself with actual revisions. Unit scopes are a.go+a_test.go, b.go+b_test.go, c.go+c_test.go; worker base must match the prepared root HEAD. Record host returned commits through unit result/integrate. For c, prepare its root only after both dependencies integrate. Test proof files are in each worker .flow-proof; preserve relevant final evidence as an artifact. Do not claim AI performed host Git operations. Respond only after completed state. Do not bypass hooks or change Rules.`
+This fixture's Git operations need host support under the normal sandbox. The test-only tool ` + helper + ` request FILE submits a JSON host job and waits; use async polling for long jobs. It does not modify workflow state. Job shapes: {"Kind":"prepare","Units":["a","b"]} returns actual worker sessions/root; {"Kind":"workers","Units":["a","b"],"Intent":"ID"} starts those assigned workers concurrently and returns actual tests/commits; {"Kind":"integrate","Commit":"HASH"} integrates a worker commit; {"Kind":"prepare-review"} returns an independent read-only root/session; {"Kind":"review","Intent":"ID","Target":"HASH","Session":"SESSION","Root":"ROOT"} runs that assigned reviewer; {"Kind":"commit"} commits fixture artifacts and returns current HEAD. The commit host job commits all nonignored fixture files. Before preparing a reviewer checkout, commit current code/test evidence and update config.code_revision to the returned HEAD. Use one literal CLI command per tool call. Keep all JSON request drafts under aidlc/.runtime/ or .flow-queue/ so they do not change code targets. You must perform all intent/unit CLI operations yourself with actual revisions. Unit scopes are a.go+a_test.go, b.go+b_test.go, c.go+c_test.go; worker base must match the prepared root HEAD. Record host returned commits through unit result/integrate. For c, prepare its root only after both dependencies integrate. Test proof files are in each worker .flow-proof; preserve relevant final evidence as an artifact. Do not claim AI performed host Git operations. Respond only after completed state. Do not bypass hooks or change Rules.`
 	go func() {
 		job, err := flowRunModel(ctx, cfg, root, "coordinator-one", prompt, "workspace-write")
 		coordinatorErr = err
@@ -530,11 +573,15 @@ This fixture's Git operations need host support under the normal sandbox. The te
 	files, _ := filepath.Glob(filepath.Join(evidence, "hook-*.json"))
 	sort.Strings(files)
 	bound := map[string]bool{}
+	var observations []flowReviewObservation
 	for _, file := range files {
 		raw, _ := os.ReadFile(file)
 		var record flowLiveRecord
 		if json.Unmarshal(raw, &record) != nil {
 			t.Fatal("invalid hook record")
+		}
+		if record.Review != nil {
+			observations = append(observations, *record.Review)
 		}
 		proof.States = append(proof.States, record.States...)
 		var input minimal.HookInput
@@ -548,7 +595,21 @@ This fixture's Git operations need host support under the normal sandbox. The te
 		if record.Bound {
 			bound[record.Session] = true
 		}
-		if bytes.Contains(record.Raw, []byte("unassigned or stale review")) {
+
+	}
+	for _, label := range []string{"coordinator-one", "coordinator-two"} {
+		raw, err := os.ReadFile(filepath.Join(evidence, label+".jsonl"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		executions, err := flowExecutions(raw, observations, binary)
+		if err != nil {
+			t.Fatal(err)
+		}
+		proof.CLI = append(proof.CLI, executions...)
+	}
+	for _, e := range proof.CLI {
+		if e.Exit == 2 && strings.TrimSpace(e.Output) == "aidlc: unassigned or stale review: invalid argument" {
 			proof.StaleRejected = true
 		}
 	}
@@ -559,4 +620,27 @@ This fixture's Git operations need host support under the normal sandbox. The te
 	if err := verifyFlowProof(proof); err != nil {
 		t.Fatalf("%v; evidence %s", err, evidence)
 	}
+}
+
+func flowLiveCodeHash(root string) (string, error) {
+	names, err := flowHostGit(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	if err != nil {
+		return "", err
+	}
+	files := strings.Split(names, "\x00")
+	sort.Strings(files)
+	var raw []byte
+	for _, name := range files {
+		if name == "" || strings.HasPrefix(name, "aidlc/") {
+			continue
+		}
+		content, err := filestore.ReadFile(root, name)
+		if err != nil {
+			return "", err
+		}
+		raw = append(raw, []byte(name+"\x00")...)
+		raw = append(raw, content...)
+		raw = append(raw, 0)
+	}
+	return filestore.Hash(raw), nil
 }

@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"github.com/sori883/ai-dd/src/internal/filestore"
 	"github.com/sori883/ai-dd/src/internal/okfmemory"
+	"io/fs"
 	"os/exec"
 	"path"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -85,7 +87,29 @@ func (s Store) checkState(st State) (Gate, error) {
 	knowledge := false
 	test := false
 	adrRefs := map[string]bool{}
+	stages := map[string]int{"discovery": 0, "planning": 1, "tdd": 2, "integration": 3}
 	for _, artifact := range config.Artifacts {
+		if !fs.ValidPath(artifact.Path) || strings.Contains(artifact.Path, "\\") {
+			require(false, "invalid artifact path")
+			continue
+		}
+		artifactStage, knownStage := stages[artifact.Stage]
+		if !knownStage {
+			require(false, "unknown artifact stage")
+			continue
+		}
+		if artifact.Kind != "Knowledge" && artifact.Kind != "ADR" && artifact.Kind != "test" {
+			require(false, "unknown artifact kind")
+			continue
+		}
+		if strings.HasPrefix(artifact.Path, "aidlc/.runtime/") || artifact.Path == "aidlc/.runtime" || (strings.HasPrefix(artifact.Path, "aidlc/spaces/") && strings.Contains(artifact.Path, "/intents/")) {
+			require(false, "state/runtime cannot be a review artifact")
+			continue
+		}
+		if artifactStage > stages[st.Stage] {
+			continue
+		}
+
 		content, err := filestore.ReadFile(s.Root, artifact.Path)
 		h.Write([]byte(artifact.Path))
 		if err != nil {
@@ -163,7 +187,7 @@ func unitPlanProblems(units []Unit) []string {
 	var problems []string
 	byID := map[string]Unit{}
 	for _, unit := range units {
-		if unit.ID == "" || byID[unit.ID].ID != "" {
+		if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$`).MatchString(unit.ID) || byID[unit.ID].ID != "" {
 			problems = append(problems, "duplicate or empty Unit ID")
 		}
 		byID[unit.ID] = unit

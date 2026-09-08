@@ -57,8 +57,13 @@ func (s Store) Unit(id string, expect uint64, r UnitRequest) (State, error) {
 			}
 			for _, dep := range unit.DependsOn {
 				for _, candidate := range st.Config.Units {
-					if candidate.ID == dep && candidate.Status != "integrated" {
-						return invalid("dependency not integrated")
+					if candidate.ID == dep {
+						if candidate.Status != "integrated" || candidate.IntegratedCommit == "" {
+							return invalid("dependency not integrated")
+						}
+						if _, err := git(s.Root, "merge-base", "--is-ancestor", candidate.IntegratedCommit, unit.BaseCommit); err != nil {
+							return invalid("worker base does not include dependency integration")
+						}
 					}
 				}
 			}
