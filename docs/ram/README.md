@@ -1,5 +1,9 @@
 # 開発プロジェクトRAM
 
+- [日常運用の実CLI検証結果](decisions/2026-09-08-daily-operations-evidence.md): 複数Intent、Git引継ぎ、並列競合、保存障害復旧と既存移転制約、Git競合判定のlocale依存除去。
+
+- [実案件の完走と日常運用の確認](decisions/2026-09-08-pilot-and-daily-operations-request.md): 1・2の実施を直接依頼。実案件はconfigure helpのUnit有無JSON例に確定、日常運用は実CLI検証。
+
 - [Knowledge CLI metadataとhelpの実装証拠](decisions/2026-09-08-knowledge-cli-frontmatter-evidence.md): C1〜C5のTDD、本文のみ入力、metadata保持、未選択help、限定live入口、confirm commit説明のreview修正。
 
 - [CLIによるfrontmatter生成とhelp参照を実装する](decisions/2026-09-08-knowledge-cli-help-approved.md): 前案への直接承認。型・選択肢をhelpへ集約し、Skillから参照する。
