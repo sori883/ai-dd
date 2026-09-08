@@ -1,5 +1,9 @@
 # 開発プロジェクトRAM
 
+- [configure help実案件のTDD証拠](decisions/2026-09-08-configure-help-pilot-evidence.md): Unitなし/ありのJSON例、型・置換説明、実CLIでplanning Sensor検証。
+
+- [configure helpの改善を実案件に採用](decisions/2026-09-08-configure-help-pilot-approved.md): 有効な設定JSON例を追加し、製品の4段階で完走する直接承認。
+
 - [Knowledge CLI metadataとhelpの実装証拠](decisions/2026-09-08-knowledge-cli-frontmatter-evidence.md): C1〜C5のTDD、本文のみ入力、metadata保持、未選択help、限定live入口、confirm commit説明のreview修正。
 
 - [CLIによるfrontmatter生成とhelp参照を実装する](decisions/2026-09-08-knowledge-cli-help-approved.md): 前案への直接承認。型・選択肢をhelpへ集約し、Skillから参照する。
