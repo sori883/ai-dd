@@ -40,6 +40,11 @@ func (s Service) Execute(r cli.MinimalRequest) ([]byte, error) {
 	store := s.store(r.Space)
 	switch r.Command + "/" + r.Action {
 	case "install/codex":
+		if r.Relocate {
+			result, err := install.Relocate(s.Root, s.Binary, r.FromProjectDir, r.FromBinary)
+			out, _ := encode(result)
+			return out, err
+		}
 		result, err := install.Codex(s.Root, s.Binary)
 		out, _ := encode(result)
 		return out, err

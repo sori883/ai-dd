@@ -10,12 +10,14 @@ import (
 )
 
 type UnitRequest struct {
-	Action  string `json:"action"`
-	Unit    string `json:"unit"`
-	Session string `json:"session"`
-	Root    string `json:"root"`
-	RunID   string `json:"run_id"`
-	Commit  string `json:"commit"`
+	Reason             string `json:"reason"`
+	PreviousRunStopped bool   `json:"previous_run_stopped"`
+	Action             string `json:"action"`
+	Unit               string `json:"unit"`
+	Session            string `json:"session"`
+	Root               string `json:"root"`
+	RunID              string `json:"run_id"`
+	Commit             string `json:"commit"`
 }
 
 func (s Store) assignmentPath(id, unit string) string {
@@ -48,6 +50,8 @@ func (s Store) Unit(id string, expect uint64, r UnitRequest) (State, error) {
 		}
 		unit := &st.Config.Units[index]
 		switch r.Action {
+		case "reassign":
+			return s.reassign(st, unit, expect, r)
 		case "claim":
 			if unit.Status != "pending" {
 				return invalid("Unit already assigned or finished")

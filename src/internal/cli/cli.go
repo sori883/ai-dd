@@ -15,6 +15,7 @@ const helpText = `AI-DLC four-stage workflow
 
 Usage:
   aidlc install codex --project-dir <root>
+  aidlc install codex --relocate --project-dir <new-root> --from-project-dir <old-root> --from-binary <old-binary>
   aidlc space create <name> [--project-dir <path>]
   aidlc space list [--json] [--project-dir <path>]
   aidlc space [--json] [--project-dir <path>]
@@ -30,7 +31,7 @@ Usage:
   aidlc intent pause|resume|cancel <id> --space <space> --expect <revision> --reason <text>
   aidlc intent wait <id> --space <space> --expect <revision> --reason <text> --resume-condition <text>
   aidlc intent reopen <id> --space <space> --expect <revision> --reason <text> --stage <stage>
-  aidlc unit claim|result|integrate|confirm <id> --space <space> --expect <revision> --file <request.json>
+  aidlc unit claim|result|integrate|confirm|reassign <id> --space <space> --expect <revision> --file <request.json>
   aidlc memory create <concept-id> --space <space> --body-file <body> --actor <actor> --type <type> --title <title> --description <description>
   aidlc memory update <concept-id> --space <space> --body-file <body> --actor <actor> --expect <hash>
   aidlc memory show <concept-id> --space <space>
