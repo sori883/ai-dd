@@ -32,56 +32,38 @@ func runDependencies(
 	}
 }
 
-const wantHelp = `AI-DLC command-line interface
+const wantHelp = `AI-DLC four-stage workflow
 
 Usage:
-  aidlc <command>
   aidlc install codex --project-dir <root>
-  aidlc intent create <name> --space <space> --file <draft> --actor <actor>
-  aidlc intent list --space <space>
-  aidlc intent switch <name> --space <space> --session <session>
-  aidlc kdr template --space <space>
-  aidlc kdr create --space <space> --file <draft> --actor <actor>
-  aidlc kdr list --space <space>
-  aidlc kdr show <id> --space <space> [--raw]
-  aidlc kdr check <id> --space <space>
-  aidlc kdr update <id> --space <space> --file <draft> --expect <hash> --session <session> --actor <actor>
-  aidlc kdr repair <id> --space <space> --file <draft> --expect <hash|missing> --session <session> --actor <actor>
-  aidlc memory <search|show|rules|check|create|update> --space <space>
-  aidlc session <bind|inspect> --session <session>
-  aidlc knowledge search [--tag <tag>]... [--type <type>]... [--query <text>] [--limit <1..100>] [--project-dir <path>]
-  aidlc next [--project-dir <path>]
-  aidlc continue <token> [--project-dir <path>]
-  aidlc read-context [continue <opaque-token>] [--project-dir <path>]
-  aidlc report --stage <slug> --result <awaiting-approval|rejected|revised|approved> [--user-input <exact>] [--reason <feedback>] [--project-dir <path>]
   aidlc space create <name> [--project-dir <path>]
   aidlc space list [--json] [--project-dir <path>]
-  aidlc space switch <name> [--project-dir <path>]
   aidlc space [--json] [--project-dir <path>]
-  aidlc intent list [--json] [--project-dir <path>]
-  aidlc intent [--json] [--project-dir <path>]
-  aidlc intent switch <target> [--project-dir <path>]
-  aidlc intent <target> [--project-dir <path>]
+  aidlc space switch <name> [--project-dir <path>]
+  aidlc intent create <name> --space <space>
+  aidlc intent list --space <space>
+  aidlc intent switch <name>|--id <id> --space <space> --session <session>
+  aidlc intent show <id> --space <space>
+  aidlc intent configure <id> --space <space> --expect <revision> --file <config.json>
+  aidlc intent check <id> --space <space>
+  aidlc intent review <id> --space <space> --expect <revision> --file <review.json>
+  aidlc intent advance <id> --space <space> --expect <revision>
+  aidlc intent pause|resume|cancel <id> --space <space> --expect <revision> --reason <text>
+  aidlc intent wait <id> --space <space> --expect <revision> --reason <text> --resume-condition <text>
+  aidlc intent reopen <id> --space <space> --expect <revision> --reason <text> --stage <stage>
+  aidlc unit claim|result|integrate|confirm <id> --space <space> --expect <revision> --file <request.json>
+  aidlc memory create <concept-id> --space <space> --file <draft> --actor <actor>
+  aidlc memory update <concept-id> --space <space> --file <draft> --actor <actor> --expect <hash>
+  aidlc memory show <concept-id> --space <space>
+  aidlc memory search [query] --space <space> [--intent-id <id>]
+  aidlc memory rules|check --space <space>
+  aidlc session bind <id> --space <space> --session <session> [--recover]
+  aidlc session inspect --session <session>
+  aidlc help | version
 
-Commands:
-  knowledge search  Search Space OKF metadata
-  help       Show help
-  version    Show version information
-  next       Compose and publish the next directive
-  continue   Continue a published directive
-  read-context  Read the active run-stage context
-  report     Record one explicit stage result
-  space create  Create a new space
-  space list    List spaces (space is an alias)
-  space switch  Select an existing space
-  intent list   List intents (intent is an alias)
-  intent switch Select an existing intent
-
-Flags:
-  --help     Show help
-  --version  Show version information
-  --project-dir <path>  Project directory for workspace commands
-  --json     Print space or intent lists as JSON
+Stages: discovery, planning, tdd, integration. Each boundary needs Sensor and independent review.
+Use --project-dir <root> for explicit project selection. Concept IDs have no .md extension.
+Exit codes: 0 success, 2 invalid input or conflict, 1 operational failure.
 `
 
 func TestRun_Help(t *testing.T) {

@@ -699,9 +699,9 @@ func assertSpaceScaffold(t *testing.T, projectPath, name, orgContent string) {
 		dir     bool
 		content string
 	}{
-		".": {dir: true}, "knowledge": {dir: true}, "knowledge/knowledge": {dir: true}, "knowledge/design": {dir: true}, "knowledge/kdr": {dir: true}, "knowledge/rules": {dir: true},
+		".": {dir: true}, "knowledge": {dir: true}, "knowledge/knowledge": {dir: true}, "knowledge/design": {dir: true}, "knowledge/ADR": {dir: true}, "knowledge/rules": {dir: true},
 	}
-	for _, path := range []string{"knowledge/index.md", "knowledge/knowledge/index.md", "knowledge/design/index.md", "knowledge/kdr/index.md", "knowledge/rules/entry.md", "knowledge/rules/rule.md"} {
+	for _, path := range []string{"knowledge/index.md", "knowledge/knowledge/index.md", "knowledge/design/index.md", "knowledge/ADR/index.md", "knowledge/rules/entry.md", "knowledge/rules/rule.md"} {
 		data, err := core.Files.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)

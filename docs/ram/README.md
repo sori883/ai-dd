@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [四段階製品切替の実装証拠](decisions/2026-09-08-four-stage-implementation-evidence.md): Issue #130、TDD・削除境界・新fresh/liveの親final入口。
+
 ## 目的
 
 このディレクトリは、GoでAI-DLCを再実装する開発プロジェクトの意思決定、調査結果、
@@ -31,8 +33,27 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 
 ## 索引
 
+現在のフローは **目的整理＋深掘り → 実装計画 → TDD → 統合検証**。
+各ステージ間にSensorとレビューを設け、必要な検査とレビューに合格してからstateを次へ進める。
+**Knowledgeは現行で何を・どう実現しているか、ADRはアーキテクチャ設計のなぜ**を記録する。
+整理・深掘りの成果もこの分担で反映し、ADRはSpaceの `knowledge/ADR/` 配下にOKF文書として置く。
+作業記録は要求せず、Intent・Unitの進捗はstateで管理する。
+過去の記録にある旧称KDRと実装識別子は履歴として保持し、名称とstateの最新方針は先頭の記録を参照する。
+
 | 種別 | 記録 | 状態 |
 | --- | --- | --- |
+| 意思決定 | [Git共有stateと調整役AIによる起動を採用する](decisions/2026-09-08-four-stage-runtime-approved.md) | Accepted。提示した4ステージ実装計画の残る2点を確定し実装へ進む |
+| 意思決定 | [4ステージ方式の実装着手と不要製品コードの削除を依頼された](decisions/2026-09-08-four-stage-implementation-request.md) | 実装・不要製品コード削除の直接依頼。進捗共有とAI起動責任を確認中 |
+| 計画 | [4ステージ方式への実装計画](../design/four-stage-workflow-implementation-plan.md) | 対象・保存/CLI案・削除境界・受入/検証を具体化。2点への回答後に契約を確定 |
+| 意思決定 | [ステージ間にSensorとレビューを設ける](decisions/2026-09-08-stage-sensor-review-gates.md) | 必須のステージ間検査・レビューを確定。具体的な検査・担当・完了条件は計画で定める |
+| 意思決定 | [Knowledgeは現行のWhat・How、ADRはWhyを担う](decisions/2026-09-08-knowledge-what-how-adr-why.md) | 方針確定。ADRはSpaceのknowledge/ADR/へ配置。製品反映は実装計画で扱う |
+| 意思決定 | [目的整理・深掘りの内容をKnowledgeへ保存する](decisions/2026-09-08-discovery-content-in-knowledge.md) | 方針確定。SpaceのOKFへ整理内容・回答・調査結果・未確定事項を保存 |
+| 意思決定 | [4段階のフローとADR・進捗stateの責任を確定する](decisions/2026-09-08-four-step-flow-adr-and-progress-state.md) | 方針確定。各工程のADR作業記録必須化を置換。具体的なstate・Sensor契約は未確定 |
+| 意思決定 | [Intent全体のstate管理を要件に加える](decisions/2026-09-08-intent-state-management-required.md) | Intentの状態を製品が管理・制御する要求を確定。具体的な状態・遷移・保存形式は検討案 |
+| 意思決定 | [ADRへの名称統一とUnit実行stateの具体案](decisions/2026-09-08-adr-name-and-unit-runtime-state.md) | ADRへの名称統一は確定。割当・実行状況・再開確認のstateは検討案 |
+| 意思決定 | [KDRを正本にしたUnit実行管理とSensorの案](decisions/2026-09-08-kdr-unit-state-sensor-proposal.md) | ADR=IntentごとのKDRを確定。最小実行state・成果物Sensorは検討案 |
+| 意思決定 | [作業全体でOKFを参照し、各段階の判断と結果を記録する](decisions/2026-09-08-okf-reference-and-record-every-step.md) | 要件を記録（各段階の参照・行動・判断・結果。ADRは既存KDRを指すと上記で確定） |
+| 意思決定 | [やること・未確定事項の深掘りを先に行い、実装を分割して並列化する](decisions/2026-09-08-discovery-before-parallel-implementation.md) | 方向性を記録（Bolt/Unitを区別。具体契約・次期実装は未承認） |
 | 意思決定 | [編集失敗後も同じIntentで作業を続ける](decisions/2026-09-08-edit-failure-remains-in-progress.md) | Accepted（AIが停止を確認して復旧・再試行。未記録を保持し同じKDRへ保存） |
 | 調査 | [編集失敗時の終了通知欠落と明示復旧の確認](research/2026-09-08-minimal-live-failure-recovery-gate.md) | Resolved（上記の継続方針を承認。失敗の実機証拠は保持） |
 | 意思決定 | [M1最小Intent実装の検証証拠](decisions/2026-09-08-m1-implementation-evidence.md) | Review修正のLoop完了（索引破損判定・実機証拠の補強。再review・finalは後続gate） |

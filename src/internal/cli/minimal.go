@@ -14,6 +14,7 @@ import (
 type MinimalRequest struct {
 	Command, Action, Target, Space, ProjectDir, Session, File, Actor, Expect string
 	IntentID                                                                 *string
+	Reason, ResumeCondition, Stage                                           string
 	Raw, Recover                                                             bool
 }
 
@@ -22,14 +23,10 @@ func isMinimal(args []string) bool {
 		return false
 	}
 	switch args[0] {
-	case "install", "kdr", "memory", "session", "__minimal-hook":
+	case "install", "unit", "memory", "session", "__minimal-hook":
 		return true
 	case "intent":
-		for _, arg := range args {
-			if arg == "--space" {
-				return true
-			}
-		}
+		return true
 	}
 	return false
 }
@@ -85,26 +82,26 @@ func ParseMinimal(args []string) (r MinimalRequest, err error) {
 		required = "--project-dir"
 	case "intent/create":
 		min, max = 1, 1
-		allowed += " --file --actor"
-		required = "--file --actor"
 	case "intent/list":
 	case "intent/switch":
 		min, max = 0, 1
 		allowed += " --session --id"
 		required = "--session"
-	case "kdr/template", "kdr/list", "memory/rules", "memory/check":
-	case "kdr/create":
-		allowed += " --file --actor"
-		required = "--file --actor"
-	case "kdr/show":
+	case "memory/rules", "memory/check":
+	case "memory/show", "intent/show", "intent/check":
 		min, max = 1, 1
-		allowed += " --raw"
-	case "kdr/check", "memory/show":
+	case "intent/configure", "intent/review", "unit/claim", "unit/result", "unit/integrate", "unit/confirm":
 		min, max = 1, 1
-	case "kdr/update", "kdr/repair":
+		allowed += " --expect --file"
+		required = "--expect --file"
+	case "intent/advance":
 		min, max = 1, 1
-		allowed += " --file --actor --expect --session"
-		required = "--file --actor --expect --session"
+		allowed += " --expect"
+		required = "--expect"
+	case "intent/pause", "intent/resume", "intent/reopen", "intent/wait", "intent/cancel":
+		min, max = 1, 1
+		allowed += " --expect --reason --stage --resume-condition"
+		required = "--expect --reason"
 	case "memory/search":
 		min, max = 0, 1
 		allowed += " --intent-id"
@@ -173,6 +170,9 @@ func ParseMinimal(args []string) (r MinimalRequest, err error) {
 	r.File = values["--file"]
 	r.Actor = values["--actor"]
 	r.Expect = values["--expect"]
+	r.Reason = values["--reason"]
+	r.Stage = values["--stage"]
+	r.ResumeCondition = values["--resume-condition"]
 	r.Raw = values["--raw"] == "true"
 	r.Recover = values["--recover"] == "true"
 	if id, ok := values["--intent-id"]; ok {

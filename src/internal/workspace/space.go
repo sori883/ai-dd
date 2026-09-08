@@ -1,7 +1,9 @@
 package workspace
 
 import (
+	"fmt"
 	"io/fs"
+	"path/filepath"
 	"slices"
 	"strings"
 	"unicode"
@@ -90,4 +92,22 @@ func isJavaScriptWhitespace(r rune) bool {
 	default:
 		return unicode.IsSpace(r)
 	}
+}
+
+// localizeSpace validates before conversion or Join can normalize a name.
+func localizeSpace(name string) (string, error) {
+	isComponent := name != "." && !strings.Contains(name, "/")
+	if !fs.ValidPath(name) || !isComponent {
+		return "", fmt.Errorf("validate space %q: %w", name, fs.ErrInvalid)
+	}
+	localized, err := filepath.Localize(name)
+	if err != nil {
+		return "", fmt.Errorf(
+			"localize space %q: %w: %w",
+			name,
+			fs.ErrInvalid,
+			err,
+		)
+	}
+	return localized, nil
 }

@@ -1,5 +1,20 @@
 # M0 最小契約案とM1実装計画
 
+ステージ移行の最新要件: 各境界にSensorとレビューを設け、合格後にstateを進める。
+[ステージ間の検査・レビュー方針](../ram/decisions/2026-09-08-stage-sensor-review-gates.md)を参照する。
+
+記録の最新分担: Knowledgeは現行の「何を・どう」、ADRは設計の「なぜ」、stateは進捗を担う。
+ADRの配置先は `aidlc/spaces/<space>/knowledge/ADR/`。[責任分担・配置の合意](../ram/decisions/2026-09-08-knowledge-what-how-adr-why.md)を優先する。
+
+最新方針: [4段階のフローとADR・進捗state](../ram/decisions/2026-09-08-four-step-flow-adr-and-progress-state.md)を優先する。
+ADRはアーキテクチャレベルの設計変更意図、進捗はIntent・Unitのstateで管理する。
+目的整理・深掘りの内容はSpaceのOKF Knowledgeへ保存する。[Knowledge保存の合意](../ram/decisions/2026-09-08-discovery-content-in-knowledge.md)を参照する。
+以下の作業記録必須化はM0/M1当時の契約であり、今後の要件としてそのまま適用しない。
+
+2026-09-08 名称更新: 記録文書は **ADR** に統一し、1 Intentにつき1 ADRへ各工程の判断・結果を記録する。
+[ADR名称とUnit実行stateの最新案](../ram/decisions/2026-09-08-adr-name-and-unit-runtime-state.md)を優先する。
+以下はM0/M1契約の履歴として旧称と実装識別子を保持する。製品CLI等への改名反映は実装計画で扱う。
+
 2026-09-08: 名前操作・標準metadata・intent_id検索の確認後、ユーザーが「はい、では進めてください」と直接承認。
 実装許可・具体的な公開文法・保存復旧・対象file・検証は[確定M1計画](../ram/decisions/2026-09-08-m1-implementation-plan.md)を優先する。
 以下に残る「提案」「未承認」「今回外部操作を行わない」は検討時の状態であり、現在のM1許可は後続計画で更新済み。

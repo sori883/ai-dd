@@ -44,8 +44,8 @@ func Codex(root, binary string) (result Result, err error) {
 			}
 			destination := ""
 			switch {
-			case path == "kdr-template.md":
-				destination = "aidlc/templates/kdr.md"
+			case path == "adr-template.md":
+				destination = "aidlc/templates/adr.md"
 			case strings.HasPrefix(path, "knowledge/"):
 				destination = "aidlc/spaces/default/" + path
 			case path == "SKILL.md":
