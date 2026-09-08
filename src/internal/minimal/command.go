@@ -103,15 +103,10 @@ func (s Service) memoryWrite(r cli.MinimalRequest) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := s.readDraft(r.File)
+	raw, err := s.readDraft(r.BodyFile)
 	if err != nil {
 		return nil, err
 	}
-	doc, err := okfmemory.Parse(raw)
-	if err != nil {
-		return nil, err
-	}
-	doc.ID = r.Target
 	if strings.TrimSpace(r.Actor) == "" {
 		return nil, invalid("actor required")
 	}
@@ -120,6 +115,7 @@ func (s Service) memoryWrite(r cli.MinimalRequest) ([]byte, error) {
 		return nil, err
 	}
 	defer release()
+	var previous *okfmemory.Document
 	current, readErr := okfmemory.ReadFile(store.Bundle, name)
 	if r.Action == "create" {
 		if readErr == nil {
@@ -139,16 +135,17 @@ func (s Service) memoryWrite(r cli.MinimalRequest) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		for key := range old.Metadata {
-			if _, ok := doc.Metadata[key]; !ok {
-				return nil, invalid("metadata omitted: " + key)
-			}
-		}
-		if strings.TrimSpace(old.Body) == strings.TrimSpace(doc.Body) {
-			return nil, invalid("Concept body unchanged")
-		}
+		previous = &old
 	}
-	doc.Metadata["generated"] = map[string]any{"by": r.Actor, "at": time.Now().UTC().Format(time.RFC3339Nano)}
+	metadata := r.Metadata
+	metadata.Actor = r.Actor
+	now := time.Now().UTC()
+	doc, err := okfmemory.BuildMetadata(previous, raw, metadata, now)
+	if err != nil {
+		return nil, err
+	}
+	doc.ID = r.Target
+
 	encoded, err := doc.Bytes()
 	if err != nil {
 		return nil, err
@@ -157,7 +154,7 @@ func (s Service) memoryWrite(r cli.MinimalRequest) ([]byte, error) {
 		return nil, err
 	}
 	out, _ := encode(map[string]string{"concept_id": doc.ID, "hash": filestore.Hash(encoded), "path": name})
-	if err := okfmemory.Bookkeeping(store.Bundle, doc, strings.Title(r.Action), time.Now()); err != nil {
+	if err := okfmemory.Bookkeeping(store.Bundle, doc, strings.Title(r.Action), now); err != nil {
 		return out, fmt.Errorf("Concept saved; bookkeeping failed: %w", err)
 	}
 	return out, nil

@@ -1,5 +1,11 @@
 # 開発プロジェクトRAM
 
+- [Knowledge CLI metadataとhelpの実装証拠](decisions/2026-09-08-knowledge-cli-frontmatter-evidence.md): C1〜C5のTDD、本文のみ入力、metadata保持、未選択help、限定live入口、confirm commit説明のreview修正。
+
+- [CLIによるfrontmatter生成とhelp参照を実装する](decisions/2026-09-08-knowledge-cli-help-approved.md): 前案への直接承認。型・選択肢をhelpへ集約し、Skillから参照する。
+
+- [KnowledgeのfrontmatterをCLIで生成する](decisions/2026-09-08-cli-owned-knowledge-frontmatter.md): 日時はCLIが自動設定、その他metadataは引数、本文はAIが作成する要求。詳細CLIは提案段階。
+
 - [四段階liveの再開と証拠集計の修正](decisions/2026-09-08-flow-live-repair-evidence.md): 失敗出力、inactive手順読取、会話別再完了の実証。
 
 - [四段階final失敗の修正証拠](decisions/2026-09-08-flow-final-repair-evidence.md): 未知Intent操作のSIGPIPE境界と同一binaryのpath表記差。

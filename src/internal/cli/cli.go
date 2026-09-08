@@ -31,8 +31,8 @@ Usage:
   aidlc intent wait <id> --space <space> --expect <revision> --reason <text> --resume-condition <text>
   aidlc intent reopen <id> --space <space> --expect <revision> --reason <text> --stage <stage>
   aidlc unit claim|result|integrate|confirm <id> --space <space> --expect <revision> --file <request.json>
-  aidlc memory create <concept-id> --space <space> --file <draft> --actor <actor>
-  aidlc memory update <concept-id> --space <space> --file <draft> --actor <actor> --expect <hash>
+  aidlc memory create <concept-id> --space <space> --body-file <body> --actor <actor> --type <type> --title <title> --description <description>
+  aidlc memory update <concept-id> --space <space> --body-file <body> --actor <actor> --expect <hash>
   aidlc memory show <concept-id> --space <space>
   aidlc memory search [query] --space <space> [--intent-id <id>]
   aidlc memory rules|check --space <space>
@@ -66,6 +66,9 @@ func Run(
 	info buildinfo.Info,
 	dependencies Dependencies,
 ) int {
+	if text, ok := Help(args); ok {
+		return writeStdout(stdout, stderr, text)
+	}
 	if len(args) == 0 {
 		return writeStdout(stdout, stderr, helpText)
 	}

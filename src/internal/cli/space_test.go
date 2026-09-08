@@ -175,7 +175,7 @@ func TestRunSpaceCreateInvalidArguments(t *testing.T) {
 	}{
 		{name: "missing name", args: []string{"space", "create"}},
 		{name: "empty name", args: []string{"space", "create", ""}},
-		{name: "help name", args: []string{"space", "create", "help"}},
+		{name: "help mixed with name", args: []string{"space", "create", "help", "extra"}},
 		{name: "short help name", args: []string{"space", "create", "-h"}},
 		{name: "extra name", args: []string{"space", "create", "team", "extra"}},
 		{name: "unknown flag after name", args: []string{"space", "create", "team", "--force"}},

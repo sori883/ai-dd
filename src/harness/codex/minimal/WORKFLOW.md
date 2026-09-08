@@ -73,14 +73,16 @@ workerは実行可能なテストのREDを観測してから実装し、同じ�
 ## KnowledgeとADR
 
 Knowledgeは現行のwhat/how、ADRはwhy・代替案・影響。毎操作の日誌や一律ADRは作らない。
-草稿にOKFのtype/title/descriptionと必要なmetadataを書く。Concept IDは拡張子なしで、例は `knowledge/addition`。
+草稿には本文だけを書く。frontmatterはCLIが引数から生成する。Concept IDは拡張子なしで、例は `knowledge/addition`。
+引数・型・選択肢に迷ったら `A memory create --help` / `A memory update --help` を参照する。
 
 ```text
-A memory create knowledge/NAME --space SPACE --file FILE --actor process:codex
+A memory create knowledge/NAME --space SPACE --body-file FILE --actor process:codex --type TYPE --title TITLE --description DESCRIPTION
 A memory show knowledge/NAME --space SPACE
-A memory update knowledge/NAME --space SPACE --file FILE --actor process:codex --expect HASH
+A memory update knowledge/NAME --space SPACE --body-file FILE --actor process:codex --expect HASH
 A memory search QUERY --space SPACE [--intent-id ID]
 ```
 
-showの `content` と `hash` を使い、更新時は既存metadataを保持する。ADRは `ADR/NAME` とtype ADRを使う。
+showの `content` と `hash` を確認し、本文だけを草稿に書く。更新時の省略metadataはCLIが保持する。
+generatedの日時は自動。出典・検証の日時を捏造せず、必要なmetadata変更だけ引数で渡す。ADRは `ADR/NAME` とtype ADRを使う。
 stateのADR参照は `aidlc/spaces/SPACE/knowledge/ADR/NAME.md`。記録成功や検証完了を未実施のまま主張しない。

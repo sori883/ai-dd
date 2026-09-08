@@ -180,7 +180,7 @@ func TestFlowInactiveWorkflowReadAndResume(t *testing.T) {
 				}
 				hook(t, s, "PostToolUse", "Bash", "read", "", false)
 			}
-			for _, command := range []string{"touch code.go", "cat code.go", "cat .agents/skills/aidlc/WORKFLOW.md > code.go", "cat .agents/skills/aidlc/WORKFLOW.md; touch code.go", "cat .agents/skills/aidlc/WORKFLOW.md other.md", "cat .agents/skills/aidlc/../aidlc/WORKFLOW.md", "/opt/aidlc intent reopen --help", "/opt/aidlc intent reopen " + st.ID + " --space default --to integration --reason retry"} {
+			for _, command := range []string{"touch code.go", "cat code.go", "cat .agents/skills/aidlc/WORKFLOW.md > code.go", "cat .agents/skills/aidlc/WORKFLOW.md; touch code.go", "cat .agents/skills/aidlc/WORKFLOW.md other.md", "cat .agents/skills/aidlc/../aidlc/WORKFLOW.md", "/opt/aidlc intent reopen " + st.ID + " --space default --to integration --reason retry"} {
 				if !deny(hook(t, s, "PreToolUse", "Bash", "bad", command, false)) {
 					t.Fatalf("unsafe or invalid command allowed: %s", command)
 				}
