@@ -73,3 +73,24 @@ HOME/CODEX_HOME/認証設定を変更しない。移転済hooksの実commandを�
 この2操作は直接承認されたGo四段階製品の追加機能であり、本家install/updateと同等とは主張しない。
 利用者編集資産とGit共有正本を保持し、旧runtimeを共有せず、停止確認と新hook信頼確認を利用条件とする。
 以前の日常運用検証に記録した制約は削除せず、この後続の明示操作で対応した。
+
+## 独立reviewの契約修復（20156f0から）
+
+work_unit_id `clone-relocation-review-repair`、Issue #138、verification_mode=loop。
+修復計画のP1/P2をtest先行で再現し、新schema/state/履歴を追加せず修正した。
+
+- P1: runtime保存後にstate保存が失敗した状態で、同configのStore.Save・別Unit再割当・pauseが
+  revisionを進める3ケースを有効RED（exit1）で確認。既存の排他lock内で、runtime副作用やstate保存に
+  入る前に未完了再割当を検査する共通guardを追加した。公開configureが使うStore.Saveにも適用する。
+  同要求のreassign完了だけを許可し、元revision・元run IDを保持して復旧する。成功後のpause/resumeと
+  後日の再割当は新runで成功することも検査した。
+- P2: 日本語・先頭空白・改行pathの追跡/未追跡6ケースと独立したresultケースが、引用済みGit出力や
+  TrimSpaceによりscope外として拒否される有効RED（exit1）を確認。reassign/resultの一覧を-zと
+  stdout生bytesで取得しNUL分割する。通常のcommit等のGit応答は従来の文字列処理を維持する。
+  同じfileを再割当後にresultでき、既存のscope外拒否も維持した。
+
+正確なrepair検証: `go test -count=1 ./src/internal/flow -run '^TestFlowUnit(Reassign|Result)'`。
+P1/P2とも修正後exit0。RED/GREENログは `/tmp/relocation-review-p1-{red,green}.log`、
+`/tmp/relocation-review-p2-{red,green}.log`。末尾にrepair検証と元の5targetedを再実行し、
+`/tmp/relocation-review-boundary.log`へ記録した。gofmt・diff check成功。
+全test/race/vet/live/GitHub/commitは実施していない。親の計画追記とユーザー差分は保全した。

@@ -1,6 +1,6 @@
 # 開発プロジェクトRAM
 
-- [配置移転とUnit再割当の実装証拠](decisions/2026-09-08-clone-relocation-evidence.md): 既知参照だけの移転、停止確認後の再割当、部分保存再試行、実CLIと限定live入口。
+- [配置移転とUnit再割当の実装証拠](decisions/2026-09-08-clone-relocation-evidence.md): 既知参照だけの移転、停止確認後の再割当、部分保存再試行、実CLIと限定live入口。reviewで未完了中のrevision保全と日本語path処理を修復。
 
 - [配置移転とUnit再割当の実装を承認](decisions/2026-09-08-clone-relocation-approved.md): 方式への直接承認。再試行・複数Unit・利用者設定保持・新hook信頼確認を具体化。
 

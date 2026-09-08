@@ -67,15 +67,15 @@ func (s Store) reassign(st *State, unit *Unit, expect uint64, r UnitRequest) err
 			}
 		}
 	}
-	changed, err := git(root, "diff", "--name-only", unit.BaseCommit)
+	changed, err := gitRaw(root, "diff", "--name-only", "-z", unit.BaseCommit)
 	if err != nil {
 		return err
 	}
-	untracked, err := git(root, "ls-files", "--others", "--exclude-standard")
+	untracked, err := gitRaw(root, "ls-files", "-z", "--others", "--exclude-standard")
 	if err != nil {
 		return err
 	}
-	for _, name := range strings.Split(changed+"\n"+untracked, "\n") {
+	for _, name := range strings.Split(changed+untracked, "\x00") {
 		if name == "" {
 			continue
 		}
@@ -149,5 +149,44 @@ func (s Store) reassign(st *State, unit *Unit, expect uint64, r UnitRequest) err
 		return err
 	}
 	unit.Status = "running"
+	return nil
+}
+
+// guardReassignment runs under the same Intent lock before any mutation or
+// runtime side effect, preserving the revision needed to recover a partial save.
+func (s Store) guardReassignment(st State, request *UnitRequest) error {
+	for _, unit := range st.Config.Units {
+		if unit.Status != "needs_confirmation" {
+			continue
+		}
+		raw, err := filestore.ReadFile(s.Root, s.assignmentPath(st.ID, unit.ID))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		var current unitReassignment
+		if err := json.Unmarshal(raw, &current); err != nil {
+			return err
+		}
+		if current.ReassignmentRevision != st.Revision {
+			continue
+		}
+		failure := invalid("incomplete reassignment; complete the identical reassign request before other state updates")
+		if request == nil || request.Unit != unit.ID || request.RunID != "" || current.RunID == "" {
+			return failure
+		}
+		candidate := *request
+		root, err := filepath.EvalSymlinks(candidate.Root)
+		if err != nil {
+			return err
+		}
+		candidate.Root = root
+		candidate.RunID = current.RunID
+		if candidate != current.UnitRequest {
+			return failure
+		}
+	}
 	return nil
 }

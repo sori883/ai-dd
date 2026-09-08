@@ -101,6 +101,9 @@ func (s Store) Review(id string, expect uint64, request ReviewRequest) (State, e
 	})
 }
 func (s Store) change(id string, expect uint64, fn func(*State) error) (State, error) {
+	return s.changeReassignment(id, expect, nil, fn)
+}
+func (s Store) changeReassignment(id string, expect uint64, request *UnitRequest, fn func(*State) error) (State, error) {
 	if err := s.check(); err != nil {
 		return State{}, err
 	}
@@ -115,6 +118,9 @@ func (s Store) change(id string, expect uint64, fn func(*State) error) (State, e
 	}
 	if st.Revision != expect || expect == ^uint64(0) {
 		return State{}, invalid("revision conflict")
+	}
+	if err := s.guardReassignment(st, request); err != nil {
+		return State{}, err
 	}
 	if err := fn(&st); err != nil {
 		return State{}, err

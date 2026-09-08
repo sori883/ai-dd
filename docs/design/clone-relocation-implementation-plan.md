@@ -110,3 +110,20 @@ Issue分類は機能開発。独立review・final・対象PRのGitHub CI成功�
 新たな重大な運用選択や承認範囲外が判明した場合だけ確認へ戻る。
 ユーザーAGENTS差分・参照資料・他worktreeを保全。ローカルの製品コードはGitで戻せるが、利用先の
 担当を巻き戻す操作は自動化せず、同じ停止確認と現物確認を必要とする。
+
+## 独立レビューで確認した契約修復
+
+20156f0の独立reviewで、途中保存後にconfigureや別Unit操作がrevisionを進めると、
+未完了reassignを異なる要求で上書きできる問題を再現した。既存の「同要求だけ再試行」契約を守るため、
+未完了reassignが残る当該Intentでは、同要求を完了するまで他のstate更新を既存lock内で拒否する。
+公開configureが通るStore.Saveとchangeの双方を対象にする。新state/schema/履歴は追加しない。
+またGitの引用済みpathがscope比較を壊すため、reassign/resultのpath一覧をNUL区切りの生bytesで扱う。
+日本語・空白・改行を保全し、scope外は引き続き拒否する。
+
+この修復は承認済み受入条件違反の修正として追加承認なしで行う。
+repair work unitはclone-relocation-review-repair、loop、単独writer。
+所有範囲をflow/{reassign,unit,store,review,sensor}.goと関連test、既存手順/helpとRAMへ限定する。
+P1は保存失敗→configure/別Unit拒否→同要求同run復旧→後日の再割当を、P2は追跡/未追跡の日本語・空白・改行pathと
+resultまでをtest先行で確認する。正確なtargetedは
+`go test -count=1 ./src/internal/flow -run '^TestFlowUnit(Reassign|Result)'`。
+末尾に元の5targetedを再実行し、再review後に未着手のfinalへ進む。

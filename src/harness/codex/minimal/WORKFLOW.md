@@ -97,6 +97,6 @@ stateのADR参照は `aidlc/spaces/SPACE/knowledge/ADR/NAME.md`。記録成功�
 
 旧workerの終了を確認し、`unit reassign --help` のJSONで同じIntent/Unitを新しい別worktree/sessionへ割り当てる。
 runningなら既存pause/resumeでneeds_confirmationにする。`previous_run_stopped: true` は確認済みの場合だけ指定し、
-CLI成功まで新workerを開始しない。runtimeはGit共有しない。保存途中は同じexpect/JSONで再試行し、
+CLI成功まで新workerを開始しない。runtimeはGit共有しない。保存途中は他のstate更新（configureや別Unit操作など）が拒否される。同じexpect/JSONで再試行し、
 既にrunningならshowと現在assignmentで成功を確認する。新run_idと現在HEADで再テスト後result/integrateする。
 レビューは新root/sessionへassignし、現在targetの独立reviewを受け直す。
