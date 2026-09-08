@@ -100,3 +100,27 @@ runningなら既存pause/resumeでneeds_confirmationにする。`previous_run_st
 CLI成功まで新workerを開始しない。runtimeはGit共有しない。保存途中は他のstate更新（configureや別Unit操作など）が拒否される。同じexpect/JSONで再試行し、
 既にrunningならshowと現在assignmentで成功を確認する。新run_idと現在HEADで再テスト後result/integrateする。
 レビューは新root/sessionへassignし、現在targetの独立reviewを受け直す。
+
+## 4担当への委譲
+
+利用者との対話と共有state・Knowledge/ADRの書込みは調整役一人が担当する。
+必要な調査は `aidlc-researcher`、要件の具体化は `aidlc-requirements`、承認後の実装は
+`aidlc-worker`、固定成果の独立レビューは `aidlc-reviewer` へ依頼する。
+単純な仕事で毎回4担当を起動する必要はない。調査は独立した読取りを並列化でき、
+実装の並列化は既存のUnit割当・依存・別worktree条件に従う。
+要件整理は必要な調査結果の後、workerは承認と割当の後、reviewerは成果固定の後に起動する。
+
+依頼は全履歴の継承を既定にせず、目的、Intent/Space、対象root、承認済み範囲、必要なRule全文・資料、
+期待出力を含む短い自己完結した文章にする。researcherには質問と対象version・OKF検索結果、
+requirementsには要望・承認条件・現状・調査結果、workerには計画・Unitまたは担当範囲・別worktree・base・検証方法、
+reviewerには固定hash・同版の別root・state・実測結果を渡す。
+read-onlyの3担当にはwriterのhookを持たない別root、workerには別worktreeを用意する。
+子はcoordinator専用hook操作や共有state・OKFの更新を代行しない。
+sandbox_modeの設定をOS全経路の保証と扱わず、実行環境とtoolの権限を守る。
+
+researcherから根拠path/URL・参照版付きの事実/推論/未確認、相違点・選択肢・質問を受け取る。
+requirementsから目的・利用者・範囲・要件・制約・受入条件・未確定事項と確認質問を受け取り、
+必要なユーザー回答と承認は調整役が得る。workerから変更file・実行testと結果・成果commit（未作成ならその旨）・残件を受け取る。
+reviewerから対象版・pass/fail・summary・優先度と根拠path付きfindingを受け取り、既存のreview受理CLIへ渡す。
+追加調査や担当が必要なら子から調整役へ戻す。reviewerに広い新規調査を兼務させない。
+子の報告や本文案は調整役が内容を確認し、必要なKnowledge/ADRをCLIで保存する。

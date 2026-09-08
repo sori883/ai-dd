@@ -1,5 +1,15 @@
 # 開発プロジェクトRAM
 
+- [製品4担当の実装証拠](decisions/2026-09-08-product-agent-roles-evidence.md): 4原稿の配置RED/GREEN、TOML構造、委譲手順と共有writer境界。実spawnはfinal待ち。
+
+- [ステージ拡張より先に製品4担当を定義する](decisions/2026-09-08-product-four-agents-approved.md): 調査・要件整理・worker・reviewerの直接実装依頼。Sensorの2問と配布更新は後続へ保留。
+
+- [Space入口・資材解析・OKF Sensorの実装具体案](../design/space-reverse-okf-sensor-plan.md): 現状解析/要件文書、対象資材、Sensor、担当、TDD順を具体化。合否に関わる2点は回答待ち。
+
+- [Space入口・資材解析・OKF Sensorの実装依頼](decisions/2026-09-08-space-reverse-okf-sensor-implementation-request.md): 構成へ同意し実装を依頼。鮮度基準と変更不要の文書の扱いは回答待ち。
+
+- [Space・既存資材解析・OKF Sensorの整理依頼](decisions/2026-09-08-space-reverse-okf-sensor-request.md): 配布更新・文書整理を保留して保持。現状の役割分担とIntent/更新日時を照合するSensor案。追加契約は未承認。
+
 - [配置移転とUnit再割当の実装証拠](decisions/2026-09-08-clone-relocation-evidence.md): 既知参照だけの移転、停止確認後の再割当、部分保存再試行、実CLIと限定live入口。reviewで未完了中のrevision保全と日本語path処理を修復。
 
 - [配置移転とUnit再割当の実装を承認](decisions/2026-09-08-clone-relocation-approved.md): 方式への直接承認。再試行・複数Unit・利用者設定保持・新hook信頼確認を具体化。

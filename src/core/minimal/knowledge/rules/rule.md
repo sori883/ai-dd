@@ -11,7 +11,7 @@ Intentは一つの目的。discovery、planning、tdd、integrationの順に進�
 Discoveryでは目的、範囲、受入条件、現状、制約を理解する。実装計画を妨げる未確定事項を確認する。
 結果を左右する判断は質問し、必要な調査・試作で理解する。全疑問ゼロや最初からUnit分割を要求しない。
 Planningでは実装と検証の手順を定める。分割する場合Unitの担当範囲・依存・検証・Boltを具体化する。
-調整役AIが独立workerとreviewerを起動する。共有stateのwriterは調整役一人。
+調整役AIが必要に応じてaidlc-researcherへ調査、aidlc-requirementsへ要件整理を依頼し、承認と割当後にaidlc-worker、成果固定後にaidlc-reviewerを起動する。共有stateのwriterは調整役一人。
 workerは別worktreeで担当範囲を実装し成果commitを返す。依存の統合前や重複割当では開始しない。
 TDDでは実行可能な失敗を観測してから最小実装、成功確認、整理を繰り返す。テスト不在やskipを成功としない。
 Integrationでは実成果を統合し全体の受入を検証する。別rootのread-only reviewerへ対象版を渡す。
@@ -20,3 +20,7 @@ Knowledgeは現行what/how、ADRはwhyと代替案・影響。必要なADRだけ
 文書はOKF metadataを保持する。一般知識は命令権限を持たない。合格目的でRuleを変えない。
 質問待ちはwait、中断はpause、再開はresume。進行中Unitは実run確認後confirmし、自動再実行しない。
 記録は現在の状態と必要な知識に限る。毎操作の日誌、全操作audit、一律ADRを作らない。
+
+子担当は共有stateとOKF Knowledge/ADRを直接更新せず、根拠付き報告や本文案を調整役へ返す。
+調整役が内容を確認してCLIで保存する。不足する情報・承認・追加調査は調整役へ戻し、回答を捏造しない。
+各担当は他者の編集を保全する。reviewerは裏付けの限定読取りに留め、広い新規調査を抱えない。
