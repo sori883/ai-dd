@@ -46,7 +46,7 @@ func TestRunSpaceSwitch(t *testing.T) {
 func TestRunSpaceSwitchInvalidRawName(t *testing.T) {
 	t.Parallel()
 
-	for _, name := range []string{"", "help", "-h"} {
+	for _, name := range []string{"", "-h"} {
 		t.Run("raw "+name, func(t *testing.T) {
 			t.Parallel()
 			var stdout, stderr bytes.Buffer

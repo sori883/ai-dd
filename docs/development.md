@@ -32,13 +32,15 @@ aidlc intent check <id> --space default
 Knowledgeは現行の仕様と手順、ADRは判断理由です。Concept IDは拡張子なしです。
 
 ```sh
-aidlc memory create knowledge/addition --space default --file note.md --actor process:codex
+aidlc memory create knowledge/addition --space default --body-file note.md --actor process:codex --type Design --title "加算" --description "加算の仕様"
 aidlc memory show knowledge/addition --space default
-aidlc memory update knowledge/addition --space default --file note.md --actor process:codex --expect <hash>
+aidlc memory update knowledge/addition --space default --body-file note.md --actor process:codex --expect <hash>
 aidlc memory search addition --space default --intent-id <id>
 ```
 
-更新時は既存metadataを保持します。ADRは `ADR/name`、typeは `ADR`。不要ならstateに理由を置きます。
+草稿はfrontmatterを含まない本文だけです。metadataはCLIが生成し、generated.atは保存時刻になります。
+`aidlc memory create --help` / `aidlc memory update --help` で型、statusの値、任意JSON、全flagを確認できます。
+helpはIntent未選択でも利用できます。更新時は省略したmetadataを保持し、本文またはmetadataに変更が必要です。ADRは `ADR/name`、typeは `ADR`。不要ならstateに理由を置きます。
 一操作ごとの日誌や一律ADRは作成しません。編集失敗後にPostが来ない場合は、AIが失敗終了を確認し、
 同じID/Space/sessionへ `session bind --recover` を実行して再試行・検証します。未終了toolはpollします。
 
@@ -69,3 +71,10 @@ workerは実編集と実test、reviewerは独立read-only会話で固定対象�
 live evidenceは表示した一時ディレクトリへ保持します。raw hook、Codex JSONL/stdout/stderr、
 host job、実testのRED/GREEN・同一test本文hash・source hashを記録します。これらは検証fixtureであり製品auditではありません。
 通常testでliveがskipされてもlive成功とは扱いません。timeout、自己申告、test不在も成功にしません。
+
+Knowledge CLIだけの親final検証は次を使用します。liveはhelpの実読取、本文のみの作成・更新、保存metadataをraw hookと実CLI結果で確認します。
+
+```sh
+go test -tags=integration -count=1 ./src/cmd/aidlc -run '^TestMemoryMetadataCommand'
+AIDLC_MEMORY_LIVE=1 go test -tags=integration -v -count=1 -timeout=15m ./src/cmd/aidlc -run '^TestMemoryMetadataLive$'
+```

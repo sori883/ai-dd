@@ -6,6 +6,8 @@ description: 目的の理解、実装計画、TDD、統合検証を、現在の�
 
 このプロジェクトでは @@BINARY@@ を使う。以下ではこの実行ファイルを `A` と記す。
 SessionStartが示すsession IDとdraftパスを使い、別の実行ファイルへ置き換えない。
+引数・型・値に迷ったら `A help`、`A memory create --help`、`A memory update --help` を参照する。
+正規helpは未選択・Rule未読・待機中でも読める。本文だけの草稿を作り、metadataはCLI引数へ渡す。
 
 最初は `A intent create NAME --space default` で目的を作る。
 再開時は `A intent list --space default` で既存IDを確認する。各会話で

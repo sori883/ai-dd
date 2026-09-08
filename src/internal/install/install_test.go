@@ -120,11 +120,11 @@ func TestInstallMemoryCommandGuidance(t *testing.T) {
 	}
 	raw = append(raw, procedure...)
 	for _, want := range []string{
-		"memory create knowledge/NAME --space SPACE --file FILE --actor process:codex",
-		"memory update knowledge/NAME --space SPACE --file FILE --actor process:codex --expect HASH",
+		"memory create knowledge/NAME --space SPACE --body-file FILE --actor process:codex --type TYPE --title TITLE --description DESCRIPTION",
+		"memory update knowledge/NAME --space SPACE --body-file FILE --actor process:codex --expect HASH",
 		"memory show knowledge/NAME --space SPACE",
 		"memory search QUERY --space SPACE [--intent-id ID]",
-		"拡張子なし", "ADR/NAME", "hash", "content",
+		"拡張子なし", "ADR/NAME", "hash", "content", "memory create --help", "memory update --help", "本文",
 	} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("deployed skill lacks %q", want)
@@ -148,5 +148,19 @@ func TestFlowInstallInactiveResumeGuidance(t *testing.T) {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("missing inactive bootstrap grammar %q", want)
 		}
+	}
+}
+
+func TestMemoryHelpPlacedSkill(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Codex(root, "/opt/aidlc"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) > 4096 || !strings.Contains(string(raw), "--help") || !strings.Contains(string(raw), "迷ったら") {
+		t.Fatalf("missing bounded help entry: %s", raw)
 	}
 }

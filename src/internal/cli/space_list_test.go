@@ -307,7 +307,7 @@ func TestRunSpaceListOutputPreparation(t *testing.T) {
 		},
 		{
 			name:       "bare invalid flag",
-			args:       []string{"space", "--help"},
+			args:       []string{"space", "--unknown-help"},
 			wantCode:   1,
 			wantEvents: []string{"prepare", "stderr"},
 		},
@@ -457,7 +457,7 @@ func TestRunSpaceListUnknownSubcommands(t *testing.T) {
 	}{
 		{name: "separate JSON value after bare", args: []string{"space", "--json", "false"}},
 		{name: "unknown", args: []string{"space", "unknown"}},
-		{name: "bare help positional", args: []string{"space", "help"}},
+		{name: "unknown help action", args: []string{"space", "help", "unknown"}},
 		{name: "list is not the command", args: []string{"other", "space", "list", "--json"}},
 	}
 	for _, tt := range tests {
@@ -495,7 +495,7 @@ func TestRunSpaceListInvalidFlags(t *testing.T) {
 		flags []string
 	}{
 		{name: "unknown", flags: []string{"--force"}},
-		{name: "help", flags: []string{"--help"}},
+		{name: "help mixed with execution flag", flags: []string{"--help", "--json"}},
 		{name: "short help", flags: []string{"-h"}},
 		{name: "end marker", flags: []string{"--"}},
 		{name: "JSON true value", flags: []string{"--json=true"}},

@@ -73,8 +73,8 @@ aidlc intent review <id> --space <space> --expect <revision> --file <review-requ
 aidlc intent advance <id> --space <space> --expect <revision>
 aidlc intent pause|resume|reopen <id> --space <space> --expect <revision> --reason <text> [--stage <stage>]
 aidlc unit claim|result|integrate|confirm <id> --space <space> --expect <revision> --file <unit-request.json>
-aidlc memory create <concept-id> --space <space> --file <draft> --actor <actor>
-aidlc memory update <concept-id> --space <space> --file <draft> --actor <actor> --expect <hash>
+aidlc memory create <concept-id> --space <space> --body-file <draft> --actor <actor> --type <type> --title <title> --description <description>
+aidlc memory update <concept-id> --space <space> --body-file <draft> --actor <actor> --expect <hash>
 aidlc memory show|search|check|rules ...
 aidlc session inspect --session <session>
 aidlc session bind <id> --space <space> --session <session> [--recover]
@@ -82,7 +82,7 @@ aidlc session bind <id> --space <space> --session <session> [--recover]
 
 review-requestのactionはassign/accept。assignはcoordinator_session,session,root。
 acceptはsession,root,target,status,summary。Unit requestはunit,session,root,run_id,commitを操作に応じ指定する。
-claimはunit/session/root、resultはそれらとrun_id/commit、integrateはunit/commit、confirmはunit/session/root/run_id。
+claimはunit/session/root、resultはそれらとrun_id/commit、integrateはunit/commit、confirmはunit/session/root/run_id/commit。resultとconfirmのcommitは現在のworker HEADと一致する40桁のcommitが必須。
 configureはconfig全体の置換だが実行中UnitのID/基準/依存/範囲を無断変更しない。
 pauseに加えwaitingは `intent pause --stage waiting` で表現せず、`intent wait` をreason/resume_condition付きで提供する。
 `intent cancel`はreason付き、completed/cancelledから通常advanceしない。

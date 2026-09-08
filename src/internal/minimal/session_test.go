@@ -11,6 +11,7 @@ import (
 	"github.com/sori883/ai-dd/src/internal/filestore"
 	"github.com/sori883/ai-dd/src/internal/flow"
 	"github.com/sori883/ai-dd/src/internal/install"
+	"github.com/sori883/ai-dd/src/internal/okfmemory"
 )
 
 func setup(t *testing.T) (Service, flow.State) {
@@ -103,10 +104,10 @@ func TestSessionMemoryWritesAndSearchPreserveSelection(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(draft), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(draft, []byte("---\ntype: Note\ntitle: Memory\ndescription: Retained metadata\ncustom: keep\n---\nFirst body.\n"), 0600); err != nil {
+	if err := os.WriteFile(draft, []byte("First body.\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	request := cli.MinimalRequest{Command: "memory", Action: "create", Target: "knowledge/note", Space: "default", File: draft, Actor: "process:test"}
+	request := bodyRequest(draft)
 	output, err := s.Execute(request)
 	if err != nil {
 		t.Fatal(err)
@@ -115,11 +116,11 @@ func TestSessionMemoryWritesAndSearchPreserveSelection(t *testing.T) {
 	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(filepath.Join(s.Root, "aidlc/spaces/default/knowledge/knowledge/note.md"))
+	_, err = os.ReadFile(filepath.Join(s.Root, "aidlc/spaces/default/knowledge/knowledge/note.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(draft, []byte(strings.Replace(string(raw), "First body.", "Second body.", 1)), 0600); err != nil {
+	if err := os.WriteFile(draft, []byte("Second body.\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	request.Action = "update"
@@ -143,11 +144,11 @@ func TestSessionMemoryWritesAndSearchPreserveSelection(t *testing.T) {
 func TestSessionMemoryBoundaries(t *testing.T) {
 	s, _ := setup(t)
 	draft := filepath.Join(s.Root, "draft.md")
-	body := "---\ntype: Note\ntitle: Memory\ndescription: Example\ncustom: keep\n---\nFirst.\n"
+	body := "First.\n"
 	if err := os.WriteFile(draft, []byte(body), 0600); err != nil {
 		t.Fatal(err)
 	}
-	r := cli.MinimalRequest{Command: "memory", Action: "create", Target: "knowledge/note", Space: "default", File: draft, Actor: "process:test"}
+	r := bodyRequest(draft)
 	output, err := s.Execute(r)
 	if err != nil {
 		t.Fatal(err)
@@ -157,20 +158,25 @@ func TestSessionMemoryBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	savedPath := filepath.Join(s.Root, "aidlc/spaces/default/knowledge/knowledge/note.md")
-	raw, err := os.ReadFile(savedPath)
+	_, err = os.ReadFile(savedPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dropped := strings.Replace(string(raw), "custom: keep\n", "", 1)
-	dropped = strings.Replace(dropped, "First.", "Second.", 1)
+	dropped := "Second.\n"
 	if err := os.WriteFile(draft, []byte(dropped), 0600); err != nil {
 		t.Fatal(err)
 	}
 	r.Action = "update"
 	r.Expect = result["hash"]
-	if _, err := s.Execute(r); err == nil {
-		t.Fatal("memory update dropped unknown metadata")
+	r.Metadata = okfmemory.MetadataInput{}
+	if _, err := s.Execute(r); err != nil {
+		t.Fatal(err)
 	}
+	doc, err := okfmemory.Read(filepath.Dir(filepath.Dir(savedPath)), "knowledge/note")
+	if err != nil || doc.String("custom") != "keep" {
+		t.Fatal("memory update dropped unknown metadata", err)
+	}
+
 	r.Action = "create"
 	other := filepath.Join(s.Root, "aidlc/spaces/other/knowledge")
 	if err := os.MkdirAll(other, 0755); err != nil {
@@ -188,6 +194,7 @@ func TestSessionMemoryBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.Target = "knowledge/partial"
+	r.Metadata = bodyRequest(draft).Metadata
 	partial, err := s.Execute(r)
 	if err == nil || !json.Valid(partial) {
 		t.Fatalf("partial write was hidden: %s, %v", partial, err)

@@ -62,18 +62,21 @@ func minimalCommand(request cli.MinimalRequest) ([]byte, error) {
 		encoded, err := json.Marshal(output)
 		return append(encoded, '\n'), err
 	}
-	if request.File != "" {
-		request.File, err = filepath.Abs(request.File)
+	for _, file := range []*string{&request.File, &request.BodyFile} {
+		if *file == "" {
+			continue
+		}
+		absolute, err := filepath.Abs(*file)
 		if err != nil {
 			return nil, err
 		}
-		// Preserve the original final component so the store can reject a symlink
-		// draft, while canonicalizing only its project-directory ancestors.
-		parent, err := filepath.EvalSymlinks(filepath.Dir(request.File))
+		// Preserve the final component so rooted reads still reject symlinks.
+		parent, err := filepath.EvalSymlinks(filepath.Dir(absolute))
 		if err != nil {
 			return nil, err
 		}
-		request.File = filepath.Join(parent, filepath.Base(request.File))
+		*file = filepath.Join(parent, filepath.Base(absolute))
 	}
+
 	return service.Execute(request)
 }

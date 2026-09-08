@@ -34,7 +34,7 @@ func TestMainSpaceSwitchClosedPipes(t *testing.T) {
 			hasClosedStdout: true, wantCode: 1,
 		},
 		{
-			name: "stderr syntax", args: []string{"space", "switch", "help"},
+			name: "stderr syntax", args: []string{"space", "switch", "-h"},
 			hasClosedStderr: true, isRejected: true, wantCode: 1,
 		},
 		{

@@ -14,6 +14,16 @@ import (
 // Hook returns Codex control JSON and never interprets model transcripts.
 func (s Service) Hook(input HookInput) (map[string]any, error) {
 	out := map[string]any{}
+	if input.Event == "PreToolUse" && input.Tool == "Bash" && input.ID != "" && input.Turn != "" {
+		if _, err := sessionPath(input.Session); err == nil {
+			argv, ok := shellWords(input.Input.Command)
+			if ok && len(argv) > 1 && sameBinary(argv[0], s.Binary) {
+				if _, help := cli.Help(argv[1:]); help {
+					return out, nil
+				}
+			}
+		}
+	}
 	_, err := s.withSession(input.Session, func(state *Session) ([]byte, error) {
 		switch input.Event {
 		case "SessionStart":
