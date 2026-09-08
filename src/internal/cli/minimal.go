@@ -26,7 +26,14 @@ func isMinimal(args []string) bool {
 	case "install", "unit", "memory", "session", "__minimal-hook":
 		return true
 	case "intent":
-		return true
+		if len(args) < 2 {
+			return true
+		}
+		switch args[1] {
+		case "create", "list", "show", "check", "switch", "configure", "review", "advance", "pause", "resume", "reopen", "wait", "cancel":
+			return true
+		}
+		return false
 	}
 	return false
 }

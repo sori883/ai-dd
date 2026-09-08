@@ -2,6 +2,7 @@ package minimal
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -131,7 +132,7 @@ func (s Service) exception(input HookInput, state *Session) bool {
 		return false
 	}
 	argv, ok := shellWords(input.Input.Command)
-	if !ok || len(argv) < 2 || argv[0] != s.Binary {
+	if !ok || len(argv) < 2 || !sameBinary(argv[0], s.Binary) {
 		return false
 	}
 	r, err := cli.ParseMinimal(argv[1:])
@@ -257,4 +258,20 @@ func (s Service) recoveryHint(session string, state *Session) string {
 	}
 	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
 	return "Poll a running Bash process to terminal. Only after an edit tool returned a failure and you confirmed it ended, run the same-session recovery as one command: " + quote(s.Binary) + " session bind " + quote(state.Intent) + " --space " + quote(state.Space) + " --session " + quote(session) + " --recover. Recovery clears only the failed tool slot. Retry and verify before advancing the Intent."
+}
+
+// sameBinary preserves exact configured paths and resolves absolute aliases only.
+func sameBinary(command, configured string) bool {
+	if command == configured {
+		return true
+	}
+	if !filepath.IsAbs(command) || !filepath.IsAbs(configured) {
+		return false
+	}
+	actual, err := os.Stat(command)
+	if err != nil {
+		return false
+	}
+	expected, err := os.Stat(configured)
+	return err == nil && actual.Mode().IsRegular() && expected.Mode().IsRegular() && os.SameFile(actual, expected)
 }

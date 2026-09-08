@@ -216,3 +216,33 @@ func TestSessionMemoryShowOriginalHash(t *testing.T) {
 		t.Fatalf("show changed bytes or hash: %s", out)
 	}
 }
+
+func TestHookBootstrapBinaryIdentity(t *testing.T) {
+	s, _ := setup(t)
+	real := filepath.Join(t.TempDir(), "aidlc")
+	if err := os.WriteFile(real, []byte("binary"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "aidlc")
+	if err := os.Symlink(real, alias); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(t.TempDir(), "aidlc")
+	if err := os.WriteFile(other, []byte("binary"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	s.Binary = real
+	for _, tc := range []struct {
+		name, binary string
+		denied       bool
+	}{{"same", real, false}, {"alias", alias, false}, {"different", other, true}, {"basename", "aidlc", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, args := range []string{" intent list --space default", " intent create Work --space default"} {
+				out := hook(t, s, "PreToolUse", "Bash", "tool", "'"+tc.binary+"'"+args, false)
+				if deny(out) != tc.denied {
+					t.Fatalf("denied=%v want %v: %+v", deny(out), tc.denied, out)
+				}
+			}
+		})
+	}
+}

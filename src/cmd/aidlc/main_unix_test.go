@@ -324,7 +324,7 @@ func TestMainRootCommandsKeepSIGPIPE(t *testing.T) {
 		{name: "unknown", args: []string{"unknown"}, closeStderr: true},
 		{name: "unknown space subcommand", args: []string{"space", "unknown"}, closeStderr: true},
 		{name: "bare JSON separate value", args: []string{"space", "--json", "false"}, closeStderr: true},
-		{name: "unknown intent subcommand", args: []string{"intent", "create"}, closeStderr: true},
+		{name: "unknown intent subcommand", args: []string{"intent", "unknown"}, closeStderr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [四段階final失敗の修正証拠](decisions/2026-09-08-flow-final-repair-evidence.md): 未知Intent操作のSIGPIPE境界と同一binaryのpath表記差。
+
 - [四段階の独立レビュー修正証拠](decisions/2026-09-08-four-stage-review-repair-evidence.md): Unit進捗・依存base・review checkout・stage別成果物・live実報告照合・日本語手順。
 
 - [四段階製品切替の実装証拠](decisions/2026-09-08-four-stage-implementation-evidence.md): Issue #130、TDD・削除境界・新fresh/liveの親final入口。
