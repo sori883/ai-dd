@@ -234,6 +234,9 @@ func (s Store) Save(st State, expect uint64) (State, error) {
 	if current.Revision != expect || st.Revision != expect || expect == ^uint64(0) {
 		return State{}, invalid("revision conflict")
 	}
+	if err := s.guardReassignment(current, nil); err != nil {
+		return State{}, err
+	}
 	st.Revision++
 	if err := s.persist(st); err != nil {
 		return State{}, err

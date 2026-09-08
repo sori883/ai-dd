@@ -132,3 +132,18 @@ test-only liveは、Pre時点のreview requestとモデルJSONLのcommand_execut
 実review報告のsession/root/target/status/summaryとCLI受理結果を一致させる。
 rawにstale診断文字列があるだけ、echo出力、別報告や別対象は証拠にしない。
 reviewer checkoutのcommitとbytes hashを保持し、review中の変化も拒否する。
+
+## 配置移転・Unit再割当（Issue #138）
+
+`install codex --relocate --project-dir NEW --from-project-dir OLD --from-binary OLD_BINARY` は
+既知の現行Skillと5eventの製品hookだけを更新する。旧pathを実アクセスせず、旧/新参照混在を再試行できる。
+hooksは検査済みcommandのJSON文字列span以外のbytesを保持する。全件検査・専用lock・保存直前bytes比較と
+原子的file保存を用い、部分成功はPaths/Pendingで示す。既存WORKFLOWは更新せず、hook trustは利用者が確認する。
+
+`unit reassign ID --space SPACE --expect REVISION --file REQUEST.json` はactive/tddのneeds_confirmationが対象。
+REQUESTはunit/session/root/commit/reason文字列とprevious_run_stopped=true。run_idは入力せず新規発行する。
+実HEAD・baseからの履歴・依存統合・scope・別担当root/sessionを検査し、ID・計画・成果は保持してrunningへ戻す。
+他Unitのneeds_confirmationではruntime不存在だけを許容し、scope検査は省略しない。runningや破損runtimeは拒否する。
+state保存前のruntime残存は同一要求なら同じrun IDを再利用し、異なる途中要求は現在割当の再確認を求める。
+現行runtimeのreassignment_revisionに要求expectを記録し、同revisionの途中保存と、成功後の後日の再割当を区別する。
+新しい履歴/state形式は追加しない。旧runのresultは受理せず、新runの再テスト・result/integrateと新しい独立reviewを必要とする。

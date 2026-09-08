@@ -96,3 +96,31 @@ Git cloneはstate・Knowledge・ADRを保持しますが、runtimeの会話・wo
 同時更新の拒否は先行する排他lock競合またはrevision競合です。旧revisionを再送せず現物を再読込します。
 Knowledgeの「Concept saved; bookkeeping failed」は本文保存済みの部分失敗です。返却hashとshowで確認し、
 索引障害を取り除いた後、明示した内容またはmetadata変更を現在hashで保存し補助索引を更新します。
+
+## 別cloneへの配置移転と担当の再割当
+
+日常運用検証で記録した旧path・runtime非共有の制約には、次の明示操作を追加しました。
+移転先AIの開始前に端末で実行します。旧pathは存在不要ですが配置済み参照と一致する絶対pathが必要です。
+
+```sh
+aidlc install codex --relocate --project-dir NEW_ROOT --from-project-dir OLD_ROOT --from-binary OLD_BINARY
+aidlc unit reassign --help
+aidlc unit reassign INTENT_ID --space SPACE --expect REVISION --file reassignment.json
+```
+
+relocateは現在版の既知Skillと製品hookの参照だけを更新し、既存WORKFLOW・独自hook・Knowledgeを保持します。
+Pathsは更新済み、Pendingは未処理です。部分失敗は同じ引数で再検査して再試行できます。
+新ROOT/.codex/hooks.jsonの絶対pathを確認し、利用者がCodex hook trustを確認します。trust/認証は自動変更しません。
+
+reassignは旧処理の終了を確認してから使います。runningならpause/resumeを経てneeds_confirmationにし、
+新しい実在worktree/session、現在HEAD、reason、previous_run_stopped=trueを指定します。遠隔processは停止しません。
+新runで再テストしてresult/integrateし、レビューを新root/sessionと現在targetで受け直します。
+保存途中は同じexpect/JSONで再試行し、すでにrunningなら現在state/assignmentを確認します。
+
+```sh
+go test -tags=integration -count=1 ./src/cmd/aidlc -run '^TestRelocationCommand'
+AIDLC_RELOCATION_LIVE=1 go test -tags=integration -v -count=1 -timeout=15m ./src/cmd/aidlc -run '^TestRelocationLive$'
+```
+
+限定liveは親finalで実行し、固定Codex/model/通常sandboxで移転後の同じIntent選択とKnowledge作成更新を観測します。
+2Unitの実CLI引継ぎと実Go testの証拠は、実AI workerの完走とは区別します。

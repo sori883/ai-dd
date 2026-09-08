@@ -3,7 +3,7 @@ package cli
 import "strings"
 
 var publicActions = map[string]string{
-	"install": "codex", "space": "create list switch", "intent": "create list switch show configure check review advance pause resume reopen wait cancel", "unit": "claim result integrate confirm", "memory": "create update show search rules check", "session": "bind inspect",
+	"install": "codex", "space": "create list switch", "intent": "create list switch show configure check review advance pause resume reopen wait cancel", "unit": "claim result integrate confirm reassign", "memory": "create update show search rules check", "session": "bind inspect",
 }
 
 // Help recognizes only complete public help requests, without execution arguments.
@@ -47,7 +47,7 @@ func Help(args []string) (string, bool) {
 		"intent/review": "ID --space SPACE --expect REVISION --file REVIEW.json", "intent/advance": "ID --space SPACE --expect REVISION",
 		"intent/pause": "ID --space SPACE --expect REVISION --reason TEXT", "intent/resume": "ID --space SPACE --expect REVISION --reason TEXT", "intent/cancel": "ID --space SPACE --expect REVISION --reason TEXT",
 		"intent/wait": "ID --space SPACE --expect REVISION --reason TEXT --resume-condition TEXT", "intent/reopen": "ID --space SPACE --expect REVISION --reason TEXT --stage STAGE",
-		"unit/claim": "ID --space SPACE --expect REVISION --file REQUEST.json", "unit/result": "ID --space SPACE --expect REVISION --file REQUEST.json", "unit/integrate": "ID --space SPACE --expect REVISION --file REQUEST.json", "unit/confirm": "ID --space SPACE --expect REVISION --file REQUEST.json",
+		"unit/reassign": "ID --space SPACE --expect REVISION --file REQUEST.json", "unit/claim": "ID --space SPACE --expect REVISION --file REQUEST.json", "unit/result": "ID --space SPACE --expect REVISION --file REQUEST.json", "unit/integrate": "ID --space SPACE --expect REVISION --file REQUEST.json", "unit/confirm": "ID --space SPACE --expect REVISION --file REQUEST.json",
 		"memory/show": "CONCEPT-ID --space SPACE", "memory/search": "[QUERY] --space SPACE [--intent-id ID]", "memory/rules": "--space SPACE", "memory/check": "--space SPACE",
 		"session/bind": "ID --space SPACE --session SESSION [--recover]", "session/inspect": "--session SESSION",
 	}
@@ -61,6 +61,12 @@ func Help(args []string) (string, bool) {
 		text += "Concept IDは拡張子なし（例 knowledge/authentication、ADR/authentication、rules/project）。showは原文contentと現在hashを返す。searchはqueryのAND検索、intent-idは32桁の小文字16進数で完全一致。rulesは必須Rule全文、checkはSpaceのOKF検査。\n"
 	case "session":
 		text += "bindは現在stateと必須Rule全文を読む。--recoverは同じsession/Space/Intentで、失敗toolの終了を確認した後だけ使用する。実行中と推測して解除しない。inspectは読取りのみ。\n"
+	}
+	if key == "install/codex" {
+		text += "移転: aidlc install codex --relocate --project-dir NEW_ROOT --from-project-dir OLD_ROOT --from-binary OLD_BINARY\n新binaryは実行中のaidlc。旧pathは絶対参照文字列で存在不要。移転先AI開始前に端末から実行する。既知Skillと製品hook参照だけを更新し、独自hookやWORKFLOW、Knowledgeを保持する。部分失敗はPathsが更新済み、Pendingが未処理。全件再検査する同じ引数の再試行で復旧する。未知編集は自動上書きしない。新ROOT/.codex/hooks.jsonの絶対pathを確認し、Codexのhook trustを利用者が確認する。trust/認証設定は変更しない。\n"
+	}
+	if key == "unit/reassign" {
+		text += "active/tddのneeds_confirmationだけ再割当できる。旧worker終了を確認し、previous_run_stoppedをtrueにする。runningなら先にpause/resumeする。成功まで新workerを開始しない。\nREQUEST.json例: {\"unit\":\"a\",\"session\":\"new-worker\",\"root\":\"/new/worker\",\"commit\":\"<40桁の現在HEAD>\",\"reason\":\"旧処理終了と成果を確認\",\"previous_run_stopped\":true}\nunit/session/root/commit/reasonは文字列、停止確認は真偽値。run_idは指定せず新規発行する。HEAD・base履歴・依存統合・scope・他担当との衝突を検査する。state保存途中は当該Intentのconfigureや他Unit操作を拒否してrevisionを保持する。同じexpectとJSONで再試行し、異なる残存要求は現在割当を確認する。既にrunningならshowとassignmentで成功済みを確認する。新runで再テスト後result/integrateし、reviewは新root/sessionへassignして現在targetを受け直す。\n"
 	}
 	if key == "intent/review" {
 		text += "REVIEW.json: actionはassign / accept。assignはcoordinator_session、別session、別rootを指定。acceptは同じsession/root/targetと、実報告のstatus pass / fail、summaryを指定する。古いtargetや未割当結果は拒否する。\n"

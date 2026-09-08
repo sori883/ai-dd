@@ -1,6 +1,7 @@
 package flow
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -17,13 +18,22 @@ import (
 )
 
 func git(root string, args ...string) (string, error) {
+	raw, err := gitRaw(root, args...)
+	return strings.TrimSpace(raw), err
+}
+
+// gitRaw keeps NUL-delimited path bytes intact, including leading whitespace.
+func gitRaw(root string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	raw, err := exec.CommandContext(ctx, "git", append([]string{"-C", root}, args...)...).CombinedOutput()
+	command := exec.CommandContext(ctx, "git", append([]string{"-C", root}, args...)...)
+	var diagnostic bytes.Buffer
+	command.Stderr = &diagnostic
+	raw, err := command.Output()
 	if err != nil {
-		return "", fmt.Errorf("git %s: %s: %w", args[0], strings.TrimSpace(string(raw)), err)
+		return "", fmt.Errorf("git %s: %s: %w", args[0], strings.TrimSpace(diagnostic.String()), err)
 	}
-	return strings.TrimSpace(string(raw)), nil
+	return string(raw), nil
 }
 
 // Check evaluates current files without saving Sensor or review results.

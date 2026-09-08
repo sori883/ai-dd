@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"path/filepath"
 	"strings"
 
 	"github.com/sori883/ai-dd/src/internal/okfmemory"
@@ -12,6 +13,8 @@ import (
 
 // MinimalRequest is the strict public request shared with hook command recognition.
 type MinimalRequest struct {
+	Relocate                                                                 bool
+	FromProjectDir, FromBinary                                               string
 	BodyFile                                                                 string
 	Metadata                                                                 okfmemory.MetadataInput
 	Command, Action, Target, Space, ProjectDir, Session, File, Actor, Expect string
@@ -94,7 +97,7 @@ func ParseMinimal(args []string) (r MinimalRequest, err error) {
 	min, max := 0, 0
 	switch r.Command + "/" + r.Action {
 	case "install/codex":
-		allowed = "--project-dir"
+		allowed = "--project-dir --relocate --from-project-dir --from-binary"
 		required = "--project-dir"
 	case "intent/create":
 		min, max = 1, 1
@@ -106,7 +109,7 @@ func ParseMinimal(args []string) (r MinimalRequest, err error) {
 	case "memory/rules", "memory/check":
 	case "memory/show", "intent/show", "intent/check":
 		min, max = 1, 1
-	case "intent/configure", "intent/review", "unit/claim", "unit/result", "unit/integrate", "unit/confirm":
+	case "intent/configure", "intent/review", "unit/claim", "unit/result", "unit/integrate", "unit/confirm", "unit/reassign":
 		min, max = 1, 1
 		allowed += " --expect --file"
 		required = "--expect --file"
@@ -159,7 +162,7 @@ func ParseMinimal(args []string) (r MinimalRequest, err error) {
 		if _, ok := values[arg]; ok && arg != "--tag" {
 			return fail("duplicate flag " + arg)
 		}
-		if arg == "--raw" || arg == "--recover" || arg == "--clear-tags" {
+		if arg == "--raw" || arg == "--recover" || arg == "--clear-tags" || arg == "--relocate" {
 			values[arg] = "true"
 			continue
 		}
@@ -201,6 +204,21 @@ func ParseMinimal(args []string) (r MinimalRequest, err error) {
 	r.ResumeCondition = values["--resume-condition"]
 	r.Raw = values["--raw"] == "true"
 	r.Recover = values["--recover"] == "true"
+	r.Relocate = values["--relocate"] == "true"
+	r.FromProjectDir, r.FromBinary = values["--from-project-dir"], values["--from-binary"]
+	if r.Command == "install" {
+		if r.Relocate {
+			for _, p := range []string{r.ProjectDir, r.FromProjectDir, r.FromBinary} {
+				if !filepath.IsAbs(p) {
+					return fail("relocate requires absolute new and old paths")
+				}
+			}
+		} else if _, hasRoot := values["--from-project-dir"]; hasRoot {
+			return fail("source paths require --relocate")
+		} else if _, hasBinary := values["--from-binary"]; hasBinary {
+			return fail("source paths require --relocate")
+		}
+	}
 	if id, ok := values["--intent-id"]; ok {
 		if !okfmemory.ValidID(id) {
 			return fail("invalid --intent-id")

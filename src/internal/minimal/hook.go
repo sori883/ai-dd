@@ -163,7 +163,7 @@ func (s Service) exception(input HookInput, state *Session) bool {
 			return true
 		}
 		return state.Tool == "" && r.Session == input.Session
-	case "intent/configure", "intent/review", "intent/advance", "intent/wait", "intent/pause", "intent/resume", "intent/reopen", "intent/cancel", "unit/claim", "unit/result", "unit/integrate", "unit/confirm":
+	case "intent/configure", "intent/review", "intent/advance", "intent/wait", "intent/pause", "intent/resume", "intent/reopen", "intent/cancel", "unit/claim", "unit/result", "unit/integrate", "unit/confirm", "unit/reassign":
 		return state.Tool == "" && r.Space == state.Space && r.Target == state.Intent
 
 	}

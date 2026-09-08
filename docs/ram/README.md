@@ -1,5 +1,11 @@
 # 開発プロジェクトRAM
 
+- [配置移転とUnit再割当の実装証拠](decisions/2026-09-08-clone-relocation-evidence.md): 既知参照だけの移転、停止確認後の再割当、部分保存再試行、実CLIと限定live入口。reviewで未完了中のrevision保全と日本語path処理を修復。
+
+- [配置移転とUnit再割当の実装を承認](decisions/2026-09-08-clone-relocation-approved.md): 方式への直接承認。再試行・複数Unit・利用者設定保持・新hook信頼確認を具体化。
+
+- [別cloneでの配置と担当割当の復旧案](decisions/2026-09-08-clone-relocation-request.md): 参照先更新と停止確認後の明示再割当を提案。方式確認待ち。
+
 - [configure helpの実案件を四段階で完走](decisions/2026-09-08-configure-help-pilot-completed.md): 全境界のSensor・独立レビューを経て同一Intentがcompleted。実利用での拒否と修復も記録。
 
 - [configure help実案件のTDD証拠](decisions/2026-09-08-configure-help-pilot-evidence.md): Unitなし/ありのJSON例、型・置換説明、実CLIでplanning Sensor検証。

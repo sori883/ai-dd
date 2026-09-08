@@ -10,12 +10,14 @@ import (
 )
 
 type UnitRequest struct {
-	Action  string `json:"action"`
-	Unit    string `json:"unit"`
-	Session string `json:"session"`
-	Root    string `json:"root"`
-	RunID   string `json:"run_id"`
-	Commit  string `json:"commit"`
+	Reason             string `json:"reason"`
+	PreviousRunStopped bool   `json:"previous_run_stopped"`
+	Action             string `json:"action"`
+	Unit               string `json:"unit"`
+	Session            string `json:"session"`
+	Root               string `json:"root"`
+	RunID              string `json:"run_id"`
+	Commit             string `json:"commit"`
 }
 
 func (s Store) assignmentPath(id, unit string) string {
@@ -33,7 +35,11 @@ func (s Store) assignment(id, unit string) (UnitRequest, error) {
 
 // Unit records coordinator acceptance of a separate worker's current run.
 func (s Store) Unit(id string, expect uint64, r UnitRequest) (State, error) {
-	return s.change(id, expect, func(st *State) error {
+	var retry *UnitRequest
+	if r.Action == "reassign" {
+		retry = &r
+	}
+	return s.changeReassignment(id, expect, retry, func(st *State) error {
 		if st.Status != "active" || st.Stage != "tdd" {
 			return invalid("Unit operations require active TDD stage")
 		}
@@ -48,6 +54,8 @@ func (s Store) Unit(id string, expect uint64, r UnitRequest) (State, error) {
 		}
 		unit := &st.Config.Units[index]
 		switch r.Action {
+		case "reassign":
+			return s.reassign(st, unit, expect, r)
 		case "claim":
 			if unit.Status != "pending" {
 				return invalid("Unit already assigned or finished")
@@ -156,11 +164,11 @@ func (s Store) Unit(id string, expect uint64, r UnitRequest) (State, error) {
 				unit.Status = "running"
 				return nil
 			}
-			changed, err := git(root, "diff", "--name-only", unit.BaseCommit, r.Commit)
+			changed, err := gitRaw(root, "diff", "--name-only", "-z", unit.BaseCommit, r.Commit)
 			if err != nil {
 				return err
 			}
-			for _, name := range strings.Split(changed, "\n") {
+			for _, name := range strings.Split(changed, "\x00") {
 				if name == "" {
 					continue
 				}
