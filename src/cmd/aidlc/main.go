@@ -3,16 +3,12 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/sori883/ai-dd/src/internal/buildinfo"
 	"github.com/sori883/ai-dd/src/internal/cli"
-	deliverypkg "github.com/sori883/ai-dd/src/internal/delivery"
-	"github.com/sori883/ai-dd/src/internal/orchestrator"
 	"github.com/sori883/ai-dd/src/internal/workspace"
 )
 
@@ -23,99 +19,16 @@ func main() {
 		os.Stderr,
 		buildinfo.Current(),
 		cli.Dependencies{
-			Minimal:         minimalCommand,
-			SearchKnowledge: knowledgeSearcher(os.Getwd, os.Getenv, time.Now),
-			CreateSpace:     spaceCreator(os.Getwd, os.Getenv, workspace.CreateSpace),
-			ListSpaces:      spaceLister(os.Getwd, os.Getenv, workspace.ReadSpaces),
-			SwitchSpace:     spaceSwitcher(os.Getwd, os.Getenv, workspace.SwitchSpace),
-			ListIntents:     intentLister(os.Getwd, os.Getenv, workspace.ReadIntents),
-			SwitchIntent: intentSwitcher(
-				os.Getwd,
-				os.Getenv,
-				workspace.SwitchIntent,
-			),
-			NextDelivery: deliveryNext(os.Getwd, os.Getenv, deliverypkg.Next),
-			ContinueDelivery: deliveryContinue(
-				os.Getwd,
-				os.Getenv,
-				deliverypkg.Continue,
-			),
-			ReadContext: deliveryReadContext(
-				os.Getwd,
-				os.Getenv,
-				deliverypkg.ReadContext,
-			),
-			ContinueContext: deliveryContinueContext(
-				os.Getwd,
-				os.Getenv,
-				deliverypkg.ContinueContext,
-			),
-			CodexStageWithInput: codexStageAdapterWithPayload(os.Getwd, os.Getenv, defaultCodexStageDispatchWithPayload),
-			CodexStageInput:     func() ([]byte, error) { return readCodexStageInput(os.Stdin) },
-			Report:              reportAdapter(os.Getwd, os.Getenv, orchestrator.Report),
-			HumanTurnHook: func() error {
-				return humanTurnHook(os.Stdin, os.Getwd, os.Getenv)
-			},
+			Minimal:     minimalCommand,
+			CreateSpace: spaceCreator(os.Getwd, os.Getenv, workspace.CreateSpace),
+			ListSpaces:  spaceLister(os.Getwd, os.Getenv, workspace.ReadSpaces),
+			SwitchSpace: spaceSwitcher(os.Getwd, os.Getenv, workspace.SwitchSpace),
 			PrepareOutput: func() {
 				// Recognized workspace commands promise exit 1 for writes to closed stdout or stderr pipes.
 				signal.Ignore(syscall.SIGPIPE)
 			},
 		},
 	))
-}
-
-const codexStagePayloadLimit = 64 * 1024
-
-func readCodexStageInput(reader io.Reader) ([]byte, error) {
-	if reader == nil {
-		return nil, fmt.Errorf("codex stage input reader is nil")
-	}
-	content, err := io.ReadAll(io.LimitReader(reader, codexStagePayloadLimit+1))
-	if err != nil {
-		return nil, fmt.Errorf("read codex stage input: %w", err)
-	}
-	if len(content) > codexStagePayloadLimit {
-		return nil, fmt.Errorf("codex stage input exceeds %d bytes", codexStagePayloadLimit)
-	}
-	return content, nil
-}
-
-func intentLister(
-	getwd func() (string, error),
-	getenv func(string) string,
-	read func(workspace.RootInput) (workspace.IntentListing, error),
-) func(string) (workspace.IntentListing, error) {
-	return func(explicitDir string) (workspace.IntentListing, error) {
-		workingDir, err := getwd()
-		if err != nil {
-			return workspace.IntentListing{}, fmt.Errorf("read working directory: %w", err)
-		}
-		return read(workspace.RootInput{
-			ExplicitDir:      explicitDir,
-			AIDLCProjectDir:  getenv("AIDLC_PROJECT_DIR"),
-			ClaudeProjectDir: getenv("CLAUDE_PROJECT_DIR"),
-			WorkingDir:       workingDir,
-		})
-	}
-}
-
-func intentSwitcher(
-	getwd func() (string, error),
-	getenv func(string) string,
-	switchIntent func(workspace.RootInput, string) (workspace.IntentSelection, error),
-) func(string, string) (workspace.IntentSelection, error) {
-	return func(target, explicitDir string) (workspace.IntentSelection, error) {
-		workingDir, err := getwd()
-		if err != nil {
-			return workspace.IntentSelection{}, fmt.Errorf("read working directory: %w", err)
-		}
-		return switchIntent(workspace.RootInput{
-			ExplicitDir:      explicitDir,
-			AIDLCProjectDir:  getenv("AIDLC_PROJECT_DIR"),
-			ClaudeProjectDir: getenv("CLAUDE_PROJECT_DIR"),
-			WorkingDir:       workingDir,
-		}, target)
-	}
 }
 
 func spaceCreator(

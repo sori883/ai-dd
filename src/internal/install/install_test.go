@@ -14,7 +14,7 @@ func TestInstallFresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{".codex/hooks.json", ".codex/agents/aidlc-reviewer.toml", ".agents/skills/aidlc/SKILL.md", "aidlc/templates/kdr.md", "aidlc/spaces/default/knowledge/index.md", "aidlc/spaces/default/knowledge/rules/entry.md", "aidlc/spaces/default/knowledge/rules/rule.md"} {
+	for _, path := range []string{".codex/hooks.json", ".codex/agents/aidlc-reviewer.toml", ".agents/skills/aidlc/SKILL.md", "aidlc/templates/adr.md", "aidlc/spaces/default/knowledge/index.md", "aidlc/spaces/default/knowledge/rules/entry.md", "aidlc/spaces/default/knowledge/rules/rule.md"} {
 		raw, err := os.ReadFile(filepath.Join(root, path))
 		if err != nil {
 			t.Errorf("missing embedded asset %s: %v", path, err)
@@ -74,7 +74,7 @@ func TestInstallRecoveryGuidanceAndContextLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(skill) > 4096 || !strings.Contains(string(skill), "session bind <id> --space <space> --session <session> --recover") {
+	if len(skill) > 4096 || !strings.Contains(string(skill), "session bind ID --space SPACE --session SESSION --recover") {
 		t.Fatalf("missing bounded recovery syntax: %s", skill)
 	}
 	raw, err := os.ReadFile(filepath.Join(root, ".codex/hooks.json"))
@@ -114,15 +114,39 @@ func TestInstallMemoryCommandGuidance(t *testing.T) {
 	if len(raw) > 4096 {
 		t.Fatalf("deployed skill is %d bytes, limit 4096", len(raw))
 	}
+	procedure, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/WORKFLOW.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = append(raw, procedure...)
 	for _, want := range []string{
-		"memory create <concept-id> --space <space> --file <draft> --actor <actor>",
-		"memory update <concept-id> --space <space> --file <draft> --actor <actor> --expect <hash>",
-		"memory show <concept-id> --space <space>",
-		"memory search [query] --space <space> [--intent-id <id>]",
-		"knowledge/addition-test", "拡張子なし", "hash", "content",
+		"memory create knowledge/NAME --space SPACE --file FILE --actor process:codex",
+		"memory update knowledge/NAME --space SPACE --file FILE --actor process:codex --expect HASH",
+		"memory show knowledge/NAME --space SPACE",
+		"memory search QUERY --space SPACE [--intent-id ID]",
+		"拡張子なし", "ADR/NAME", "hash", "content",
 	} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("deployed skill lacks %q", want)
+		}
+	}
+}
+
+func TestFlowInstallInactiveResumeGuidance(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Codex(root, "/private/var/folders/example/aidlc"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) > 4096 {
+		t.Fatalf("deployed skill %d bytes exceeds 4096", len(raw))
+	}
+	for _, want := range []string{"cat .agents/skills/aidlc/WORKFLOW.md", "intent resume ID --space SPACE --expect R --reason TEXT", "intent reopen ID --space SPACE --expect R --reason TEXT --stage STAGE"} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("missing inactive bootstrap grammar %q", want)
 		}
 	}
 }

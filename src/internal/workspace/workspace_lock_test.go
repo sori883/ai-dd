@@ -772,3 +772,7 @@ func assertPublicWorkspaceLockContention(t *testing.T, project string, switchFn 
 		t.Fatal("public switch did not complete after workspace lock release")
 	}
 }
+
+type errorReader struct{ err error }
+
+func (r errorReader) Read([]byte) (int, error) { return 0, r.err }

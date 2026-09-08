@@ -42,18 +42,11 @@ jobs:
         run: go test -race -shuffle=on ./...
       - name: Test workspace filesystem integration
         run: go test -tags=integration -count=1 ./src/internal/workspace
-      - name: Test state filesystem integration
-        run: go test -tags=integration -count=1 ./src/internal/state
-      - name: Test content filesystem integration
-        run: go test -tags=integration -count=1 ./src/internal/memory ./src/internal/steering ./src/internal/knowledge ./src/internal/okf ./src/internal/delivery
-      - name: Test OKF knowledge search fresh sandbox journey
-        run: go test -tags=integration -count=1 -run '^TestKnowledgeSearchFreshNonLiveJourney$' ./src/cmd/aidlc
-      - name: Test minimal Intent fresh sandbox journey
-        run: go test -tags=integration -count=1 ./src/cmd/aidlc -run '^TestMinimalJourney'
-      - name: Test audit, record lock, and orchestrator integration
-        run: go test -tags=integration -race -count=1 -shuffle=on ./src/internal/audit ./src/internal/recordlock ./src/internal/orchestrator
-      - name: Test intent-capture fresh sandbox journeys
-        run: go test -tags=integration -count=1 ./src/cmd/aidlc -run '^(TestCodexIntentCaptureFreshApprove|TestCodexIntentCaptureRejectReviseApprove|TestCodexIntentCaptureFailsClosed)$'
+      - name: Test OKF filesystem integration
+        run: go test -tags=integration -count=1 ./src/internal/okf
+      - name: Test fresh four-stage distribution journey
+        run: go test -tags=integration -count=1 ./src/cmd/aidlc -run '^TestFlowJourney$'
+
       - name: Check module metadata
         run: go mod tidy -diff
       - name: Smoke test native binary

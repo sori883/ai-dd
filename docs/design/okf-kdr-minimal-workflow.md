@@ -1,5 +1,20 @@
 # OKF・KDR・hookを中心とする最小構成案
 
+ステージ移行の最新要件: 各境界にSensorとレビューを設け、合格後にstateを進める。
+[ステージ間の検査・レビュー方針](../ram/decisions/2026-09-08-stage-sensor-review-gates.md)を参照する。
+
+記録の最新分担: Knowledgeは現行の「何を・どう」、ADRは設計の「なぜ」、stateは進捗を担う。
+ADRの配置先は `aidlc/spaces/<space>/knowledge/ADR/`。[責任分担・配置の合意](../ram/decisions/2026-09-08-knowledge-what-how-adr-why.md)を優先する。
+
+最新方針: [4段階のフローとADR・進捗state](../ram/decisions/2026-09-08-four-step-flow-adr-and-progress-state.md)を優先する。
+ADRの用途はアーキテクチャレベルの設計変更意図に限定し、作業の進捗はstate管理が担う。
+目的整理・深掘りの内容はSpaceのOKF Knowledgeへ保存する。[Knowledge保存の合意](../ram/decisions/2026-09-08-discovery-content-in-knowledge.md)を参照する。
+以下の作業記録必須化は検討履歴である。
+
+現在の記録文書名は **ADR**。1 Intentにつき1 ADRへ各工程の判断・結果を記録する。
+[名称とUnit実行stateの最新案](../ram/decisions/2026-09-08-adr-name-and-unit-runtime-state.md)を参照する。
+以下は当時の名称を含む検討履歴として保持する。
+
 後続の配置指示: [Space knowledgeへのOKF集約](../ram/decisions/2026-09-07-space-knowledge-okf-unification.md)により、Knowledge・KDR・Ruleはすべて `aidlc/spaces/<space>/knowledge/` 内のOKF文書とする。本文中の分離配置例は検討履歴であり、現行案は[最小契約案](minimal-product-contract-m0.md)を参照する。
 
 2026-09-07。状態: Proposed。ユーザーの製品方針を具体化する設計案であり、実装・配布・既存data移行の許可ではない。

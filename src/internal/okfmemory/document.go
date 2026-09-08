@@ -3,18 +3,16 @@ package okfmemory
 
 import (
 	"bytes"
-	"crypto/rand"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/sori883/ai-dd/src/internal/filestore"
 	"github.com/sori883/ai-dd/src/internal/okf"
 	"go.yaml.in/yaml/v3"
 )
@@ -220,95 +218,11 @@ func Validate(root string) error {
 	})
 }
 
-// ReadFile rejects symlinks and non-regular files within the supplied root.
-func ReadFile(root, name string) ([]byte, error) {
-	directory, err := os.OpenRoot(root)
-	if err != nil {
-		return nil, err
-	}
-	defer directory.Close()
-	if err := checkPath(directory, name, false); err != nil {
-		return nil, err
-	}
-	file, err := directory.Open(name)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("not regular: %w", fs.ErrInvalid)
-	}
-	raw, err := io.ReadAll(io.LimitReader(file, MaxBytes+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(raw) > MaxBytes {
-		return nil, fmt.Errorf("file exceeds 256 KiB: %w", fs.ErrInvalid)
-	}
-	return raw, nil
-}
-func checkPath(root *os.Root, name string, missing bool) error {
-	if !fs.ValidPath(filepath.ToSlash(name)) || strings.Contains(name, "\\") {
-		return fmt.Errorf("invalid relative path: %w", fs.ErrInvalid)
-	}
-	parts := strings.Split(filepath.ToSlash(name), "/")
-	for i := range parts {
-		info, err := root.Lstat(filepath.Join(parts[:i+1]...))
-		if missing && os.IsNotExist(err) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("symlink path: %w", fs.ErrInvalid)
-		}
-		if i < len(parts)-1 && !info.IsDir() {
-			return fmt.Errorf("non-directory parent: %w", fs.ErrInvalid)
-		}
-	}
-	return nil
-}
+// ReadFile loads a bounded regular file within the supplied root.
+func ReadFile(root, name string) ([]byte, error) { return filestore.ReadFile(root, name) }
 
-// WriteFile replaces one file via a sibling temporary file. Callers hold their
-// bundle lock; it does not promise a multi-file transaction.
-func WriteFile(root, name string, raw []byte) error {
-	directory, err := os.OpenRoot(root)
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	if err := checkPath(directory, name, true); err != nil {
-		return err
-	}
-	if err := directory.MkdirAll(filepath.Dir(name), 0755); err != nil {
-		return err
-	}
-	temp := filepath.Join(filepath.Dir(name), fmt.Sprintf(".aidlc-%x", randomBytes()))
-	file, err := directory.OpenFile(temp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer directory.Remove(temp)
-	_, writeErr := file.Write(raw)
-	syncErr := file.Sync()
-	closeErr := file.Close()
-	if writeErr != nil {
-		return writeErr
-	}
-	if syncErr != nil {
-		return syncErr
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-	return directory.Rename(temp, name)
-}
-func randomBytes() []byte { raw := make([]byte, 16); _, _ = rand.Read(raw); return raw }
+// WriteFile atomically replaces one file; the caller holds its bundle lock.
+func WriteFile(root, name string, raw []byte) error { return filestore.WriteFile(root, name, raw) }
 
 // Bookkeeping updates the immediate parent index and then the bundle change log.
 func Bookkeeping(root string, doc Document, action string, now time.Time) error {

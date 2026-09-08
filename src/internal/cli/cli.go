@@ -8,100 +8,50 @@ import (
 	"strings"
 
 	"github.com/sori883/ai-dd/src/internal/buildinfo"
-	"github.com/sori883/ai-dd/src/internal/okf"
 	"github.com/sori883/ai-dd/src/internal/workspace"
 )
 
-const helpText = `AI-DLC command-line interface
+const helpText = `AI-DLC four-stage workflow
 
 Usage:
-  aidlc <command>
   aidlc install codex --project-dir <root>
-  aidlc intent create <name> --space <space> --file <draft> --actor <actor>
-  aidlc intent list --space <space>
-  aidlc intent switch <name> --space <space> --session <session>
-  aidlc kdr template --space <space>
-  aidlc kdr create --space <space> --file <draft> --actor <actor>
-  aidlc kdr list --space <space>
-  aidlc kdr show <id> --space <space> [--raw]
-  aidlc kdr check <id> --space <space>
-  aidlc kdr update <id> --space <space> --file <draft> --expect <hash> --session <session> --actor <actor>
-  aidlc kdr repair <id> --space <space> --file <draft> --expect <hash|missing> --session <session> --actor <actor>
-  aidlc memory <search|show|rules|check|create|update> --space <space>
-  aidlc session <bind|inspect> --session <session>
-  aidlc knowledge search [--tag <tag>]... [--type <type>]... [--query <text>] [--limit <1..100>] [--project-dir <path>]
-  aidlc next [--project-dir <path>]
-  aidlc continue <token> [--project-dir <path>]
-  aidlc read-context [continue <opaque-token>] [--project-dir <path>]
-  aidlc report --stage <slug> --result <awaiting-approval|rejected|revised|approved> [--user-input <exact>] [--reason <feedback>] [--project-dir <path>]
   aidlc space create <name> [--project-dir <path>]
   aidlc space list [--json] [--project-dir <path>]
-  aidlc space switch <name> [--project-dir <path>]
   aidlc space [--json] [--project-dir <path>]
-  aidlc intent list [--json] [--project-dir <path>]
-  aidlc intent [--json] [--project-dir <path>]
-  aidlc intent switch <target> [--project-dir <path>]
-  aidlc intent <target> [--project-dir <path>]
+  aidlc space switch <name> [--project-dir <path>]
+  aidlc intent create <name> --space <space>
+  aidlc intent list --space <space>
+  aidlc intent switch <name>|--id <id> --space <space> --session <session>
+  aidlc intent show <id> --space <space>
+  aidlc intent configure <id> --space <space> --expect <revision> --file <config.json>
+  aidlc intent check <id> --space <space>
+  aidlc intent review <id> --space <space> --expect <revision> --file <review.json>
+  aidlc intent advance <id> --space <space> --expect <revision>
+  aidlc intent pause|resume|cancel <id> --space <space> --expect <revision> --reason <text>
+  aidlc intent wait <id> --space <space> --expect <revision> --reason <text> --resume-condition <text>
+  aidlc intent reopen <id> --space <space> --expect <revision> --reason <text> --stage <stage>
+  aidlc unit claim|result|integrate|confirm <id> --space <space> --expect <revision> --file <request.json>
+  aidlc memory create <concept-id> --space <space> --file <draft> --actor <actor>
+  aidlc memory update <concept-id> --space <space> --file <draft> --actor <actor> --expect <hash>
+  aidlc memory show <concept-id> --space <space>
+  aidlc memory search [query] --space <space> [--intent-id <id>]
+  aidlc memory rules|check --space <space>
+  aidlc session bind <id> --space <space> --session <session> [--recover]
+  aidlc session inspect --session <session>
+  aidlc help | version
 
-Commands:
-  knowledge search  Search Space OKF metadata
-  help       Show help
-  version    Show version information
-  next       Compose and publish the next directive
-  continue   Continue a published directive
-  read-context  Read the active run-stage context
-  report     Record one explicit stage result
-  space create  Create a new space
-  space list    List spaces (space is an alias)
-  space switch  Select an existing space
-  intent list   List intents (intent is an alias)
-  intent switch Select an existing intent
-
-Flags:
-  --help     Show help
-  --version  Show version information
-  --project-dir <path>  Project directory for workspace commands
-  --json     Print space or intent lists as JSON
+Stages: discovery, planning, tdd, integration. Each boundary needs Sensor and independent review.
+Use --project-dir <root> for explicit project selection. Concept IDs have no .md extension.
+Exit codes: 0 success, 2 invalid input or conflict, 1 operational failure.
 `
-
-const humanTurnHookCommand = "__codex-user-prompt-submit"
-const codexStageCommand = "__codex-stage"
-
-func isHumanTurnHookCommand(args []string) bool {
-	return len(args) == 1 && args[0] == humanTurnHookCommand
-}
 
 // Dependencies groups the workspace operations used by Run. Nil callbacks are
 // valid for commands that do not invoke the corresponding operation.
 type Dependencies struct {
-	Minimal          func(MinimalRequest) ([]byte, error)
-	SearchKnowledge  func(okf.SearchOptions, string) (okf.SearchResult, error)
-	CreateSpace      func(rawName, explicitDir string) (string, error)
-	ListSpaces       func(explicitDir string) ([]workspace.Space, error)
-	SwitchSpace      func(rawName, explicitDir string) (string, error)
-	ListIntents      func(explicitDir string) (workspace.IntentListing, error)
-	SwitchIntent     func(target, explicitDir string) (workspace.IntentSelection, error)
-	NextDelivery     func(explicitDir string) ([]byte, error)
-	ContinueDelivery func(token, explicitDir string) ([]byte, error)
-	ReadContext      func(explicitDir string) ([]byte, error)
-	ContinueContext  func(token, explicitDir string) ([]byte, error)
-	// CodexStage is an intentionally hidden bridge for the configured Codex
-	// receiver. Its action namespace is not part of public help or report
-	// grammar.
-	CodexStage func(action, explicitDir string) ([]byte, error)
-	// CodexStageWithInput is the payload-aware form used by the configured
-	// receiver. CodexStage remains for embedders that only need an empty
-	// payload, but production wiring uses this form so normal answer data can
-	// cross the hidden bridge without allowing authority fields.
-	CodexStageWithInput func(action, explicitDir string, payload []byte) ([]byte, error)
-	// CodexStageInput supplies the one stdin payload for a hidden stage action.
-	// It is injected to keep Run deterministic in tests and never affects the
-	// public report grammar.
-	CodexStageInput func() ([]byte, error)
-	// Report records one explicit lifecycle result. The callback receives raw
-	// values after the CLI has validated only the public grammar.
-	Report        func(stage, result, userInput, reason, explicitDir string) ([]byte, error)
-	HumanTurnHook func() error
+	Minimal       func(MinimalRequest) ([]byte, error)
+	CreateSpace   func(rawName, explicitDir string) (string, error)
+	ListSpaces    func(explicitDir string) ([]workspace.Space, error)
+	SwitchSpace   func(rawName, explicitDir string) (string, error)
 	PrepareOutput func()
 }
 
@@ -133,84 +83,10 @@ func Run(
 		}
 	}
 	if isMinimal(args) {
+		if dependencies.PrepareOutput != nil {
+			dependencies.PrepareOutput()
+		}
 		return runMinimal(args, stdout, stderr, dependencies)
-	}
-	if isHumanTurnHookCommand(args) {
-		if dependencies.PrepareOutput != nil {
-			dependencies.PrepareOutput()
-		}
-		if dependencies.HumanTurnHook != nil {
-			_ = dependencies.HumanTurnHook()
-		}
-		return 0
-	}
-	if args[0] == "knowledge" {
-		return runKnowledgeSearch(args, stdout, stderr, dependencies)
-	}
-	if isCodexStageCommand(args) {
-		if dependencies.PrepareOutput != nil {
-			dependencies.PrepareOutput()
-		}
-		request, err := parseCodexStageArguments(args)
-		if err != nil {
-			return writeDeliverySyntaxError(stderr, err)
-		}
-		if dependencies.CodexStage == nil && dependencies.CodexStageWithInput == nil {
-			return writeCommandError(stderr, errors.New("codex stage callback is unavailable"))
-		}
-		var payload []byte
-		if dependencies.CodexStageInput != nil {
-			payload, err = dependencies.CodexStageInput()
-			if err != nil {
-				return writeCommandError(stderr, fmt.Errorf("read codex stage input: %w", err))
-			}
-		}
-		var wire []byte
-		if dependencies.CodexStageWithInput != nil {
-			wire, err = dependencies.CodexStageWithInput(request.action, request.explicitDir, payload)
-		} else {
-			wire, err = dependencies.CodexStage(request.action, request.explicitDir)
-		}
-		if err != nil {
-			return writeCommandError(stderr, err)
-		}
-		return writeDeliveryWire(stdout, stderr, wire)
-	}
-	if isDeliveryCommand(args) {
-		if dependencies.PrepareOutput != nil {
-			dependencies.PrepareOutput()
-		}
-		command, explicitDir, err := deliveryArguments(args)
-		if err != nil {
-			return writeDeliverySyntaxError(stderr, err)
-		}
-		if command[0] == "next" {
-			return runDeliveryNext(command, explicitDir, stdout, stderr, dependencies.NextDelivery)
-		}
-		return runDeliveryContinue(command, explicitDir, stdout, stderr, dependencies.ContinueDelivery)
-	}
-	if isContextReadCommand(args) {
-		if dependencies.PrepareOutput != nil {
-			dependencies.PrepareOutput()
-		}
-		command, explicitDir, err := contextReadArguments(args)
-		if err != nil {
-			return writeDeliverySyntaxError(stderr, err)
-		}
-		if len(command) == 1 {
-			return runContextReadStart(command, explicitDir, stdout, stderr, dependencies.ReadContext)
-		}
-		return runContextReadContinue(command, explicitDir, stdout, stderr, dependencies.ContinueContext)
-	}
-	if isReportCommand(args) {
-		if dependencies.PrepareOutput != nil {
-			dependencies.PrepareOutput()
-		}
-		request, err := parseReportArguments(args)
-		if err != nil {
-			return writeReportSyntaxError(stderr, err)
-		}
-		return runReport(request, stdout, stderr, dependencies.Report)
 	}
 	command, explicitDir, _, err := workspaceArguments(args, false)
 	hasSpaceSubcommand := len(command) >= 2 && command[0] == "space"
@@ -268,72 +144,10 @@ func Run(
 			dependencies.ListSpaces,
 		)
 	}
-	isIntentSwitch := len(command) >= 2 && command[0] == "intent" && command[1] == "switch"
-	if isIntentSwitch {
-		if dependencies.PrepareOutput != nil {
-			dependencies.PrepareOutput()
-		}
-		if err != nil {
-			return writeCommandError(stderr, err)
-		}
-		return runIntentSwitch(
-			command[2:],
-			explicitDir,
-			stdout,
-			stderr,
-			dependencies.SwitchIntent,
-		)
-	}
-	isIntentList := len(command) >= 2 && command[0] == "intent" && command[1] == "list"
-	isBareIntent := len(command) == 1 && command[0] == "intent"
-	if isIntentList || isBareIntent {
-		if dependencies.PrepareOutput != nil {
-			dependencies.PrepareOutput()
-		}
-		_, explicitDir, jsonOutput, err := workspaceArguments(args, true)
-		if err != nil {
-			return writeCommandError(stderr, err)
-		}
-		if len(command) > 2 {
-			return writeCommandError(stderr, errors.New("intent list does not accept positional arguments"))
-		}
-		return runIntentList(
-			explicitDir,
-			jsonOutput,
-			stdout,
-			stderr,
-			dependencies.ListIntents,
-		)
-	}
-	isBareIntentSwitch := len(command) >= 2 && command[0] == "intent" && !isIntentVerb(command[1])
-	if isBareIntentSwitch {
-		if dependencies.PrepareOutput != nil {
-			dependencies.PrepareOutput()
-		}
-		if err != nil {
-			return writeCommandError(stderr, err)
-		}
-		return runIntentSwitch(
-			command[1:],
-			explicitDir,
-			stdout,
-			stderr,
-			dependencies.SwitchIntent,
-		)
-	}
 
 	_, _ = fmt.Fprintf(stderr, "aidlc: unknown arguments: %q\n\n", strings.Join(args, " "))
 	_, _ = io.WriteString(stderr, helpText)
 	return 2
-}
-
-func isIntentVerb(value string) bool {
-	switch value {
-	case "help", "list", "switch", "create", "archive", "rename", "show", "birth":
-		return true
-	default:
-		return false
-	}
 }
 
 func writeStdout(stdout, stderr io.Writer, output string) int {

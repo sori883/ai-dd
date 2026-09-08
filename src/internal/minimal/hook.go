@@ -2,11 +2,12 @@ package minimal
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/sori883/ai-dd/src/internal/cli"
-	"github.com/sori883/ai-dd/src/internal/kdr"
+	"github.com/sori883/ai-dd/src/internal/flow"
 	"github.com/sori883/ai-dd/src/internal/okfmemory"
 )
 
@@ -36,7 +37,7 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 				return nil, invalid("missing turn ID")
 			}
 			state.Turn = input.Turn
-			state.Dirty = true
+
 			state.RuleTurn = ""
 			state.RuleHash = ""
 		case "PreToolUse":
@@ -44,7 +45,7 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 				return nil, invalid("missing tool or turn ID")
 			}
 			if input.Tool == "apply_patch" && s.protectedPatch(input.Input.Command) {
-				return nil, invalid("use KDR CLI updates; do not patch canonical records or session state")
+				return nil, invalid("use Intent CLI updates; do not patch canonical state or session state")
 			}
 			if s.exception(input, state) {
 				return nil, nil
@@ -53,16 +54,13 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 				return nil, invalid("another tool is still running. " + s.recoveryHint(input.Session, state))
 			}
 			if state.Intent == "" || state.Space == "" {
-				return nil, invalid("select an Intent and read its KDR and Rules first")
+				return nil, invalid("select an Intent and read its state and Rules first")
 			}
 			if state.Turn != input.Turn || state.RuleTurn != state.Turn || state.RuleHash == "" {
-				return nil, invalid("read KDR and Rules for this turn with intent switch")
+				return nil, invalid("read state and Rules for this turn with intent switch")
 			}
-			saved, err := s.store(state.Space).Read(state.Intent)
+			selected, err := (flow.Store{Root: s.Root, Space: state.Space}).Read(state.Intent)
 			if err != nil {
-				return nil, err
-			}
-			if _, err := kdr.Parse(saved.Raw, state.Intent); err != nil {
 				return nil, err
 			}
 			_, hash, err := s.rules(state.Space)
@@ -72,7 +70,11 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 			if hash != state.RuleHash {
 				return nil, invalid("required Rules changed; select the Intent again to reread")
 			}
-			state.Dirty = true
+
+			if selected.Status != "active" && !s.workflowRead(input) {
+				return nil, invalid("Intent is waiting, paused or finished; read the deployed procedure with cat .agents/skills/aidlc/WORKFLOW.md, then resume or reopen explicitly")
+			}
+
 			state.Tool = input.ID
 		case "PostToolUse":
 			if state.Tool == input.ID && input.ID != "" {
@@ -81,12 +83,12 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 				return nil, nil
 			}
 		case "Stop":
-			if state.Dirty || state.Tool != "" {
+			if state.Tool != "" {
 				if input.Active {
-					out["systemMessage"] = "KDR is still unrecorded or a tool is running. Stopping with a warning; this is not a completion claim."
+					out["systemMessage"] = "A tool is still running. Stopping with a warning; verify the process before recovery."
 				} else {
 					out["decision"] = "block"
-					out["reason"] = fmt.Sprintf("unrecorded=%t; running_tool=%q. Finish all general operations, then save the findings and remaining work to this same KDR with the installed skill. Any general check after saving requires another update. Do not claim recorded completion until saving succeeds. %s", state.Dirty, state.Tool, s.recoveryHint(input.Session, state))
+					out["reason"] = "A tool is still running. " + s.recoveryHint(input.Session, state)
 				}
 			}
 			return nil, nil
@@ -131,7 +133,7 @@ func (s Service) exception(input HookInput, state *Session) bool {
 		return false
 	}
 	argv, ok := shellWords(input.Input.Command)
-	if !ok || len(argv) < 2 || argv[0] != s.Binary {
+	if !ok || len(argv) < 2 || !sameBinary(argv[0], s.Binary) {
 		return false
 	}
 	r, err := cli.ParseMinimal(argv[1:])
@@ -142,19 +144,18 @@ func (s Service) exception(input HookInput, state *Session) bool {
 		return false
 	}
 	switch r.Command + "/" + r.Action {
-	case "kdr/template", "kdr/list", "kdr/show", "kdr/check", "memory/rules", "memory/search", "memory/show", "memory/check", "intent/list", "session/inspect":
+	case "memory/rules", "memory/search", "memory/show", "memory/check", "intent/list", "intent/show", "intent/check", "session/inspect":
 		return true
-	case "kdr/create", "intent/create":
-		return state.Tool == "" && s.sameDraft(r.File, input.Session)
+	case "intent/create":
+		return state.Tool == ""
 	case "session/bind", "intent/switch":
 		if r.Command == "session" && r.Recover && r.Session == input.Session && r.Space == state.Space && r.Target == state.Intent && state.Intent != "" {
 			return true
 		}
 		return state.Tool == "" && r.Session == input.Session
-	case "kdr/repair":
-		return state.Tool == "" && r.Session == input.Session && s.sameDraft(r.File, input.Session)
-	case "kdr/update":
-		return state.Tool == "" && r.Session == input.Session && r.Space == state.Space && r.Target == state.Intent && s.sameDraft(r.File, input.Session)
+	case "intent/configure", "intent/review", "intent/advance", "intent/wait", "intent/pause", "intent/resume", "intent/reopen", "intent/cancel", "unit/claim", "unit/result", "unit/integrate", "unit/confirm":
+		return state.Tool == "" && r.Space == state.Space && r.Target == state.Intent
+
 	}
 	return false
 }
@@ -241,7 +242,7 @@ func (s Service) protectedPatch(patch string) bool {
 				name = relative
 			}
 			name = filepath.ToSlash(filepath.Clean(name))
-			if strings.HasPrefix(name, "aidlc/spaces/") && strings.Contains(name, "/knowledge/kdr/") {
+			if strings.HasPrefix(name, "aidlc/spaces/") && strings.Contains(name, "/intents/") {
 				return true
 			}
 			if strings.HasPrefix(name, "aidlc/.runtime/") && !strings.HasPrefix(name, "aidlc/.runtime/drafts/") {
@@ -254,8 +255,45 @@ func (s Service) protectedPatch(patch string) bool {
 
 func (s Service) recoveryHint(session string, state *Session) string {
 	if state.Tool == "" {
-		return "No running tool slot; update the KDR after the final general operation."
+		return "No running tool slot."
 	}
 	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
-	return "Poll a running Bash process to terminal. Only after an edit tool returned a failure and you confirmed it ended, run the same-session recovery as one command: " + quote(s.Binary) + " session bind " + quote(state.Intent) + " --space " + quote(state.Space) + " --session " + quote(session) + " --recover. Recovery keeps the work unrecorded; retry, verify, and save the same KDR."
+	return "Poll a running Bash process to terminal. Only after an edit tool returned a failure and you confirmed it ended, run the same-session recovery as one command: " + quote(s.Binary) + " session bind " + quote(state.Intent) + " --space " + quote(state.Space) + " --session " + quote(session) + " --recover. Recovery clears only the failed tool slot. Retry and verify before advancing the Intent."
+}
+
+// sameBinary preserves exact configured paths and resolves absolute aliases only.
+func sameBinary(command, configured string) bool {
+	if command == configured {
+		return true
+	}
+	if !filepath.IsAbs(command) || !filepath.IsAbs(configured) {
+		return false
+	}
+	actual, err := os.Stat(command)
+	if err != nil {
+		return false
+	}
+	expected, err := os.Stat(configured)
+	return err == nil && actual.Mode().IsRegular() && expected.Mode().IsRegular() && os.SameFile(actual, expected)
+}
+
+// workflowRead permits only the deployed procedure, after selection and Rules checks.
+// It uses a normal tool slot; this is not an exception to in-flight protection.
+func (s Service) workflowRead(input HookInput) bool {
+	if input.Tool != "Bash" {
+		return false
+	}
+	argv, ok := shellWords(input.Input.Command)
+	if !ok || len(argv) < 2 || len(argv) > 3 || argv[0] != "cat" {
+		return false
+	}
+	for _, name := range argv[1:] {
+		if name != ".agents/skills/aidlc/SKILL.md" && name != ".agents/skills/aidlc/WORKFLOW.md" {
+			return false
+		}
+		if _, err := okfmemory.ReadFile(s.Root, name); err != nil {
+			return false
+		}
+	}
+	return true
 }

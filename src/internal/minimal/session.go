@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/sori883/ai-dd/src/internal/kdr"
+	"github.com/sori883/ai-dd/src/internal/filestore"
 	"github.com/sori883/ai-dd/src/internal/okfmemory"
 )
 
@@ -21,7 +21,6 @@ type Service struct{ Root, Binary string }
 // Session is temporary conversation state; it is not the canonical work record.
 type Session struct {
 	Space, Intent, Turn, Tool, RuleTurn, RuleHash string
-	Dirty                                         bool
 }
 
 // HookInput contains only policy fields from the observed Codex hook protocol.
@@ -42,7 +41,7 @@ func sessionPath(session string) (string, error) {
 	if !regexp.MustCompile(`^[A-Za-z0-9_-]{1,160}$`).MatchString(session) {
 		return "", invalid("invalid session ID")
 	}
-	return "aidlc/.runtime/sessions/" + session + ".txt", nil
+	return "aidlc/.runtime/flow/sessions/" + session + ".txt", nil
 }
 
 // Inspect reads state without creating it; an unseen session remains unrecorded.
@@ -53,7 +52,7 @@ func (s Service) Inspect(session string) (Session, error) {
 	}
 	raw, err := okfmemory.ReadFile(s.Root, name)
 	if os.IsNotExist(err) {
-		return Session{Dirty: true}, nil
+		return Session{}, nil
 	}
 	if err != nil {
 		return Session{}, err
@@ -73,15 +72,15 @@ func (s Service) Inspect(session string) (Session, error) {
 		}
 		values[key] = decoded
 	}
-	if len(values) != 7 || (values["dirty"] != "true" && values["dirty"] != "false") {
+	if len(values) != 6 {
 		return Session{}, invalid("invalid session fields")
 	}
-	for _, key := range []string{"space", "intent", "turn", "tool", "rule_turn", "rule_hash", "dirty"} {
+	for _, key := range []string{"space", "intent", "turn", "tool", "rule_turn", "rule_hash"} {
 		if _, ok := values[key]; !ok {
 			return Session{}, invalid("missing session field")
 		}
 	}
-	return Session{Space: values["space"], Intent: values["intent"], Turn: values["turn"], Tool: values["tool"], RuleTurn: values["rule_turn"], RuleHash: values["rule_hash"], Dirty: values["dirty"] == "true"}, nil
+	return Session{Space: values["space"], Intent: values["intent"], Turn: values["turn"], Tool: values["tool"], RuleTurn: values["rule_turn"], RuleHash: values["rule_hash"]}, nil
 }
 func (s Service) save(session string, state Session) error {
 	name, err := sessionPath(session)
@@ -89,19 +88,19 @@ func (s Service) save(session string, state Session) error {
 		return err
 	}
 	var out strings.Builder
-	for _, field := range []struct{ key, value string }{{"space", state.Space}, {"intent", state.Intent}, {"turn", state.Turn}, {"tool", state.Tool}, {"rule_turn", state.RuleTurn}, {"rule_hash", state.RuleHash}, {"dirty", fmt.Sprint(state.Dirty)}} {
+	for _, field := range []struct{ key, value string }{{"space", state.Space}, {"intent", state.Intent}, {"turn", state.Turn}, {"tool", state.Tool}, {"rule_turn", state.RuleTurn}, {"rule_hash", state.RuleHash}} {
 		fmt.Fprintf(&out, "%s=%s\n", field.key, url.QueryEscape(field.value))
 	}
 	return okfmemory.WriteFile(s.Root, name, []byte(out.String()))
 }
-func (s Service) store(space string) kdr.Store {
-	return kdr.Store{Root: s.Root, Space: space, Bundle: filepath.Join(s.Root, "aidlc/spaces", space, "knowledge")}
+func (s Service) store(space string) bundleStore {
+	return bundleStore{Root: s.Root, Space: space, Bundle: filepath.Join(s.Root, "aidlc/spaces", space, "knowledge")}
 }
 func (s Service) withSession(session string, fn func(*Session) ([]byte, error)) ([]byte, error) {
 	if _, err := sessionPath(session); err != nil {
 		return nil, err
 	}
-	release, err := kdr.Lock(s.Root, "session-"+session)
+	release, err := filestore.Lock(s.Root, "session-"+session)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +164,7 @@ func (s Service) rules(space string) (string, string, error) {
 	if len(all) > 16*1024 {
 		return "", "", invalid("required Rules exceed 16 KiB; reorganize without truncation")
 	}
-	return all, kdr.Hash([]byte(fingerprint)), nil
+	return all, filestore.Hash([]byte(fingerprint)), nil
 }
 func (s Service) draftPath(session string) string {
 	return filepath.Join(s.Root, "aidlc/.runtime/drafts", session+".md")

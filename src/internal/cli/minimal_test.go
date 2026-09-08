@@ -12,9 +12,10 @@ func TestMinimalPublicCommands(t *testing.T) {
 		args []string
 	}{
 		{"install", []string{"install", "codex", "--project-dir", "/tmp/project"}},
-		{"intent_create", []string{"intent", "create", "Search", "--space", "main", "--file", "draft.md", "--actor", "process:test"}},
+		{"intent_show", []string{"intent", "show", "abc", "--space", "main"}},
+		{"intent_check", []string{"intent", "check", "abc", "--space", "main"}},
+		{"intent_create", []string{"intent", "create", "Search", "--space", "main"}},
 		{"intent_switch", []string{"intent", "switch", "Search", "--space", "main", "--session", "session"}},
-		{"kdr_update", []string{"kdr", "update", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "--space", "main", "--file", "draft.md", "--actor", "process:test", "--expect", "hash", "--session", "session"}},
 		{"memory_id", []string{"memory", "search", "--space", "main", "--intent-id", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
