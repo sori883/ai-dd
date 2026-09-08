@@ -124,3 +124,13 @@ AIDLC_RELOCATION_LIVE=1 go test -tags=integration -v -count=1 -timeout=15m ./src
 
 限定liveは親finalで実行し、固定Codex/model/通常sandboxで移転後の同じIntent選択とKnowledge作成更新を観測します。
 2Unitの実CLI引継ぎと実Go testの証拠は、実AI workerの完走とは区別します。
+
+### 製品の4担当
+
+fresh installは `.codex/agents/aidlc-{researcher,requirements,worker,reviewer}.toml` を配置する。
+調整役は配置済みWORKFLOWを読み、調査・要件整理・承認済み実装・固定成果の独立レビューを必要に応じて委譲する。
+workerはworkspace-write、残る3担当はread-only。
+model/effortは定義で固定せず利用者設定を継承する。共有stateとKnowledge/ADRの保存は調整役が担当する。
+既存配置を自動上書きする更新機能ではないため、利用には4定義と更新されたWORKFLOWが配置された環境が必要。
+配置原稿との一致は `go test -count=1 ./src/internal/install -run '^TestProductAgent'` で確認する。
+実際のnamed agent起動は固定Codex環境で別途検証し、配置testだけで実行や任意の成果品質を保証しない。

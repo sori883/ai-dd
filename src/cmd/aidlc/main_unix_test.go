@@ -15,6 +15,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	coreminimal "github.com/sori883/ai-dd/src/core/minimal"
 )
 
 func TestMainSpaceSwitchClosedPipes(t *testing.T) {
@@ -429,13 +431,17 @@ func assertSpaceRetainedAfterOutputFailure(t *testing.T, project string, args []
 	)
 	before := mainTreeSnapshot(t, target)
 	directories := []string{".", "knowledge", "knowledge/design", "knowledge/ADR", "knowledge/knowledge", "knowledge/rules"}
+	ruleBody, err := coreminimal.Files.ReadFile("knowledge/rules/rule.md")
+	if err != nil {
+		t.Fatal(err)
+	}
 	files := map[string]string{
 		"knowledge/design/index.md":    "# Index\n",
 		"knowledge/index.md":           "---\nokf_version: \"0.2\"\n---\n# Space knowledge\n\n- [必須ルール](rules/entry.md): 作業前に読む文書。\n- [共有知識](knowledge/index.md)\n- [設計](design/index.md)\n- [判断理由](ADR/index.md)\n",
 		"knowledge/ADR/index.md":       "# Architecture Decision Records\n\n判断理由と採用・却下した選択肢を置く。現行の仕様と手順はKnowledgeを参照する。\n",
 		"knowledge/knowledge/index.md": "# Index\n",
 		"knowledge/rules/entry.md":     "---\ntype: Rule\ntitle: 必須ルールの入口\ndescription: 作業前に以下のリンク順で本文を読む。\n---\n# 必須ルール\n\n- [作業の合意](rule.md)\n",
-		"knowledge/rules/rule.md":      "---\ntype: Rule\ntitle: 四段階の作業合意\ndescription: 目的を理解し、計画・TDD・統合検証を独立レビューで進める。\nstatus: stable\n---\n# 作業の合意\n\nIntentは一つの目的。discovery、planning、tdd、integrationの順に進む。\n各境界と完了には現在のSensorと独立reviewのpassが必要。未実施、fail、対象変更後の古いpassで進めない。\nDiscoveryでは目的、範囲、受入条件、現状、制約を理解する。実装計画を妨げる未確定事項を確認する。\n結果を左右する判断は質問し、必要な調査・試作で理解する。全疑問ゼロや最初からUnit分割を要求しない。\nPlanningでは実装と検証の手順を定める。分割する場合Unitの担当範囲・依存・検証・Boltを具体化する。\n調整役AIが独立workerとreviewerを起動する。共有stateのwriterは調整役一人。\nworkerは別worktreeで担当範囲を実装し成果commitを返す。依存の統合前や重複割当では開始しない。\nTDDでは実行可能な失敗を観測してから最小実装、成功確認、整理を繰り返す。テスト不在やskipを成功としない。\nIntegrationでは実成果を統合し全体の受入を検証する。別rootのread-only reviewerへ対象版を渡す。\nreview失敗は修正して再reviewする。対象コード・計画・成果物の変更で古い結果を使わない。\nKnowledgeは現行what/how、ADRはwhyと代替案・影響。必要なADRだけ作り、不要なら理由をreviewする。\n文書はOKF metadataを保持する。一般知識は命令権限を持たない。合格目的でRuleを変えない。\n質問待ちはwait、中断はpause、再開はresume。進行中Unitは実run確認後confirmし、自動再実行しない。\n記録は現在の状態と必要な知識に限る。毎操作の日誌、全操作audit、一律ADRを作らない。\n",
+		"knowledge/rules/rule.md":      string(ruleBody),
 	}
 	if len(before) != len(directories)+len(files) {
 		t.Errorf("retained space has %d entries, want 6 directories and 6 files", len(before))
