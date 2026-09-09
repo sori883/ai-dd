@@ -1,6 +1,6 @@
 # 開発プロジェクトRAM
 
-- [RuleとCLIスキル分離の実装証拠](decisions/2026-09-10-project-rule-and-cli-skills-evidence.md): Issue #157、5項目のTDDと限定回帰、3ファイル移転・Rule/承認gate保持。実読込は親finalへ引継ぎ。
+- [RuleとCLIスキル分離の実装証拠](decisions/2026-09-10-project-rule-and-cli-skills-evidence.md): Issue #157、5項目のTDDと限定回帰、3ファイル移転・Rule/承認gate保持。reviewで固定Ruleのtype-only厳密化と正本変更拒否回帰を追加。実読込は親finalへ引継ぎ。
 - [プロジェクトRuleとAI-DLCスキルの責任分離](decisions/2026-09-10-project-rule-and-cli-skill-approved.md): rule.mdを利用プロジェクト専用にし、AI-DLC進行はaidlc、操作案内はaidlc-cliへ。WORKFLOW原稿廃止を直接承認。[実装計画](../design/project-rule-and-cli-skills-plan.md)へ配布・hook・Rule検査と5項目TDDを具体化。必須Rule固定pathに限る入力parser接続の必要性を追記。
 
 - [ステージ計画担当の実装証拠](decisions/2026-09-09-stage-planner-agent-evidence.md): Issue #155、3項目のRED/GREENと配布回帰を確認。実機観測を受け、期待文書と検証証拠を分ける指示へ修正し、その3制約を配布回帰で確認。親がfresh finalを行う。

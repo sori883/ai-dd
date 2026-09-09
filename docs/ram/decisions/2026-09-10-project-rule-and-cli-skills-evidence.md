@@ -88,3 +88,20 @@ human approval liveは旧WORKFLOW/Rule本文を固定せず既存配布を読む
 - `src/internal/workflow/definition.go`: `ce7e84dd7949f1c4a350152b7c6d7d49802828b7bcaa794740f4a0ee2674eb0c`
 - `src/internal/workflow/rule_skill_separation_test.go`: `6aec1794abcf5a0c77729e6e2ffccb86b22bb87187beb822a32b6eba8ce2ae5d`
 - `src/internal/workspace/rule_skill_separation_test.go`: `80a856fd0b909236f5c45a0282963c37c6dd5d3c8c33faefde9146caf2663407`
+
+## Review修復1
+
+work_unit_id=project-rules-skills-review-repair-1、verification_mode=loop。開始HEADはc4d9ded8e3015b3791ad7d3ec51a13e6630eda23。
+
+P1: 固定path正本契約に追従し、無関連の同型Rule追加が正規選択を変えずCheckWork可能、正規Rule本文変更と正規path欠落は拒否されることをTestSelectedDocumentsStartAndIdentityで確認した。製品実装は変更せず人工REDなし。テスト編集時の余分な閉じ括弧によるgofmt失敗は補正し、REDとして数えていない。
+
+P2: 固定Rule入力のtype以外のtitle/description/status/tags/intent_idの各指定を拒否するtestを先行追加。`go test -count=1 ./src/internal/workflow -run '^TestRuleSkillSeparationRule'` はexit 1（ceb140）、全5属性が誤って受理されるrunnable REDを観測した。許可分岐へ全5属性nilを追加し、正規type-only受理とmetadata既存検証を維持した。
+
+末尾確認はすべてexit 0（396a48）:
+
+- `go test -count=1 ./src/internal/workflow -run '^TestRuleSkillSeparationRule'`
+- `go test -count=1 ./src/internal/flow -run '^(TestSelectedDocuments|TestRuleSkillSeparationRule)'`
+- `go test -count=1 ./src/internal/okfmemory -run '^TestDocumentSelectorExactAndCount$'`
+- 変更Goへのgofmtと`git diff --check`。
+
+一般metadata selectorの件数・完全一致・曖昧重複拒否は既存okfmemory回帰で維持を確認。全体finalは実行していない。上記hash一覧のworkflow定義/関連testは本修復で更新され、確定内容は修復commitを参照する。
