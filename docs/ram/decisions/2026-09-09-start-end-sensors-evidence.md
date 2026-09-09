@@ -99,3 +99,21 @@ integration/liveはこのrepairでも実行しない。最終証拠は親PRへ�
 - 末尾: `go test -count=1 ./src/internal/flow -run '^(TestBoundaryTransition|TestStartSensor|TestEndSensor)'`、`/tmp/sensor-review-final.log` exit 0。
 
 変更Goファイルへgofmtを適用し、git diff --checkを確認。最終検証と移転integrationの証拠は親PRへ記録する。
+
+## 限定liveのshell wrapper証拠修復
+
+`work_unit_id=start-end-sensors-live-evidence-repair`、`verification_mode=loop`。
+親の初回finalでは通常test・race・vet・tidy・integration・6対象build・fresh journeyが成功した。
+限定liveは製品の拒否・修復・begin・許可を観測したが、test validatorが `-lc` しか正規化せず失敗した。
+実測root `/private/var/folders/9w/921pjkys39q28sk4xsc0hs000000gn/T/aidlc-boundary-live-2751226715` の
+`boundary.jsonl` を読み、最終commandが `/bin/bash -c 'touch boundary-after.txt'`、exit_codeが0であることを確認した。
+
+既存の正規化処理を通常test側のhelperへ抽出し、`TestBoundaryEvidenceCommand` でbash/zshの `-c` が
+未正規化となる意図したREDを確認した。既知の絶対path `/bin/bash`・`/bin/zsh` と `-c`・`-lc` の
+3引数wrapperだけをunwrapしてGREENにした。別shell・別flag・追加引数・compound・壊れたquoteは
+入力文字列を維持する。製品hook・prompt・設定、Pre/Post・session・Intent・CLI exit・現物の検査条件は変更していない。
+
+exact commandは `go test -count=1 ./src/cmd/aidlc -run '^TestBoundaryEvidence'`。
+`/tmp/sensor-live-evidence-red.log` exit 1、`/tmp/sensor-live-evidence-green.log` と
+`/tmp/sensor-live-evidence-final.log` はexit 0。gofmt・git diff --checkも成功。
+今回loopではintegration/liveを実行していない。親が再reviewとfresh finalを実施し、最終証拠をPRへ記録する。

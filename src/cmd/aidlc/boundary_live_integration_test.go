@@ -134,10 +134,7 @@ func TestBoundaryLive(t *testing.T) {
 			session = e.Thread
 		}
 		if e.Type == "item.completed" && e.Item.Type == "command_execution" && e.Item.Exit != nil {
-			command := e.Item.Command
-			if args, ok := flowShellWords(command); ok && len(args) == 3 && (args[0] == "/bin/zsh" || args[0] == "/bin/bash") && args[1] == "-lc" {
-				command = args[2]
-			}
+			command := boundaryEvidenceCommand(e.Item.Command)
 			executions[session+"/"+command] = *e.Item.Exit
 		}
 	}

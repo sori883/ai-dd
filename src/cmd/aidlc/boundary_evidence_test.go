@@ -153,3 +153,27 @@ func TestBoundaryEvidenceSequence(t *testing.T) {
 		t.Fatal("forbidden canary accepted")
 	}
 }
+
+// boundaryEvidenceCommand matches the fixed CLI's known shell envelopes only.
+func boundaryEvidenceCommand(command string) string {
+	if args, ok := flowShellWords(command); ok && len(args) == 3 && (args[0] == "/bin/zsh" || args[0] == "/bin/bash") && (args[1] == "-lc" || args[1] == "-c") {
+		return args[2]
+	}
+	return command
+}
+
+func TestBoundaryEvidenceCommand(t *testing.T) {
+	for _, shell := range []string{"/bin/bash", "/bin/zsh"} {
+		for _, flag := range []string{"-c", "-lc"} {
+			command := shell + " " + flag + " 'touch boundary-after.txt'"
+			if got := boundaryEvidenceCommand(command); got != "touch boundary-after.txt" {
+				t.Errorf("%q normalized to %q", command, got)
+			}
+		}
+	}
+	for _, command := range []string{"touch boundary-after.txt", "/bin/sh -c 'touch boundary-after.txt'", "bash -c 'touch boundary-after.txt'", "/bin/bash -c 'touch boundary-after.txt' extra", "/bin/bash -l 'touch boundary-after.txt'", "/bin/bash -c 'unterminated", "/bin/bash -c 'touch boundary-after.txt' && echo done"} {
+		if got := boundaryEvidenceCommand(command); got != command {
+			t.Errorf("unrecognized command changed: %q -> %q", command, got)
+		}
+	}
+}
