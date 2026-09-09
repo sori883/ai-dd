@@ -24,10 +24,10 @@ inputs:
   - declared: intent_documents
 outputs:
   - role: current_analysis
-    path: "${knowledge_root}/knowledge/current-analysis.md"
+    path: "${knowledge_root}/codekb/current-analysis.md"
     metadata: {type: CurrentAnalysis}
   - role: architecture
-    path: "${knowledge_root}/knowledge/architecture.md"
+    path: "${knowledge_root}/codekb/architecture.md"
     metadata: {type: Architecture}
   - declared: intent_documents
 sensors:
@@ -42,7 +42,7 @@ sensors:
 config.test_resultsへ現在存在するintegration結果JSONを追記する。TDD結果を上書きしない。
 共有解析と構成図を現行実装へ更新する。type CurrentAnalysisは## 現状・構成・動作・根拠・未確認事項（「構成・動作」は一つ）。
 type Architectureは## 構成図・構成要素・データフロー、構成図には非空mermaid fenceを置く。
-共有解析/図とは別に、knowledge/FEATURE.mdへtype Knowledge、## 機能・利用手順・制約を保存し、intent documents outputsへ最低1件を宣言する。
+共有解析/図とは別に、codekb/FEATURE.mdへtype Knowledge、## 機能・利用手順・制約を保存し、intent documents outputsへ最低1件を宣言する。
 必要ADRを照合する。実装修正はtdd、計画変更はplanning、要件変更はdiscoveryへreopenする。
 最終HEAD・実測結果・利用者の受入を揃えて独立レビューへ渡す。完了位置はgraphが決める。
 
@@ -62,13 +62,13 @@ stateのrevisionが要求revisionを超えて確定するまで、記録の存�
 ## KnowledgeとADR
 
 Knowledgeは現行のwhat/how、ADRはwhy・代替案・影響。毎操作の日誌や一律ADRは作らない。
-草稿には本文だけを書く。frontmatterはCLIが引数から生成する。Concept IDは拡張子なしで、例は `knowledge/addition`。
+草稿には本文だけを書く。frontmatterはCLIが引数から生成する。Concept IDは拡張子なしで、例は `codekb/addition`。
 引数・型・選択肢に迷ったら `A memory create --help` / `A memory update --help` を参照する。
 
 ```text
-A memory create knowledge/NAME --space SPACE --body-file FILE --actor process:codex --type TYPE --title TITLE --description DESCRIPTION
-A memory show knowledge/NAME --space SPACE
-A memory update knowledge/NAME --space SPACE --body-file FILE --actor process:codex --expect HASH
+A memory create codekb/NAME --space SPACE --body-file FILE --actor process:codex --type TYPE --title TITLE --description DESCRIPTION
+A memory show codekb/NAME --space SPACE
+A memory update codekb/NAME --space SPACE --body-file FILE --actor process:codex --expect HASH
 A memory search QUERY --space SPACE [--intent-id ID]
 ```
 

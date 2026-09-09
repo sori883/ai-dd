@@ -23,7 +23,7 @@ func TestMemoryMetadataCommand(t *testing.T) {
 	}
 	nested := filepath.Join(root, "drafts")
 	writeMinimalFixture(t, filepath.Join(nested, "body.md"), "# First body\n")
-	for _, tc := range []struct{ id, kind string }{{"knowledge/example", "Design"}, {"adr/example", "adr"}, {"rules/example", "Rule"}} {
+	for _, tc := range []struct{ id, kind string }{{"codekb/example", "Design"}, {"adr/example", "adr"}, {"rules/example", "Rule"}} {
 		args := []string{"memory", "create", tc.id, "--space", "default", "--project-dir", root, "--body-file", "body.md", "--actor", "process:codex", "--type", tc.kind, "--title", "Example", "--description", "Current behavior", "--tag", "lookup", "--metadata-json", `{"extension":{"keep":true}}`}
 		if tc.kind != "Rule" {
 			args = append(args, "--intent-id", strings.Repeat("a", 32))

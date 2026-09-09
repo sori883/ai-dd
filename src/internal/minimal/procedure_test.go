@@ -71,7 +71,7 @@ func TestProcedureDriftBlocksDocumentRepair(t *testing.T) {
 	p := filepath.Join(s.Root, "aidlc/workflow/stages/discovery.md")
 	raw, _ := os.ReadFile(p)
 	os.WriteFile(p, append(raw, []byte("changed\n")...), 0644)
-	out := hook(t, s, "PreToolUse", "Bash", "repair", "/opt/aidlc memory create knowledge/current-analysis --space default --body-file draft --actor process:test --type CurrentAnalysis --title Current --description Current", false)
+	out := hook(t, s, "PreToolUse", "Bash", "repair", "/opt/aidlc memory create codekb/current-analysis --space default --body-file draft --actor process:test --type CurrentAnalysis --title Current --description Current", false)
 	if !deny(out) {
 		t.Fatal("definition drift allowed document repair")
 	}

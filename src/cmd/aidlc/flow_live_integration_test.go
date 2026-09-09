@@ -505,7 +505,7 @@ func TestFlowJourneyLive(t *testing.T) {
 	hooksRaw, _ = json.Marshal(hooks)
 	os.WriteFile(hooksPath, hooksRaw, 0600)
 	writeMinimalFixture(t, filepath.Join(root, ".gitignore"), ".flow-*\nflow-helper\n.codex/\n.agents/\n")
-	writeMinimalFixture(t, filepath.Join(root, "aidlc/spaces/default/knowledge/knowledge/current.md"), "---\ntype: Design\ntitle: Arithmetic\ndescription: Current arithmetic behavior\n---\nAdd(0,x) returns 0. Mul multiplies. Combine sums Add and Mul.\n")
+	writeMinimalFixture(t, filepath.Join(root, "aidlc/spaces/default/knowledge/codekb/current.md"), "---\ntype: Design\ntitle: Arithmetic\ndescription: Current arithmetic behavior\n---\nAdd(0,x) returns 0. Mul multiplies. Combine sums Add and Mul.\n")
 	runMinimalProcess(t, root, "git", "add", ".gitignore")
 	runMinimalProcess(t, root, "git", "-c", "user.name=Flow", "-c", "user.email=flow@example.invalid", "commit", "-qm", "fixture exclusions")
 	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Minute)

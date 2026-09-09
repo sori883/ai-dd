@@ -33,7 +33,7 @@ func TestBoundaryHookRepairAndBegin(t *testing.T) {
 		t.Fatal("fixed document repair blocked")
 	}
 	hook(t, s, "PostToolUse", "Bash", "repair", "", false)
-	if !deny(hook(t, s, "PreToolUse", "Bash", "random", "/opt/aidlc memory create knowledge/unknown --space default --body-file draft --actor process:a --type Knowledge --title X --description X", false)) {
+	if !deny(hook(t, s, "PreToolUse", "Bash", "random", "/opt/aidlc memory create codekb/unknown --space default --body-file draft --actor process:a --type Knowledge --title X --description X", false)) {
 		t.Fatal("arbitrary memory bypassed begin")
 	}
 	if _, err = s.Execute(cli.MinimalRequest{Command: "intent", Action: "begin", Target: st.ID, Space: "default", Expect: strconv.FormatUint(st.Revision, 10)}); err != nil {

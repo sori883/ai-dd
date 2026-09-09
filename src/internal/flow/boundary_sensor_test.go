@@ -39,7 +39,7 @@ func boundaryFile(t *testing.T, s Store, name, body string) {
 }
 func boundaryDoc(t *testing.T, s Store, st State, kind string) string {
 	t.Helper()
-	rel := map[string]string{"Requirements": "design/" + st.ID + "/requirements.md", "ImplementationPlan": "design/" + st.ID + "/implementation-plan.md", "CurrentAnalysis": "knowledge/current-analysis.md", "Architecture": "knowledge/architecture.md", "Knowledge": "knowledge/feature.md"}[kind]
+	rel := map[string]string{"Requirements": "design/" + st.ID + "/requirements.md", "ImplementationPlan": "design/" + st.ID + "/implementation-plan.md", "CurrentAnalysis": "codekb/current-analysis.md", "Architecture": "codekb/architecture.md", "Knowledge": "codekb/feature.md"}[kind]
 	sections := map[string][]string{"Requirements": {"目的", "範囲", "要件", "受入条件", "未確定事項"}, "ImplementationPlan": {"変更箇所", "実装手順", "検証方法"}, "CurrentAnalysis": {"現状", "構成・動作", "根拠", "未確認事項"}, "Architecture": {"構成図", "構成要素", "データフロー"}, "Knowledge": {"機能", "利用手順", "制約"}}[kind]
 	body := "---\ntype: " + kind + "\ntitle: Document\ndescription: Contract\nintent_id: " + st.ID + "\n---\n"
 	for _, heading := range sections {
@@ -74,7 +74,7 @@ func TestStartSensorInitialAndReadOnly(t *testing.T) {
 	if _, err = s.CheckBoundary(st.ID, Boundary("other")); err == nil {
 		t.Fatal("unknown boundary accepted")
 	}
-	boundaryFile(t, s, "aidlc/spaces/default/knowledge/knowledge/current-analysis.md", "broken")
+	boundaryFile(t, s, "aidlc/spaces/default/knowledge/codekb/current-analysis.md", "broken")
 	g, err = s.CheckBoundary(st.ID, BoundaryStart)
 	if err != nil || g.Status != "fail" {
 		t.Fatalf("existing malformed shared: %+v %v", g, err)
@@ -333,7 +333,7 @@ func TestEndSensorUnitCommandCommitPair(t *testing.T) {
 }
 func TestStartSensorMissingViaSymlinkIsNotAbsent(t *testing.T) {
 	s, st := boundaryFixture(t)
-	if err := os.Symlink(filepath.Join(s.Root, "missing"), filepath.Join(s.Root, "aidlc/spaces/default/knowledge/knowledge")); err != nil {
+	if err := os.Symlink(filepath.Join(s.Root, "missing"), filepath.Join(s.Root, "aidlc/spaces/default/knowledge/codekb")); err != nil {
 		t.Fatal(err)
 	}
 	g, err := s.CheckBoundary(st.ID, BoundaryStart)

@@ -115,7 +115,7 @@ func verifyMemoryLive(binary string, transport []byte, records []memoryLiveRecor
 		if err != nil || r.Command != "memory" || (r.Action != "create" && r.Action != "update") {
 			continue
 		}
-		if r.Target != "knowledge/live-note" {
+		if r.Target != "codekb/live-note" {
 			continue
 		}
 		pre, ok := pending[key]
@@ -173,8 +173,8 @@ func verifyMemoryLive(binary string, transport []byte, records []memoryLiveRecor
 func TestMemoryMetadataCommandEvidence(t *testing.T) {
 	binary := "/bin/aidlc"
 	help := binary + " memory create --help"
-	create := binary + " memory create knowledge/live-note --space default --body-file body.md --actor process:codex --type Design --title Arithmetic --description Current"
-	update := binary + " memory update knowledge/live-note --space default --body-file body.md --actor process:codex --expect first"
+	create := binary + " memory create codekb/live-note --space default --body-file body.md --actor process:codex --type Design --title Arithmetic --description Current"
+	update := binary + " memory update codekb/live-note --space default --body-file body.md --actor process:codex --expect first"
 	document := func(body string) []byte {
 		return []byte("---\ntype: Design\ntitle: Arithmetic\ndescription: Current\ntags: [arithmetic]\naudience: maintainers\ngenerated: {by: 'process:codex', at: '2026-09-08T00:00:00Z'}\n---\n" + body)
 	}
@@ -255,7 +255,7 @@ func TestMemoryMetadataLiveHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	record := memoryLiveRecord{Raw: input, Output: output, Bound: session.Intent != ""}
-	record.Document, _ = filestore.ReadFile(cfg.Root, "aidlc/spaces/default/knowledge/knowledge/live-note.md")
+	record.Document, _ = filestore.ReadFile(cfg.Root, "aidlc/spaces/default/knowledge/codekb/live-note.md")
 	if args, ok := memoryLiveArgs(cfg.Binary, hook.Input.Command); ok {
 		if request, err := cli.ParseMinimal(args[1:]); err == nil && request.BodyFile != "" {
 			name := request.BodyFile
@@ -370,7 +370,7 @@ func TestMemoryMetadataLive(t *testing.T) {
 	if err := verifyMemoryLive(binary, transport, records); err != nil {
 		t.Fatalf("%v; evidence %s", err, evidence)
 	}
-	final, err := filestore.ReadFile(root, "aidlc/spaces/default/knowledge/knowledge/live-note.md")
+	final, err := filestore.ReadFile(root, "aidlc/spaces/default/knowledge/codekb/live-note.md")
 	if err != nil {
 		t.Fatal(err)
 	}

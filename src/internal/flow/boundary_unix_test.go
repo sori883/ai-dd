@@ -28,7 +28,7 @@ func TestEndSensorRejectsNonRegularMaterial(t *testing.T) {
 }
 func TestStartSensorRejectsNonRegularShared(t *testing.T) {
 	s, st := boundaryFixture(t)
-	name := filepath.Join(s.Root, "aidlc/spaces/default/knowledge/knowledge/current-analysis.md")
+	name := filepath.Join(s.Root, "aidlc/spaces/default/knowledge/codekb/current-analysis.md")
 	if err := os.MkdirAll(filepath.Dir(name), 0700); err != nil {
 		t.Fatal(err)
 	}

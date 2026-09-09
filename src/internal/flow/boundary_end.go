@@ -69,7 +69,7 @@ func (s Store) collectEndDocuments(st State, c *boundaryCollector) *boundaryColl
 	}
 	if st.Stage == "integration" {
 		feature := false
-		prefix := "aidlc/spaces/" + s.Space + "/knowledge/knowledge/"
+		prefix := "aidlc/spaces/" + s.Space + "/knowledge/codekb/"
 		for _, doc := range st.Config.DocumentOutputs {
 			if doc.Stage == "integration" && doc.Metadata.Type == "Knowledge" && strings.HasPrefix(doc.Path, prefix) && doc.Path != s.documentPath(st, "CurrentAnalysis") && doc.Path != s.documentPath(st, "Architecture") {
 				feature = true

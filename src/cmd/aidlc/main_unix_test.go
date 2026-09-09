@@ -430,18 +430,18 @@ func assertSpaceRetainedAfterOutputFailure(t *testing.T, project string, args []
 		"pipe-target",
 	)
 	before := mainTreeSnapshot(t, target)
-	directories := []string{".", "knowledge", "knowledge/design", "knowledge/adr", "knowledge/knowledge", "knowledge/rules"}
+	directories := []string{".", "knowledge", "knowledge/design", "knowledge/adr", "knowledge/codekb", "knowledge/rules"}
 	ruleBody, err := coreminimal.Files.ReadFile("knowledge/rules/rule.md")
 	if err != nil {
 		t.Fatal(err)
 	}
 	files := map[string]string{
-		"knowledge/design/index.md":    "# Index\n",
-		"knowledge/index.md":           "---\nokf_version: \"0.2\"\n---\n# Space knowledge\n\n- [必須ルール](rules/entry.md): 作業前に読む文書。\n- [共有知識](knowledge/index.md)\n- [設計](design/index.md)\n- [判断理由](adr/index.md)\n",
-		"knowledge/adr/index.md":       "# Architecture Decision Records\n\n判断理由と採用・却下した選択肢を置く。現行の仕様と手順はKnowledgeを参照する。\n",
-		"knowledge/knowledge/index.md": "# Index\n",
-		"knowledge/rules/entry.md":     "---\ntype: Rule\ntitle: 必須ルールの入口\ndescription: 作業前に以下のリンク順で本文を読む。\n---\n# 必須ルール\n\n- [作業の合意](rule.md)\n",
-		"knowledge/rules/rule.md":      string(ruleBody),
+		"knowledge/design/index.md": "# Index\n",
+		"knowledge/index.md":        "---\nokf_version: \"0.2\"\n---\n# Space knowledge\n\n- [必須ルール](rules/entry.md): 作業前に読む文書。\n- [共有知識](codekb/index.md)\n- [設計](design/index.md)\n- [判断理由](adr/index.md)\n",
+		"knowledge/adr/index.md":    "# Architecture Decision Records\n\n判断理由と採用・却下した選択肢を置く。現行の仕様と手順はKnowledgeを参照する。\n",
+		"knowledge/codekb/index.md": "# Index\n",
+		"knowledge/rules/entry.md":  "---\ntype: Rule\ntitle: 必須ルールの入口\ndescription: 作業前に以下のリンク順で本文を読む。\n---\n# 必須ルール\n\n- [作業の合意](rule.md)\n",
+		"knowledge/rules/rule.md":   string(ruleBody),
 	}
 	if len(before) != len(directories)+len(files) {
 		t.Errorf("retained space has %d entries, want 6 directories and 6 files", len(before))

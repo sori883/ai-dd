@@ -146,7 +146,7 @@ func TestRelocationLive(t *testing.T) {
 	if err := os.WriteFile(hooksPath, relay, 0600); err != nil {
 		t.Fatal(err)
 	}
-	prompt := fmt.Sprintf(`Use the installed aidlc skill. Before selecting an Intent read memory create help through the installed binary. Then select the existing Intent by ID %s in default Space; do not create another Intent. Follow the skill to read Rules and deployed procedure. Record arithmetic.go in knowledge/live-note with title Arithmetic, type Design, tag arithmetic and extension audience=maintainers. First body must include FIRST-BODY and describe Add. Read update help, then replace FIRST-BODY with SECOND-BODY and add an example, preserving metadata. Use actor process:codex. Inspect the saved document and stop. Use one literal CLI per tool call. Do not modify product hooks or Rules.`, st.ID)
+	prompt := fmt.Sprintf(`Use the installed aidlc skill. Before selecting an Intent read memory create help through the installed binary. Then select the existing Intent by ID %s in default Space; do not create another Intent. Follow the skill to read Rules and deployed procedure. Record arithmetic.go in codekb/live-note with title Arithmetic, type Design, tag arithmetic and extension audience=maintainers. First body must include FIRST-BODY and describe Add. Read update help, then replace FIRST-BODY with SECOND-BODY and add an example, preserving metadata. Use actor process:codex. Inspect the saved document and stop. Use one literal CLI per tool call. Do not modify product hooks or Rules.`, st.ID)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
 	defer cancel()
 	if _, err := flowRunModel(ctx, cfg, clone, "relocation", prompt, "workspace-write"); err != nil {
@@ -173,7 +173,7 @@ func TestRelocationLive(t *testing.T) {
 	if session == "" || g.session(session).Intent != st.ID {
 		t.Fatal("same Intent not bound in actual session")
 	}
-	final := operationsRead(t, filepath.Join(clone, "aidlc/spaces/default/knowledge/knowledge/live-note.md"))
+	final := operationsRead(t, filepath.Join(clone, "aidlc/spaces/default/knowledge/codekb/live-note.md"))
 	var last []byte
 	for _, r := range records {
 		if len(r.Document) > 0 {

@@ -28,7 +28,7 @@ func TestIntentDocumentsCommands(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(draft), 0700); err != nil {
 		t.Fatal(err)
 	}
-	doc := `{"inputs":[],"outputs":[{"stage":"integration","path":"aidlc/spaces/default/knowledge/knowledge/feature.md","metadata":{"type":"Knowledge","title":"Feature","description":"Current"}}]}`
+	doc := `{"inputs":[],"outputs":[{"stage":"integration","path":"aidlc/spaces/default/knowledge/codekb/feature.md","metadata":{"type":"Knowledge","title":"Feature","description":"Current"}}]}`
 	if err = os.WriteFile(draft, []byte(doc), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestIntentDocumentsHookRepair(t *testing.T) {
 		t.Fatal(err)
 	}
 	title, description := "Feature", "Current"
-	st, err = store.SetDocuments(st.ID, st.Revision, flow.IntentDocuments{Inputs: []flow.DocumentDeclaration{}, Outputs: []flow.DocumentDeclaration{{Stage: "discovery", Path: "aidlc/spaces/default/knowledge/knowledge/custom.md", Metadata: okfmemory.DocumentMatch{Type: "Knowledge", Title: &title, Description: &description}}}})
+	st, err = store.SetDocuments(st.ID, st.Revision, flow.IntentDocuments{Inputs: []flow.DocumentDeclaration{}, Outputs: []flow.DocumentDeclaration{{Stage: "discovery", Path: "aidlc/spaces/default/knowledge/codekb/custom.md", Metadata: okfmemory.DocumentMatch{Type: "Knowledge", Title: &title, Description: &description}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestIntentDocumentsHookRepair(t *testing.T) {
 		t.Fatal("documents read denied")
 	}
 	hook(t, s, "PostToolUse", "Bash", "read", "", false)
-	repair := "/opt/aidlc memory create knowledge/custom --space default --body-file " + s.draftPath("session") + " --actor process:a --type Knowledge --title Feature --description Current"
+	repair := "/opt/aidlc memory create codekb/custom --space default --body-file " + s.draftPath("session") + " --actor process:a --type Knowledge --title Feature --description Current"
 	if deny(hook(t, s, "PreToolUse", "Bash", "repair", repair, false)) {
 		t.Fatal("declared output repair denied")
 	}

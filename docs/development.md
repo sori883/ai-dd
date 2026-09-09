@@ -32,9 +32,9 @@ aidlc intent check <id> --space default
 Knowledgeは現行の仕様と手順、ADRは判断理由です。Concept IDは拡張子なしです。
 
 ```sh
-aidlc memory create knowledge/addition --space default --body-file note.md --actor process:codex --type Design --title "加算" --description "加算の仕様"
-aidlc memory show knowledge/addition --space default
-aidlc memory update knowledge/addition --space default --body-file note.md --actor process:codex --expect <hash>
+aidlc memory create codekb/addition --space default --body-file note.md --actor process:codex --type Design --title "加算" --description "加算の仕様"
+aidlc memory show codekb/addition --space default
+aidlc memory update codekb/addition --space default --body-file note.md --actor process:codex --expect <hash>
 aidlc memory search addition --space default --intent-id <id>
 ```
 
@@ -192,7 +192,7 @@ aidlc intent documents ID --space SPACE --expect REV --file documents.json
 ```
 
 ```json
-{"inputs":[],"outputs":[{"stage":"integration","path":"aidlc/spaces/default/knowledge/knowledge/addition.md","metadata":{"type":"Knowledge","title":"加算","description":"現行の利用方法"}}]}
+{"inputs":[],"outputs":[{"stage":"integration","path":"aidlc/spaces/default/knowledge/codekb/addition.md","metadata":{"type":"Knowledge","title":"加算","description":"現行の利用方法"}}]}
 ```
 
 `inputs` と `outputs` を両方指定して一覧全体を置換します。metadata は type/title/description が必須、status（draft/stable/deprecated）・tags（文字列配列）・intent_id（32桁小文字16進数）が任意です。上の path は利用する Space に合わせます。未存在の output は登録でき、保存後に同じ path と metadata が検査されます。Requirements/ImplementationPlan と新規 adr の Intent ID は登録時に保持されるため、本文保存の `memory create --intent-id ID` にも登録結果の値を使います。generated の日時は memory CLI が生成します。
