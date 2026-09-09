@@ -21,12 +21,12 @@ func TestStagePlannerDistribution(t *testing.T) {
 			t.Errorf("planner instruction missing %s", want)
 		}
 	}
-	for _, name := range []string{"SKILL.md", "WORKFLOW.md"} {
-		raw, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc", name))
+	for _, name := range []string{"aidlc", "aidlc-cli"} {
+		raw, err := os.ReadFile(filepath.Join(root, ".agents/skills", name, "SKILL.md"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(raw), "aidlc-stage-planner") {
+		if name == "aidlc" && !strings.Contains(string(raw), "aidlc-stage-planner") {
 			t.Errorf("%s omits planner", name)
 		}
 	}

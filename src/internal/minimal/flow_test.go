@@ -177,7 +177,7 @@ func TestFlowInactiveWorkflowReadAndResume(t *testing.T) {
 			hook(t, s, "SessionStart", "", "", "", false)
 			hook(t, s, "UserPromptSubmit", "", "", "", false)
 			bind(t, s, st.ID)
-			for _, command := range []string{"cat .agents/skills/aidlc/WORKFLOW.md", "cat .agents/skills/aidlc/SKILL.md .agents/skills/aidlc/WORKFLOW.md"} {
+			for _, command := range []string{"cat .agents/skills/aidlc-cli/SKILL.md", "cat .agents/skills/aidlc/SKILL.md .agents/skills/aidlc-cli/SKILL.md"} {
 				if out := hook(t, s, "PreToolUse", "Bash", "read", command, false); deny(out) {
 					t.Fatalf("placed procedure denied: %+v", out)
 				}
@@ -190,7 +190,7 @@ func TestFlowInactiveWorkflowReadAndResume(t *testing.T) {
 				}
 				hook(t, s, "PostToolUse", "Bash", "read", "", false)
 			}
-			for _, command := range []string{"touch code.go", "cat code.go", "cat .agents/skills/aidlc/WORKFLOW.md > code.go", "cat .agents/skills/aidlc/WORKFLOW.md; touch code.go", "cat .agents/skills/aidlc/WORKFLOW.md other.md", "cat .agents/skills/aidlc/../aidlc/WORKFLOW.md", "/opt/aidlc intent reopen " + st.ID + " --space default --to integration --reason retry"} {
+			for _, command := range []string{"touch code.go", "cat code.go", "cat .agents/skills/aidlc-cli/SKILL.md > code.go", "cat .agents/skills/aidlc-cli/SKILL.md; touch code.go", "cat .agents/skills/aidlc-cli/SKILL.md other.md", "cat .agents/skills/aidlc-cli/../aidlc-cli/SKILL.md", "/opt/aidlc intent reopen " + st.ID + " --space default --to integration --reason retry"} {
 				if !deny(hook(t, s, "PreToolUse", "Bash", "bad", command, false)) {
 					t.Fatalf("unsafe or invalid command allowed: %s", command)
 				}
@@ -248,7 +248,7 @@ func TestFlowWorkflowReadRequiresCurrentRulesAndRealFiles(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "missing", "symlink":
-				file := filepath.Join(s.Root, ".agents/skills/aidlc/WORKFLOW.md")
+				file := filepath.Join(s.Root, ".agents/skills/aidlc-cli/SKILL.md")
 				if err := os.Remove(file); err != nil {
 					t.Fatal(err)
 				}
@@ -262,7 +262,7 @@ func TestFlowWorkflowReadRequiresCurrentRulesAndRealFiles(t *testing.T) {
 					}
 				}
 			}
-			if !deny(hook(t, s, "PreToolUse", "Bash", "read", "cat .agents/skills/aidlc/WORKFLOW.md", false)) {
+			if !deny(hook(t, s, "PreToolUse", "Bash", "read", "cat .agents/skills/aidlc-cli/SKILL.md", false)) {
 				t.Fatal("unsafe read allowed")
 			}
 		})

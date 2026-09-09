@@ -23,3 +23,5 @@ WORKFLOW.mdは必要な内容を適切な定義へ移して参照を更新した
 本記録はsrc/core/minimal/knowledge/rules/rule.mdにAI-DLC運用規約を持たせる従来配置を置き換える。過去RAMは履歴として残し、過去の製品ルール自体の意味は対応するスキル/工程定義へ保持する。
 
 具体的な対象、Rule初期本文・固定path、配布・移転・hook・検証の根拠は[実装計画](../../design/project-rule-and-cli-skills-plan.md)に記録した。
+
+実装中、stage入力の固定pathを定義parserが拒否することを確認。実装計画へ既存形式という前提の訂正と、必須Ruleの固定path/current/typeだけを許可する狭いvalidation接続を追記した。一般入力の緩和やschema追加は行わない。

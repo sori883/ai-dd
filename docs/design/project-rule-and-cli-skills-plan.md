@@ -41,3 +41,7 @@
 安定HEADで全test/race/vet、format/tidy/diff、全integration（配布journey含む）、6OS/arch構成build、native CLI/helpを確認する。新配布の両skillをskill-creator quick_validate.pyで検証する。既存固定Codexで限定live: aidlc→aidlc-cli→help/procedureの実読込、プロジェクトRule読込み、文書のCLI保存、承認待ち非迂回を確認する。必要な既存memory/human-approval live fixtureは新配置へ追従する。モデルへの説明が失われるリスクは独立reviewで移管元と照合しliveで確認する。固定head後に修正した場合は必要targeted/reviewからfresh finalへ戻る。
 
 Go単一binaryと標準ライブラリ、外部module/tool導入なし。GitHub checks成功後にmerge commitで反映しIssue closeを確認する。新配布は旧Intentへ暗黙に適用せず、必要な場合は元版を維持することで復帰する。重大未決事項なし。
+
+## 実装中に確認した入力parserの接続
+
+既存Reference型とflowの解決処理はpath+metadataを扱うが、workflow.validateReferenceはstageの入力にmatch形式のみを許可していた。既存形式だけで変更できるという事前調査の前提を訂正する。承認済みの固定Rule参照を動かすため、src/internal/workflow/definition.goと関連testを単独writerの所有へ追加する。一般のpath入力を広く許可せず、pathが${knowledge_root}/rules/rule.md、metadata.typeがRule、versionがcurrent、match/count/role/accepted_atが未指定である入力だけを新たに許可する。metadataの既存Validateと他selectorの既存検査を維持する。slice2内のTestRuleSkillSeparationRuleへ正規Rule参照と別path/type/version/混在fieldの拒否回帰を追加し、exact commandへ ./src/internal/workflow を追加する。公開フィールドや保存schemaは追加しない。必要なvalidation接続は今回承認されたRule責任分離の範囲内であり、再承認を要する新機能には広げない。

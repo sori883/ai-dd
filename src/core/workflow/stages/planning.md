@@ -4,8 +4,8 @@ agents:
   - role: independent_review
     agent: aidlc-reviewer
 inputs:
-  - match: {type: Rule, title: "Intent実行の作業合意"}
-    count: one
+  - path: ${knowledge_root}/rules/rule.md
+    metadata: {type: Rule}
     version: current
   - match: {type: Requirements, intent_id: "${intent_id}"}
     count: one
@@ -41,4 +41,4 @@ sensors:
 実際の回答による成果承認は `A intent approval ID --space SPACE --expect R --file DECISION.json`。
 現在回だけを `A intent finish ID --space SPACE --expect R` で完了する。計画承認だけで成果を合格にしない。
 文書・Unit・実測結果は現在のstep_idへ結び付ける。過去の同stage成功を使い回さない。
-共通のJSON型、会話出典、Knowledge保存、Unit、reopenと保存retryは `A intent ACTION --help` と配置済みWORKFLOW.mdを参照する。
+共通のJSON型、会話出典、Knowledge保存、Unit、reopenと保存retryは `A intent ACTION --help` と配置済みaidlc-cliスキルを参照する。

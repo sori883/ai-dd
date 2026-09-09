@@ -42,11 +42,11 @@ func TestDocumentDistribution(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, p := range d.Procedures {
-		if !strings.Contains(p.Text, "WORKFLOW.md") {
+		if !strings.Contains(p.Text, "aidlc-cli") {
 			t.Fatal("common document operation reference missing")
 		}
 	}
-	common, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/WORKFLOW.md"))
+	common, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc-cli/SKILL.md"))
 	if err != nil || !strings.Contains(string(common), "intent documents") {
 		t.Fatal("common document operations missing", err)
 	}
@@ -65,8 +65,16 @@ func TestDocumentDistributionRuleSelector(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	docs, err := okfmemory.SelectDocuments(filepath.Join(root, "aidlc/spaces/default/knowledge"), *d.Procedures["discovery"].Inputs[0].Match, "one")
-	if err != nil || len(docs) != 1 || docs[0].Path != "rules/rule.md" {
-		t.Fatalf("fresh Rule selector: %+v %v", docs, err)
+	ref := d.Procedures["discovery"].Inputs[0]
+	if ref.Path != "${knowledge_root}/rules/rule.md" || ref.Match != nil || ref.Metadata == nil || ref.Metadata.Type != "Rule" || ref.Version != "current" {
+		t.Fatalf("fixed Rule reference: %+v", ref)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "aidlc/spaces/default/knowledge/rules/rule.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := okfmemory.Parse(raw)
+	if err != nil || !ref.Metadata.Matches(doc) {
+		t.Fatalf("fresh Rule: %v", err)
 	}
 }

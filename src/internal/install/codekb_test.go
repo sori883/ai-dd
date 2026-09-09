@@ -50,15 +50,15 @@ func TestCodeKBGuidance(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(raw), "WORKFLOW.md") {
+		if !strings.Contains(string(raw), "aidlc-cli") {
 			t.Fatal("stage lacks common-operation reference")
 		}
-		common, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/WORKFLOW.md"))
+		common, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc-cli/SKILL.md"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		raw = append(raw, common...)
-		if !strings.Contains(string(raw), "memory create codekb/NAME") || strings.Contains(string(raw), "memory create knowledge/") {
+		if (!strings.Contains(string(raw), "codekb/NAME") || !strings.Contains(string(raw), "memory create --help")) || strings.Contains(string(raw), "memory create knowledge/") {
 			t.Errorf("%s uses old Concept guidance", stage)
 		}
 	}
@@ -74,7 +74,7 @@ func TestCodeKBGuidance(t *testing.T) {
 			t.Errorf("architecture output: %s", ref.Path)
 		}
 	}
-	raw, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/WORKFLOW.md"))
+	raw, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc-cli/SKILL.md"))
 	if err != nil {
 		t.Fatal(err)
 	}

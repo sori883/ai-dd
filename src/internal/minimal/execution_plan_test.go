@@ -118,7 +118,7 @@ func TestExecutionPlanCLIPendingHook(t *testing.T) {
 	for _, tc := range []struct {
 		command string
 		deny    bool
-	}{{"touch code.go", true}, {"cat code.go", false}, {"/opt/aidlc intent plan " + st.ID + " --space default", false}, {"/opt/aidlc intent plan-approval " + st.ID + " --space default --expect " + strconv.FormatUint(st.Revision, 10) + " --file decision.json", false}} {
+	}{{"touch code.go", true}, {"cat .agents/skills/aidlc/SKILL.md .agents/skills/aidlc-cli/SKILL.md", false}, {"cat code.go", false}, {"/opt/aidlc intent plan " + st.ID + " --space default", false}, {"/opt/aidlc intent plan-approval " + st.ID + " --space default --expect " + strconv.FormatUint(st.Revision, 10) + " --file decision.json", false}} {
 		input := HookInput{Event: "PreToolUse", Session: "session", Turn: "A", Tool: "Bash", ID: "tool"}
 		input.Input.Command = tc.command
 		out, err := s.Hook(input)

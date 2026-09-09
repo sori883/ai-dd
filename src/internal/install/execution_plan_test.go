@@ -31,12 +31,12 @@ func TestExecutionPlanDistribution(t *testing.T) {
 			t.Errorf("old transition in %s", stage.ID)
 		}
 	}
-	for _, name := range []string{".agents/skills/aidlc/WORKFLOW.md", "aidlc/spaces/default/knowledge/rules/rule.md"} {
+	for _, name := range []string{".agents/skills/aidlc-cli/SKILL.md", ".agents/skills/aidlc/SKILL.md"} {
 		raw, err := os.ReadFile(filepath.Join(root, name))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(raw), "plan-approval") {
+		if !strings.Contains(string(raw), "計画承認") {
 			t.Errorf("missing plan approval in %s", name)
 		}
 	}

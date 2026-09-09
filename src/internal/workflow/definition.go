@@ -240,6 +240,9 @@ func validateReference(r Reference, output bool) error {
 		}
 		return r.Metadata.Validate()
 	}
+	if r.Path == "${knowledge_root}/rules/rule.md" && r.Metadata != nil && r.Metadata.Type == "Rule" && r.Version == "current" && r.Match == nil && r.Count == "" && r.Role == "" && r.AcceptedAt == "" {
+		return r.Metadata.Validate()
+	}
 	if r.Match == nil || r.Path != "" || r.Metadata != nil || r.Role != "" {
 		return fmt.Errorf("input match required")
 	}
