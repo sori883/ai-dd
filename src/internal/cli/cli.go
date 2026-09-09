@@ -11,7 +11,8 @@ import (
 	"github.com/sori883/ai-dd/src/internal/workspace"
 )
 
-const helpText = `AI-DLC four-stage workflow
+const helpText = `AI-DLC 6段階のIntent実行計画
+initialization → discoveryが必須。architecture-analysis / planning / tdd / integrationは計画で採否と順序を承認する。
 
 Usage:
   aidlc install codex --project-dir <root>
@@ -29,10 +30,14 @@ Usage:
   aidlc intent check <id> --space <space> [--boundary start|end]
   aidlc intent begin <id> --space <space> --expect <revision>
   aidlc intent review <id> --space <space> --expect <revision> --file <review.json>
-  aidlc intent advance <id> --space <space> --expect <revision>
+  aidlc intent plan <id> --space <space> [--expect <revision> --file <plan.json>]
+  aidlc intent plan-approval <id> --space <space> --expect <revision> --file <decision.json>
+  aidlc intent approval <id> --space <space> --expect <revision> --file <decision.json>
+  aidlc intent finish <id> --space <space> --expect <revision>
+  aidlc intent history <id> --space <space>
   aidlc intent pause|resume|cancel <id> --space <space> --expect <revision> --reason <text>
   aidlc intent wait <id> --space <space> --expect <revision> --reason <text> --resume-condition <text>
-  aidlc intent reopen <id> --space <space> --expect <revision> --reason <text> --stage <stage>
+  aidlc intent reopen <id> --space <space> --expect <revision> --reason <text> --step <step-id>
   aidlc unit claim|result|integrate|confirm|reassign <id> --space <space> --expect <revision> --file <request.json>
   aidlc memory create <concept-id> --space <space> --body-file <body> --actor <actor> --type <type> --title <title> --description <description>
   aidlc memory update <concept-id> --space <space> --body-file <body> --actor <actor> --expect <hash>

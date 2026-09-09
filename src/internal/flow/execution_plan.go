@@ -33,6 +33,7 @@ type PlanVersion struct {
 // ExecutionPlan keeps proposed changes separate from the effective execution order.
 type ExecutionPlan struct {
 	Allocated map[string]string `json:"allocated"`
+	Origins   map[string]string `json:"origins,omitempty"`
 	Revision  uint64            `json:"revision"`
 	Approved  *PlanVersion      `json:"approved"`
 	Draft     *PlanVersion      `json:"draft"`
@@ -102,6 +103,42 @@ func validateExecutionPlan(st State) error {
 		}
 		if bootstrap && len(steps) != 2 {
 			return invalid("unapproved optional execution")
+		}
+		origins := map[string]string{}
+		for id, origin := range p.Origins {
+			origins[id] = origin
+		}
+		for _, step := range steps {
+			if step.Reopens != "" {
+				origins[step.ID] = step.Reopens
+			}
+		}
+		for i, step := range steps {
+			if step.Stage != "initialization" {
+				continue
+			}
+			id := step.ID
+			visited := map[string]bool{}
+			for id != "s01" {
+				if visited[id] || origins[id] == "" {
+					return invalid("initialization requires reopen origin")
+				}
+				visited[id] = true
+				id = origins[id]
+				if p.Allocated[id] != "initialization" {
+					return invalid("invalid initialization origin chain")
+				}
+			}
+			followed := false
+			for _, later := range steps[i+1:] {
+				if later.Stage == "discovery" && (step.Status == "completed" || later.Status != "completed") {
+					followed = true
+					break
+				}
+			}
+			if !followed {
+				return invalid("initialization requires following discovery")
+			}
 		}
 		seen, stages := map[string]bool{}, map[string]bool{}
 		pending := false
@@ -174,6 +211,18 @@ func validateExecutionPlan(st State) error {
 		if err := validate(p.Draft.Steps, p.Draft.Omitted, false); err != nil {
 			return err
 		}
+		if p.Draft.ReopenStepID != "" {
+			target := executionStage(st, p.Draft.ReopenStepID)
+			replay := false
+			for _, step := range p.Draft.Steps {
+				if step.Reopens == p.Draft.ReopenStepID && step.Stage == target && step.Status == "pending" && executionStage(st, step.ID) == "" {
+					replay = true
+				}
+			}
+			if target == "" || !replay {
+				return invalid("reopen requires new pending execution")
+			}
+		}
 		current := map[string]string{}
 		for _, step := range executionSteps(st) {
 			current[step.ID] = step.Stage
@@ -237,15 +286,24 @@ func (s Store) ProposePlan(id string, expect uint64, request PlanRequest) (State
 		if st.ExecutionPlan.Allocated == nil {
 			st.ExecutionPlan.Allocated = map[string]string{}
 		}
+		if st.ExecutionPlan.Origins == nil {
+			st.ExecutionPlan.Origins = map[string]string{}
+		}
 		known := map[string]ExecutionStep{}
 		current := executionSteps(*st)
 		for _, step := range current {
 			known[step.ID] = step
+			if step.Reopens != "" {
+				st.ExecutionPlan.Origins[step.ID] = step.Reopens
+			}
 			st.ExecutionPlan.Allocated[step.ID] = step.Stage
 		}
 		if st.ExecutionPlan.Draft != nil {
 			for _, step := range st.ExecutionPlan.Draft.Steps {
 				known[step.ID] = step
+				if step.Reopens != "" {
+					st.ExecutionPlan.Origins[step.ID] = step.Reopens
+				}
 				st.ExecutionPlan.Allocated[step.ID] = step.Stage
 			}
 		}

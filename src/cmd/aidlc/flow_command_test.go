@@ -19,7 +19,7 @@ func TestFlowCommandPublicCutover(t *testing.T) {
 			t.Errorf("obsolete entry %s", old)
 		}
 	}
-	for _, want := range []string{"intent configure", "intent review", "intent advance", "unit claim"} {
+	for _, want := range []string{"intent configure", "intent review", "intent plan", "intent plan-approval", "intent approval", "intent finish", "intent history", "unit claim"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("missing %s", want)
 		}

@@ -160,6 +160,9 @@ func (s Store) CaptureApproval(id, session, previousTurn, turn, prompt string) e
 	if err != nil {
 		return err
 	}
+	if err = s.verifyHistoryHead(st); err != nil {
+		return err
+	}
 	if session == "" || turn == "" || strings.TrimSpace(prompt) == "" {
 		return nil
 	}

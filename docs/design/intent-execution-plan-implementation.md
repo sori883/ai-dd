@@ -89,3 +89,13 @@ work unit末尾は上記targeted群、変更したpackageの必要な既存test�
 work-logの時刻固定はdurable pending保存後である。その前の失敗では有効な空本文OKF土台が残ることがあるが、
 要求は未保存なので同じ利用者操作の再試行で新しい時刻を選べる。既存の前後hash復旧境界を維持する。
 段階MDは段階固有の目的・担当・Sensor・入出力・操作を中心にし、全CLIの共通説明はWORKFLOW/helpへ集約する。
+
+## 独立review修復の具体化
+
+公開PLANのreopen_step_idは、対象から派生した新ID・pendingの実行を必須とする。logだけを追加する変更案は拒否する。
+追加initializationは初期s01からの正規reopen由来を持ち、その後にdiscoveryを置く。未完了discoveryは保持でき、完了済みなら新回を作る。
+由来連鎖はExecutionPlan.Originsに最小限保持し、再々実行も許可する。全initializationを全discoveryより前へ寄せる制限は設けない。
+
+確定履歴headにはHistoryRevisionを保存し、通常mutationと回答source保存前に最新recordの実在・hash・UTF-8・厳密state・identityと版を照合する。
+通常更新では過去全列を再走査せず、history列挙時に全列とrevision単調減少を検査する。configだけの更新はhead/HistoryRevisionを保持する。
+これは保存整合のanchorであり、stateと履歴を両方書き換えられる者への改竄耐性や本人認証を主張しない。

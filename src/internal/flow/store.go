@@ -64,6 +64,7 @@ type Gate struct {
 	Summary string `json:"summary"`
 }
 type State struct {
+	HistoryRevision uint64                     `json:"history_revision"`
 	HistoryHead     string                     `json:"history_head"`
 	Approval        *Approval                  `json:"approval"`
 	ExecutionPlan   ExecutionPlan              `json:"execution_plan"`
@@ -119,7 +120,7 @@ func (s Store) validate(st State) error {
 	if st.SchemaVersion != 5 || !validID(st.ID) || st.Space != s.Space || st.Revision == 0 || strings.TrimSpace(st.Name) == "" || !utf8.ValidString(st.Name) {
 		return invalid("invalid state identity or schema")
 	}
-	if st.HistoryHead != "" && !validHash(st.HistoryHead) {
+	if st.HistoryHead != "" && (!validHash(st.HistoryHead) || st.HistoryRevision == 0 || st.HistoryRevision > st.Revision) || st.HistoryHead == "" && st.HistoryRevision != 0 {
 		return invalid("invalid history head")
 	}
 	for _, a := range []*Approval{st.Approval} {
@@ -300,7 +301,7 @@ func (s Store) Save(st State, expect uint64) (State, error) {
 	if err := s.guardReassignment(current, nil); err != nil {
 		return State{}, err
 	}
-	if st.HistoryHead != current.HistoryHead {
+	if st.HistoryHead != current.HistoryHead || st.HistoryRevision != current.HistoryRevision {
 		return State{}, invalid("history head is CLI owned")
 	}
 	if !reflect.DeepEqual(st.Approval, current.Approval) {

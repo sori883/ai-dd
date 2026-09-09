@@ -122,6 +122,9 @@ func (s Store) changePlanDecision(id string, expect uint64, r ApprovalDecision, 
 	if st.Revision != expect || expect == ^uint64(0) {
 		return State{}, invalid("revision conflict")
 	}
+	if err = s.verifyHistoryHead(st); err != nil {
+		return State{}, err
+	}
 	if st.PendingReopen == nil {
 		if err = s.guardReassignment(st, nil); err != nil {
 			return State{}, err
