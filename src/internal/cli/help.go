@@ -105,7 +105,7 @@ func memoryWriteHelp(action string) string {
 Concept IDは拡張子なし。例 knowledge/authentication、adr/authentication、rules/project。
 --body-file: 本文だけのUTF-8ファイル（256 KiB以内、文書全体も同上）。先頭frontmatterは禁止。本文途中の水平線は可。
 本文ファイルは対象project内の通常file。symlink・project外pathは拒否する。--project-dir ROOTでprojectを明示できる。
---type: 自由な非空文字列。Design / ADR / Rule は例であり列挙型ではない。
+--type: 自由な非空文字列。Design / adr / Rule は例であり列挙型ではない。
 --title / --description: 非空文字列。改行や引用符はCLIが安全なYAMLへ変換する。
 --actor: 必須。generated.byへ保存。OKFの識別形式は producer/version、human:id、process:id（例 process:codex）。
 generated.atは内容または明示metadataを変更した保存時の現在UTC日時。generatedを手入力しない。

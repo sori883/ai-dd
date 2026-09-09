@@ -1,7 +1,6 @@
 package flow
 
 import (
-	"github.com/sori883/ai-dd/src/internal/filestore"
 	"github.com/sori883/ai-dd/src/internal/okfmemory"
 	"os"
 	"path"
@@ -77,8 +76,8 @@ func (s Store) SetDocuments(id string, expect uint64, documents IntentDocuments)
 				if !strings.HasPrefix(d.Path, "aidlc/spaces/"+s.Space+"/knowledge/adr/") {
 					return invalid("adr output must use knowledge/adr")
 				}
-				_, err := filestore.ReadFile(s.Root, d.Path)
-				if os.IsNotExist(err) {
+				exists, err := registrationFile(s.Root, d.Path)
+				if err == nil && !exists {
 					if d.Metadata.IntentID != nil && *d.Metadata.IntentID != id {
 						return invalid("new adr Intent mismatch")
 					}
@@ -112,4 +111,39 @@ func (s Store) SetDocuments(id string, expect uint64, documents IntentDocuments)
 		st.Review = Gate{}
 		return nil
 	})
+}
+
+// registrationFile checks existence without opening document contents, including FIFOs.
+func registrationFile(rootPath, name string) (bool, error) {
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		return false, err
+	}
+	defer root.Close()
+	parts := strings.Split(name, "/")
+	current := ""
+	for i, part := range parts {
+		if current != "" {
+			current += "/"
+		}
+		current += part
+		info, err := root.Lstat(current)
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return false, invalid("document path contains symlink")
+		}
+		if i < len(parts)-1 {
+			if !info.IsDir() {
+				return false, invalid("document parent is not a directory")
+			}
+		} else if !info.Mode().IsRegular() {
+			return false, invalid("document must be a regular file")
+		}
+	}
+	return true, nil
 }

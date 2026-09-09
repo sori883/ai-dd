@@ -38,7 +38,7 @@ func (s Service) executeFlow(r cli.MinimalRequest) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		return encode(flow.IntentDocuments{Inputs: st.Config.DocumentInputs, Outputs: st.Config.DocumentOutputs})
+		return encode(flow.IntentDocuments{Inputs: append([]flow.DocumentDeclaration{}, st.Config.DocumentInputs...), Outputs: append([]flow.DocumentDeclaration{}, st.Config.DocumentOutputs...)})
 	}
 	if r.Action == "show" {
 		st, err := store.Read(r.Target)

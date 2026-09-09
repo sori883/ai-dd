@@ -150,3 +150,33 @@ func TestIntentDocumentsProcedureResolution(t *testing.T) {
 		t.Fatalf("missing concrete resolution %s", raw)
 	}
 }
+
+func TestIntentDocumentsRoundtrip(t *testing.T) {
+	root := t.TempDir()
+	if _, err := install.Codex(root, "/opt/aidlc"); err != nil {
+		t.Fatal(err)
+	}
+	s := Service{Root: root}
+	st, err := (flow.Store{Root: root, Space: "default"}).Create("Fresh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := s.Execute(cli.MinimalRequest{Command: "intent", Action: "documents", Target: st.ID, Space: "default"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var docs flow.IntentDocuments
+	if err = json.Unmarshal(raw, &docs); err != nil {
+		t.Fatal(err)
+	}
+	if docs.Inputs == nil || docs.Outputs == nil {
+		t.Fatalf("empty lists are not arrays: %s", raw)
+	}
+	draft := filepath.Join(root, "documents.json")
+	if err = os.WriteFile(draft, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Execute(cli.MinimalRequest{Command: "intent", Action: "documents", Target: st.ID, Space: "default", Expect: strconv.FormatUint(st.Revision, 10), File: draft}); err != nil {
+		t.Fatalf("read/update roundtrip: %v", err)
+	}
+}

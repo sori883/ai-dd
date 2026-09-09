@@ -23,3 +23,12 @@ func TestIntentDocumentsGrammar(t *testing.T) {
 		t.Fatal("documents help missing")
 	}
 }
+
+func TestIntentDocumentsLowercaseHelp(t *testing.T) {
+	for _, action := range []string{"create", "update"} {
+		text, ok := Help([]string{"memory", action, "--help"})
+		if !ok || !strings.Contains(text, "Design / adr / Rule") || strings.Contains(text, "Design / ADR / Rule") {
+			t.Fatalf("%s help has incorrect adr type example", action)
+		}
+	}
+}
