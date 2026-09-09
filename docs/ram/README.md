@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [プロジェクトRuleとAI-DLCスキルの責任分離](decisions/2026-09-10-project-rule-and-cli-skill-approved.md): rule.mdを利用プロジェクト専用にし、AI-DLC進行はaidlc、操作案内はaidlc-cliへ。WORKFLOW原稿廃止を直接承認。[実装計画](../design/project-rule-and-cli-skills-plan.md)へ配布・hook・Rule検査と5項目TDDを具体化。
+
 - [ステージ計画担当の実装証拠](decisions/2026-09-09-stage-planner-agent-evidence.md): Issue #155、3項目のRED/GREENと配布回帰を確認。実機観測を受け、期待文書と検証証拠を分ける指示へ修正し、その3制約を配布回帰で確認。親がfresh finalを行う。
 - [ステージ実行計画を提案する専用エージェント](decisions/2026-09-09-stage-planner-agent-request.md): discovery内と計画変更時にaidlc-stage-plannerへ採否・順序の立案を委譲する新要望。ユーザー承認・共有保存はメインAI。具体実装案を直接承認済み。Issue #155で実装する。
 
