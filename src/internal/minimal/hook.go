@@ -167,6 +167,8 @@ func (s Service) exception(input HookInput, state *Session) bool {
 		return false
 	}
 	switch r.Command + "/" + r.Action {
+	case "intent/documents":
+		return r.File == "" || (state.Tool == "" && r.Space == state.Space && r.Target == state.Intent)
 	case "memory/rules", "memory/search", "memory/show", "memory/check", "intent/list", "intent/show", "intent/procedure", "intent/check", "session/inspect":
 		return true
 	case "intent/create":
@@ -340,8 +342,13 @@ func (s Service) documentRepair(input HookInput, session *Session, st flow.State
 	prefix := "aidlc/spaces/" + session.Space + "/knowledge/"
 	name := prefix + r.Target + ".md"
 	allowed := []string{prefix + "design/" + session.Intent + "/requirements.md", prefix + "design/" + session.Intent + "/implementation-plan.md", prefix + "knowledge/current-analysis.md", prefix + "knowledge/architecture.md"}
-	allowed = append(allowed, st.Config.FeatureKnowledge...)
-	allowed = append(allowed, st.Config.ADR.Refs...)
+	for _, list := range [][]flow.DocumentDeclaration{st.Config.DocumentInputs, st.Config.DocumentOutputs} {
+		for _, doc := range list {
+			if doc.Stage == st.Stage {
+				allowed = append(allowed, doc.Path)
+			}
+		}
+	}
 	for _, a := range st.Config.Artifacts {
 		if a.Kind == "Knowledge" || a.Kind == "ADR" {
 			allowed = append(allowed, a.Path)
@@ -349,6 +356,49 @@ func (s Service) documentRepair(input HookInput, session *Session, st flow.State
 	}
 	for _, p := range allowed {
 		if name == p && strings.HasPrefix(p, prefix) {
+			return true
+		}
+	}
+	if _, err := okfmemory.ConceptPath(r.Target); err != nil {
+		return false
+	}
+	view, err := (flow.Store{Root: s.Root, Space: session.Space}).Procedure(st.ID)
+	if err != nil {
+		return false
+	}
+	metadata := map[string]any{}
+	for key, value := range map[string]*string{"type": r.Metadata.Type, "title": r.Metadata.Title, "description": r.Metadata.Description, "intent_id": r.IntentID, "status": r.Metadata.Status} {
+		if value != nil {
+			metadata[key] = *value
+		}
+	}
+	if r.Metadata.Tags != nil {
+		metadata["tags"] = r.Metadata.Tags
+	}
+	if r.Action == "update" {
+		raw, err := okfmemory.ReadFile(s.Root, name)
+		if err != nil {
+			return false
+		}
+		doc, err := okfmemory.Parse(raw)
+		if err != nil {
+			return false
+		}
+		for key, value := range metadata {
+			doc.Metadata[key] = value
+		}
+		metadata = doc.Metadata
+	}
+	for _, ref := range view.Procedure.Inputs {
+		if ref.Match == nil || ref.Match.Type == "Rule" {
+			continue
+		}
+		match := *ref.Match
+		if match.IntentID != nil && *match.IntentID == "${intent_id}" {
+			id := st.ID
+			match.IntentID = &id
+		}
+		if match.Matches(okfmemory.Document{Metadata: metadata}) {
 			return true
 		}
 	}

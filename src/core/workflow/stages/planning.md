@@ -4,23 +4,25 @@ agents:
   - role: independent_review
     agent: aidlc-reviewer
 inputs:
-  - path: "${knowledge_root}/rules/rule.md"
+  - match: {type: Rule, title: "四段階の作業合意"}
+    count: one
     version: current
-  - path: "${knowledge_root}/design/${intent_id}/requirements.md"
+  - match: {type: CurrentAnalysis}
+    count: optional
+    version: current
+  - match: {type: Architecture}
+    count: optional
+    version: current
+  - match: {type: Requirements, intent_id: "${intent_id}"}
+    count: one
     version: accepted
     accepted_at: discovery
-  - path: "${knowledge_root}/knowledge/current-analysis.md"
-    version: current
-    required_when: exists
-  - path: "${knowledge_root}/knowledge/architecture.md"
-    version: current
-    required_when: exists
-  - refs: config.adr.refs
-    version: current
-    required_when: adr_required
-outputs: 
+  - declared: intent_documents
+outputs:
   - role: implementation_plan
     path: "${knowledge_root}/design/${intent_id}/implementation-plan.md"
+    metadata: {type: ImplementationPlan, intent_id: "${intent_id}"}
+  - declared: intent_documents
 sensors:
   start: planning-start
   end: planning-end
@@ -33,7 +35,7 @@ sensors:
 分割する場合はUnitのid・bolt・base_commit・depends_on・scope・testsを具体化する。新Unitはpending、成果commitは空。
 既存進捗をconfigureで初期値に戻さない。重複scopeや未統合依存からworkerを始めない。
 実装計画はdesign/ID/implementation-plan.md。type ImplementationPlan、intent_id ID、## 変更箇所・実装手順・検証方法を非空にする。
-config.plan・testsまたはUnit.testsと対応させる。設計判断が必要ならADRを作りconfig.adr.required/refsへ宣言する。
+config.plan・testsまたはUnit.testsと対応させる。設計判断が必要ならADRを作りconfig.adr.required / intent documentsへ宣言する。
 不要ならconfig.adr.reasonへ理由を書く。既存共有解析/図は現在版として必要に応じ更新する。
 承認・担当条件を整え、終了Sensorと独立レビューを通してから実装する。
 
@@ -62,8 +64,8 @@ A memory search QUERY --space SPACE [--intent-id ID]
 ```
 
 showの `content` と `hash` を確認し、本文だけを草稿に書く。更新時の省略metadataはCLIが保持する。
-generatedの日時は自動。出典・検証の日時を捏造せず、必要なmetadata変更だけ引数で渡す。ADRは `ADR/NAME` とtype ADRを使う。
-stateのADR参照は `aidlc/spaces/SPACE/knowledge/ADR/NAME.md`。記録成功や検証完了を未実施のまま主張しない。
+generatedの日時は自動。出典・検証の日時を捏造せず、必要なmetadata変更だけ引数で渡す。ADRは `adr/NAME` とtype adrを使う。
+stateのADR参照は `aidlc/spaces/SPACE/knowledge/adr/NAME.md`。記録成功や検証完了を未実施のまま主張しない。
 ## Sensorと独立レビュー
 
 開始は後述のstart検査とbeginで確認する。`A intent check ID --space SPACE` は終了の実ファイル検査。各境界と完了には現在の終了Sensorと
@@ -104,3 +106,9 @@ workerは実行可能なテストのREDを観測してから実装し、同じ�
 
 中断したrunは実workerと現在commitを確認する。`unit confirm` へ同じrun identityと現在commitを渡してから再開する。
 不明なrunを自動再実行しない。Go CLIは起動やGit統合を代行しない。実行環境で許可されたGit操作を使う。
+## 入出力文書の登録
+
+`intent procedure ID --space SPACE` の inputs は metadata の完全一致で解決する。count は one=1件、optional=0〜1件、many=1件以上。tags は順序なし集合。accepted は accepted_at の同じ path/hash を保持し、変更にはその段階への reopen が必要。共有 current 文書は更新できる。
+`intent documents ID --space SPACE` で明示一覧を読み、`intent documents ID --space SPACE --expect REV --file DOCUMENTS.json` で inputs/outputs 両配列を一括置換する。各要素は stage、Space内の具体的な Markdown path、metadata(type/title/description必須、status/tags/intent_id任意)。未存在の outputs は宣言できるが、終了までにその path と metadata で保存する。追加の成果文書も必ず outputs に登録する。受入済み段階の宣言変更は先に reopen する。
+新規 adr の folder/type は小文字で、現在 Intent ID は登録時に自動保持する。既存の共有文書や過去の adr は意味が変わらない限り ID や日時を付け直さない。採用した過去 adr は inputs に具体 path で登録する。config.adr は required/reason のみ。
+統合では共有解析・構成図に加えて機能 Knowledge を最低1件 outputs へ登録する。文書成果がない TDD は outputs を空にできる。test_results は別契約で、実行済みの存在する JSON/output だけを configure へ登録し、将来段階の結果を事前登録しない。

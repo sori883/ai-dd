@@ -3,7 +3,7 @@ package cli
 import "strings"
 
 var publicActions = map[string]string{
-	"install": "codex", "space": "create list switch", "intent": "create list switch show procedure configure check begin review advance pause resume reopen wait cancel", "unit": "claim result integrate confirm reassign", "memory": "create update show search rules check", "session": "bind inspect",
+	"install": "codex", "space": "create list switch", "intent": "create list switch show procedure documents configure check begin review advance pause resume reopen wait cancel", "unit": "claim result integrate confirm reassign", "memory": "create update show search rules check", "session": "bind inspect",
 }
 
 // Help recognizes only complete public help requests, without execution arguments.
@@ -43,6 +43,7 @@ func Help(args []string) (string, bool) {
 		"install/codex": "--project-dir ROOT",
 		"space/create":  "NAME [--project-dir ROOT]", "space/list": "[--json] [--project-dir ROOT]", "space/switch": "NAME [--project-dir ROOT]",
 		"intent/create": "NAME --space SPACE", "intent/list": "--space SPACE", "intent/switch": "NAME|--id ID --space SPACE --session SESSION",
+		"intent/documents": "ID --space SPACE [--expect REVISION --file DOCUMENTS.json]",
 		"intent/procedure": "ID --space SPACE", "intent/show": "ID --space SPACE", "intent/check": "ID --space SPACE [--boundary start|end]", "intent/begin": "ID --space SPACE --expect REVISION", "intent/configure": "ID --space SPACE --expect REVISION --file CONFIG.json",
 		"intent/review": "ID --space SPACE --expect REVISION --file REVIEW.json", "intent/advance": "ID --space SPACE --expect REVISION",
 		"intent/pause": "ID --space SPACE --expect REVISION --reason TEXT", "intent/resume": "ID --space SPACE --expect REVISION --reason TEXT", "intent/cancel": "ID --space SPACE --expect REVISION --reason TEXT",
@@ -58,7 +59,7 @@ func Help(args []string) (string, bool) {
 	case "unit":
 		text += "Unitのstatus: pending / running / needs_confirmation / reported / integrated。JSONはclaimでunit/session/root、resultでunit/session/root/run_id/commit、integrateでunit/commit、confirmでunit/session/root/run_id/commitを指定する。resultとconfirmのcommitは現在のworker HEADと一致する40桁のcommitが必須。claimで割当、resultで成果commit、integrateで統合commit、confirmで既存runを確認する。statusを入力して進捗を偽装しない。\n"
 	case "memory":
-		text += "Concept IDは拡張子なし（例 knowledge/authentication、ADR/authentication、rules/project）。showは原文contentと現在hashを返す。searchはqueryのAND検索、intent-idは32桁の小文字16進数で完全一致。rulesは必須Rule全文、checkはSpaceのOKF検査。\n"
+		text += "Concept IDは拡張子なし（例 knowledge/authentication、adr/authentication、rules/project）。showは原文contentと現在hashを返す。searchはqueryのAND検索、intent-idは32桁の小文字16進数で完全一致。rulesは必須Rule全文、checkはSpaceのOKF検査。\n"
 	case "session":
 		text += "bindは現在stateと必須Rule全文を読む。--recoverは同じsession/Space/Intentで、失敗toolの終了を確認した後だけ使用する。実行中と推測して解除しない。inspectは読取りのみ。\n"
 	}
@@ -74,16 +75,21 @@ func Help(args []string) (string, bool) {
 	if key == "intent/reopen" {
 		text += "graphの現在段階または祖先だけへ差し戻す。理由はUTC日時・元/先・要求revisionとwork-log.mdへ記録し、戻り先以降の合格を無効化する。途中保存時は同じexpect/from/to/reasonの要求だけretryできる。異なる操作は停止する。記録の改変・欠落は元版を復元する。成功後の古いexpectはrevision conflict。\n"
 	}
+	if key == "intent/documents" {
+		text += "DOCUMENTS.json例: {\"inputs\":[],\"outputs\":[{\"stage\":\"integration\",\"path\":\"aidlc/spaces/default/knowledge/knowledge/feature.md\",\"metadata\":{\"type\":\"Knowledge\",\"title\":\"Feature\",\"description\":\"Current behavior\"}}]}\nstatusはdraft/stable/deprecated、tagsは文字列配列、intent_idは32桁小文字16進数。Requirements/ImplementationPlanと新規adrの登録結果のintent_idをmemory create --intent-idへ渡す。generated日時はmemory CLIが生成する。\n"
+
+		text += "inputs/outputs配列を一括置換。各要素はstage、Space内Markdownのpath、metadata(type/title/description必須、status/tags/intent_id任意)。outputsは未存在pathも宣言できる。test_resultsは実行後に存在する結果だけをconfigureへ登録する。受入済み段階の変更はreopenが必要。metadataは完全一致、tagsは順序なし集合。新規adrはknowledge/adr/へ作り現在Intent IDを保持する。\n"
+	}
 	if key == "intent/procedure" {
-		text += "現在段階・definition_hash・procedureのpath/frontmatter/本文全文・advance・reopen候補をJSONで返す読取り専用操作。IDは32桁小文字16進数、SPACEはSpace名。段階変更や再開後に取り直す。任意path/stageは指定不可。定義変更時は元版を復元するか新Intentを作る。\n"
+		text += "現在段階・definition_hash・procedureのpath/frontmatter/本文全文・解決inputs・具体outputs・診断・advance・reopen候補をJSONで返す読取り専用操作。IDは32桁小文字16進数、SPACEはSpace名。段階変更や再開後に取り直す。任意path/stageは指定不可。配布Rule selectorは本文のtype/titleで特定しrules/rule.mdのpathも検査する。他のRuleや入口を削除しない。定義変更時は元版を復元するか新Intentを作る。\n"
 	}
 	if key == "intent/check" || key == "intent/begin" {
 		text += "checkは読取り専用。--boundary start|end（省略end）。beginは開始入力版を保存し同段階の再試行では差し替えない。一般作業/Unit claim前にbeginが必要。文書不足はintent procedureの必須型/節に従いmemory CLIで修復する。\n"
 	}
 	if key == "intent/configure" {
-		text += "新規stateはschema_version=3。旧schemaは保持して明示エラー。material_sources/feature_knowledge/test_resultsはrepository相対pathの文字列配列、no_materials_reasonは文字列。material_sourcesは明示UTF-8ファイル/ディレクトリ。空ならdiscovery終了までにno_materials_reasonが必要。変更時はdiscoveryのbeginを無効化し、後段ではdiscoveryへのreopenが必要。entry/acceptedはCLI所有でconfigure不可。feature_knowledgeは統合終了で最低1件、共有解析/図とは別のknowledge/<機能名>.md。test_resultsはstrict JSONのstage(tdd|integration)/runs配列。現在存在する結果だけを指定し、次段階の結果は作成後に追記する。TDDはUnitごとのcommandとResultCommitの成功、integrationは全Unit統合後の現在HEADで計画command全ての成功を要求する。各runはcommand、実成果commit、必須整数exit_code、非空出力ファイルoutput_path。intent procedureの本文節と作成例に従う。\n"
-		text += "CONFIG.jsonはconfig全体。objective、scope配列、acceptance配列、unknowns配列、plan、code_revision、tests配列、direct_commit、adr、artifacts配列、units配列。adrはrequired/reason/refs。artifact kindはKnowledge / ADR / test、stageは上記4値。既存fieldとUnit進捗を保持する。\n"
-		text += "\n型: objective/plan/code_revision/direct_commitは文字列。scope/acceptance/unknowns/testsは文字列配列。adrはobjectでrequiredは真偽値、reasonは文字列、refsは文字列配列。artifacts/unitsはobject配列。artifactのpath/kind/stageは文字列。Unitのid/bolt/base_commit/status/result_commit/integrated_commitは文字列、depends_on/scope/testsは文字列配列。\n例中の<CURRENT_HEAD>を対象Gitの現在HEAD（40桁commit）へ置換する。Knowledgeのpath/本文、scope、受入条件、テストcommandは実projectに合わせて用意・置換する。例のコピーだけではSensor合格や検証済みを意味しない。\nUnitなし（直接実装）:\n```json\n{\n  \"no_materials_reason\": \"新規fixture。既存資材があればmaterial_sourcesを指定する\",\n  \"objective\": \"加算を提供する\",\n  \"scope\": [\n    \"add.go\"\n  ],\n  \"acceptance\": [\n    \"Add(2,3)は5を返す\"\n  ],\n  \"unknowns\": [],\n  \"plan\": \"失敗するテストを書き、最小実装と検証を行う\",\n  \"code_revision\": \"<CURRENT_HEAD>\",\n  \"tests\": [\n    \"go test -run TestAdd\"\n  ],\n  \"direct_commit\": \"\",\n  \"adr\": {\n    \"required\": false,\n    \"reason\": \"既存方式に沿うため追加判断なし\",\n    \"refs\": []\n  },\n  \"artifacts\": [\n    {\n      \"path\": \"aidlc/spaces/default/knowledge/knowledge/current.md\",\n      \"kind\": \"Knowledge\",\n      \"stage\": \"discovery\"\n    }\n  ],\n  \"units\": []\n}\n```\nUnitあり（新規Unitの初期値）:\n```json\n{\n  \"no_materials_reason\": \"新規fixture。既存資材があればmaterial_sourcesを指定する\",\n  \"objective\": \"加算を提供する\",\n  \"scope\": [\n    \"add.go\"\n  ],\n  \"acceptance\": [\n    \"Add(2,3)は5を返す\"\n  ],\n  \"unknowns\": [],\n  \"plan\": \"失敗するテストを書き、最小実装と検証を行う\",\n  \"code_revision\": \"<CURRENT_HEAD>\",\n  \"tests\": [\n    \"go test -run TestAdd\"\n  ],\n  \"direct_commit\": \"\",\n  \"adr\": {\n    \"required\": false,\n    \"reason\": \"既存方式に沿うため追加判断なし\",\n    \"refs\": []\n  },\n  \"artifacts\": [\n    {\n      \"path\": \"aidlc/spaces/default/knowledge/knowledge/current.md\",\n      \"kind\": \"Knowledge\",\n      \"stage\": \"discovery\"\n    }\n  ],\n  \"units\": [\n    {\n      \"id\": \"addition\",\n      \"bolt\": \"bolt-1\",\n      \"base_commit\": \"<CURRENT_HEAD>\",\n      \"depends_on\": [],\n      \"scope\": [\n        \"add.go\"\n      ],\n      \"tests\": [\n        \"go test -run TestAdd\"\n      ],\n      \"status\": \"pending\",\n      \"result_commit\": \"\",\n      \"integrated_commit\": \"\"\n    }\n  ]\n}\n```\n新規Unitはpending、result_commit/integrated_commitは空文字列。Unitのidは英数字から始まる英数字・_・-の1〜80文字。既存configの更新はintent showを読み、既存fieldとUnit進捗を保持する。実行中Unitを例のpendingや空commitへ戻してはならない。direct_commitは直接実装の成果commitを検証後に指定する。\n"
+		text += "新規stateはschema_version=4。旧schemaは保持して明示エラー。material_sources/test_resultsはrepository相対pathの文字列配列、no_materials_reasonは文字列。material_sourcesは明示UTF-8ファイル/ディレクトリ。空ならdiscovery終了までにno_materials_reasonが必要。変更時はdiscoveryのbeginを無効化し、後段ではdiscoveryへのreopenが必要。entry/acceptedはCLI所有でconfigure不可。統合終了で機能Knowledgeのoutputs登録が最低1件必要。document_inputs/document_outputsはintent documents専用でconfigure不可。test_resultsはstrict JSONのstage(tdd|integration)/runs配列。現在存在する結果だけを指定し、次段階の結果は作成後に追記する。TDDはUnitごとのcommandとResultCommitの成功、integrationは全Unit統合後の現在HEADで計画command全ての成功を要求する。各runはcommand、実成果commit、必須整数exit_code、非空出力ファイルoutput_path。intent procedureの本文節と作成例に従う。\n"
+		text += "CONFIG.jsonはconfig全体。objective、scope配列、acceptance配列、unknowns配列、plan、code_revision、tests配列、direct_commit、adr、artifacts配列、units配列。adrはrequired/reason。artifact kindはKnowledge / ADR / test、stageは上記4値。既存fieldとUnit進捗を保持する。\n"
+		text += "\n型: objective/plan/code_revision/direct_commitは文字列。scope/acceptance/unknowns/testsは文字列配列。adrはobjectでrequiredは真偽値、reasonは文字列。artifacts/unitsはobject配列。artifactのpath/kind/stageは文字列。Unitのid/bolt/base_commit/status/result_commit/integrated_commitは文字列、depends_on/scope/testsは文字列配列。\n例中の<CURRENT_HEAD>を対象Gitの現在HEAD（40桁commit）へ置換する。Knowledgeのpath/本文、scope、受入条件、テストcommandは実projectに合わせて用意・置換する。例のコピーだけではSensor合格や検証済みを意味しない。\nUnitなし（直接実装）:\n```json\n{\n  \"no_materials_reason\": \"新規fixture。既存資材があればmaterial_sourcesを指定する\",\n  \"objective\": \"加算を提供する\",\n  \"scope\": [\n    \"add.go\"\n  ],\n  \"acceptance\": [\n    \"Add(2,3)は5を返す\"\n  ],\n  \"unknowns\": [],\n  \"plan\": \"失敗するテストを書き、最小実装と検証を行う\",\n  \"code_revision\": \"<CURRENT_HEAD>\",\n  \"tests\": [\n    \"go test -run TestAdd\"\n  ],\n  \"direct_commit\": \"\",\n  \"adr\": {\n    \"required\": false,\n    \"reason\": \"既存方式に沿うため追加判断なし\"\n  },\n  \"artifacts\": [\n    {\n      \"path\": \"aidlc/spaces/default/knowledge/knowledge/current.md\",\n      \"kind\": \"Knowledge\",\n      \"stage\": \"discovery\"\n    }\n  ],\n  \"units\": []\n}\n```\nUnitあり（新規Unitの初期値）:\n```json\n{\n  \"no_materials_reason\": \"新規fixture。既存資材があればmaterial_sourcesを指定する\",\n  \"objective\": \"加算を提供する\",\n  \"scope\": [\n    \"add.go\"\n  ],\n  \"acceptance\": [\n    \"Add(2,3)は5を返す\"\n  ],\n  \"unknowns\": [],\n  \"plan\": \"失敗するテストを書き、最小実装と検証を行う\",\n  \"code_revision\": \"<CURRENT_HEAD>\",\n  \"tests\": [\n    \"go test -run TestAdd\"\n  ],\n  \"direct_commit\": \"\",\n  \"adr\": {\n    \"required\": false,\n    \"reason\": \"既存方式に沿うため追加判断なし\"\n  },\n  \"artifacts\": [\n    {\n      \"path\": \"aidlc/spaces/default/knowledge/knowledge/current.md\",\n      \"kind\": \"Knowledge\",\n      \"stage\": \"discovery\"\n    }\n  ],\n  \"units\": [\n    {\n      \"id\": \"addition\",\n      \"bolt\": \"bolt-1\",\n      \"base_commit\": \"<CURRENT_HEAD>\",\n      \"depends_on\": [],\n      \"scope\": [\n        \"add.go\"\n      ],\n      \"tests\": [\n        \"go test -run TestAdd\"\n      ],\n      \"status\": \"pending\",\n      \"result_commit\": \"\",\n      \"integrated_commit\": \"\"\n    }\n  ]\n}\n```\n新規Unitはpending、result_commit/integrated_commitは空文字列。Unitのidは英数字から始まる英数字・_・-の1〜80文字。既存configの更新はintent showを読み、既存fieldとUnit進捗を保持する。実行中Unitを例のpendingや空commitへ戻してはならない。direct_commitは直接実装の成果commitを検証後に指定する。\n"
 	}
 	return text, true
 }
@@ -96,7 +102,7 @@ func memoryWriteHelp(action string) string {
 		text += " --expect HASH\n更新時はshowの現在hashが必須。省略metadataと未知拡張項目を保持する。"
 	}
 	return text + `
-Concept IDは拡張子なし。例 knowledge/authentication、ADR/authentication、rules/project。
+Concept IDは拡張子なし。例 knowledge/authentication、adr/authentication、rules/project。
 --body-file: 本文だけのUTF-8ファイル（256 KiB以内、文書全体も同上）。先頭frontmatterは禁止。本文途中の水平線は可。
 本文ファイルは対象project内の通常file。symlink・project外pathは拒否する。--project-dir ROOTでprojectを明示できる。
 --type: 自由な非空文字列。Design / ADR / Rule は例であり列挙型ではない。

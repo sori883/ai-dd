@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/sori883/ai-dd/src/internal/okfmemory"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -42,12 +43,14 @@ type Agent struct {
 	Agent string `yaml:"agent" json:"agent"`
 }
 type Reference struct {
-	Path         string `yaml:"path" json:"path,omitempty"`
-	Refs         string `yaml:"refs" json:"refs,omitempty"`
-	Role         string `yaml:"role" json:"role,omitempty"`
-	Version      string `yaml:"version" json:"version,omitempty"`
-	AcceptedAt   string `yaml:"accepted_at" json:"accepted_at,omitempty"`
-	RequiredWhen string `yaml:"required_when" json:"required_when,omitempty"`
+	Match      *okfmemory.DocumentMatch `yaml:"match,omitempty" json:"match,omitempty"`
+	Metadata   *okfmemory.DocumentMatch `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+	Count      string                   `yaml:"count,omitempty" json:"count,omitempty"`
+	Declared   string                   `yaml:"declared,omitempty" json:"declared,omitempty"`
+	Path       string                   `yaml:"path" json:"path,omitempty"`
+	Role       string                   `yaml:"role" json:"role,omitempty"`
+	Version    string                   `yaml:"version" json:"version,omitempty"`
+	AcceptedAt string                   `yaml:"accepted_at" json:"accepted_at,omitempty"`
 }
 type Sensors struct {
 	Start string `yaml:"start" json:"start"`
@@ -247,31 +250,30 @@ func parseProcedure(stage Stage, raw []byte) (Procedure, error) {
 	return p, nil
 }
 func validateReference(r Reference, output bool) error {
-	if (r.Path == "") == (r.Refs == "") {
-		return fmt.Errorf("one document path or refs required")
+	if r.Declared != "" {
+		if r.Declared != "intent_documents" || r.Path != "" || r.Match != nil || r.Metadata != nil || r.Count != "" || r.Version != "" || r.AcceptedAt != "" || r.Role != "" {
+			return fmt.Errorf("invalid declared documents")
+		}
+		return nil
 	}
-	if r.Refs != "" && r.Refs != "config.adr.refs" && r.Refs != "config.feature_knowledge" {
-		return fmt.Errorf("unsupported reference")
-	}
-	if r.Path != "" {
+	if output {
+		if r.Path == "" || r.Metadata == nil || r.Match != nil || r.Count != "" || r.Version != "" || r.AcceptedAt != "" || strings.TrimSpace(r.Role) == "" {
+			return fmt.Errorf("output path, role and metadata required")
+		}
 		name := strings.ReplaceAll(strings.ReplaceAll(r.Path, "${knowledge_root}", "knowledge"), "${intent_id}", "intent")
 		if !strings.HasPrefix(r.Path, "${knowledge_root}/") || !fs.ValidPath(name) || strings.ContainsAny(name, "$\\") || path.Ext(name) != ".md" {
 			return fmt.Errorf("document path outside Knowledge")
 		}
+		return r.Metadata.Validate()
 	}
-	switch r.RequiredWhen {
-	case "", "always", "exists", "adr_required", "materials_present":
-	default:
-		return fmt.Errorf("unsupported required_when")
+	if r.Match == nil || r.Path != "" || r.Metadata != nil || r.Role != "" {
+		return fmt.Errorf("input match required")
 	}
-	if r.RequiredWhen == "adr_required" && r.Refs != "config.adr.refs" {
-		return fmt.Errorf("ADR condition requires ADR refs")
+	if err := r.Match.Validate(); err != nil {
+		return err
 	}
-	if output {
-		if r.Version != "" || r.AcceptedAt != "" || strings.TrimSpace(r.Role) == "" {
-			return fmt.Errorf("invalid output version or role")
-		}
-		return nil
+	if r.Count != "one" && r.Count != "optional" && r.Count != "many" {
+		return fmt.Errorf("invalid input count")
 	}
 	if r.Version != "current" && r.Version != "accepted" {
 		return fmt.Errorf("input version required")

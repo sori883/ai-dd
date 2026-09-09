@@ -1,6 +1,7 @@
 package flow
 
 import (
+	"github.com/sori883/ai-dd/src/internal/okfmemory"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -171,16 +172,21 @@ func TestFlowSensorKnowledgePreservesOKFType(t *testing.T) {
 }
 func TestFlowSensorRequiredADR(t *testing.T) {
 	s, st := sensorFixture(t)
-	name := "aidlc/spaces/default/knowledge/ADR/store.md"
+	name := "aidlc/spaces/default/knowledge/adr/store.md"
 	if err := os.MkdirAll(filepath.Dir(filepath.Join(s.Root, name)), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(s.Root, name), []byte("---\ntype: ADR\ntitle: Store\ndescription: Why atomic replacement\n---\nAtomic replacement avoids partial state.\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(s.Root, name), []byte("---\ntype: adr\ntitle: Store\ndescription: Why atomic replacement\n---\nAtomic replacement avoids partial state.\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	st.Config.ADR = ADR{Required: true, Refs: []string{name}}
+	st.Config.ADR = ADR{Required: true}
 	st.Config.Artifacts = append(st.Config.Artifacts, Artifact{Path: name, Kind: "ADR", Stage: "discovery"})
 	st, err := s.Save(st, st.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	title, description := "Store", "Why atomic replacement"
+	st, err = s.SetDocuments(st.ID, st.Revision, IntentDocuments{Inputs: []DocumentDeclaration{}, Outputs: []DocumentDeclaration{{Stage: st.Stage, Path: name, Metadata: okfmemory.DocumentMatch{Type: "adr", Title: &title, Description: &description}}}})
 	if err != nil {
 		t.Fatal(err)
 	}

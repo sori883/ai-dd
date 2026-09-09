@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/sori883/ai-dd/src/internal/flow"
+	"github.com/sori883/ai-dd/src/internal/okfmemory"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -99,7 +100,7 @@ func runBoundaryJourney(t *testing.T) {
 	}
 	writeRequest := func(name string, value any) string {
 		t.Helper()
-		raw, err := json.Marshal(value)
+		raw, err := marshalFlowRequest(value)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -186,7 +187,17 @@ func runBoundaryJourney(t *testing.T) {
 	call("resume", "--reason", "new session inspected persisted state")
 	boundaryFixtureDocument(t, root, st.ID, "CurrentAnalysis")
 	boundaryFixtureDocument(t, root, st.ID, "Architecture")
-	config.FeatureKnowledge = []string{boundaryFixtureDocument(t, root, st.ID, "Knowledge")}
+	name := boundaryFixtureDocument(t, root, st.ID, "Knowledge")
+	content, err := os.ReadFile(filepath.Join(root, name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := okfmemory.Parse(content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	title, description := document.String("title"), document.String("description")
+	call("documents", "--file", writeRequest("documents.json", flow.IntentDocuments{Inputs: []flow.DocumentDeclaration{}, Outputs: []flow.DocumentDeclaration{{Stage: "integration", Path: name, Metadata: okfmemory.DocumentMatch{Type: "Knowledge", Title: &title, Description: &description}}}}))
 	integrationOutput := runMinimalProcess(t, root, "go", "test", "-count=1", "-run", "^TestAdd$")
 	config.TestResults = append(config.TestResults, boundaryFixtureResults(t, root, "integration", head, config.Tests, integrationOutput))
 	call("configure", "--file", writeRequest("config.json", config))
@@ -196,4 +207,21 @@ func runBoundaryJourney(t *testing.T) {
 	if st.Status != "completed" {
 		t.Fatalf("not completed %+v", st)
 	}
+}
+
+func marshalFlowRequest(value any) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := value.(flow.Config); !ok {
+		return raw, nil
+	}
+	var fields map[string]json.RawMessage
+	if err = json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	delete(fields, "document_inputs")
+	delete(fields, "document_outputs")
+	return json.Marshal(fields)
 }

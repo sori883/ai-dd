@@ -17,8 +17,8 @@ func TestDefinitionBindingDrift(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.SchemaVersion != 3 {
-		t.Errorf("schema=%d want 3", st.SchemaVersion)
+	if st.SchemaVersion != 4 {
+		t.Errorf("schema=%d want 4", st.SchemaVersion)
 	}
 	p := filepath.Join(s.Root, "aidlc/workflow/stages/tdd.md")
 	raw, _ := os.ReadFile(p)
@@ -152,7 +152,7 @@ func TestDefinitionBindingMalformedState(t *testing.T) {
 	}
 	for _, bad := range []struct{ name, old, new string }{
 		{"missing hash", st.DefinitionHash, ""},
-		{"old schema", `"schema_version": 3`, `"schema_version": 2`},
+		{"old schema", `"schema_version": 4`, `"schema_version": 2`},
 		{"forged pending", `"entry": null`, `"pending_reopen":{"revision":99,"from":"other","to":"discovery","reason":"x","at":"bad","log_hash":"bad"},"entry": null`},
 	} {
 		t.Run(bad.name, func(t *testing.T) {

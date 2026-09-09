@@ -176,3 +176,26 @@ journeyは実CLIの4段階、TDDからplanningへの差戻し・再前進、Sens
 実Codexが現在手順を取得し、begin、通常作業、planningへのreopen、新しい現在手順取得を行う。
 固定Codex 0.153.4、既存gpt-6-astra/medium・workspace-write・認証保持・test hook方式を使用し、raw Pre/Postとexit、session/Intent、現物を照合する。
 本体からCodexを起動するschedulerや追加権限は設けていない。
+
+## 段階の入力選択と出力一覧
+
+新規 Intent は schema 4 です。旧 schema のファイルは保持して明示エラーにし、自動移行しません。Issue146 の人間承認はこの変更に含まれていません。
+`intent procedure ID --space SPACE` は metadata selector・件数・版条件と解決 path、具体的な outputs、診断を返します。条件は完全一致の AND、tags は順序なし集合です。配布 Rule selector は本文の type と title を特定し、解決 path が `rules/rule.md` であることも検査します。Rule 入口や他の Rule を削除する必要はありません。
+
+```sh
+aidlc intent documents ID --space SPACE
+aidlc intent documents ID --space SPACE --expect REV --file documents.json
+```
+
+```json
+{"inputs":[],"outputs":[{"stage":"integration","path":"aidlc/spaces/default/knowledge/knowledge/addition.md","metadata":{"type":"Knowledge","title":"加算","description":"現行の利用方法"}}]}
+```
+
+`inputs` と `outputs` を両方指定して一覧全体を置換します。metadata は type/title/description が必須、status（draft/stable/deprecated）・tags（文字列配列）・intent_id（32桁小文字16進数）が任意です。上の path は利用する Space に合わせます。未存在の output は登録でき、保存後に同じ path と metadata が検査されます。Requirements/ImplementationPlan と新規 adr の Intent ID は登録時に保持されるため、本文保存の `memory create --intent-id ID` にも登録結果の値を使います。generated の日時は memory CLI が生成します。
+
+`configure` は文書一覧を保持し、document_inputs/document_outputs・旧 feature_knowledge・旧 adr.refs の直接指定を拒否します。既存共有 Knowledge/adr の ID や日時を形式だけのために書き換えません。ADR の type とフォルダは小文字 `adr`、概念名は引き続き ADR です。新しい成果文書は outputs へ、採用する過去 ADR は inputs へ具体 path で登録します。
+
+accepted 入力は合格した path/hash を保持し、変更には前段への reopen が必要です。共有 current 文書は更新できますが、開始時の選択を別 path へ黙って交換できません。入力変更は begin を無効化し、現在・将来段階の output 追加だけなら begin を保持します。
+`test_results` は文書宣言と異なり、実行後に存在する strict JSON と出力ファイルだけを登録します。将来の integration 結果は実行後に追記します。
+
+親 final 用の実 CLI 一周は `go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestIntentDocumentsJourney$'` です。loop では実行しません。

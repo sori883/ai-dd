@@ -280,7 +280,7 @@ func TestEndSensorIntegrationDocuments(t *testing.T) {
 	}
 	analysis := boundaryDoc(t, s, st, "CurrentAnalysis")
 	diagram := boundaryDoc(t, s, st, "Architecture")
-	st.Config.FeatureKnowledge = []string{boundaryDoc(t, s, st, "Knowledge")}
+	st.Config.DocumentOutputs = []DocumentDeclaration{boundaryDeclaration(t, s, st, "Knowledge")}
 	raw, err := os.ReadFile(filepath.Join(s.Root, analysis))
 	if err != nil {
 		t.Fatal(err)

@@ -1,5 +1,11 @@
 # 開発プロジェクトRAM
 
+- [OKF selectorと具体的文書一覧の実装証拠](decisions/2026-09-09-stage-okf-documents-evidence.md): Issue147の7項目TDD、schema4登録、共有current/accepted版、lowercase adr配布とfixture追従。最終検証は親PRに記録。
+
+- [ステージ入力をOKF検索し、出力は保存先とmetadataを定義する](decisions/2026-09-09-stage-okf-selectors-approved.md): 方式への直接承認。必須入力の件数と版を検査し、出力先を明示する。Intentごとの保存先一覧と必要metadataも承認済み。[実装計画](../design/stage-okf-documents-plan.md)へ具体化。
+- [ADRのフォルダ名とtypeを小文字にする](decisions/2026-09-09-lowercase-adr-request.md): `knowledge/adr/` と `type: adr` を指定。従来の大文字指定を置換し、実装反映は未実施。
+- [ステージの入出力を実ファイル名で示す](decisions/2026-09-09-explicit-stage-document-paths-request.md): inputs/outputsとも具体的pathを記載する依頼。機能別Knowledge・判断別ADRの可変名を指定する方法は確認中。人間承認実装は中断を維持。
+
 - [Stage Graph実装証拠](decisions/2026-09-09-stage-graph-evidence.md): 7項目のTDD、schema3 binding、差戻しの保存失敗・同一retry、現在手順とfresh配置のloop実測。log容量・明示TDD文書outputs・不正agentの独立レビュー修復を含む。最終検証と実機の証拠は親PRへ記録。
 
 - [Stage Graphと段階別手順の実装依頼](decisions/2026-09-09-stage-graph-implementation-approved.md): 直接承認。outputsは文書のみ・空でも可、差戻し理由はIntent作業記録。定義変更時は元版復元または新Intent、既設自動更新は保留で承認済み。

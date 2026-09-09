@@ -72,7 +72,10 @@ func TestFlowTransitionGatesAndStages(t *testing.T) {
 		if st.Stage == "integration" {
 			boundaryDoc(t, s, st, "CurrentAnalysis")
 			boundaryDoc(t, s, st, "Architecture")
-			st.Config.FeatureKnowledge = []string{boundaryDoc(t, s, st, "Knowledge")}
+			st, err = s.SetDocuments(st.ID, st.Revision, IntentDocuments{Inputs: []DocumentDeclaration{}, Outputs: []DocumentDeclaration{boundaryDeclaration(t, s, st, "Knowledge")}})
+			if err != nil {
+				t.Fatal(err)
+			}
 			prepareBoundaryResults(t, s, &st)
 			st, err = s.Save(st, st.Revision)
 			if err != nil {

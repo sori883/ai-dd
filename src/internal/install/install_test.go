@@ -124,7 +124,7 @@ func TestInstallMemoryCommandGuidance(t *testing.T) {
 		"memory update knowledge/NAME --space SPACE --body-file FILE --actor process:codex --expect HASH",
 		"memory show knowledge/NAME --space SPACE",
 		"memory search QUERY --space SPACE [--intent-id ID]",
-		"拡張子なし", "ADR/NAME", "hash", "content", "memory create --help", "memory update --help", "本文",
+		"拡張子なし", "adr/NAME", "hash", "content", "memory create --help", "memory update --help", "本文",
 	} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("deployed skill lacks %q", want)
