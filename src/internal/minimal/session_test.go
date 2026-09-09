@@ -20,6 +20,7 @@ func setup(t *testing.T) (Service, flow.State) {
 	if _, err := install.Codex(root, "/opt/aidlc"); err != nil {
 		t.Fatal(err)
 	}
+	deployProcedureFixture(t, root)
 	s := Service{Root: root, Binary: "/opt/aidlc"}
 	store := flow.Store{Root: root, Space: "default"}
 	saved, err := store.Create("Work")

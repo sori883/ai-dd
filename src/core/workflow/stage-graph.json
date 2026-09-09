@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "start_stage": "discovery",
+  "completion_stage": "integration",
+  "stages": [
+    {
+      "id": "discovery",
+      "name": "目的整理と深掘り",
+      "procedure": "stages/discovery.md"
+    },
+    {
+      "id": "planning",
+      "name": "実装計画",
+      "procedure": "stages/planning.md"
+    },
+    {
+      "id": "tdd",
+      "name": "TDD",
+      "procedure": "stages/tdd.md"
+    },
+    {
+      "id": "integration",
+      "name": "統合検証",
+      "procedure": "stages/integration.md"
+    }
+  ],
+  "advance": [
+    {
+      "from": "discovery",
+      "to": "planning"
+    },
+    {
+      "from": "planning",
+      "to": "tdd"
+    },
+    {
+      "from": "tdd",
+      "to": "integration"
+    }
+  ],
+  "reopen": {
+    "allow_current": true,
+    "allow_ancestors": true
+  }
+}

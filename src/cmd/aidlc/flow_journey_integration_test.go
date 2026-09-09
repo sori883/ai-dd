@@ -64,8 +64,9 @@ func writeMinimalFixture(t *testing.T, path, body string) {
 
 // This deterministic executable journey covers failure/recovery boundaries;
 // actual asynchronous Codex transport pairing is separately live-probed.
-func TestFlowJourney(t *testing.T)     { runBoundaryJourney(t) }
-func TestBoundaryJourney(t *testing.T) { runBoundaryJourney(t) }
+func TestFlowJourney(t *testing.T)      { runBoundaryJourney(t) }
+func TestBoundaryJourney(t *testing.T)  { runBoundaryJourney(t) }
+func TestProcedureJourney(t *testing.T) { runBoundaryJourney(t) }
 func runBoundaryJourney(t *testing.T) {
 	t.Helper()
 	binary := buildMinimalBinary(t)
@@ -81,10 +82,20 @@ func runBoundaryJourney(t *testing.T) {
 		}
 	}
 	read(runMinimalCLI(t, binary, root, nil, "intent", "create", "Fresh journey", "--space", "default"))
+	procedure := func() {
+		t.Helper()
+		var view flow.ProcedureView
+		raw := runMinimalCLI(t, binary, root, nil, "intent", "procedure", st.ID, "--space", "default")
+		if json.Unmarshal(raw, &view) != nil || view.Stage != st.Stage || view.DefinitionHash != st.DefinitionHash || view.Procedure.Text == "" {
+			t.Fatalf("procedure mismatch: %s", raw)
+		}
+	}
+	procedure()
 	call := func(action string, args ...string) {
 		t.Helper()
 		base := []string{"intent", action, st.ID, "--space", "default", "--expect", strconv.FormatUint(st.Revision, 10)}
 		read(runMinimalCLI(t, binary, root, nil, append(base, args...)...))
+		procedure()
 	}
 	writeRequest := func(name string, value any) string {
 		t.Helper()
@@ -138,6 +149,14 @@ func runBoundaryJourney(t *testing.T) {
 	config.Plan = "Implement Add using a failing example then verification"
 	config.Tests = []string{"go test -run ^TestAdd$"}
 	call("configure", "--file", writeRequest("config.json", config))
+	review("pass")
+	call("advance")
+	call("reopen", "--stage", "planning", "--reason", "recheck implementation plan")
+	log, err := os.ReadFile(filepath.Join(root, "aidlc/spaces/default/intents", st.ID, "work-log.md"))
+	if err != nil || !bytes.Contains(log, []byte("recheck implementation plan")) {
+		t.Fatal("missing reopen log", err)
+	}
+	call("begin")
 	review("pass")
 	call("advance")
 	call("begin")

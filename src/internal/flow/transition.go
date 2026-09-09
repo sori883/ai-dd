@@ -6,7 +6,14 @@ type TransitionRequest struct{ Action, Reason, ResumeCondition, Stage string }
 
 // Transition changes only current progress, enforcing both current boundary gates.
 func (s Store) Transition(id string, expect uint64, r TransitionRequest) (State, error) {
+	if r.Action == "reopen" {
+		return s.reopen(id, expect, r)
+	}
 	return s.change(id, expect, func(st *State) error {
+		d, err := s.definition()
+		if err != nil {
+			return err
+		}
 		if r.Action == "advance" {
 			if st.Status != "active" {
 				return invalid("only active Intent can advance")
@@ -32,17 +39,10 @@ func (s Store) Transition(id string, expect uint64, r TransitionRequest) (State,
 			st.Entry = nil
 			st.Sensor = Gate{}
 			st.Review = Gate{}
-			switch st.Stage {
-			case "discovery":
-				st.Stage = "planning"
-			case "planning":
-				st.Stage = "tdd"
-			case "tdd":
-				st.Stage = "integration"
-			case "integration":
+			if st.Stage == d.Graph.Completion {
 				st.Status = "completed"
-			default:
-				return invalid("unknown stage")
+			} else {
+				st.Stage = d.Next(st.Stage)
 			}
 			return nil
 		}
@@ -76,24 +76,6 @@ func (s Store) Transition(id string, expect uint64, r TransitionRequest) (State,
 			st.Status = "active"
 			st.Reason = r.Reason
 			st.ResumeCondition = ""
-		case "reopen":
-			stages := map[string]int{"discovery": 0, "planning": 1, "tdd": 2, "integration": 3}
-			to, ok := stages[r.Stage]
-			if !ok || to > stages[st.Stage] {
-				return invalid("reopen cannot skip forward")
-			}
-			st.Entry = nil
-			for stage := range st.Accepted {
-				if stages[stage] >= to {
-					delete(st.Accepted, stage)
-				}
-			}
-			st.Stage = r.Stage
-			st.Status = "active"
-			st.Reason = r.Reason
-			st.ResumeCondition = ""
-			st.Sensor = Gate{}
-			st.Review = Gate{}
 		case "cancel":
 			if st.Status == "completed" || st.Status == "cancelled" {
 				return invalid("Intent already finished")

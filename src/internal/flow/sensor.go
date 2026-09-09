@@ -49,6 +49,9 @@ func (s Store) checkState(st State) (Gate, error) {
 	return gate, err
 }
 func (s Store) checkStateSnapshot(st State) (Gate, *boundaryCollector, error) {
+	if err := s.guardWorkflow(st); err != nil {
+		return Gate{}, nil, err
+	}
 	config := st.Config
 	config.Units = append([]Unit(nil), st.Config.Units...)
 	for i := range config.Units {

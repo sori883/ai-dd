@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -61,6 +62,8 @@ type Gate struct {
 	Summary string `json:"summary"`
 }
 type State struct {
+	DefinitionHash  string                     `json:"definition_hash"`
+	PendingReopen   *PendingReopen             `json:"pending_reopen,omitempty"`
 	Entry           *StageEntry                `json:"entry"`
 	Accepted        map[string]StageAcceptance `json:"accepted"`
 	SchemaVersion   int                        `json:"schema_version"`
@@ -107,10 +110,20 @@ func (s Store) path(id string) string {
 	return "aidlc/spaces/" + s.Space + "/intents/" + id + "/state.json"
 }
 func (s Store) validate(st State) error {
-	if st.SchemaVersion != 2 || !validID(st.ID) || st.Space != s.Space || st.Revision == 0 || strings.TrimSpace(st.Name) == "" || !utf8.ValidString(st.Name) {
+	if st.SchemaVersion != 3 || !validID(st.ID) || st.Space != s.Space || st.Revision == 0 || strings.TrimSpace(st.Name) == "" || !utf8.ValidString(st.Name) {
 		return invalid("invalid state identity or schema")
 	}
-	if !strings.Contains("|discovery|planning|tdd|integration|", "|"+st.Stage+"|") || st.Stage == "" {
+	hashPattern := regexp.MustCompile(`^[a-f0-9]{64}$`)
+	if !hashPattern.MatchString(st.DefinitionHash) {
+		return invalid("invalid workflow binding")
+	}
+	if p := st.PendingReopen; p != nil {
+		_, err := time.Parse(time.RFC3339Nano, p.At)
+		if p.Revision != st.Revision || p.From != st.Stage || !supportedStage(p.To) || strings.TrimSpace(p.Reason) == "" || !utf8.ValidString(p.Reason) || err != nil || !hashPattern.MatchString(p.LogHash) {
+			return invalid("invalid pending reopen")
+		}
+	}
+	if !supportedStage(st.Stage) {
 		return invalid("invalid stage")
 	}
 	if err := validateVersions(st); err != nil {
@@ -152,9 +165,13 @@ func (s Store) Create(name string) (State, error) {
 		return State{}, err
 	}
 	defer release()
+	d, err := s.definition()
+	if err != nil {
+		return State{}, err
+	}
 	id := make([]byte, 16)
 	rand.Read(id)
-	st := State{SchemaVersion: 2, ID: fmt.Sprintf("%x", id), Space: s.Space, Name: name, Revision: 1, Stage: "discovery", Status: "active"}
+	st := State{SchemaVersion: 3, DefinitionHash: d.Hash, ID: fmt.Sprintf("%x", id), Space: s.Space, Name: name, Revision: 1, Stage: d.Graph.Start, Status: "active"}
 	if _, err := os.Lstat(filepath.Join(s.Root, s.path(st.ID))); !os.IsNotExist(err) {
 		return State{}, fmt.Errorf("identity already exists: %w", fs.ErrExist)
 	}
@@ -246,6 +263,9 @@ func (s Store) Save(st State, expect uint64) (State, error) {
 	}
 	if err := s.guardReassignment(current, nil); err != nil {
 		return State{}, err
+	}
+	if st.DefinitionHash != current.DefinitionHash || !reflect.DeepEqual(st.PendingReopen, current.PendingReopen) {
+		return State{}, invalid("workflow binding is CLI owned")
 	}
 	if !reflect.DeepEqual(st.Entry, current.Entry) || !reflect.DeepEqual(st.Accepted, current.Accepted) {
 		return State{}, invalid("entry and accepted are CLI owned")

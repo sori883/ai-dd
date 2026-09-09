@@ -88,14 +88,21 @@ func (s Store) CheckWork(id string) error {
 	return s.checkWorkState(st)
 }
 func (s Store) checkWorkState(st State) error {
+	if err := s.guardWorkflow(st); err != nil {
+		return err
+	}
+	d, err := s.boundDefinition(st)
+	if err != nil {
+		return err
+	}
 	if st.Status != "active" || st.Entry == nil || st.Entry.Stage != st.Stage {
 		return invalid("active Intent and intent begin required")
 	}
 	c := boundaryCollector{store: s}
-	if stageOrder[st.Stage] >= 1 {
+	if d.Before("discovery", st.Stage) {
 		c.accepted(st, "discovery", s.documentPath(st, "Requirements"))
 	}
-	if stageOrder[st.Stage] >= 2 {
+	if d.Before("planning", st.Stage) {
 		c.accepted(st, "planning", s.documentPath(st, "ImplementationPlan"))
 	}
 	if st.Stage == "integration" {
@@ -110,8 +117,6 @@ func (s Store) checkWorkState(st State) error {
 	}
 	return nil
 }
-
-var stageOrder = map[string]int{"discovery": 0, "planning": 1, "tdd": 2, "integration": 3}
 
 func safeEvidencePath(name string) bool {
 	if !fs.ValidPath(name) || name == "." || strings.Contains(name, "\\") {
@@ -150,7 +155,7 @@ func validateVersions(st State) error {
 		return invalid("too many accepted stages")
 	}
 	for stage, a := range st.Accepted {
-		if _, ok := stageOrder[stage]; !ok || stage != a.Stage || !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(a.ReviewTarget) {
+		if !supportedStage(stage) || stage != a.Stage || !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(a.ReviewTarget) {
 			return invalid("invalid stage acceptance")
 		}
 		if err := validateFileVersions(a.Outputs); err != nil {

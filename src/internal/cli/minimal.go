@@ -35,7 +35,7 @@ func isMinimal(args []string) bool {
 			return true
 		}
 		switch args[1] {
-		case "create", "list", "show", "check", "begin", "switch", "configure", "review", "advance", "pause", "resume", "reopen", "wait", "cancel":
+		case "create", "list", "show", "procedure", "check", "begin", "switch", "configure", "review", "advance", "pause", "resume", "reopen", "wait", "cancel":
 			return true
 		}
 		return false
@@ -110,7 +110,7 @@ func ParseMinimal(args []string) (r MinimalRequest, err error) {
 	case "intent/check":
 		min, max = 1, 1
 		allowed += " --boundary"
-	case "memory/show", "intent/show":
+	case "memory/show", "intent/show", "intent/procedure":
 		min, max = 1, 1
 	case "intent/configure", "intent/review", "unit/claim", "unit/result", "unit/integrate", "unit/confirm", "unit/reassign":
 		min, max = 1, 1

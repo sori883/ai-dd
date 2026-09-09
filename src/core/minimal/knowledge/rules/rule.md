@@ -30,3 +30,8 @@ Knowledgeは現行what/how、ADRはwhyと代替案・影響。必要なADRだけ
 開始前も正規の読取り・設定・専用草稿・同Spaceの必要文書修復は行える。修復で当該turnのRule確認やactive条件を省略しない。
 共有文書のIntentIDや日時だけを更新しない。前段合格の要件・計画を変える場合は対応段階へreopenする。
 Sensorは実行結果JSONの形式・成果版・成功commandを確認し、実行の真正性とRED/GREENの意味は独立reviewerが確認する。
+
+現在の段階手順と遷移候補はintent procedureから取得し、段階変更・再開後に取り直す。
+定義のpath・bytesが変わったIntentは元定義復元または新Intentで再開し、暗黙に結び直さない。
+reopenの理由はIntent作業記録へCLIが保存する。保存途中は同一要求のみ再試行し、記録を消して成功扱いしない。
+outputsは必要な文書だけで空でもよい。コード・テスト・ADR要否の検査は引き続き必要。

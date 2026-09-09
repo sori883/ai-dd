@@ -233,10 +233,10 @@ func prepareBoundaryStage(t *testing.T, s Store, st *State) {
 	if st.Accepted == nil {
 		st.Accepted = map[string]StageAcceptance{}
 	}
-	if stageOrder[st.Stage] >= 1 {
+	if st.Stage != "discovery" {
 		st.Accepted["discovery"] = StageAcceptance{Stage: "discovery", ReviewTarget: strings.Repeat("a", 64), Outputs: []FileVersion{boundaryVersion(t, s, req)}}
 	}
-	if stageOrder[st.Stage] >= 2 {
+	if st.Stage == "tdd" || st.Stage == "integration" {
 		st.Accepted["planning"] = StageAcceptance{Stage: "planning", ReviewTarget: strings.Repeat("b", 64), Outputs: []FileVersion{boundaryVersion(t, s, plan)}}
 	}
 	if err := s.persist(*st); err != nil {

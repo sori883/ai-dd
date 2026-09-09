@@ -1,5 +1,15 @@
 # 開発プロジェクトRAM
 
+- [Stage Graph実装証拠](decisions/2026-09-09-stage-graph-evidence.md): 7項目のTDD、schema3 binding、差戻しの保存失敗・同一retry、現在手順とfresh配置のloop実測。最終検証と実機の証拠は親PRへ記録。
+
+- [Stage Graphと段階別手順の実装依頼](decisions/2026-09-09-stage-graph-implementation-approved.md): 直接承認。outputsは文書のみ・空でも可、差戻し理由はIntent作業記録。定義変更時は元版復元または新Intent、既設自動更新は保留で承認済み。
+
+- [差戻し理由の作業記録と文書だけのoutputs](decisions/2026-09-09-stage-rework-log-document-outputs.md): ユーザー指定を確定。差戻し理由はIntent配下Markdown、outputsは文書のみ。コード・テストのSensorは維持、実装未承認。
+
+- [Stage Graphと段階別Markdownへの分割検討](decisions/2026-09-09-stage-graph-procedure-request.md): 読込み負担を減らす設計依頼。遷移をJSON、担当・入出力・手順を段階MDへ分ける提案。help実案件は保留、実装未承認。
+
+- [新Sensor付き実案件の実施依頼](decisions/2026-09-09-new-sensor-pilot-request.md): 既存資材解析から4段階を完走する依頼。check helpの必須文書案内を対象候補として確認中。
+
 - [開始・終了Sensorの実装証拠](decisions/2026-09-09-start-end-sensors-evidence.md): schema2、beginと合格版、文書/資材/実行結果、修復hookのloop証拠。Unit別成功・統合HEAD・段階別結果の親境界修復、同一検査版保存・TDD証拠役割分離・移転fixtureの独立レビュー修復、限定liveのshell wrapper証拠修復を含む。最終検証と実機の証拠は親PRへ記録。
 
 - [開始・終了Sensorの実装を承認](decisions/2026-09-09-start-end-sensors-approved.md): ファイル別表への直接実装依頼。begin/境界check、共有版とIntent文書、schema2と旧data保持を具体化。
@@ -83,7 +93,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 各ステージ間にSensorとレビューを設け、必要な検査とレビューに合格してからstateを次へ進める。
 **Knowledgeは現行で何を・どう実現しているか、ADRはアーキテクチャ設計のなぜ**を記録する。
 整理・深掘りの成果もこの分担で反映し、ADRはSpaceの `knowledge/ADR/` 配下にOKF文書として置く。
-作業記録は要求せず、Intent・Unitの進捗はstateで管理する。
+Intent・Unitの進捗はstateで管理する。全作業の日誌は要求せず、差戻し理由だけはIntent配下の作業記録Markdownにも保存する。
 過去の記録にある旧称KDRと実装識別子は履歴として保持し、名称とstateの最新方針は先頭の記録を参照する。
 
 | 種別 | 記録 | 状態 |

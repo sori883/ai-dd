@@ -45,6 +45,7 @@ Usage:
   aidlc intent list --space <space>
   aidlc intent switch <name>|--id <id> --space <space> --session <session>
   aidlc intent show <id> --space <space>
+  aidlc intent procedure <id> --space <space>
   aidlc intent configure <id> --space <space> --expect <revision> --file <config.json>
   aidlc intent check <id> --space <space> [--boundary start|end]
   aidlc intent begin <id> --space <space> --expect <revision>

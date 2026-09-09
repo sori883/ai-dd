@@ -14,6 +14,7 @@ import (
 
 	core "github.com/sori883/ai-dd/src/core/minimal"
 	"github.com/sori883/ai-dd/src/internal/flow"
+	"github.com/sori883/ai-dd/src/internal/install"
 )
 
 func TestFlowCommandFailureOutput(t *testing.T) {
@@ -32,6 +33,11 @@ func TestFlowCommandFailureOutput(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "aidlc/spaces/default"), 0700); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := install.Codex(root, "/opt/aidlc"); err != nil {
+		t.Fatal(err)
+	}
+	git("add", ".agents", ".codex")
+	git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "installed fixture assets")
 	store := flow.Store{Root: root, Space: "default"}
 	st, err := store.Create("Work")
 	if err != nil {
