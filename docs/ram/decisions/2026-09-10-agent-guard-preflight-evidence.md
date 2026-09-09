@@ -79,3 +79,11 @@ Bashは親session＋子agent_id＋内部exec IDの実Pre/Post、command/nonceと
 このmetadata対応はG0試験限定の観測候補であり、製品向けの安定API承認ではない。同じtask_nameの再使用・再試行での一意性、transcript APIの安定性、予定worker rootの構造化対応は未確認。fork_turns変更後にも必要metadataが得られるかはfresh liveで確かめ、不足時は推測しない。通常のroot cwdや自然文から割当rootを確定しない。
 
 末尾で上記2commandを再実行し、gofmtと `git diff --check` を確認した。このloopではlive・全体test・race・vet・integration・cross-buildを実行せず、製品コード・依存・Issue/PR・既存helperも変更していない。
+
+## race計測時のhook応答待機修復
+
+`work_unit_id=agent-probe-race-timeout-repair`、開始HEAD `d637a46389241e0228d81f47f03ea3df0ad6a8b2`。親のfresh finalでintegration/testは成功したが、race実行は `/var/folders/9w/921pjkys39q28sk4xsc0hs000000gn/T/ai-dd-agent-guard-final-p449cv2c/race.log` の `TestAgentHookProbeProtocolObservedFault/missing` が0.50秒で `signal: killed` となって失敗した。DATA RACE警告はなく、正常終了を待つcaseにも共通500ms deadlineを使ったtest fixtureの問題だった。この既存回帰の実測失敗を修復根拠として保持する。
+
+loop開始時の `go test -count=1 ./src/cmd/aidlc -run '^TestAgentHookProbeProtocolObservedFault$'` は通常buildでexit 0（ALREADY_GREEN）。人工REDやdeadline値を鏡写しに検査するtestは作らなかった。通常のmissing/nonzero/save-failureは既存helper呼出しと同じ3秒待機、意図したtimeoutだけhelperの3秒sleepより短い1秒deadlineへ分離した。missingは正常exit 0とcontext未取消、nonzero/save-failureは実exit code 2/74とcontext未取消を検査し、deadlineによるkillを故障応答成功にしない。timeoutはdeadline到達と呼出し失敗を区別して確認する。
+
+修正後および末尾の同targeted commandはexit 0。gofmtと `git diff --check` も成功。loopではraceを再実行せず、親の再review/fresh finalへ返す。変更はprotocol testと本記録・索引だけで、実装・依存・Issue/PRは変更していない。

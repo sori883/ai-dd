@@ -1,6 +1,6 @@
 # 開発プロジェクトRAM
 
-- [G0 fixtureのloop実装証拠](decisions/2026-09-10-agent-guard-preflight-evidence.md): 初回実機でStop後のprocess継続を観測。tool名・child metadata・promptの追従修復完了、再review・fresh final待ち。
+- [G0 fixtureのloop実装証拠](decisions/2026-09-10-agent-guard-preflight-evidence.md): 初回実機でStop後のprocess継続を観測。tool名・child metadata・prompt追従とrace時のfixture待機を修復。再review・fresh final待ち。
 
 - [担当起動制限の推奨案とG0先行を承認](decisions/2026-09-10-stage-agent-worker-guard-approved.md): 各段階のstage-planner、Unitなし予約、1調整root集約で進める。[G0作業単位](../design/agent-guard-preflight-work-unit.md)を固定Codexで実測し、対応/root/停止・再開の不明点が残る場合は製品guardへ進まない。
 

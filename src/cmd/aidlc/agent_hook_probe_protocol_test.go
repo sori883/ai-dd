@@ -557,16 +557,36 @@ func TestAgentHookProbeProtocolObservedFault(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+			timeout := 3 * time.Second
+			if mode == "timeout" {
+				timeout = time.Second
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), timeout)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, binary, "-test.run=^TestAgentHookProbeHelper$", "--", "agent-hook", dir, mode)
 			cmd.Stdin = strings.NewReader(`{"hook_event_name":"PreToolUse","tool_name":"collaborationspawn_agent","tool_input":{"agent_type":"probe_worker"}}`)
 			out, err := cmd.Output()
-			if len(out) != 0 || (err != nil) != (mode != "missing") {
-				t.Fatalf("mode=%s output=%q err=%v", mode, out, err)
+			if len(out) != 0 {
+				t.Fatalf("mode=%s unexpected output=%q", mode, out)
 			}
-			if mode == "timeout" && ctx.Err() != context.DeadlineExceeded {
-				t.Fatalf("timeout mode returned early: %v", ctx.Err())
+			if mode == "timeout" {
+				if err == nil || ctx.Err() != context.DeadlineExceeded {
+					t.Fatalf("timeout must reach its deadline: err=%v context=%v", err, ctx.Err())
+				}
+			} else {
+				if ctx.Err() != nil {
+					t.Fatalf("mode=%s must finish without deadline cancellation: %v", mode, ctx.Err())
+				}
+				wantExit := 0
+				switch mode {
+				case "nonzero":
+					wantExit = 2
+				case "save-failure":
+					wantExit = 74
+				}
+				if cmd.ProcessState == nil || cmd.ProcessState.ExitCode() != wantExit || (err != nil) != (wantExit != 0) {
+					t.Fatalf("mode=%s want exit %d: state=%v err=%v", mode, wantExit, cmd.ProcessState, err)
+				}
 			}
 			files, _ := filepath.Glob(filepath.Join(dir, "event-*.json"))
 			if len(files) != 1 {
