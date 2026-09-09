@@ -42,9 +42,13 @@ func TestDocumentDistribution(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, p := range d.Procedures {
-		if !strings.Contains(p.Text, "intent documents") {
-			t.Fatal("documents procedure missing")
+		if !strings.Contains(p.Text, "WORKFLOW.md") {
+			t.Fatal("common document operation reference missing")
 		}
+	}
+	common, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/WORKFLOW.md"))
+	if err != nil || !strings.Contains(string(common), "intent documents") {
+		t.Fatal("common document operations missing", err)
 	}
 	raw, err = os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/SKILL.md"))
 	if err != nil || len(raw) > 4096 {

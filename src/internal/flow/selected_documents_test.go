@@ -64,7 +64,7 @@ func TestSelectedDocumentsOutputPath(t *testing.T) {
 	s, st := boundaryFixture(t)
 	st.Config = Config{Objective: "Work", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", CodeRevision: flowGit(t, s.Root, "rev-parse", "HEAD"), ADR: ADR{Reason: "none"}}
 	var err error
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestSelectedDocumentsSharedPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	var err error
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,9 +149,9 @@ func TestSelectedDocumentsCollectorSnapshot(t *testing.T) {
 
 func TestSelectedDocumentsIntegrationFeature(t *testing.T) {
 	s, st := boundaryFixture(t)
-	st.Stage = "integration"
+	fixtureExecutionStage(t, s, &st, "integration")
 	prepareBoundaryStage(t, s, &st)
-	st.Accepted["tdd"] = StageAcceptance{Stage: "tdd", ReviewTarget: strings.Repeat("c", 64)}
+	st.Accepted["s04"] = StageAcceptance{StepID: "s04", Stage: "tdd", ReviewTarget: strings.Repeat("c", 64)}
 	head := flowGit(t, s.Root, "rev-parse", "HEAD")
 	st.Config = Config{Objective: "Work", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: head, DirectCommit: head, Plan: "implement", Tests: []string{"go test"}}
 	prepareBoundaryResults(t, s, &st)
@@ -189,7 +189,7 @@ func boundaryDeclaration(t *testing.T, s Store, st State, kind string) DocumentD
 		t.Fatal(err)
 	}
 	title, description := doc.String("title"), doc.String("description")
-	return DocumentDeclaration{Stage: st.Stage, Path: name, Metadata: okfmemory.DocumentMatch{Type: kind, Title: &title, Description: &description}}
+	return DocumentDeclaration{StepID: st.CurrentStepID, Stage: st.Stage, Path: name, Metadata: okfmemory.DocumentMatch{Type: kind, Title: &title, Description: &description}}
 }
 
 func TestSelectedDocumentsRequiredTypes(t *testing.T) {
@@ -205,12 +205,12 @@ func TestSelectedDocumentsRequiredTypes(t *testing.T) {
 	if err = os.WriteFile(name, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
-	st, err := s.Create("No output declaration")
+	st, err := createExecutionFixture(t, s, "No output declaration")
 	if err != nil {
 		t.Fatal(err)
 	}
 	st.Config = Config{Objective: "Work", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", CodeRevision: flowGit(t, s.Root, "rev-parse", "HEAD"), ADR: ADR{Reason: "none"}}
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,12 +239,12 @@ func TestSelectedDocumentsRequiredInputs(t *testing.T) {
 	if err = os.WriteFile(name, []byte(string(raw[:start])+"inputs: []\n"+string(raw[end:])), 0600); err != nil {
 		t.Fatal(err)
 	}
-	st, err := s.Create("Required accepted inputs")
+	st, err := createExecutionFixture(t, s, "Required accepted inputs")
 	if err != nil {
 		t.Fatal(err)
 	}
-	st.Stage = "planning"
-	st, err = s.Save(st, st.Revision)
+	fixtureExecutionStage(t, s, &st, "planning")
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}

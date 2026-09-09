@@ -152,7 +152,7 @@ func TestRelocationCommand(t *testing.T) {
 	c := st.Config
 	c.CodeRevision = head
 	resultPath := "aidlc/evidence/relocated-tdd.json"
-	resultJSON, err := json.Marshal(map[string]any{"stage": "tdd", "runs": runs})
+	resultJSON, err := json.Marshal(map[string]any{"step_id": st.CurrentStepID, "stage": "tdd", "runs": runs})
 	if err != nil {
 		t.Fatal(err)
 	}

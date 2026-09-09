@@ -1,12 +1,24 @@
 {
-  "schema_version": 1,
-  "start_stage": "discovery",
-  "completion_stage": "integration",
+  "schema_version": 2,
+  "required_prefix": [
+    "initialization",
+    "discovery"
+  ],
   "stages": [
+    {
+      "id": "initialization",
+      "name": "Space等の初期化",
+      "procedure": "stages/initialization.md"
+    },
     {
       "id": "discovery",
       "name": "目的整理と深掘り",
       "procedure": "stages/discovery.md"
+    },
+    {
+      "id": "architecture-analysis",
+      "name": "現状の構成分析",
+      "procedure": "stages/architecture-analysis.md"
     },
     {
       "id": "planning",
@@ -23,23 +35,5 @@
       "name": "統合検証",
       "procedure": "stages/integration.md"
     }
-  ],
-  "advance": [
-    {
-      "from": "discovery",
-      "to": "planning"
-    },
-    {
-      "from": "planning",
-      "to": "tdd"
-    },
-    {
-      "from": "tdd",
-      "to": "integration"
-    }
-  ],
-  "reopen": {
-    "allow_current": true,
-    "allow_ancestors": true
-  }
+  ]
 }

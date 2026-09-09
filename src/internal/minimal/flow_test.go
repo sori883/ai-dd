@@ -26,7 +26,7 @@ func TestFlowIntentCommand(t *testing.T) {
 	if err := json.Unmarshal(raw, &st); err != nil {
 		t.Fatal(err)
 	}
-	if st.Stage != "discovery" || len(st.ID) != 32 {
+	if st.Stage != "initialization" || len(st.ID) != 32 {
 		t.Fatalf("state %s", raw)
 	}
 	raw, err = s.Execute(cli.MinimalRequest{Command: "intent", Action: "show", Target: st.ID, Space: "default"})
@@ -100,7 +100,8 @@ func TestFlowConfigurePreservesActiveAssignment(t *testing.T) {
 		t.Fatal(err)
 	}
 	st.Config.Units = []flow.Unit{{ID: "a", Status: "running", BaseCommit: "base", Scope: []string{"a.go"}}}
-	st, err = store.Save(st, st.Revision)
+	st = writeExecutionFixture(t, store, st)
+	err = nil
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +139,8 @@ func TestFlowConfigureCannotForgeProgress(t *testing.T) {
 					status = "integrated"
 				}
 				st.Config.Units = []flow.Unit{{ID: "a", Status: status, ResultCommit: "result", IntegratedCommit: "integration"}}
-				st, err = store.Save(st, st.Revision)
+				st = writeExecutionFixture(t, store, st)
+				err = nil
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -167,7 +169,8 @@ func TestFlowInactiveWorkflowReadAndResume(t *testing.T) {
 			st.Status = status
 			st.Stage = "discovery"
 			var err error
-			st, err = store.Save(st, st.Revision)
+			st = writeExecutionFixture(t, store, st)
+			err = nil
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -196,18 +199,21 @@ func TestFlowInactiveWorkflowReadAndResume(t *testing.T) {
 			command := "/opt/aidlc intent resume " + st.ID + " --space default --expect " + strconv.FormatUint(st.Revision, 10) + " --reason retry"
 			if status == "completed" {
 				action = "reopen"
-				command = "/opt/aidlc intent reopen " + st.ID + " --space default --expect " + strconv.FormatUint(st.Revision, 10) + " --reason retry --stage discovery"
+				command = "/opt/aidlc intent reopen " + st.ID + " --space default --expect " + strconv.FormatUint(st.Revision, 10) + " --reason retry --step s02"
 			}
 			if out := hook(t, s, "PreToolUse", "Bash", "resume", command, false); deny(out) {
 				t.Fatalf("valid resume denied: %+v", out)
 			}
-			_, err = s.Execute(cli.MinimalRequest{Command: "intent", Action: action, Target: st.ID, Space: "default", Expect: strconv.FormatUint(st.Revision, 10), Reason: "retry", Stage: "discovery"})
+			_, err = s.Execute(cli.MinimalRequest{Command: "intent", Action: action, Target: st.ID, Space: "default", Expect: strconv.FormatUint(st.Revision, 10), Reason: "retry", Step: "s02"})
 			if err != nil {
 				t.Fatal(err)
 			}
 			current, err := store.Read(st.ID)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if current.ExecutionPlan.Draft != nil {
+				current = approveFixturePlan(t, store, current)
 			}
 			if _, err = store.Begin(st.ID, current.Revision); err != nil {
 				t.Fatal(err)
@@ -224,9 +230,7 @@ func TestFlowWorkflowReadRequiresCurrentRulesAndRealFiles(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			s, st := setup(t)
 			st.Status = "completed"
-			if _, err := (flow.Store{Root: s.Root, Space: "default"}).Save(st, st.Revision); err != nil {
-				t.Fatal(err)
-			}
+			st = writeExecutionFixture(t, flow.Store{Root: s.Root, Space: "default"}, st)
 			hook(t, s, "UserPromptSubmit", "", "", "", false)
 			if mode != "unbound" {
 				bind(t, s, st.ID)

@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [Intent実行計画・会話承認のloop実装証拠](decisions/2026-09-09-intent-execution-plan-evidence.md): Issue153、6段階・step_id・選択Sensor・別承認・reopen履歴の8項目TDDと保存復旧。mandatory順序と未完了回の新ID置換、同一Draftの2承認を具体化。独立review/finalは親担当。
+
 - [Intentごとの承認済み実行計画へ変更する依頼](decisions/2026-09-09-intent-execution-plan-request.md): 初期化→目的整理を必須とし、構成分析等を選択。途中の計画変更も都度承認。具体案への「hai」で一体実装の直接承認を確認。[実装計画](../design/intent-execution-plan-implementation.md)にschema・CLI・8項目TDD・承認/保存の検証を具体化。
 
 - [codekb配置変更の実装証拠](decisions/2026-09-09-knowledge-codekb-evidence.md): Issue #151、配布・Sensor・修復hook・手順のTDD実測。metadata selector契約を維持し、機能Knowledgeの既定配置をcodekbへ変更。finalは親担当。

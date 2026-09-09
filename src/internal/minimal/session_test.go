@@ -27,6 +27,7 @@ func setup(t *testing.T) (Service, flow.State) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	saved = executionFixtureState(t, store, saved, "discovery")
 	return s, saved
 }
 func hook(t *testing.T, s Service, event, tool, id, command string, active bool) map[string]any {

@@ -32,28 +32,28 @@ func passReview(t *testing.T, s Store, st State) State {
 }
 func TestFlowTransitionGatesAndStages(t *testing.T) {
 	s, st := sensorFixture(t)
-	if _, err := s.Transition(st.ID, st.Revision, TransitionRequest{Action: "advance"}); err == nil {
+	if _, err := transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "advance"}); err == nil {
 		t.Fatal("advanced without review")
 	}
 	st = passReview(t, s, st)
 	previous := st.Revision
 	var err error
-	st, err = s.Transition(st.ID, st.Revision, TransitionRequest{Action: "advance"})
+	st, err = transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "advance"})
 	if err != nil || st.Stage != "planning" {
 		t.Fatalf("planning %+v %v", st, err)
 	}
-	if _, err := s.Transition(st.ID, previous, TransitionRequest{Action: "advance"}); err == nil {
+	if _, err := transitionExecutionFixture(t, s, st.ID, previous, TransitionRequest{Action: "advance"}); err == nil {
 		t.Fatal("duplicate advance accepted")
 	}
 	boundaryDoc(t, s, st, "ImplementationPlan")
 	st.Config.Plan = "Direct change"
 	st.Config.Tests = []string{"go test"}
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
 	st = passReview(t, s, st)
-	st, err = s.Transition(st.ID, st.Revision, TransitionRequest{Action: "advance"})
+	st, err = transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "advance"})
 	if err != nil || st.Stage != "tdd" {
 		t.Fatalf("tdd %+v %v", st, err)
 	}
@@ -64,7 +64,7 @@ func TestFlowTransitionGatesAndStages(t *testing.T) {
 	st.Config.Artifacts = append(st.Config.Artifacts, Artifact{Path: file, Kind: "test", Stage: "tdd"})
 	st.Config.DirectCommit = st.Config.CodeRevision
 	prepareBoundaryResults(t, s, &st)
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,14 +76,15 @@ func TestFlowTransitionGatesAndStages(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			st.Config.DirectCommit = st.Config.CodeRevision
 			prepareBoundaryResults(t, s, &st)
-			st, err = s.Save(st, st.Revision)
+			st, err = saveExecutionFixture(t, s, st, st.Revision)
 			if err != nil {
 				t.Fatal(err)
 			}
 		}
 		st = passReview(t, s, st)
-		st, err = s.Transition(st.ID, st.Revision, TransitionRequest{Action: "advance"})
+		st, err = transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "advance"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -91,39 +92,47 @@ func TestFlowTransitionGatesAndStages(t *testing.T) {
 			t.Fatalf("want %s: %+v", want, st)
 		}
 	}
-	if _, err := s.Transition(st.ID, st.Revision, TransitionRequest{Action: "advance"}); err == nil {
+	if _, err := transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "advance"}); err == nil {
 		t.Fatal("completed advanced")
 	}
 }
 func TestFlowTransitionWaitPauseResumeReopen(t *testing.T) {
 	s, st := sensorFixture(t)
 	for _, r := range []TransitionRequest{{Action: "wait"}, {Action: "pause"}, {Action: "reopen", Stage: "tdd"}} {
-		if _, err := s.Transition(st.ID, st.Revision, r); err == nil {
+		if _, err := transitionExecutionFixture(t, s, st.ID, st.Revision, r); err == nil {
 			t.Fatal("missing reason accepted")
 		}
 	}
 	var err error
-	st, err = s.Transition(st.ID, st.Revision, TransitionRequest{Action: "wait", Reason: "Need user answer", ResumeCondition: "Answer provided"})
+	st, err = transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "wait", Reason: "Need user answer", ResumeCondition: "Answer provided"})
 	if err != nil || st.Status != "waiting" {
 		t.Fatalf("wait %+v %v", st, err)
 	}
-	if _, err := s.Transition(st.ID, st.Revision, TransitionRequest{Action: "advance"}); err == nil {
+	if _, err := transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "advance"}); err == nil {
 		t.Fatal("waiting advanced")
 	}
-	st, err = s.Transition(st.ID, st.Revision, TransitionRequest{Action: "resume", Reason: "Answer provided"})
+	st, err = transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "resume", Reason: "Answer provided"})
 	if err != nil || st.Status != "active" {
 		t.Fatalf("resume %+v %v", st, err)
 	}
 	st.Config.Units = []Unit{{ID: "one", Status: "running"}}
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err = s.Transition(st.ID, st.Revision, TransitionRequest{Action: "pause", Reason: "Interruption"})
+	st, err = transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "pause", Reason: "Interruption"})
 	if err != nil || st.Config.Units[0].Status != "needs_confirmation" {
 		t.Fatalf("pause %+v %v", st, err)
 	}
-	st, err = s.Transition(st.ID, st.Revision, TransitionRequest{Action: "reopen", Stage: "discovery", Reason: "Revise purpose"})
+	if _, err = transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "reopen", Stage: "discovery", Reason: "Revise purpose"}); err == nil {
+		t.Fatal("unconfirmed worker allowed plan change")
+	}
+	// Isolated fixture: the worker has now been checked and stopped.
+	st.Config.Units = nil
+	if err = s.persist(st); err != nil {
+		t.Fatal(err)
+	}
+	st, err = transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "reopen", Stage: "discovery", Reason: "Revise purpose"})
 	if err != nil || st.Status != "active" || st.Stage != "discovery" || st.Review.Status != "" {
 		t.Fatalf("reopen %+v %v", st, err)
 	}

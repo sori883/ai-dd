@@ -90,16 +90,20 @@ func verifyProcedureEvidence(binary, id string, records []boundaryObservation, e
 				step++
 			}
 		case 3:
-			if r.Action == "reopen" && r.Stage == "planning" && st.Stage == "planning" && st.Entry == nil {
+			if r.Action == "reopen" && r.Step == "s03" && st.ExecutionPlan.Draft != nil {
 				step++
 			}
 		case 4:
+			if r.Action == "plan-approval" && st.Stage == "planning" && st.Entry == nil {
+				step++
+			}
+		case 5:
 			if r.Action == "procedure" && st.Stage == "planning" {
 				step++
 			}
 		}
 	}
-	if step != 5 {
+	if step != 6 {
 		return fail()
 	}
 	return nil
@@ -107,7 +111,7 @@ func verifyProcedureEvidence(binary, id string, records []boundaryObservation, e
 
 func TestProcedureEvidenceSequence(t *testing.T) {
 	binary, id := "/aidlc", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	commands := []string{binary + " intent procedure " + id + " --space default", binary + " intent begin " + id + " --space default --expect 3", "touch procedure-work.txt", binary + " intent reopen " + id + " --space default --expect 4 --stage planning --reason reconsider", binary + " intent procedure " + id + " --space default"}
+	commands := []string{binary + " intent procedure " + id + " --space default", binary + " intent begin " + id + " --space default --expect 3", "touch procedure-work.txt", binary + " intent reopen " + id + " --space default --expect 4 --step s03 --reason reconsider", binary + " intent plan-approval " + id + " --space default --expect 5 --file decision.json", binary + " intent procedure " + id + " --space default"}
 	records := []boundaryObservation{}
 	executions := map[string]int{}
 	for i, command := range commands {
@@ -116,10 +120,13 @@ func TestProcedureEvidenceSequence(t *testing.T) {
 			h.Input.Command = command
 			raw, _ := json.Marshal(h)
 			stage := "tdd"
-			if i == 4 || i == 3 && event == "PostToolUse" {
+			if i == 5 || i == 4 && event == "PostToolUse" {
 				stage = "planning"
 			}
 			st := flow.State{ID: id, Stage: stage}
+			if i == 3 && event == "PostToolUse" {
+				st.ExecutionPlan.Draft = &flow.PlanVersion{ReopenStepID: "s03"}
+			}
 			if (i == 1 && event == "PostToolUse") || i == 2 {
 				st.Entry = &flow.StageEntry{Stage: stage}
 			}

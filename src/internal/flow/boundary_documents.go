@@ -147,7 +147,7 @@ func (c *boundaryCollector) gate(stage string) Gate {
 	return g
 }
 func (c *boundaryCollector) accepted(st State, stage, name string) {
-	a, ok := st.Accepted[stage]
+	a, ok := st.Accepted[precedingStep(st, stage)]
 	c.require(ok, "accepted "+stage+" required")
 	raw, good := c.file(name)
 	if !good {
@@ -162,7 +162,8 @@ func (c *boundaryCollector) accepted(st State, stage, name string) {
 	}
 	c.require(match, "accepted input changed; reopen "+stage+": "+name)
 }
-func (s Store) startState(st State) (Gate, []FileVersion, []FileVersion) {
+func (s Store) startState(st State) (gate Gate, inputsOut []FileVersion, sourcesOut []FileVersion) {
+	defer func() { gate.StepID = st.CurrentStepID }()
 	c := boundaryCollector{store: s}
 	d, err := s.boundDefinition(st)
 	if err != nil {
@@ -175,8 +176,8 @@ func (s Store) startState(st State) (Gate, []FileVersion, []FileVersion) {
 	c.references(st, d.Procedures[st.Stage].Inputs)
 	c.requiredInputs(st)
 	c.require(st.Status == "active", "Intent is not active")
-	if st.Stage == "integration" {
-		a, ok := st.Accepted["tdd"]
+	if st.Stage == "integration" && precedingStep(st, "tdd") != "" {
+		a, ok := st.Accepted[precedingStep(st, "tdd")]
 		c.require(ok, "accepted tdd required")
 		for _, f := range a.Outputs {
 			c.accepted(st, "tdd", f.Path)

@@ -23,7 +23,7 @@ func TestBoundaryReviewRequiresEndPass(t *testing.T) {
 	}
 	boundaryDoc(t, s, st, "Requirements")
 	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: flowGit(t, s.Root, "rev-parse", "HEAD")}
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,6 +10,7 @@ import (
 )
 
 type UnitRequest struct {
+	StepID             string `json:"step_id"`
 	Reason             string `json:"reason"`
 	PreviousRunStopped bool   `json:"previous_run_stopped"`
 	Action             string `json:"action"`
@@ -40,6 +41,9 @@ func (s Store) Unit(id string, expect uint64, r UnitRequest) (State, error) {
 		retry = &r
 	}
 	return s.changeReassignment(id, expect, retry, func(st *State) error {
+		if r.StepID != st.CurrentStepID {
+			return invalid("Unit execution mismatch")
+		}
 		if st.Status != "active" || st.Stage != "tdd" {
 			return invalid("Unit operations require active TDD stage")
 		}
@@ -150,7 +154,7 @@ func (s Store) Unit(id string, expect uint64, r UnitRequest) (State, error) {
 			if err != nil {
 				return err
 			}
-			if a.Session != r.Session || a.Root != root || a.RunID != r.RunID {
+			if a.StepID != st.CurrentStepID || a.Session != r.Session || a.Root != root || a.RunID != r.RunID {
 				return invalid("Unit run identity mismatch")
 			}
 			head, err := git(root, "rev-parse", "HEAD")

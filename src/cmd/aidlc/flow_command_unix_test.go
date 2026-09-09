@@ -60,7 +60,7 @@ func TestFlowCommandFailureOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st.Config = flow.Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, CodeRevision: strings.TrimSpace(string(head)), NoMaterialsReason: "new", ADR: flow.ADR{Reason: "none"}}
+	st.Config = flow.Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, CodeRevision: strings.TrimSpace(string(head)), ADR: flow.ADR{Reason: "none"}}
 	st, err = store.Save(st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +106,9 @@ func TestFlowCommandFailureOutput(t *testing.T) {
 			}
 		})
 	}
-	st.Config.Unknowns = []string{"unresolved"}
+	if err = os.Remove(filepath.Join(root, ".codex/hooks.json")); err != nil {
+		t.Fatal(err)
+	}
 	st, err = store.Save(st, st.Revision)
 	if err != nil {
 		t.Fatal(err)

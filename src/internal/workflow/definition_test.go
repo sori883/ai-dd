@@ -15,13 +15,10 @@ func definitionFixture(t *testing.T) string {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	ids := []string{"discovery", "planning", "tdd", "integration"}
-	g := Graph{SchemaVersion: 1, Start: ids[0], Completion: ids[3], Reopen: Reopen{Current: true, Ancestors: true}}
-	for i, id := range ids {
+	ids := []string{"initialization", "discovery", "architecture-analysis", "planning", "tdd", "integration"}
+	g := Graph{SchemaVersion: 2, RequiredPrefix: []string{"initialization", "discovery"}}
+	for _, id := range ids {
 		g.Stages = append(g.Stages, Stage{ID: id, Name: id, Procedure: "stages/" + id + ".md"})
-		if i > 0 {
-			g.Advance = append(g.Advance, Edge{From: ids[i-1], To: id})
-		}
 		body := "---\nstage_id: " + id + "\nagents: []\ninputs: []\noutputs: []\nsensors:\n  start: " + id + "-start\n  end: " + id + "-end\n---\n# Procedure\nDo the work.\n"
 		if err := os.WriteFile(filepath.Join(dir, id+".md"), []byte(body), 0644); err != nil {
 			t.Fatal(err)
@@ -36,7 +33,7 @@ func definitionFixture(t *testing.T) string {
 func TestDefinitionValid(t *testing.T) {
 	root := definitionFixture(t)
 	d, err := Load(root)
-	if err != nil || len(d.Hash) != 64 || d.Next("tdd") != "integration" || !d.Before("discovery", "tdd") || !d.CanReopen("tdd", "planning") || d.CanReopen("planning", "tdd") {
+	if err != nil || len(d.Hash) != 64 || len(d.Graph.Stages) != 6 || len(d.Graph.RequiredPrefix) != 2 {
 		t.Fatalf("invalid definition: %+v %v", d, err)
 	}
 	if !strings.Contains(d.Procedures["tdd"].Text, "# Procedure") {
@@ -53,9 +50,9 @@ func TestDefinitionValid(t *testing.T) {
 }
 func TestDefinitionRejectsInvalid(t *testing.T) {
 	cases := []struct{ name, file, old, new string }{
-		{"unknown graph", "stage-graph.json", `"schema_version":1`, `"schema_version":1,"unknown":1`},
-		{"duplicate graph key", "stage-graph.json", `"schema_version":1`, `"schema_version":1,"schema_version":1`},
-		{"cycle", "stage-graph.json", `"to":"integration"`, `"to":"discovery"`},
+		{"unknown graph", "stage-graph.json", `"schema_version":2`, `"schema_version":2,"unknown":1`},
+		{"duplicate graph key", "stage-graph.json", `"schema_version":2`, `"schema_version":2,"schema_version":2`},
+		{"invalid prefix", "stage-graph.json", `"required_prefix":["initialization","discovery"]`, `"required_prefix":["discovery","initialization"]`},
 		{"outside procedure", "stage-graph.json", "stages/tdd.md", "../tdd.md"},
 		{"stage mismatch", "stages/tdd.md", "stage_id: tdd", "stage_id: planning"},
 		{"unknown yaml", "stages/tdd.md", "agents: []", "unknown: true\nagents: []"},

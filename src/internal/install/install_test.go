@@ -118,6 +118,11 @@ func TestInstallMemoryCommandGuidance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	common, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/WORKFLOW.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = append(raw, common...)
 	raw = append(raw, procedure...)
 	for _, want := range []string{
 		"memory create codekb/NAME --space SPACE --body-file FILE --actor process:codex --type TYPE --title TITLE --description DESCRIPTION",
@@ -144,7 +149,7 @@ func TestFlowInstallInactiveResumeGuidance(t *testing.T) {
 	if len(raw) > 4096 {
 		t.Fatalf("deployed skill %d bytes exceeds 4096", len(raw))
 	}
-	for _, want := range []string{"intent procedure ID --space SPACE", "intent resume ID --space SPACE --expect R --reason TEXT", "intent reopen ID --space SPACE --expect R --reason TEXT --stage STAGE"} {
+	for _, want := range []string{"intent procedure ID --space SPACE", "intent resume ID --space SPACE --expect R --reason TEXT", "intent reopen ID --space SPACE --expect R --reason TEXT --step STEP_ID"} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("missing inactive bootstrap grammar %q", want)
 		}
@@ -175,6 +180,15 @@ func TestOKFWorkLogInstalledGuidance(t *testing.T) {
 			raw, err := os.ReadFile(filepath.Join(root, name))
 			if err != nil {
 				t.Fatal(err)
+			}
+			if strings.Contains(name, "/stages/") {
+				if !strings.Contains(string(raw), "WORKFLOW.md") {
+					t.Fatal("stage lacks common-operation reference")
+				}
+				raw, err = os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/WORKFLOW.md"))
+				if err != nil {
+					t.Fatal(err)
+				}
 			}
 			for _, want := range []string{"knowledge/log/<intent_id>-work-log.md", "memory search work-log --space SPACE --intent-id ID", "memory show log/ID-work-log --space SPACE", "revision"} {
 				if !strings.Contains(string(raw), want) {

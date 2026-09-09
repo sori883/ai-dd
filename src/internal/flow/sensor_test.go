@@ -35,7 +35,7 @@ func sensorFixture(t *testing.T) (Store, State) {
 		t.Fatal(err)
 	}
 	st.Config = Config{NoMaterialsReason: "new project", Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, ADR: ADR{Reason: "No architectural decision"}, Artifacts: []Artifact{{Path: name, Kind: "Knowledge", Stage: "discovery"}}, CodeRevision: flowGit(t, s.Root, "rev-parse", "HEAD")}
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestFlowSensorDiscovery(t *testing.T) {
 	}
 	original := gate.Target
 	st.Config.Unknowns = []string{"Blocking design choice"}
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestFlowSensorDiscovery(t *testing.T) {
 	}
 	st.Config.Unknowns = nil
 	st.Config.ADR = ADR{Required: true}
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestFlowSensorDiscovery(t *testing.T) {
 		t.Fatalf("missing ADR: %+v %v", gate, err)
 	}
 	st.Config.ADR = ADR{Reason: "No architectural decision"}
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,11 +92,11 @@ func TestFlowSensorDiscovery(t *testing.T) {
 func TestFlowSensorUnitGraph(t *testing.T) {
 	for _, units := range [][]Unit{{{ID: "a", DependsOn: []string{"missing"}}}, {{ID: "a", DependsOn: []string{"b"}}, {ID: "b", DependsOn: []string{"a"}}}, {{ID: "a"}, {ID: "a"}}} {
 		s, st := sensorFixture(t)
-		st.Stage = "planning"
+		fixtureExecutionStage(t, s, &st, "planning")
 		prepareBoundaryStage(t, s, &st)
 		st.Config.Plan = "A plan"
 		st.Config.Units = units
-		st, err := s.Save(st, st.Revision)
+		st, err := saveExecutionFixture(t, s, st, st.Revision)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -108,10 +108,10 @@ func TestFlowSensorUnitGraph(t *testing.T) {
 }
 func TestFlowSensorDirectImplementation(t *testing.T) {
 	s, st := sensorFixture(t)
-	st.Stage = "planning"
+	fixtureExecutionStage(t, s, &st, "planning")
 	prepareBoundaryStage(t, s, &st)
 	st.Config.Plan = "Direct implementation"
-	st, err := s.Save(st, st.Revision)
+	st, err := saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestFlowSensorDirectImplementation(t *testing.T) {
 		t.Fatalf("empty direct verification accepted: %+v %v", gate, err)
 	}
 	st.Config.Tests = []string{"go test ./..."}
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,9 +128,9 @@ func TestFlowSensorDirectImplementation(t *testing.T) {
 	if err != nil || gate.Status != "pass" {
 		t.Fatalf("direct plan rejected: %+v %v", gate, err)
 	}
-	st.Stage = "tdd"
+	fixtureExecutionStage(t, s, &st, "tdd")
 	prepareBoundaryStage(t, s, &st)
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestFlowSensorDirectImplementation(t *testing.T) {
 	st.Config.Artifacts = append(st.Config.Artifacts, Artifact{Path: file, Kind: "test", Stage: "tdd"})
 	st.Config.DirectCommit = st.Config.CodeRevision
 	prepareBoundaryResults(t, s, &st)
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,12 +181,12 @@ func TestFlowSensorRequiredADR(t *testing.T) {
 	}
 	st.Config.ADR = ADR{Required: true}
 	st.Config.Artifacts = append(st.Config.Artifacts, Artifact{Path: name, Kind: "ADR", Stage: "discovery"})
-	st, err := s.Save(st, st.Revision)
+	st, err := saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
 	title, description := "Store", "Why atomic replacement"
-	st, err = s.SetDocuments(st.ID, st.Revision, IntentDocuments{Inputs: []DocumentDeclaration{}, Outputs: []DocumentDeclaration{{Stage: st.Stage, Path: name, Metadata: okfmemory.DocumentMatch{Type: "adr", Title: &title, Description: &description}}}})
+	st, err = s.SetDocuments(st.ID, st.Revision, IntentDocuments{Inputs: []DocumentDeclaration{}, Outputs: []DocumentDeclaration{{StepID: st.CurrentStepID, Stage: st.Stage, Path: name, Metadata: okfmemory.DocumentMatch{Type: "adr", Title: &title, Description: &description}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestFlowSensorRequiredADR(t *testing.T) {
 }
 func TestFlowSensorRejectsInventedIntegratedCommit(t *testing.T) {
 	s, st := sensorFixture(t)
-	st.Stage = "tdd"
+	fixtureExecutionStage(t, s, &st, "tdd")
 	prepareBoundaryStage(t, s, &st)
 	st.Config.Plan = "Unit plan"
 	st.Config.Units = []Unit{{ID: "a", Bolt: "one", BaseCommit: st.Config.CodeRevision, Scope: []string{"a.go"}, Tests: []string{"test a"}, Status: "integrated", ResultCommit: strings.Repeat("f", 40), IntegratedCommit: strings.Repeat("f", 40)}}
@@ -205,7 +205,7 @@ func TestFlowSensorRejectsInventedIntegratedCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	st.Config.Artifacts = append(st.Config.Artifacts, Artifact{Path: "results.txt", Kind: "test", Stage: "tdd"})
-	st, err := s.Save(st, st.Revision)
+	st, err := saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestFlowSensorArtifactStageAndAuthority(t *testing.T) {
 				os.WriteFile(filepath.Join(s.Root, name), []byte("proof"), 0600)
 			}
 			st.Config.Artifacts = append(st.Config.Artifacts, Artifact{Path: name, Kind: tc.kind, Stage: tc.stage})
-			st, err := s.Save(st, st.Revision)
+			st, err := saveExecutionFixture(t, s, st, st.Revision)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -244,11 +244,11 @@ func TestFlowSensorArtifactStageAndAuthority(t *testing.T) {
 func TestFlowSensorUnitIDsAreComponents(t *testing.T) {
 	for _, id := range []string{"../escape", "a/b", "a\\b", ".", ""} {
 		s, st := sensorFixture(t)
-		st.Stage = "planning"
+		fixtureExecutionStage(t, s, &st, "planning")
 		prepareBoundaryStage(t, s, &st)
 		st.Config.Plan = "Plan"
 		st.Config.Units = []Unit{{ID: id, Bolt: "one", BaseCommit: st.Config.CodeRevision, Scope: []string{"a.go"}, Tests: []string{"test"}}}
-		st, err := s.Save(st, st.Revision)
+		st, err := saveExecutionFixture(t, s, st, st.Revision)
 		if err != nil {
 			t.Fatal(err)
 		}

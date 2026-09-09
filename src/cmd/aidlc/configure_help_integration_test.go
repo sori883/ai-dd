@@ -34,7 +34,7 @@ func TestConfigureHelpExamples(t *testing.T) {
 			}
 			config := strings.ReplaceAll(examples[tc.index][1], "<CURRENT_HEAD>", head)
 			file := filepath.Join(root, "aidlc/.runtime/config.json")
-			writeMinimalFixture(t, file, config)
+			writeMinimalFixture(t, file, strings.ReplaceAll(config, "<CURRENT_STEP>", "s02"))
 			var st flow.State
 			read := func(raw []byte) {
 				t.Helper()
@@ -48,6 +48,11 @@ func TestConfigureHelpExamples(t *testing.T) {
 				base := []string{"intent", action, st.ID, "--space", "default", "--expect", strconv.FormatUint(st.Revision, 10)}
 				read(runMinimalCLI(t, binary, root, nil, append(base, args...)...))
 			}
+			f := operationsFixture{t: t, binary: binary, root: root}
+			st = f.action(st, "begin")
+			st = f.review(st)
+			st = f.finish(st)
+			st = f.selectPlan(st)
 			boundaryFixtureDocument(t, root, st.ID, "Requirements")
 			call("configure", "--file", file)
 			call("begin")
@@ -78,13 +83,14 @@ func TestConfigureHelpExamples(t *testing.T) {
 			}
 			gate := check()
 			call("review", "--file", request(flow.ReviewRequest{Action: "accept", Session: "reviewer", Root: reviewer, Target: gate.Target, Status: "pass", Summary: "Deterministic example validation, not AI review"}))
-			call("advance")
+			st = f.finish(st)
 			if st.Stage != "planning" {
 				t.Fatalf("stage=%s", st.Stage)
 			}
 			// Reapply the public help example at planning, then evaluate its real prerequisites.
 			boundaryFixtureDocument(t, root, st.ID, "ImplementationPlan")
 			call("begin")
+			writeMinimalFixture(t, file, strings.ReplaceAll(config, "<CURRENT_STEP>", st.CurrentStepID))
 			call("configure", "--file", file)
 			check()
 			if st.Config.CodeRevision != head || len(st.Config.Units) != tc.index {

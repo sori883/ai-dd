@@ -73,3 +73,19 @@ work unit末尾は上記targeted群、変更したpackageの必要な既存test�
 ## 許可と本家参照の境界
 
 固定4段階から利用者が選ぶ実行列への変更、および会話承認・進捗履歴はユーザーが直接指定した製品設計である。本家の配布・Space作成を変更するものではなく、旧33 Stageの互換性を約束しない。最新upstreamとの一致を未確認のまま主張しない。Issue146の人間承認は本変更の実行回契約へ統合し、その受入条件も確認できた時点で完了にする。
+
+## 実装時に確定した契約の具体化
+
+承認済み設計の「両者を対象と明示した同じ回答」を成立させるため、初回discoveryの成果検査は提示済みDraftのrevisionとcontent hashに結び付ける。入力・成果・定義・review対象が同じまま全く同じDraftを採用した時だけ証拠を保持する。Draft置換・修正・却下は失効する。回答到着時に両requestが存在する場合だけ両方に使え、後から作るrequestへ転用しない。計画承認順と成果承認順のどちらでも同じ境界を守る。
+
+初回mandatoryは役割と順序を維持する。物理配列の先頭2要素固定や、生IDの無条件不変という内部解釈は採用しない。
+例えば `[s01 initialization completed, s02 discovery pending]` へ初期化reopenを承認すると
+`[s01 completed, s03 initialization pending (reopens:s01), s02 discovery pending]` とする。
+未完了現在回のreopenは新IDへ置換し、`[s01 completed,s02 discovery active]` は
+`[s01 completed,s03 discovery pending (reopens:s02)]` となる。旧未完了回と置換理由・前後計画は確定履歴へ残す。
+同stageの承認されたreopen由来を同stateの最小fieldで検査し、任意のID/stage差替えを拒否する。
+完了prefixを保持し、新回へEntry・Sensor・review・approval・文書・テスト・Unit結果を自動流用しない。
+
+work-logの時刻固定はdurable pending保存後である。その前の失敗では有効な空本文OKF土台が残ることがあるが、
+要求は未保存なので同じ利用者操作の再試行で新しい時刻を選べる。既存の前後hash復旧境界を維持する。
+段階MDは段階固有の目的・担当・Sensor・入出力・操作を中心にし、全CLIの共通説明はWORKFLOW/helpへ集約する。

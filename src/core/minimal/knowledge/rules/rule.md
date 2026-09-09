@@ -1,13 +1,13 @@
 ---
 type: Rule
-title: 四段階の作業合意
+title: Intent実行の作業合意
 description: 目的を理解し、計画・TDD・統合検証を独立レビューで進める。
 status: stable
 ---
 # 作業の合意
 
-Intentは一つの目的。discovery、planning、tdd、integrationの順に進む。
-各境界と完了には現在のSensorと独立reviewのpassが必要。未実施、fail、対象変更後の古いpassで進めない。
+Intentは一つの目的。initializationとdiscoveryが必須。architecture-analysis、planning、tdd、integrationは採否・順序を計画し人間が承認する。
+各境界と完了には現在実行回のSensor・独立review・人間の成果承認が必要。未実施、fail、対象変更後の古いpassで進めない。
 Discoveryでは目的、範囲、受入条件、現状、制約を理解する。実装計画を妨げる未確定事項を確認する。
 結果を左右する判断は質問し、必要な調査・試作で理解する。全疑問ゼロや最初からUnit分割を要求しない。
 Planningでは実装と検証の手順を定める。分割する場合Unitの担当範囲・依存・検証・Boltを具体化する。
@@ -26,7 +26,7 @@ Knowledgeは現行what/how、ADRはwhyと代替案・影響。必要なADRだけ
 各担当は他者の編集を保全する。reviewerは裏付けの限定読取りに留め、広い新規調査を抱えない。
 
 各段階は開始Sensorとintent beginで参照版を確認してから一般作業・Unit claimを行う。
-終了SensorはIntent別の要件・実装計画、共有解析・構成図、必要ADR、実行結果と現行機能知識を段階別に検査する。
+終了Sensorは選択した実行回に必要な要件・計画・解析・実測結果を確認する。省略した段階の成果を一律には要求しない。
 開始前も正規の読取り・設定・専用草稿・同Spaceの必要文書修復は行える。修復で当該turnのRule確認やactive条件を省略しない。
 共有文書のIntentIDや日時だけを更新しない。前段合格の要件・計画を変える場合は対応段階へreopenする。
 Sensorは実行結果JSONの形式・成果版・成功commandを確認し、実行の真正性とRED/GREENの意味は独立reviewerが確認する。
@@ -37,3 +37,5 @@ reopenの理由はIntent作業記録へCLIが保存する。保存途中は同�
 outputsは必要な文書だけで空でもよい。コード・テスト・ADR要否の検査は引き続き必要。
 
 入力は procedure の metadata 条件と解決 path/版を確認する。可変成果は intent documents の具体 outputs に全件登録してから保存する。受入済み文書の変更は reopen する。ADR は knowledge/adr/ と type adr を使い、新規 ADR の Intent ID は保持する。
+
+計画変更はintent plan、会話の判断はintent plan-approvalとintent approvalで別々に記録する。step_idで実行回を区別し、finishで現在回だけ完了する。提示済みrequestへの実際の後続回答だけを引用し、AIの判断を人間承認として捏造しない。

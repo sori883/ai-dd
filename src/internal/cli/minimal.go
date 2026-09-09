@@ -13,6 +13,7 @@ import (
 
 // MinimalRequest is the strict public request shared with hook command recognition.
 type MinimalRequest struct {
+	Step                                                                     string
 	Relocate                                                                 bool
 	FromProjectDir, FromBinary                                               string
 	BodyFile                                                                 string
@@ -35,7 +36,7 @@ func isMinimal(args []string) bool {
 			return true
 		}
 		switch args[1] {
-		case "create", "list", "show", "documents", "procedure", "check", "begin", "switch", "configure", "review", "advance", "pause", "resume", "reopen", "wait", "cancel":
+		case "plan", "plan-approval", "approval", "finish", "history", "create", "list", "show", "documents", "procedure", "check", "begin", "switch", "configure", "review", "advance", "pause", "resume", "reopen", "wait", "cancel":
 			return true
 		}
 		return false
@@ -110,20 +111,24 @@ func ParseMinimal(args []string) (r MinimalRequest, err error) {
 	case "intent/check":
 		min, max = 1, 1
 		allowed += " --boundary"
-	case "memory/show", "intent/show", "intent/procedure":
+	case "memory/show", "intent/show", "intent/procedure", "intent/history":
 		min, max = 1, 1
-	case "intent/documents":
+	case "intent/documents", "intent/plan":
 		min, max = 1, 1
 		allowed += " --expect --file"
-	case "intent/configure", "intent/review", "unit/claim", "unit/result", "unit/integrate", "unit/confirm", "unit/reassign":
+	case "intent/plan-approval", "intent/approval", "intent/configure", "intent/review", "unit/claim", "unit/result", "unit/integrate", "unit/confirm", "unit/reassign":
 		min, max = 1, 1
 		allowed += " --expect --file"
 		required = "--expect --file"
-	case "intent/advance", "intent/begin":
+	case "intent/finish", "intent/advance", "intent/begin":
 		min, max = 1, 1
 		allowed += " --expect"
 		required = "--expect"
-	case "intent/pause", "intent/resume", "intent/reopen", "intent/wait", "intent/cancel":
+	case "intent/reopen":
+		min, max = 1, 1
+		allowed += " --expect --reason --step"
+		required = "--expect --reason --step"
+	case "intent/pause", "intent/resume", "intent/wait", "intent/cancel":
 		min, max = 1, 1
 		allowed += " --expect --reason --stage --resume-condition"
 		required = "--expect --reason"
@@ -207,6 +212,7 @@ func ParseMinimal(args []string) (r MinimalRequest, err error) {
 	r.Expect = values["--expect"]
 	r.Reason = values["--reason"]
 	r.Stage = values["--stage"]
+	r.Step = values["--step"]
 	r.Boundary = values["--boundary"]
 	if r.Boundary != "" && r.Boundary != "start" && r.Boundary != "end" {
 		return fail("--boundary must be start or end")
@@ -265,7 +271,7 @@ func ParseMinimal(args []string) (r MinimalRequest, err error) {
 			return fail("--status must be draft, stable or deprecated")
 		}
 	}
-	if r.Command == "intent" && r.Action == "documents" && ((r.Expect == "") != (r.File == "")) {
+	if r.Command == "intent" && (r.Action == "documents" || r.Action == "plan") && ((r.Expect == "") != (r.File == "")) {
 		return fail("--expect and --file must be supplied together")
 	}
 	return r, nil
