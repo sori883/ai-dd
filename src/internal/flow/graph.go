@@ -5,7 +5,7 @@ import "github.com/sori883/ai-dd/src/internal/workflow"
 func (s Store) definition() (workflow.Definition, error) { return workflow.Load(s.Root) }
 func supportedStage(stage string) bool {
 	switch stage {
-	case "discovery", "planning", "tdd", "integration":
+	case "initialization", "discovery", "architecture-analysis", "planning", "tdd", "integration":
 		return true
 	}
 	return false

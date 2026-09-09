@@ -26,12 +26,18 @@ func TestOKFWorkLogSearchAndShow(t *testing.T) {
 		}
 		return raw
 	}
-	call("intent", "reopen", st.ID, "--space", "default", "--expect", strconv.FormatUint(st.Revision, 10), "--stage", "discovery", "--reason", "searchable reopen reason")
+	call("intent", "reopen", st.ID, "--space", "default", "--expect", strconv.FormatUint(st.Revision, 10), "--step", "s02", "--reason", "searchable reopen reason")
+	store := flow.Store{Root: s.Root, Space: "default"}
+	st, _ = store.Read(st.ID)
+	st = approveFixturePlan(t, store, st)
 	other, err := (flow.Store{Root: s.Root, Space: "default"}).Create("Other")
 	if err != nil {
 		t.Fatal(err)
 	}
-	call("intent", "reopen", other.ID, "--space", "default", "--expect", strconv.FormatUint(other.Revision, 10), "--stage", "discovery", "--reason", "other reason")
+	other = executionFixtureState(t, store, other, "discovery")
+	call("intent", "reopen", other.ID, "--space", "default", "--expect", strconv.FormatUint(other.Revision, 10), "--step", "s02", "--reason", "other reason")
+	other, _ = store.Read(other.ID)
+	other = approveFixturePlan(t, store, other)
 	if err = os.MkdirAll(filepath.Join(s.Root, "aidlc/spaces/foreign/knowledge"), 0755); err != nil {
 		t.Fatal(err)
 	}

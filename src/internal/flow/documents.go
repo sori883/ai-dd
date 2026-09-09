@@ -9,6 +9,7 @@ import (
 )
 
 type DocumentDeclaration struct {
+	StepID   string                  `json:"step_id"`
 	Stage    string                  `json:"stage"`
 	Path     string                  `json:"path"`
 	Metadata okfmemory.DocumentMatch `json:"metadata"`
@@ -28,13 +29,13 @@ func (s Store) SetDocuments(id string, expect uint64, documents IntentDocuments)
 			for i := range list {
 				d := &list[i]
 				prefix := "aidlc/spaces/" + s.Space + "/knowledge/"
-				if !supportedStage(d.Stage) || !strings.HasPrefix(d.Path, prefix) || !safeEvidencePath(d.Path) || path.Ext(d.Path) != ".md" {
+				if executionStage(*st, d.StepID) != d.Stage || !supportedStage(d.Stage) || !strings.HasPrefix(d.Path, prefix) || !safeEvidencePath(d.Path) || path.Ext(d.Path) != ".md" {
 					return invalid("invalid document stage or Space path")
 				}
 				if _, err := okfmemory.ConceptPath(strings.TrimSuffix(strings.TrimPrefix(d.Path, prefix), ".md")); err != nil {
 					return err
 				}
-				key := d.Stage + "/" + d.Path
+				key := d.StepID + "/" + d.Path
 				if seen[key] {
 					return invalid("duplicate document declaration")
 				}
@@ -64,7 +65,7 @@ func (s Store) SetDocuments(id string, expect uint64, documents IntentDocuments)
 			d := &documents.Outputs[i]
 			if d.Metadata.Type == "adr" {
 				for _, old := range st.Config.DocumentOutputs {
-					if old.Stage == d.Stage && old.Path == d.Path && old.Metadata.Type == "adr" && old.Metadata.IntentID != nil {
+					if old.StepID == d.StepID && old.Path == d.Path && old.Metadata.Type == "adr" && old.Metadata.IntentID != nil {
 						if d.Metadata.IntentID != nil && *d.Metadata.IntentID != *old.Metadata.IntentID {
 							return invalid("registered adr Intent binding changed")
 						}
@@ -91,7 +92,7 @@ func (s Store) SetDocuments(id string, expect uint64, documents IntentDocuments)
 		stageList := func(list []DocumentDeclaration, stage string) []DocumentDeclaration {
 			out := []DocumentDeclaration{}
 			for _, d := range list {
-				if d.Stage == stage {
+				if d.StepID == stage {
 					out = append(out, d)
 				}
 			}
@@ -102,7 +103,7 @@ func (s Store) SetDocuments(id string, expect uint64, documents IntentDocuments)
 				return invalid("accepted document declaration changed; reopen " + stage)
 			}
 		}
-		if !reflect.DeepEqual(stageList(st.Config.DocumentInputs, st.Stage), stageList(documents.Inputs, st.Stage)) {
+		if !reflect.DeepEqual(stageList(st.Config.DocumentInputs, st.CurrentStepID), stageList(documents.Inputs, st.CurrentStepID)) {
 			st.Entry = nil
 		}
 		st.Config.DocumentInputs = documents.Inputs

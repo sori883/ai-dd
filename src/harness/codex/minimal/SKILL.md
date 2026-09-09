@@ -20,7 +20,7 @@ SessionStartが示すsession IDとdraftパスを使い、別の実行ファイ�
 未開始・質問待ち・中断中でも読める。段階変更・再開後は取り直す。共通操作の索引はWORKFLOW.md、正確な引数・型・値は各CLI helpにある。
 手順の欠落や定義変更は停止して診断する。元定義を復元するか新Intentを作り、旧passを流用しない。
 質問待ち・中断後は `A intent resume ID --space SPACE --expect R --reason TEXT`、
-差戻しは `A intent reopen ID --space SPACE --expect R --reason TEXT --stage STAGE`。
+差戻しは `A intent reopen ID --space SPACE --expect R --reason TEXT --step STEP_ID`。
 差戻し保存失敗時は同一要求だけを再試行し、work-logの改変時は元版へ復元する。
 現在のSensorと独立reviewのpassを確認して前進する。調整役が担当を起動し共有state/文書を保存する。
 

@@ -59,13 +59,13 @@ func TestBoundaryUnitClaimRequiresBegin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st.Stage = "tdd"
-	st.Config.Units = []flow.Unit{{ID: "a", Status: "pending"}}
+	st = executionFixtureState(t, store, st, "tdd")
+	st.Config.Units = []flow.Unit{{StepID: st.CurrentStepID, ID: "a", Status: "pending"}}
 	st, err = store.Save(st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = store.Unit(st.ID, st.Revision, flow.UnitRequest{Action: "claim", Unit: "a"})
+	_, err = store.Unit(st.ID, st.Revision, flow.UnitRequest{StepID: st.CurrentStepID, Action: "claim", Unit: "a"})
 	if err == nil || !strings.Contains(err.Error(), "begin") {
 		t.Fatalf("missing begin was not first gate: %v", err)
 	}

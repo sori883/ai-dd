@@ -11,9 +11,9 @@ func TestCodeKBIntegrationFeature(t *testing.T) {
 	for _, folder := range []string{"codekb", "knowledge"} {
 		t.Run(folder, func(t *testing.T) {
 			s, st := boundaryFixture(t)
-			st.Stage = "integration"
+			fixtureExecutionStage(t, s, &st, "integration")
 			prepareBoundaryStage(t, s, &st)
-			st.Accepted["tdd"] = StageAcceptance{Stage: "tdd", ReviewTarget: strings.Repeat("c", 64)}
+			st.Accepted["s04"] = StageAcceptance{StepID: "s04", Stage: "tdd", ReviewTarget: strings.Repeat("c", 64)}
 			head := flowGit(t, s.Root, "rev-parse", "HEAD")
 			st.Config = Config{Objective: "Work", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: head, DirectCommit: head, Plan: "implement", Tests: []string{"go test"}}
 			prepareBoundaryResults(t, s, &st)
@@ -41,7 +41,7 @@ func TestCodeKBIntegrationFeature(t *testing.T) {
 			if folder == "codekb" && gate.Status != "pass" {
 				t.Fatalf("codekb feature rejected: %+v", gate)
 			}
-			if folder == "knowledge" && (gate.Status != "fail" || !strings.Contains(gate.Summary, "declared feature Knowledge output required")) {
+			if folder == "knowledge" && (gate.Status != "fail" || !strings.Contains(gate.Summary, "integration Knowledge must use codekb")) {
 				t.Fatalf("old folder substituted for codekb: %+v", gate)
 			}
 		})

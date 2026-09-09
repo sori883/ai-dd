@@ -24,7 +24,7 @@ func boundaryFixtureDocument(t *testing.T, root, id, kind string) string {
 	writeMinimalFixture(t, filepath.Join(root, name), body)
 	return name
 }
-func boundaryFixtureResults(t *testing.T, root, stage, head string, commands []string, output []byte) string {
+func boundaryFixtureResults(t *testing.T, root, step, stage, head string, commands []string, output []byte) string {
 	t.Helper()
 	log := "aidlc/evidence/" + stage + ".txt"
 	writeMinimalFixture(t, filepath.Join(root, log), string(output))
@@ -32,7 +32,7 @@ func boundaryFixtureResults(t *testing.T, root, stage, head string, commands []s
 	for _, command := range commands {
 		runs = append(runs, map[string]any{"command": command, "commit": head, "exit_code": 0, "output_path": log})
 	}
-	raw, err := json.Marshal(map[string]any{"stage": stage, "runs": runs})
+	raw, err := json.Marshal(map[string]any{"step_id": step, "stage": stage, "runs": runs})
 	if err != nil {
 		t.Fatal(err)
 	}

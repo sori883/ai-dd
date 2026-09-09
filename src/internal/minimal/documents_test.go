@@ -24,11 +24,12 @@ func TestIntentDocumentsCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	st = executionFixtureState(t, store, st, "discovery")
 	draft := s.draftPath("session")
 	if err := os.MkdirAll(filepath.Dir(draft), 0700); err != nil {
 		t.Fatal(err)
 	}
-	doc := `{"inputs":[],"outputs":[{"stage":"integration","path":"aidlc/spaces/default/knowledge/codekb/feature.md","metadata":{"type":"Knowledge","title":"Feature","description":"Current"}}]}`
+	doc := `{"inputs":[],"outputs":[{"step_id":"s06","stage":"integration","path":"aidlc/spaces/default/knowledge/codekb/feature.md","metadata":{"type":"Knowledge","title":"Feature","description":"Current"}}]}`
 	if err = os.WriteFile(draft, []byte(doc), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -72,8 +73,9 @@ func TestIntentDocumentsHookRepair(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	st = executionFixtureState(t, store, st, "discovery")
 	title, description := "Feature", "Current"
-	st, err = store.SetDocuments(st.ID, st.Revision, flow.IntentDocuments{Inputs: []flow.DocumentDeclaration{}, Outputs: []flow.DocumentDeclaration{{Stage: "discovery", Path: "aidlc/spaces/default/knowledge/codekb/custom.md", Metadata: okfmemory.DocumentMatch{Type: "Knowledge", Title: &title, Description: &description}}}})
+	st, err = store.SetDocuments(st.ID, st.Revision, flow.IntentDocuments{Inputs: []flow.DocumentDeclaration{}, Outputs: []flow.DocumentDeclaration{{StepID: "s02", Stage: "discovery", Path: "aidlc/spaces/default/knowledge/codekb/custom.md", Metadata: okfmemory.DocumentMatch{Type: "Knowledge", Title: &title, Description: &description}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +111,7 @@ func TestIntentDocumentsUnregisteredInputRepair(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st.Stage = "planning"
+	st = executionFixtureState(t, store, st, "planning")
 	st, err = store.Save(st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
@@ -138,6 +140,7 @@ func TestIntentDocumentsProcedureResolution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	st = executionFixtureState(t, store, st, "discovery")
 	raw, err := s.Execute(cli.MinimalRequest{Command: "intent", Action: "procedure", Target: st.ID, Space: "default"})
 	if err != nil {
 		t.Fatal(err)

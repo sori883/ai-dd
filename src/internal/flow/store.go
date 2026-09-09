@@ -28,6 +28,7 @@ type ADR struct {
 	Reason   string `json:"reason"`
 }
 type Unit struct {
+	StepID           string   `json:"step_id"`
 	ID               string   `json:"id"`
 	Bolt             string   `json:"bolt"`
 	BaseCommit       string   `json:"base_commit"`
@@ -57,11 +58,17 @@ type Config struct {
 	Units             []Unit                `json:"units"`
 }
 type Gate struct {
+	StepID  string `json:"step_id"`
 	Target  string `json:"target"`
 	Status  string `json:"status"`
 	Summary string `json:"summary"`
 }
 type State struct {
+	HistoryRevision uint64                     `json:"history_revision"`
+	HistoryHead     string                     `json:"history_head"`
+	Approval        *Approval                  `json:"approval"`
+	ExecutionPlan   ExecutionPlan              `json:"execution_plan"`
+	CurrentStepID   string                     `json:"current_step_id"`
 	DefinitionHash  string                     `json:"definition_hash"`
 	PendingReopen   *PendingReopen             `json:"pending_reopen,omitempty"`
 	Entry           *StageEntry                `json:"entry"`
@@ -110,8 +117,26 @@ func (s Store) path(id string) string {
 	return "aidlc/spaces/" + s.Space + "/intents/" + id + "/state.json"
 }
 func (s Store) validate(st State) error {
-	if st.SchemaVersion != 4 || !validID(st.ID) || st.Space != s.Space || st.Revision == 0 || strings.TrimSpace(st.Name) == "" || !utf8.ValidString(st.Name) {
+	if st.SchemaVersion != 5 || !validID(st.ID) || st.Space != s.Space || st.Revision == 0 || strings.TrimSpace(st.Name) == "" || !utf8.ValidString(st.Name) {
 		return invalid("invalid state identity or schema")
+	}
+	if st.HistoryHead != "" && (!validHash(st.HistoryHead) || st.HistoryRevision == 0 || st.HistoryRevision > st.Revision) || st.HistoryHead == "" && st.HistoryRevision != 0 {
+		return invalid("invalid history head")
+	}
+	for _, a := range []*Approval{st.Approval} {
+		if err := validateApproval(a, st); err != nil {
+			return err
+		}
+	}
+	for _, p := range []*PlanVersion{st.ExecutionPlan.Approved, st.ExecutionPlan.Draft} {
+		if p != nil {
+			if err := validateApproval(p.Approval, st); err != nil {
+				return err
+			}
+			if p.Approval != nil && (p.Approval.Target != PlanHash(*p) || p.Approval.PlanRevision != p.Revision || p.Approval.PlanHash != PlanHash(*p)) {
+				return invalid("plan approval target mismatch")
+			}
+		}
 	}
 	hashPattern := regexp.MustCompile(`^[a-f0-9]{64}$`)
 	if !hashPattern.MatchString(st.DefinitionHash) {
@@ -120,11 +145,18 @@ func (s Store) validate(st State) error {
 	if p := st.PendingReopen; p != nil {
 		_, err := time.Parse(time.RFC3339Nano, p.At)
 		invalidTarget := p.Revision != st.Revision || p.From != st.Stage || !supportedStage(p.To)
+		draft := st.ExecutionPlan.Draft
+		if draft == nil || p.StepID != draft.ReopenStepID || p.PlanRevision != draft.Revision || p.PlanHash != PlanHash(*draft) || p.Reason != draft.Reason || p.To != executionStage(st, p.StepID) {
+			invalidTarget = true
+		}
 		invalidReason := strings.TrimSpace(p.Reason) == "" || !utf8.ValidString(p.Reason)
 		invalidHashes := !hashPattern.MatchString(p.LogHash) || !hashPattern.MatchString(p.LogAfterHash)
 		if invalidTarget || invalidReason || err != nil || invalidHashes {
 			return invalid("invalid pending reopen")
 		}
+	}
+	if err := validateExecutionPlan(st); err != nil {
+		return err
 	}
 	if !supportedStage(st.Stage) {
 		return invalid("invalid stage")
@@ -147,7 +179,7 @@ func (s Store) persist(st State) error {
 	if err != nil {
 		return err
 	}
-	if len(raw) > filestore.MaxBytes {
+	if len(raw)+1 > filestore.MaxBytes {
 		return invalid("state exceeds 256 KiB")
 	}
 	write := s.write
@@ -174,11 +206,13 @@ func (s Store) Create(name string) (State, error) {
 	}
 	id := make([]byte, 16)
 	rand.Read(id)
-	st := State{SchemaVersion: 4, DefinitionHash: d.Hash, ID: fmt.Sprintf("%x", id), Space: s.Space, Name: name, Revision: 1, Stage: d.Graph.Start, Status: "active"}
+	st := State{SchemaVersion: 5, DefinitionHash: d.Hash, ID: fmt.Sprintf("%x", id), Space: s.Space, Name: name, Revision: 1, Stage: "initialization", Status: "active", CurrentStepID: "s01",
+		ExecutionPlan: ExecutionPlan{NextID: 3, Bootstrap: []ExecutionStep{{ID: "s01", Stage: "initialization", Status: "pending"}, {ID: "s02", Stage: "discovery", Status: "pending"}}}}
 	if _, err := os.Lstat(filepath.Join(s.Root, s.path(st.ID))); !os.IsNotExist(err) {
 		return State{}, fmt.Errorf("identity already exists: %w", fs.ErrExist)
 	}
-	return st, s.persist(st)
+	err = s.commit(&st)
+	return st, err
 }
 func (s Store) Read(id string) (State, error) {
 	if err := s.check(); err != nil {
@@ -267,6 +301,15 @@ func (s Store) Save(st State, expect uint64) (State, error) {
 	if err := s.guardReassignment(current, nil); err != nil {
 		return State{}, err
 	}
+	if st.HistoryHead != current.HistoryHead || st.HistoryRevision != current.HistoryRevision {
+		return State{}, invalid("history head is CLI owned")
+	}
+	if !reflect.DeepEqual(st.Approval, current.Approval) {
+		return State{}, invalid("human approval is CLI owned")
+	}
+	if !reflect.DeepEqual(st.ExecutionPlan, current.ExecutionPlan) || st.CurrentStepID != current.CurrentStepID || st.Stage != current.Stage || st.Status != current.Status {
+		return State{}, invalid("execution progress is CLI owned")
+	}
 	if !reflect.DeepEqual(st.Config.DocumentInputs, current.Config.DocumentInputs) || !reflect.DeepEqual(st.Config.DocumentOutputs, current.Config.DocumentOutputs) {
 		return State{}, invalid("document lists are managed by intent documents")
 	}
@@ -283,7 +326,7 @@ func (s Store) Save(st State, expect uint64) (State, error) {
 		st.Entry = nil
 	}
 	st.Revision++
-	if err := s.persist(st); err != nil {
+	if err := s.commit(&st); err != nil {
 		return State{}, err
 	}
 	return st, nil

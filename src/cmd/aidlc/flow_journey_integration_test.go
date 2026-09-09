@@ -112,7 +112,6 @@ func runBoundaryJourney(t *testing.T) {
 	writeMinimalFixture(t, filepath.Join(root, knowledge), "---\ntype: Design\ntitle: Addition\ndescription: Adds two integers\n---\nAdd returns the sum.\n")
 	head := string(bytes.TrimSpace(runMinimalProcess(t, root, "git", "rev-parse", "HEAD")))
 	config := flow.Config{NoMaterialsReason: "fresh project", Objective: "Addition", Scope: []string{"add.go"}, Acceptance: []string{"Add(2,3)=5"}, CodeRevision: head, ADR: flow.ADR{Reason: "No architectural decision"}, Artifacts: []flow.Artifact{{Path: knowledge, Kind: "Knowledge", Stage: "discovery"}}}
-	call("configure", "--file", writeRequest("config.json", config))
 	review := func(status string) {
 		t.Helper()
 		reviewRoot := filepath.Join(t.TempDir(), "review")
@@ -135,6 +134,12 @@ func runBoundaryJourney(t *testing.T) {
 		}
 		call("review", "--file", writeRequest("review.json", flow.ReviewRequest{Action: "accept", Session: "r", Root: reviewRoot, Target: gate.Target, Status: status, Summary: "Fixture review for CLI integration; not actual AI evidence"}))
 	}
+	f := operationsFixture{t: t, binary: binary, root: root}
+	call("begin")
+	review("pass")
+	st = f.finish(st)
+	call("configure", "--file", writeRequest("config.json", config))
+	st = f.selectPlan(st)
 	boundaryFixtureDocument(t, root, st.ID, "Requirements")
 	call("begin")
 	review("fail")
@@ -144,15 +149,16 @@ func runBoundaryJourney(t *testing.T) {
 		t.Fatal("failed review advanced")
 	}
 	review("pass")
-	call("advance")
+	st = f.finish(st)
 	boundaryFixtureDocument(t, root, st.ID, "ImplementationPlan")
 	call("begin")
 	config.Plan = "Implement Add using a failing example then verification"
 	config.Tests = []string{"go test -run ^TestAdd$"}
 	call("configure", "--file", writeRequest("config.json", config))
 	review("pass")
-	call("advance")
-	call("reopen", "--stage", "planning", "--reason", "recheck implementation plan")
+	st = f.finish(st)
+	call("reopen", "--step", "s03", "--reason", "recheck implementation plan")
+	st = f.approve(st, true)
 	log, err := os.ReadFile(filepath.Join(root, "aidlc/spaces/default/knowledge/log", st.ID+"-work-log.md"))
 	if err != nil || !bytes.Contains(log, []byte("recheck implementation plan")) {
 		t.Fatal("missing reopen log", err)
@@ -178,7 +184,7 @@ func runBoundaryJourney(t *testing.T) {
 	}
 	call("begin")
 	review("pass")
-	call("advance")
+	st = f.finish(st)
 	call("begin")
 	writeMinimalFixture(t, filepath.Join(root, "go.mod"), "module example.invalid/add\n\ngo 1.26\n")
 	writeMinimalFixture(t, filepath.Join(root, "add.go"), "package add\nfunc Add(a,b int)int{return 0}\n")
@@ -197,10 +203,10 @@ func runBoundaryJourney(t *testing.T) {
 	config.CodeRevision = head
 	config.DirectCommit = head
 	config.Artifacts = append(config.Artifacts, flow.Artifact{Path: "results.txt", Kind: "test", Stage: "tdd"})
-	config.TestResults = []string{boundaryFixtureResults(t, root, "tdd", head, config.Tests, green)}
+	config.TestResults = []string{boundaryFixtureResults(t, root, st.CurrentStepID, "tdd", head, config.Tests, green)}
 	call("configure", "--file", writeRequest("config.json", config))
 	review("pass")
-	call("advance")
+	st = f.finish(st)
 	call("begin")
 	call("pause", "--reason", "session ended")
 	call("resume", "--reason", "new session inspected persisted state")
@@ -216,13 +222,13 @@ func runBoundaryJourney(t *testing.T) {
 		t.Fatal(err)
 	}
 	title, description := document.String("title"), document.String("description")
-	call("documents", "--file", writeRequest("documents.json", flow.IntentDocuments{Inputs: []flow.DocumentDeclaration{}, Outputs: []flow.DocumentDeclaration{{Stage: "integration", Path: name, Metadata: okfmemory.DocumentMatch{Type: "Knowledge", Title: &title, Description: &description}}}}))
+	call("documents", "--file", writeRequest("documents.json", flow.IntentDocuments{Inputs: []flow.DocumentDeclaration{}, Outputs: []flow.DocumentDeclaration{{StepID: st.CurrentStepID, Stage: "integration", Path: name, Metadata: okfmemory.DocumentMatch{Type: "Knowledge", Title: &title, Description: &description}}}}))
 	integrationOutput := runMinimalProcess(t, root, "go", "test", "-count=1", "-run", "^TestAdd$")
-	config.TestResults = append(config.TestResults, boundaryFixtureResults(t, root, "integration", head, config.Tests, integrationOutput))
+	config.TestResults = append(config.TestResults, boundaryFixtureResults(t, root, st.CurrentStepID, "integration", head, config.Tests, integrationOutput))
 	call("configure", "--file", writeRequest("config.json", config))
 	runMinimalCLI(t, binary, root, nil, "session", "bind", st.ID, "--space", "default", "--session", "second")
 	review("pass")
-	call("advance")
+	st = f.finish(st)
 	if st.Status != "completed" {
 		t.Fatalf("not completed %+v", st)
 	}

@@ -20,7 +20,7 @@ func TestProcedureBoundaryReferences(t *testing.T) {
 				raw = []byte(strings.Replace(string(raw), "outputs:\n", "outputs:\n  - role: supporting_document\n    path: \"${knowledge_root}/codekb/extra.md\"\n    metadata: {type: Note}\n", 1))
 			}
 			os.WriteFile(p, raw, 0644)
-			st, err := s.Create("modified procedure")
+			st, err := createExecutionFixture(t, s, "modified procedure")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -42,7 +42,7 @@ func TestProcedureBoundaryReferences(t *testing.T) {
 func TestProcedureBoundaryEmptyOutputsKeepTests(t *testing.T) {
 	s, st := boundaryFixture(t)
 	deployFlowDefinition(t, s)
-	st.Stage = "tdd"
+	fixtureExecutionStage(t, s, &st, "tdd")
 	prepareBoundaryStage(t, s, &st)
 	st.Config.NoMaterialsReason = "new"
 	c := s.endDocuments(st)
@@ -69,11 +69,11 @@ func TestProcedureBoundaryAcceptedTDDOutput(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	st, err := s.Create("explicit output")
+	st, err := createExecutionFixture(t, s, "explicit output")
 	if err != nil {
 		t.Fatal(err)
 	}
-	st.Stage = "tdd"
+	fixtureExecutionStage(t, s, &st, "tdd")
 	prepareBoundaryStage(t, s, &st)
 	head := flowGit(t, s.Root, "rev-parse", "HEAD")
 	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: head, DirectCommit: head, Plan: "Implement", Tests: []string{"go test"}}
@@ -87,16 +87,16 @@ func TestProcedureBoundaryAcceptedTDDOutput(t *testing.T) {
 	if err != nil || gate.Status != "pass" {
 		t.Fatalf("gate %+v %v", gate, err)
 	}
-	st.Review = Gate{Status: "pass", Target: gate.Target}
+	st.Review = Gate{StepID: st.CurrentStepID, Status: "pass", Target: gate.Target}
 	if err = s.persist(st); err != nil {
 		t.Fatal(err)
 	}
-	st, err = s.Transition(st.ID, st.Revision, TransitionRequest{Action: "advance"})
+	st, err = transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "advance"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	found := false
-	for _, v := range st.Accepted["tdd"].Outputs {
+	for _, v := range st.Accepted["s04"].Outputs {
 		if v.Path == doc {
 			found = true
 		}

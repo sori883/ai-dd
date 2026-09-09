@@ -11,19 +11,19 @@ import (
 
 func TestBoundaryStoreSchema(t *testing.T) {
 	s := flowStore(t)
-	st, err := s.Create("New")
+	st, err := createExecutionFixture(t, s, "New")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.SchemaVersion != 4 {
+	if st.SchemaVersion != 5 {
 		t.Fatalf("schema=%d want 4", st.SchemaVersion)
 	}
 	st.Config.NoMaterialsReason = "new project"
-	next, err := s.Save(st, st.Revision)
+	next, err := saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil || next.Revision != 2 {
 		t.Fatalf("CAS: %+v %v", next, err)
 	}
-	if _, err = s.Save(st, st.Revision); err == nil {
+	if _, err = saveExecutionFixture(t, s, st, st.Revision); err == nil {
 		t.Fatal("stale save accepted")
 	}
 	st.SchemaVersion = 1
@@ -51,7 +51,7 @@ func TestBoundaryStoreVersions(t *testing.T) {
 		{Stage: "discovery", Inputs: []FileVersion{{Path: "file", SHA256: strings.Repeat("a", 64)}, {Path: "file", SHA256: strings.Repeat("a", 64)}}},
 	} {
 		s := flowStore(t)
-		st, err := s.Create("New")
+		st, err := createExecutionFixture(t, s, "New")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -61,7 +61,7 @@ func TestBoundaryStoreVersions(t *testing.T) {
 		}
 	}
 	s := flowStore(t)
-	st, err := s.Create("New")
+	st, err := createExecutionFixture(t, s, "New")
 	if err != nil {
 		t.Fatal(err)
 	}

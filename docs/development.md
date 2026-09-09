@@ -18,15 +18,17 @@ aidlc intent configure <id> --space default --expect <revision> --file config.js
 aidlc intent check <id> --space default
 ```
 
-理解、計画、TDD、統合検証の各境界で別rootの独立read-only reviewを受けます。
+初期化、目的整理、および選択した各段階の境界で別rootの独立read-only reviewを受けます。
 `intent review` のassignは担当session/rootを指定し、acceptはその担当の実報告と対象hashを受け取ります。
-修正で対象が変わったら再reviewします。`intent advance` は一段階だけ進めます。
+修正で対象が変わったら再reviewします。実際の会話回答を `intent approval` へ記録し、`intent finish` が現在回を完了します。
+初期化→目的整理は必須です。構成分析・計画・TDD・統合検証の採否と順序は `intent plan` で提示し、
+`intent plan-approval` で会話承認を記録します。計画承認と成果承認は別々です。
 待機は `intent wait --reason ... --resume-condition ...`、中断は `intent pause --reason ...`、
 再開は `intent resume --reason ...`。いずれもID、Space、期待revisionを指定します。
 
 分割時はUnitのscope/tests/依存/Bolt/base_commitを計画します。調整役AIがworkerを起動し、
 別worktreeへ割り当て、成果commitを統合します。`unit claim/result/integrate/confirm` のJSONと
-完全な操作文法は [詳細契約](design/four-stage-workflow-contract.md) を参照してください。
+完全な操作文法は `aidlc unit claim --help` と [実行計画契約](design/intent-execution-plan-proposal.md) を参照してください。
 小さなIntentはUnit分割せず、直接実装の受入・検証・結果commitを定義できます。
 
 Knowledgeは現行の仕様と手順、ADRは判断理由です。Concept IDは拡張子なしです。
@@ -65,7 +67,7 @@ AIDLC_FLOW_LIVE=1 go test -tags=integration -v -count=1 -timeout=50m ./src/cmd/a
 liveはCodex CLI 0.153.4、gpt-6-astra/medium、workspace-write、approval=neverを使用します。
 HOME/CODEX_HOMEや認証を変更しません。fixtureのtrust mapをCLI引数で渡し、検査済みhookだけを実行します。
 固定sandboxのGit制約によりtest hostがfixtureのworktree作成・検証bytesのcommit・統合を行います。
-AIによるGit操作成功とは報告しません。調整役AIは実CLIのstate・割当・review・advanceを担当し、
+AIによるGit操作成功とは報告しません。調整役AIは実CLIのstate・割当・review・approval・finishを担当し、
 workerは実編集と実test、reviewerは独立read-only会話で固定対象をレビューします。
 
 live evidenceは表示した一時ディレクトリへ保持します。raw hook、Codex JSONL/stdout/stderr、
@@ -137,17 +139,17 @@ model/effortは定義で固定せず利用者設定を継承する。共有state
 
 ### 段階の開始・終了Sensor
 
-新規Intentはschema3で、旧schemaのIntentはファイルを保持して明示エラーにする。
+新規Intentはschema5で、旧schemaのIntentはファイルを保持して明示エラーにする。
 各段階の入力を正規memory CLIで整え、`intent check ID --space SPACE --boundary start`、
 `intent begin ID --space SPACE --expect REV`で開始する。終了check（boundary省略時も終了）が合格したら
-独立reviewを割り当て、実報告を受理してadvanceする。次段階もbeginが必要。
+独立reviewを割り当て、実報告を受理し、会話の成果承認を記録してfinishする。次段階もbeginが必要。
 共有文書の日時やIntentIDの空更新は要求せず、前段合格要件・計画と現在の共有版を区別する。
 新しい文書型・必須節・実行証拠JSONはintent procedureが返す段階手順と公開helpを参照する。
 
 限定確認は `go test -count=1 ./src/internal/flow -run '^(TestBoundary|TestStartSensor|TestEndSensor)'`。
-実CLI4段階はfinalで `go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestBoundaryJourney$'`。
+実CLIの初期化・目的整理と選択した段階はfinalで `go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestBoundaryJourney$'`。
 固定Codex 0.153.4の限定実機は `AIDLC_BOUNDARY_LIVE=1 go test -tags=integration -count=1 -v -timeout 15m ./src/cmd/aidlc -run '^TestBoundaryLive$'`。
-後者は未開始拒否→必要文書修復→begin→一般編集の実hook/CLIと現物証拠に限定し、4段階完走と同一視しない。
+後者は未開始拒否→必要文書修復→begin→一般編集の実hook/CLIと現物証拠に限定し、選択計画の完走と同一視しない。
 既存model/認証/通常sandboxを保ち、test observerは製品hook出力を変更せず一時fixtureに記録する。
 
 
@@ -159,7 +161,7 @@ fresh配置は `aidlc/workflow/stage-graph.json` と `stages/*.md` を含む。
 定義のpathとbytesはIntent作成時に結び付く。変更・欠落時は作業を停止し、元版の復元または新Intentで再開する。
 show/list診断は維持する。旧schemaの移行や既設assetの自動上書きは行わない。
 
-reopenは理由を`aidlc/spaces/<space>/knowledge/log/<intent_id>-work-log.md`へOKFで追記し、戻り先以降の合格を無効化する。
+reopenは `--step STEP_ID` で変更案を提示し、plan-approvalで承認された時に新IDへ適用する。理由を`aidlc/spaces/<space>/knowledge/log/<intent_id>-work-log.md`へOKFで追記し、過去の完了実績を保持する。新実行回へ過去の合格を流用しない。
 `aidlc memory search work-log --space SPACE --intent-id ID`でmetadataを検索し、
 `aidlc memory show log/ID-work-log --space SPACE`で本文を読む。検索はtitle/description/tagsを対象とし、intent_idは完全一致で絞り込む。本文全文検索ではない。
 初回logはpending前に、正しいmetadataと空の本文を持つOKF文書を原子的に作る。
@@ -175,7 +177,7 @@ go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestProcedureJourne
 AIDLC_PROCEDURE_LIVE=1 go test -tags=integration -count=1 -v -timeout 15m ./src/cmd/aidlc -run '^TestProcedureLive$'
 ```
 
-journeyは実CLIの4段階、TDDからplanningへの差戻し・再前進、Sensor/reviewの拒否を確認する。
+journeyは実CLIの必須2段階と選択した計画・TDD・統合、TDDからplanningへの差戻し・再前進、Sensor/reviewの拒否を確認する。
 限定liveのhostは実CLIでTDD直前までfixtureを準備する（fixtureのreviewは独立AIの実報告ではない）。
 実Codexが現在手順を取得し、begin、通常作業、planningへのreopen、新しい現在手順取得を行う。
 固定Codex 0.153.4、既存gpt-6-astra/medium・workspace-write・認証保持・test hook方式を使用し、raw Pre/Postとexit、session/Intent、現物を照合する。
@@ -183,7 +185,7 @@ journeyは実CLIの4段階、TDDからplanningへの差戻し・再前進、Sens
 
 ## 段階の入力選択と出力一覧
 
-新規 Intent は schema 4 です。旧 schema のファイルは保持して明示エラーにし、自動移行しません。Issue146 の人間承認はこの変更に含まれていません。
+新規 Intent は schema 5 です。旧 schema のファイルは保持して明示エラーにし、自動移行しません。会話承認と進捗履歴は実行回IDと計画版へ結び付けます。
 `intent procedure ID --space SPACE` は metadata selector・件数・版条件と解決 path、具体的な outputs、診断を返します。条件は完全一致の AND、tags は順序なし集合です。配布 Rule selector は本文の type と title を特定し、解決 path が `rules/rule.md` であることも検査します。Rule 入口や他の Rule を削除する必要はありません。
 
 ```sh
@@ -192,7 +194,7 @@ aidlc intent documents ID --space SPACE --expect REV --file documents.json
 ```
 
 ```json
-{"inputs":[],"outputs":[{"stage":"integration","path":"aidlc/spaces/default/knowledge/codekb/addition.md","metadata":{"type":"Knowledge","title":"加算","description":"現行の利用方法"}}]}
+{"inputs":[],"outputs":[{"step_id":"現在の実行回ID","stage":"integration","path":"aidlc/spaces/default/knowledge/codekb/addition.md","metadata":{"type":"Knowledge","title":"加算","description":"現行の利用方法"}}]}
 ```
 
 `inputs` と `outputs` を両方指定して一覧全体を置換します。metadata は type/title/description が必須、status（draft/stable/deprecated）・tags（文字列配列）・intent_id（32桁小文字16進数）が任意です。上の path は利用する Space に合わせます。未存在の output は登録でき、保存後に同じ path と metadata が検査されます。Requirements/ImplementationPlan と新規 adr の Intent ID は登録時に保持されるため、本文保存の `memory create --intent-id ID` にも登録結果の値を使います。generated の日時は memory CLI が生成します。
@@ -203,3 +205,27 @@ accepted 入力は合格した path/hash を保持し、変更には前段への
 `test_results` は文書宣言と異なり、実行後に存在する strict JSON と出力ファイルだけを登録します。将来の integration 結果は実行後に追記します。
 
 親 final 用の実 CLI 一周は `go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestIntentDocumentsJourney$'` です。loop では実行しません。
+
+## 実行計画と会話承認
+
+`intent show` の `current_step_id` が現在の実行回です。同じstageでも再実行は別IDになります。
+`intent procedure` はその回の短い段階手順を返します。共通CLI詳細は配置済みWORKFLOWと各helpを参照します。
+`intent plan ID --space SPACE` で承認済み計画と変更案を読み、`--expect REV --file PLAN.json` で変更案を提示します。
+任意4段階は選択するか省略理由を記します。初回の目的整理終了までに計画承認を完了してください。
+
+計画と成果のrequest_id・targetを明示して回答を待ちます。UserPromptSubmitで到着した実際の回答の
+session・turn・quoteを、それぞれ `plan-approval` と `approval` のJSONに記録します。
+両requestが回答到着前に存在し対象が不変なら、同じ回答を両方へ使えます。AIの自己承認はできません。
+承認待ち中は通常作業を停止し、読取り・質問・計画整理・正規承認を行います。
+変更後は以前のSensor・review・承認を使わず、必要な開始検査から取り直します。
+
+未完了の現在回をreopenすると新IDに置換し、旧回と理由・変更前後の計画は `intent history` に残します。
+完了済みの回は有効な計画にも保持します。例えば初期化完了後の目的整理を再実行すると、
+`s01 initialization completed, s03 discovery pending (reopens:s02)` になります。
+Entry・文書宣言・実測JSON・Unit要求には実際のstep_idを用い、過去回のUnit結果やテスト結果を転用しません。
+次回へ進んだらUnit計画が必要な場合も現在回に登録し直します。
+履歴はstateのheadが指す確定列だけを表示し、途中保存の未確定ファイルを成功扱いしません。
+
+限定実機の会話承認確認は親finalで実施します。
+`AIDLC_HUMAN_APPROVAL_LIVE=1 go test -tags=integration -count=1 -v -timeout 20m ./src/cmd/aidlc -run '^TestHumanApprovalLive$'`
+は試験用の2承認待ちを準備し、実hookの作業拒否、同じ回答の出典、別承認CLIの成功、finishと確定履歴を照合します。

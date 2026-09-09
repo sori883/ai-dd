@@ -46,6 +46,11 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 			if input.Turn == "" {
 				return nil, invalid("missing turn ID")
 			}
+			if state.Intent != "" && state.Space != "" {
+				if err := (flow.Store{Root: s.Root, Space: state.Space}).CaptureApproval(state.Intent, input.Session, state.Turn, input.Turn, input.Prompt); err != nil {
+					return nil, err
+				}
+			}
 			state.Turn = input.Turn
 
 			state.RuleTurn = ""
@@ -93,7 +98,11 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 					return nil, err
 				}
 			}
-			if !s.workflowRead(input) && !s.documentRepair(input, state, selected) {
+			pending := selected.ExecutionPlan.Draft != nil || selected.Approval != nil && selected.Approval.Status == "pending"
+			if pending && !s.workflowRead(input) && !approvalRead(input) {
+				return nil, invalid("human approval pending; read, discuss or use plan/approval commands")
+			}
+			if !s.workflowRead(input) && !(pending && approvalRead(input)) && !s.documentRepair(input, state, selected) {
 				if err := (flow.Store{Root: s.Root, Space: state.Space}).CheckWork(state.Intent); err != nil {
 					return nil, err
 				}
@@ -167,9 +176,9 @@ func (s Service) exception(input HookInput, state *Session) bool {
 		return false
 	}
 	switch r.Command + "/" + r.Action {
-	case "intent/documents":
+	case "intent/plan", "intent/documents":
 		return r.File == "" || (state.Tool == "" && r.Space == state.Space && r.Target == state.Intent)
-	case "memory/rules", "memory/search", "memory/show", "memory/check", "intent/list", "intent/show", "intent/procedure", "intent/check", "session/inspect":
+	case "memory/rules", "memory/search", "memory/show", "memory/check", "intent/list", "intent/show", "intent/procedure", "intent/history", "intent/check", "session/inspect":
 		return true
 	case "intent/create":
 		return state.Tool == ""
@@ -178,7 +187,7 @@ func (s Service) exception(input HookInput, state *Session) bool {
 			return true
 		}
 		return state.Tool == "" && r.Session == input.Session
-	case "intent/begin", "intent/configure", "intent/review", "intent/advance", "intent/wait", "intent/pause", "intent/resume", "intent/reopen", "intent/cancel", "unit/claim", "unit/result", "unit/integrate", "unit/confirm", "unit/reassign":
+	case "intent/plan-approval", "intent/approval", "intent/finish", "intent/begin", "intent/configure", "intent/review", "intent/advance", "intent/wait", "intent/pause", "intent/resume", "intent/reopen", "intent/cancel", "unit/claim", "unit/result", "unit/integrate", "unit/confirm", "unit/reassign":
 		return state.Tool == "" && r.Space == state.Space && r.Target == state.Intent
 
 	}
@@ -403,4 +412,16 @@ func (s Service) documentRepair(input HookInput, session *Session, st flow.State
 		}
 	}
 	return false
+}
+
+func approvalRead(input HookInput) bool {
+	switch input.Tool {
+	case "Read", "Glob", "Grep", "AskUserQuestion", "request_user_input":
+		return true
+	}
+	if input.Tool != "Bash" {
+		return false
+	}
+	argv, ok := shellWords(input.Input.Command)
+	return ok && len(argv) > 0 && (argv[0] == "cat" || argv[0] == "pwd" || argv[0] == "ls")
 }

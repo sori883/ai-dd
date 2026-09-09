@@ -40,6 +40,20 @@ func (s Service) executeFlow(r cli.MinimalRequest) ([]byte, error) {
 		}
 		return encode(flow.IntentDocuments{Inputs: append([]flow.DocumentDeclaration{}, st.Config.DocumentInputs...), Outputs: append([]flow.DocumentDeclaration{}, st.Config.DocumentOutputs...)})
 	}
+	if r.Action == "history" {
+		records, err := store.History(r.Target)
+		if err != nil {
+			return nil, err
+		}
+		return encode(records)
+	}
+	if r.Action == "plan" && r.File == "" {
+		st, err := store.Read(r.Target)
+		if err != nil {
+			return nil, err
+		}
+		return encode(st.ExecutionPlan)
+	}
 	if r.Action == "show" {
 		st, err := store.Read(r.Target)
 		if err != nil {
@@ -75,6 +89,26 @@ func (s Service) executeFlow(r cli.MinimalRequest) ([]byte, error) {
 	}
 	var result flow.State
 	switch {
+	case r.Action == "plan":
+		var request flow.PlanRequest
+		if err := s.decodeDraft(r.File, &request); err != nil {
+			return nil, err
+		}
+		result, err = store.ProposePlan(r.Target, expect, request)
+	case r.Action == "approval" || r.Action == "plan-approval":
+		var request flow.ApprovalDecision
+		if err := s.decodeDraft(r.File, &request); err != nil {
+			return nil, err
+		}
+		if r.Action == "approval" {
+			result, err = store.Decide(r.Target, expect, request)
+		} else {
+			result, err = store.DecidePlan(r.Target, expect, request)
+		}
+	case r.Action == "finish":
+		result, err = store.Finish(r.Target, expect)
+	case r.Action == "reopen":
+		result, err = store.Reopen(r.Target, expect, r.Step, r.Reason)
 	case r.Action == "documents":
 		var documents flow.IntentDocuments
 		if err := s.decodeDraft(r.File, &documents); err != nil {
@@ -156,6 +190,9 @@ func (s Service) decodeDraft(file string, value any) error {
 	if err != nil {
 		return err
 	}
+	if err := uniqueDraftJSON(json.NewDecoder(bytes.NewReader(raw))); err != nil {
+		return err
+	}
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.DisallowUnknownFields()
 	if err := d.Decode(value); err != nil {
@@ -194,4 +231,43 @@ func (s Service) bindFlow(session, space, id string, recover bool) ([]byte, erro
 		}
 		return encode(map[string]any{"state": st, "rules": rules, "rules_hash": hash, "draft": s.draftPath(session)})
 	})
+}
+
+func uniqueDraftJSON(d *json.Decoder) error {
+	token, err := d.Token()
+	if err != nil {
+		return err
+	}
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+	switch delim {
+	case '{':
+		seen := map[string]bool{}
+		for d.More() {
+			key, err := d.Token()
+			if err != nil {
+				return err
+			}
+			name, ok := key.(string)
+			if !ok || seen[name] {
+				return invalid("duplicate JSON key")
+			}
+			seen[name] = true
+			if err = uniqueDraftJSON(d); err != nil {
+				return err
+			}
+		}
+	case '[':
+		for d.More() {
+			if err = uniqueDraftJSON(d); err != nil {
+				return err
+			}
+		}
+	default:
+		return invalid("invalid JSON delimiter")
+	}
+	_, err = d.Token()
+	return err
 }

@@ -48,7 +48,8 @@ func TestProcedureLive(t *testing.T) {
 	}
 	f := operationsFixture{t: t, binary: binary, root: root}
 	st := f.tdd()
-	st = f.action(st, "reopen", "--stage", "tdd", "--reason", "prepare unstarted live stage")
+	st = f.action(st, "reopen", "--step", st.CurrentStepID, "--reason", "prepare unstarted live stage")
+	st = f.approve(st, true)
 	cfg := flowLiveConfig{Root: root, Binary: binary, Evidence: evidence}
 	cfgPath := filepath.Join(evidence, "config.json")
 	raw, err := json.Marshal(cfg)
@@ -89,10 +90,14 @@ func TestProcedureLive(t *testing.T) {
 	writeMinimalFixture(t, hooksPath, string(raw))
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
 	defer cancel()
-	prompt := "Use the installed aidlc skill. Select the existing Intent " + st.ID + ". Retrieve its current procedure, begin the stage through the documented CLI, then run the literal Bash command touch procedure-work.txt. Reconsider the implementation plan: reopen planning with reason live plan reconsideration, then retrieve the new current procedure and stop. Keep CLI operations separate. Do not change workflow, hooks or Rules."
+	prompt := "Use the installed aidlc skill. Select the existing Intent " + st.ID + ". Retrieve its current procedure, begin the stage through the documented CLI, then run the literal Bash command touch procedure-work.txt. Reconsider the implementation plan: propose reopening planning step s03 with reason live plan reconsideration. Show the pending plan and wait for my answer. Keep CLI operations separate. Do not change workflow, hooks or Rules."
 
-	if _, err = flowRunModel(ctx, cfg, root, "boundary", prompt, "workspace-write"); err != nil {
+	first, err := flowRunModel(ctx, cfg, root, "boundary", prompt, "workspace-write")
+	if err != nil {
 		t.Fatalf("model: %v; evidence %s", err, evidence)
+	}
+	if _, err = flowRunModel(ctx, cfg, root, "procedure-answer", "これは試験用回答です。提示されたplanning再実行計画を承認します。plan-approvalへこの回答を記録し、新しい現在手順を取得して止めてください。", "workspace-write", first.Session); err != nil {
+		t.Fatal(err)
 	}
 	files, err := filepath.Glob(filepath.Join(evidence, "hook-*.json"))
 	if err != nil {
@@ -115,6 +120,11 @@ func TestProcedureLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	answerWire, err := os.ReadFile(filepath.Join(evidence, "procedure-answer.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire = append(append(wire, byte(10)), answerWire...)
 	executions := map[string]int{}
 	session := ""
 	for _, line := range bytes.Split(wire, []byte("\n")) {

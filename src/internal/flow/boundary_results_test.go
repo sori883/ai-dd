@@ -11,14 +11,14 @@ func resultPairFixture(t *testing.T) (Store, State, string, string) {
 	a := flowGit(t, s.Root, "rev-parse", "HEAD")
 	flowGit(t, s.Root, "commit", "--allow-empty", "-qm", "second")
 	b := flowGit(t, s.Root, "rev-parse", "HEAD")
-	st.Stage = "tdd"
+	fixtureExecutionStage(t, s, &st, "tdd")
 	st.Config.Units = []Unit{{ID: "a", Tests: []string{"go test"}, ResultCommit: a, IntegratedCommit: a}, {ID: "b", Tests: []string{"go test"}, ResultCommit: b, IntegratedCommit: b}}
 	st.Config.TestResults = []string{"aidlc/evidence/tdd.json"}
 	return s, st, a, b
 }
 func writeResultRuns(t *testing.T, s Store, name, stage string, runs ...resultRun) {
 	t.Helper()
-	raw, err := json.Marshal(resultDocument{Stage: stage, Runs: runs})
+	raw, err := json.Marshal(resultDocument{StepID: fixtureStepID(stage), Stage: stage, Runs: runs})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestEndSensorSharedCommandRequiresEachUnitResult(t *testing.T) {
 }
 func TestEndSensorIntegrationRequiresFinalHEAD(t *testing.T) {
 	s, st, a, b := resultPairFixture(t)
-	st.Stage = "integration"
+	fixtureExecutionStage(t, s, &st, "integration")
 	st.Config.Units[0].Tests = []string{"test a"}
 	st.Config.Units[1].Tests = []string{"test b"}
 	one := successfulRun(t, s, "test a", a, "aidlc/evidence/a.txt")
@@ -92,7 +92,7 @@ func TestEndSensorOtherStageDoesNotEnterAcceptedOutputs(t *testing.T) {
 	if c.gate(st.Stage).Target != baseline {
 		t.Fatal("other-stage JSON changed current results digest")
 	}
-	boundaryFile(t, s, other, `{"stage":"integration","runs":[{"command":"go test","commit":"bad"}]}`)
+	boundaryFile(t, s, other, `{"step_id":"s05","stage":"integration","runs":[{"command":"go test","commit":"bad"}]}`)
 	c = boundaryCollector{store: s}
 	c.results(st)
 	if len(c.failures) == 0 {

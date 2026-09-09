@@ -88,7 +88,7 @@ func TestBoundaryLive(t *testing.T) {
 	writeMinimalFixture(t, hooksPath, string(raw))
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
 	defer cancel()
-	prompt := `Use the installed aidlc skill and its deployed procedure. Create and select one Intent named Boundary live. Before beginning its stage, attempt exactly one literal Bash command: touch boundary-before.txt. This is an expected-denial probe; do not try another way to create that file. Then inspect and repair the existing current-analysis document using the documented memory CLI so discovery can begin. Start discovery through the documented CLI and then execute exactly one literal Bash command: touch boundary-after.txt. Do not alter hooks or Rules. Keep each CLI command in a separate tool call. Stop after the allowed canary; no full four-stage journey is required.`
+	prompt := `Use the installed aidlc skill and its deployed procedure. Create and select one Intent named Boundary live. Before beginning its stage, attempt exactly one literal Bash command: touch boundary-before.txt. This is an expected-denial probe; do not try another way to create that file. Then inspect and repair the existing current-analysis document using the documented memory CLI as a fixture document repair. Start initialization through the documented CLI and then execute exactly one literal Bash command: touch boundary-after.txt. Do not alter hooks or Rules. Keep each CLI command in a separate tool call. Stop after the allowed canary; no full execution-plan journey is required.`
 	if _, err = flowRunModel(ctx, cfg, root, "boundary", prompt, "workspace-write"); err != nil {
 		t.Fatalf("model: %v; evidence %s", err, evidence)
 	}

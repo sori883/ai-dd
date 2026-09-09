@@ -50,6 +50,14 @@ func TestCodeKBGuidance(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if !strings.Contains(string(raw), "WORKFLOW.md") {
+			t.Fatal("stage lacks common-operation reference")
+		}
+		common, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/WORKFLOW.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw = append(raw, common...)
 		if !strings.Contains(string(raw), "memory create codekb/NAME") || strings.Contains(string(raw), "memory create knowledge/") {
 			t.Errorf("%s uses old Concept guidance", stage)
 		}

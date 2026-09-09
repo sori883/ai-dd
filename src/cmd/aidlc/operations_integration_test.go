@@ -88,7 +88,11 @@ func (f operationsFixture) git(args ...string) string {
 }
 func (f operationsFixture) create(name string) flow.State {
 	f.t.Helper()
-	return operationsState(f.t, f.ok("intent", "create", name, "--space", "default"))
+	st := operationsState(f.t, f.ok("intent", "create", name, "--space", "default"))
+	st = f.action(st, "begin")
+	st = f.review(st)
+	st = f.finish(st)
+	return f.selectPlan(st)
 }
 func operationsState(t *testing.T, raw []byte) flow.State {
 	t.Helper()
@@ -210,18 +214,23 @@ func (f operationsFixture) tdd() flow.State {
 	boundaryFixtureDocument(f.t, f.root, s.ID, "Requirements")
 	s = f.action(s, "begin")
 	s = f.review(s)
-	s = f.action(s, "advance")
+	s = f.finish(s)
 	boundaryFixtureDocument(f.t, f.root, s.ID, "ImplementationPlan")
 	s = f.action(s, "begin")
 	c.Plan = "Separate workers"
 	c.Tests = []string{"go test"}
-	c.Units = []flow.Unit{{ID: "a", Bolt: "one", BaseCommit: head, Scope: []string{"a.go"}, Tests: []string{"go test"}}, {ID: "b", Bolt: "one", BaseCommit: head, Scope: []string{"b.go"}, Tests: []string{"go test"}}}
+	c.Units = []flow.Unit{{StepID: s.CurrentStepID, ID: "a", Bolt: "one", BaseCommit: head, Scope: []string{"a.go"}, Tests: []string{"go test"}}, {StepID: s.CurrentStepID, ID: "b", Bolt: "one", BaseCommit: head, Scope: []string{"b.go"}, Tests: []string{"go test"}}}
 	s = f.action(s, "configure", "--file", f.request(c))
 	s = f.review(s)
-	s = f.action(s, "advance")
+	s = f.finish(s)
+	for i := range c.Units {
+		c.Units[i].StepID = s.CurrentStepID
+	}
+	s = f.action(s, "configure", "--file", f.request(c))
 	return f.action(s, "begin")
 }
 func (f operationsFixture) unit(s flow.State, action string, r flow.UnitRequest) flow.State {
+	r.StepID = s.CurrentStepID
 	f.t.Helper()
 	return operationsState(f.t, f.ok("unit", action, s.ID, "--space", "default", "--expect", strconv.FormatUint(s.Revision, 10), "--file", f.request(r)))
 }
@@ -269,7 +278,7 @@ func TestOperationsGitHandoff(t *testing.T) {
 	g.bind(s, "new-session")
 	s = g.action(s, "resume", "--reason", "clone inspected")
 	before := g.bytes(s)
-	g.rejectCode(1, "aidlc/.runtime/flow/units", "unit", "confirm", s.ID, "--space", "default", "--expect", strconv.FormatUint(s.Revision, 10), "--file", g.request(flow.UnitRequest{Unit: "a", Session: "old-worker", Root: worker, RunID: "old", Commit: f.git("rev-parse", "HEAD")}))
+	g.rejectCode(1, "aidlc/.runtime/flow/units", "unit", "confirm", s.ID, "--space", "default", "--expect", strconv.FormatUint(s.Revision, 10), "--file", g.request(flow.UnitRequest{StepID: s.CurrentStepID, Unit: "a", Session: "old-worker", Root: worker, RunID: "old", Commit: f.git("rev-parse", "HEAD")}))
 	if !bytes.Equal(before, g.bytes(s)) || s.Config.Units[0].Status != "needs_confirmation" {
 		t.Fatal("old assignment accepted")
 	}
@@ -335,7 +344,7 @@ func TestOperationsUnitConflicts(t *testing.T) {
 	a, b := f.worktree(), f.worktree()
 	// A third Unit depends on A, while a fourth deliberately overlaps A's scope.
 	c := s.Config
-	c.Units = append(c.Units, flow.Unit{ID: "dependent", Bolt: "two", BaseCommit: c.CodeRevision, DependsOn: []string{"a"}, Scope: []string{"c.go"}, Tests: []string{"go test"}}, flow.Unit{ID: "overlap", Bolt: "one", BaseCommit: c.CodeRevision, Scope: []string{"a.go"}, Tests: []string{"go test"}})
+	c.Units = append(c.Units, flow.Unit{StepID: s.CurrentStepID, ID: "dependent", Bolt: "two", BaseCommit: c.CodeRevision, DependsOn: []string{"a"}, Scope: []string{"c.go"}, Tests: []string{"go test"}}, flow.Unit{StepID: s.CurrentStepID, ID: "overlap", Bolt: "one", BaseCommit: c.CodeRevision, Scope: []string{"a.go"}, Tests: []string{"go test"}})
 	s = f.action(s, "configure", "--file", f.request(c))
 	s = f.unit(s, "claim", flow.UnitRequest{Unit: "a", Session: "worker-a", Root: a})
 	for _, tc := range []struct{ name, unit, message string }{{"duplicate", "a", "Unit already assigned"}, {"scope", "overlap", "concurrent Unit scopes overlap"}, {"dependency", "dependent", "dependency not integrated"}} {
@@ -343,7 +352,7 @@ func TestOperationsUnitConflicts(t *testing.T) {
 			g := f
 			g.t = t
 			before := g.bytes(s)
-			g.reject(tc.message, "unit", "claim", s.ID, "--space", "default", "--expect", strconv.FormatUint(s.Revision, 10), "--file", g.request(flow.UnitRequest{Unit: tc.unit, Session: "worker-b", Root: b}))
+			g.reject(tc.message, "unit", "claim", s.ID, "--space", "default", "--expect", strconv.FormatUint(s.Revision, 10), "--file", g.request(flow.UnitRequest{StepID: s.CurrentStepID, Unit: tc.unit, Session: "worker-b", Root: b}))
 			if !bytes.Equal(before, g.bytes(s)) {
 				t.Fatal("rejected claim changed state")
 			}
@@ -404,8 +413,9 @@ func TestOperationsSaveRecovery(t *testing.T) {
 	}
 	restore()
 	s = f.show(s)
+	previousRevision := s.Revision
 	s = f.action(s, "pause", "--reason", "permission restored")
-	if s.Revision != 2 || s.Status != "paused" {
+	if s.Revision != previousRevision+1 || s.Status != "paused" {
 		t.Fatal("state retry failed")
 	}
 	body := filepath.Join(f.root, "body.md")
@@ -507,4 +517,26 @@ func TestOperationsGitConflict(t *testing.T) {
 	if resolved.ID != left.ID || resolved.Revision != left.Revision || resolved.Status != "paused" || resolved.Reason != "left decision" || !bytes.Equal(chosen, f.bytes(s)) || f.git("ls-files", "-u") != "" {
 		t.Fatal("explicit conflict resolution lost state")
 	}
+}
+
+// Synthetic answer provenance is explicitly test-only; live tests use real hooks.
+func (f operationsFixture) approve(s flow.State, plan bool) flow.State {
+	f.t.Helper()
+	a, action := s.Approval, "approval"
+	if plan {
+		a = s.ExecutionPlan.Draft.Approval
+		action = "plan-approval"
+	}
+	store := flow.Store{Root: f.root, Space: "default"}
+	if err := store.CaptureApproval(s.ID, "fixture", "", a.RequestID, "approve fixture target"); err != nil {
+		f.t.Fatal(err)
+	}
+	return f.action(s, action, "--file", f.request(flow.ApprovalDecision{RequestID: a.RequestID, Target: a.Target, Decision: "approve", Session: "fixture", Turn: a.RequestID, Quote: "approve"}))
+}
+func (f operationsFixture) finish(s flow.State) flow.State {
+	return f.action(f.approve(s, false), "finish")
+}
+func (f operationsFixture) selectPlan(s flow.State) flow.State {
+	r := flow.PlanRequest{Reason: "deterministic full journey", Steps: []flow.PlanStepInput{{ID: "s01", Stage: "initialization"}, {ID: "s02", Stage: "discovery"}, {Stage: "planning"}, {Stage: "tdd"}, {Stage: "integration"}}, Omitted: []flow.StageOmission{{Stage: "architecture-analysis", Reason: "fresh arithmetic fixture"}}}
+	return f.approve(f.action(s, "plan", "--file", f.request(r)), true)
 }

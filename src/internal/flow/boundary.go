@@ -19,11 +19,13 @@ type FileVersion struct {
 	SHA256 string `json:"sha256"`
 }
 type StageEntry struct {
+	StepID  string        `json:"step_id"`
 	Stage   string        `json:"stage"`
 	Inputs  []FileVersion `json:"inputs"`
 	Sources []FileVersion `json:"sources"`
 }
 type StageAcceptance struct {
+	StepID       string        `json:"step_id"`
 	Stage        string        `json:"stage"`
 	ReviewTarget string        `json:"review_target"`
 	Outputs      []FileVersion `json:"outputs"`
@@ -73,9 +75,10 @@ func (s Store) Begin(id string, expect uint64) (State, error) {
 	if gate.Status != "pass" {
 		return State{}, invalid("start Sensor failed: " + gate.Summary)
 	}
-	st.Entry = &StageEntry{Stage: st.Stage, Inputs: inputs, Sources: sources}
+	st.Entry = &StageEntry{StepID: st.CurrentStepID, Stage: st.Stage, Inputs: inputs, Sources: sources}
+	currentExecution(&st).Status = "active"
 	st.Revision++
-	if err = s.persist(st); err != nil {
+	if err = s.commit(&st); err != nil {
 		return State{}, err
 	}
 	return st, nil
@@ -88,6 +91,10 @@ func (s Store) CheckWork(id string) error {
 	return s.checkWorkState(st)
 }
 func (s Store) checkWorkState(st State) error {
+	if st.ExecutionPlan.Draft != nil || st.Approval != nil && st.Approval.Status == "pending" {
+		return invalid("human approval pending")
+	}
+
 	if err := s.guardWorkflow(st); err != nil {
 		return err
 	}
@@ -95,7 +102,7 @@ func (s Store) checkWorkState(st State) error {
 	if err != nil {
 		return err
 	}
-	if st.Status != "active" || st.Entry == nil || st.Entry.Stage != st.Stage {
+	if st.Status != "active" || st.Entry == nil || st.Entry.Stage != st.Stage || st.Entry.StepID != st.CurrentStepID {
 		return invalid("active Intent and intent begin required")
 	}
 	c := boundaryCollector{store: s}
@@ -128,8 +135,19 @@ func validateFileVersions(files []FileVersion) error {
 	return nil
 }
 func validateVersions(st State) error {
+	for _, gate := range []Gate{st.Sensor, st.Review} {
+		if gate.Status != "" && gate.StepID != st.CurrentStepID {
+			return invalid("gate execution mismatch")
+		}
+	}
+	for _, unit := range st.Config.Units {
+		if unit.StepID != st.CurrentStepID {
+			return invalid("Unit execution mismatch")
+		}
+	}
+
 	if st.Entry != nil {
-		if st.Entry.Stage != st.Stage {
+		if st.Entry.Stage != st.Stage || st.Entry.StepID != st.CurrentStepID {
 			return invalid("entry stage mismatch")
 		}
 		if err := validateFileVersions(st.Entry.Inputs); err != nil {
@@ -139,12 +157,9 @@ func validateVersions(st State) error {
 			return err
 		}
 	}
-	if len(st.Accepted) > 4 {
-		return invalid("too many accepted stages")
-	}
-	for stage, a := range st.Accepted {
-		if !supportedStage(stage) || stage != a.Stage || !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(a.ReviewTarget) {
-			return invalid("invalid stage acceptance")
+	for id, a := range st.Accepted {
+		if id != a.StepID || executionStage(st, id) != a.Stage || !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(a.ReviewTarget) {
+			return invalid("invalid execution acceptance")
 		}
 		if err := validateFileVersions(a.Outputs); err != nil {
 			return err

@@ -12,6 +12,7 @@ import (
 )
 
 type ReviewRequest struct {
+	StepID             string `json:"step_id"`
 	Action             string `json:"action"`
 	CoordinatorSession string `json:"coordinator_session"`
 	Session            string `json:"session"`
@@ -45,16 +46,19 @@ func (s Store) Review(id string, expect uint64, request ReviewRequest) (State, e
 		if !info.IsDir() {
 			return invalid("reviewer root is not directory")
 		}
-		expectedCode, err := reviewCode(s.Root)
-		if err != nil {
-			return err
-		}
-		actualCode, err := reviewCode(root)
-		if err != nil {
-			return err
-		}
-		if expectedCode != actualCode {
-			return invalid("reviewer checkout code version or bytes differ")
+		if st.Stage != "initialization" {
+			expectedCode, err := reviewCode(s.Root)
+			if err != nil {
+				return err
+			}
+			actualCode, err := reviewCode(root)
+			if err != nil {
+				return err
+			}
+			if expectedCode != actualCode {
+				return invalid("reviewer checkout code version or bytes differ")
+			}
+
 		}
 		gate, err := s.checkState(*st)
 		if err != nil {
@@ -69,6 +73,7 @@ func (s Store) Review(id string, expect uint64, request ReviewRequest) (State, e
 			if request.CoordinatorSession == "" || request.CoordinatorSession == request.Session {
 				return invalid("reviewer must be independent")
 			}
+			request.StepID = st.CurrentStepID
 			request.Target = gate.Target
 			request.Root = root
 			request.Status = ""
@@ -80,7 +85,7 @@ func (s Store) Review(id string, expect uint64, request ReviewRequest) (State, e
 			if err := filestore.WriteFile(s.Root, name, raw); err != nil {
 				return err
 			}
-			st.Review = Gate{Target: gate.Target, Status: "pending"}
+			st.Review = Gate{StepID: st.CurrentStepID, Target: gate.Target, Status: "pending"}
 		case "accept":
 			raw, err := filestore.ReadFile(s.Root, name)
 			if err != nil {
@@ -90,13 +95,21 @@ func (s Store) Review(id string, expect uint64, request ReviewRequest) (State, e
 			if err := json.Unmarshal(raw, &assignment); err != nil {
 				return err
 			}
-			if st.Review.Status != "pending" || assignment.Session != request.Session || assignment.Root != root || assignment.Target != request.Target || gate.Target != request.Target {
+			if assignment.StepID != st.CurrentStepID || st.Review.StepID != st.CurrentStepID || st.Review.Status != "pending" || assignment.Session != request.Session || assignment.Root != root || assignment.Target != request.Target || gate.Target != request.Target {
 				return invalid("unassigned or stale review")
 			}
 			if request.Status != "pass" && request.Status != "fail" || strings.TrimSpace(request.Summary) == "" {
 				return invalid("review pass/fail and summary required")
 			}
-			st.Review = Gate{Target: gate.Target, Status: request.Status, Summary: request.Summary}
+			st.Review = Gate{StepID: st.CurrentStepID, Target: gate.Target, Status: request.Status, Summary: request.Summary}
+			if request.Status == "pass" {
+				revision, hash := evidencePlan(*st)
+				st.Approval, err = newApproval(*st, gate.Target, revision, hash)
+				if err != nil {
+					return err
+				}
+				currentExecution(st).Status = "awaiting_approval"
+			}
 		default:
 			return invalid("unknown review action")
 		}
@@ -129,7 +142,7 @@ func (s Store) changeReassignment(id string, expect uint64, request *UnitRequest
 		return State{}, err
 	}
 	st.Revision++
-	if err := s.persist(st); err != nil {
+	if err := s.commit(&st); err != nil {
 		return State{}, err
 	}
 	return st, nil

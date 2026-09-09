@@ -28,6 +28,11 @@ func TestFlowInstallAssets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	common, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/WORKFLOW.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = append(raw, common...)
 	raw = append(raw, procedure...)
 	for _, word := range []string{"discovery", "planning", "tdd", "integration", "intent review", "unit claim"} {
 		if !strings.Contains(string(raw), word) {
@@ -54,6 +59,11 @@ func TestFlowInstallJapaneseProcedure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	common, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/WORKFLOW.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	procedure = append(procedure, common...)
 	for _, word := range []string{"実装計画", "独立レビュー", "intent review", "unit claim", "memory update"} {
 		if !strings.Contains(string(procedure), word) {
 			t.Errorf("missing %s", word)

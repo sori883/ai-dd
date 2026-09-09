@@ -16,8 +16,12 @@ func boundaryFixture(t *testing.T) (Store, State) {
 	s := flowStore(t)
 	flowGit(t, s.Root, "init", "-q")
 	flowGit(t, s.Root, "commit", "--allow-empty", "-qm", "base")
-	st, err := s.Create("Boundary")
+	st, err := createExecutionFixture(t, s, "Boundary")
 	if err != nil {
+		t.Fatal(err)
+	}
+	fixtureExecutionStage(t, s, &st, "discovery")
+	if err = s.persist(st); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := core.Files.ReadFile("knowledge/rules/rule.md")
@@ -83,7 +87,7 @@ func TestStartSensorInitialAndReadOnly(t *testing.T) {
 func TestStartSensorAcceptedInputs(t *testing.T) {
 	s, st := boundaryFixture(t)
 	name := boundaryDoc(t, s, st, "Requirements")
-	st.Stage = "planning"
+	fixtureExecutionStage(t, s, &st, "planning")
 	if err := s.persist(st); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +95,7 @@ func TestStartSensorAcceptedInputs(t *testing.T) {
 	if err != nil || g.Status != "fail" {
 		t.Fatalf("unaccepted requirements: %+v %v", g, err)
 	}
-	st.Accepted = map[string]StageAcceptance{"discovery": {Stage: "discovery", ReviewTarget: strings.Repeat("a", 64), Outputs: []FileVersion{boundaryVersion(t, s, name)}}}
+	st.Accepted = map[string]StageAcceptance{"s02": {StepID: "s02", Stage: "discovery", ReviewTarget: strings.Repeat("a", 64), Outputs: []FileVersion{boundaryVersion(t, s, name)}}}
 	if err = s.persist(st); err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +113,7 @@ func TestStartSensorAcceptedInputs(t *testing.T) {
 func TestEndSensorDocuments(t *testing.T) {
 	s, st := boundaryFixture(t)
 	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: flowGit(t, s.Root, "rev-parse", "HEAD")}
-	st.Entry = &StageEntry{Stage: "discovery"}
+	st.Entry = &StageEntry{StepID: "s02", Stage: "discovery"}
 	if err := s.persist(st); err != nil {
 		t.Fatal(err)
 	}
@@ -137,15 +141,15 @@ func TestEndSensorDocuments(t *testing.T) {
 func TestEndSensorMaterials(t *testing.T) {
 	s, st := boundaryFixture(t)
 	boundaryDoc(t, s, st, "Requirements")
-	st.Entry = &StageEntry{Stage: "discovery"}
+	st.Entry = &StageEntry{StepID: "s02", Stage: "discovery"}
 	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, MaterialSources: []string{"inputs"}, ADR: ADR{Reason: "none"}, CodeRevision: flowGit(t, s.Root, "rev-parse", "HEAD")}
 	boundaryFile(t, s, "inputs/source.txt", "source")
 	if err := s.persist(st); err != nil {
 		t.Fatal(err)
 	}
 	g, err := s.Check(st.ID)
-	if err != nil || g.Status != "fail" {
-		t.Fatalf("missing analysis: %+v %v", g, err)
+	if err != nil || g.Status != "pass" {
+		t.Fatalf("unselected analysis required: %+v %v", g, err)
 	}
 	boundaryDoc(t, s, st, "CurrentAnalysis")
 	boundaryDoc(t, s, st, "Architecture")
@@ -170,15 +174,15 @@ func TestEndSensorResults(t *testing.T) {
 	req := boundaryDoc(t, s, st, "Requirements")
 	plan := boundaryDoc(t, s, st, "ImplementationPlan")
 	head := flowGit(t, s.Root, "rev-parse", "HEAD")
-	st.Stage = "tdd"
-	st.Entry = &StageEntry{Stage: "tdd"}
-	st.Accepted = map[string]StageAcceptance{"discovery": {Stage: "discovery", ReviewTarget: strings.Repeat("a", 64), Outputs: []FileVersion{boundaryVersion(t, s, req)}}, "planning": {Stage: "planning", ReviewTarget: strings.Repeat("b", 64), Outputs: []FileVersion{boundaryVersion(t, s, plan)}}}
+	fixtureExecutionStage(t, s, &st, "tdd")
+	st.Entry = &StageEntry{StepID: "s04", Stage: "tdd"}
+	st.Accepted = map[string]StageAcceptance{"s02": {StepID: "s02", Stage: "discovery", ReviewTarget: strings.Repeat("a", 64), Outputs: []FileVersion{boundaryVersion(t, s, req)}}, "s03": {StepID: "s03", Stage: "planning", ReviewTarget: strings.Repeat("b", 64), Outputs: []FileVersion{boundaryVersion(t, s, plan)}}}
 	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: head, DirectCommit: head, Plan: "Implement", Tests: []string{"go test ./target"}, TestResults: []string{"aidlc/evidence/results.json"}}
 	boundaryFile(t, s, "aidlc/evidence/output.txt", "ok target")
 	if err := s.persist(st); err != nil {
 		t.Fatal(err)
 	}
-	good := fmt.Sprintf(`{"stage":"tdd","runs":[{"command":"go test ./target","commit":%q,"exit_code":0,"output_path":"aidlc/evidence/output.txt"}]}`, head)
+	good := fmt.Sprintf(`{"step_id":"s04","stage":"tdd","runs":[{"command":"go test ./target","commit":%q,"exit_code":0,"output_path":"aidlc/evidence/output.txt"}]}`, head)
 	for _, raw := range []string{good, strings.Replace(good, `"exit_code":0,`, "", 1), strings.Replace(good, `"exit_code":0`, `"exit_code":1`, 1), strings.Replace(good, head, strings.Repeat("a", 40), 1), strings.Replace(good, "go test ./target", "echo no test", 1), strings.Replace(good, `"stage":"tdd"`, `"stage":"tdd","extra":1`, 1)} {
 		boundaryFile(t, s, "aidlc/evidence/results.json", raw)
 		g, err := s.Check(st.ID)
@@ -229,15 +233,16 @@ func prepareBoundaryStage(t *testing.T, s Store, st *State) {
 	t.Helper()
 	req := boundaryDoc(t, s, *st, "Requirements")
 	plan := boundaryDoc(t, s, *st, "ImplementationPlan")
-	st.Entry = &StageEntry{Stage: st.Stage}
+	fixtureExecutionStage(t, s, st, st.Stage)
+	st.Entry = &StageEntry{StepID: st.CurrentStepID, Stage: st.Stage}
 	if st.Accepted == nil {
 		st.Accepted = map[string]StageAcceptance{}
 	}
 	if st.Stage != "discovery" {
-		st.Accepted["discovery"] = StageAcceptance{Stage: "discovery", ReviewTarget: strings.Repeat("a", 64), Outputs: []FileVersion{boundaryVersion(t, s, req)}}
+		st.Accepted["s02"] = StageAcceptance{StepID: "s02", Stage: "discovery", ReviewTarget: strings.Repeat("a", 64), Outputs: []FileVersion{boundaryVersion(t, s, req)}}
 	}
 	if st.Stage == "tdd" || st.Stage == "integration" {
-		st.Accepted["planning"] = StageAcceptance{Stage: "planning", ReviewTarget: strings.Repeat("b", 64), Outputs: []FileVersion{boundaryVersion(t, s, plan)}}
+		st.Accepted["s03"] = StageAcceptance{StepID: "s03", Stage: "planning", ReviewTarget: strings.Repeat("b", 64), Outputs: []FileVersion{boundaryVersion(t, s, plan)}}
 	}
 	if err := s.persist(*st); err != nil {
 		t.Fatal(err)
@@ -254,7 +259,7 @@ func prepareBoundaryResults(t *testing.T, s Store, st *State) {
 	for _, command := range st.Config.Tests {
 		runs = append(runs, resultRun{Command: command, Commit: head, ExitCode: &zero, OutputPath: output})
 	}
-	raw, err := json.Marshal(resultDocument{Stage: st.Stage, Runs: runs})
+	raw, err := json.Marshal(resultDocument{StepID: st.CurrentStepID, Stage: st.Stage, Runs: runs})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,9 +270,9 @@ func prepareBoundaryResults(t *testing.T, s Store, st *State) {
 func TestEndSensorIntegrationDocuments(t *testing.T) {
 	s, st := boundaryFixture(t)
 	prepareBoundaryStage(t, s, &st)
-	st.Stage = "integration"
+	fixtureExecutionStage(t, s, &st, "integration")
 	prepareBoundaryStage(t, s, &st)
-	st.Accepted["tdd"] = StageAcceptance{Stage: "tdd", ReviewTarget: strings.Repeat("c", 64)}
+	st.Accepted["s04"] = StageAcceptance{StepID: "s04", Stage: "tdd", ReviewTarget: strings.Repeat("c", 64)}
 	head := flowGit(t, s.Root, "rev-parse", "HEAD")
 	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: head, DirectCommit: head, Plan: "Implement", Tests: []string{"go test"}}
 	prepareBoundaryResults(t, s, &st)
@@ -275,8 +280,8 @@ func TestEndSensorIntegrationDocuments(t *testing.T) {
 		t.Fatal(err)
 	}
 	g, err := s.Check(st.ID)
-	if err != nil || g.Status != "fail" {
-		t.Fatalf("missing integration docs: %+v %v", g, err)
+	if err != nil || g.Status != "pass" {
+		t.Fatalf("undeclared integration docs required: %+v %v", g, err)
 	}
 	analysis := boundaryDoc(t, s, st, "CurrentAnalysis")
 	diagram := boundaryDoc(t, s, st, "Architecture")
@@ -309,13 +314,13 @@ func TestEndSensorUnitCommandCommitPair(t *testing.T) {
 	a := flowGit(t, s.Root, "rev-parse", "HEAD")
 	flowGit(t, s.Root, "commit", "--allow-empty", "-qm", "second result")
 	b := flowGit(t, s.Root, "rev-parse", "HEAD")
-	st.Stage = "tdd"
+	fixtureExecutionStage(t, s, &st, "tdd")
 	st.Config.CodeRevision = b
 	st.Config.Tests = []string{"direct-only command"}
 	st.Config.Units = []Unit{{ID: "a", Tests: []string{"test a"}, ResultCommit: a, IntegratedCommit: b}, {ID: "b", Tests: []string{"test b"}, ResultCommit: b, IntegratedCommit: b}}
 	st.Config.TestResults = []string{"aidlc/evidence/results.json"}
 	boundaryFile(t, s, "aidlc/evidence/output", "ok")
-	raw := fmt.Sprintf(`{"stage":"tdd","runs":[{"command":"test a","commit":%q,"exit_code":0,"output_path":"aidlc/evidence/output"},{"command":"test b","commit":%q,"exit_code":0,"output_path":"aidlc/evidence/output"}]}`, a, a)
+	raw := fmt.Sprintf(`{"step_id":"s04","stage":"tdd","runs":[{"command":"test a","commit":%q,"exit_code":0,"output_path":"aidlc/evidence/output"},{"command":"test b","commit":%q,"exit_code":0,"output_path":"aidlc/evidence/output"}]}`, a, a)
 	boundaryFile(t, s, st.Config.TestResults[0], raw)
 	c := boundaryCollector{store: s}
 	c.results(st)

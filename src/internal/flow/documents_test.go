@@ -12,15 +12,15 @@ import (
 
 func declaredDoc(stage, name, kind string) DocumentDeclaration {
 	title, description := "Document", "Purpose"
-	return DocumentDeclaration{Stage: stage, Path: "aidlc/spaces/default/knowledge/" + name + ".md", Metadata: okfmemory.DocumentMatch{Type: kind, Title: &title, Description: &description}}
+	return DocumentDeclaration{StepID: fixtureStepID(stage), Stage: stage, Path: "aidlc/spaces/default/knowledge/" + name + ".md", Metadata: okfmemory.DocumentMatch{Type: kind, Title: &title, Description: &description}}
 }
 func TestIntentDocumentsRegistration(t *testing.T) {
 	s := flowStore(t)
-	st, err := s.Create("Documents")
+	st, err := createExecutionFixture(t, s, "Documents")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.SchemaVersion != 4 {
+	if st.SchemaVersion != 5 {
 		t.Errorf("schema=%d want4", st.SchemaVersion)
 	}
 	docs := IntentDocuments{Inputs: []DocumentDeclaration{}, Outputs: []DocumentDeclaration{declaredDoc("integration", "knowledge/orders", "Knowledge"), declaredDoc("discovery", "adr/storage", "adr")}}
@@ -36,18 +36,18 @@ func TestIntentDocumentsRegistration(t *testing.T) {
 	}
 	saved := got
 	saved.Config.Objective = "ordinary configure"
-	saved, err = s.Save(saved, saved.Revision)
+	saved, err = saveExecutionFixture(t, s, saved, saved.Revision)
 	if err != nil || len(saved.Config.DocumentOutputs) != 2 {
 		t.Fatal("configure lost documents")
 	}
 	saved.Config.DocumentOutputs = nil
-	if _, err = s.Save(saved, saved.Revision); err == nil {
+	if _, err = saveExecutionFixture(t, s, saved, saved.Revision); err == nil {
 		t.Fatal("generic Save replaced declaration")
 	}
 }
 func TestIntentDocumentsFailureAndMetadata(t *testing.T) {
 	s := flowStore(t)
-	st, err := s.Create("Documents")
+	st, err := createExecutionFixture(t, s, "Documents")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,13 +84,13 @@ func TestIntentDocumentsFailureAndMetadata(t *testing.T) {
 
 func TestIntentDocumentsEntryAndAccepted(t *testing.T) {
 	s := flowStore(t)
-	st, err := s.Create("Documents")
+	st, err := createExecutionFixture(t, s, "Documents")
 	if err != nil {
 		t.Fatal(err)
 	}
-	st.Entry = &StageEntry{Stage: "discovery"}
-	st.Sensor = Gate{Status: "pass"}
-	st.Review = Gate{Status: "pass"}
+	st.Entry = &StageEntry{StepID: "s02", Stage: "discovery"}
+	st.Sensor = Gate{StepID: st.CurrentStepID, Status: "pass"}
+	st.Review = Gate{StepID: st.CurrentStepID, Status: "pass"}
 	if err = s.persist(st); err != nil {
 		t.Fatal(err)
 	}
@@ -110,8 +110,8 @@ func TestIntentDocumentsEntryAndAccepted(t *testing.T) {
 	if st.Entry != nil {
 		t.Fatal("changed start input kept entry")
 	}
-	st.Stage = "planning"
-	st.Accepted = map[string]StageAcceptance{"discovery": {Stage: "discovery", ReviewTarget: strings.Repeat("a", 64)}}
+	fixtureExecutionStage(t, s, &st, "planning")
+	st.Accepted = map[string]StageAcceptance{"s02": {StepID: "s02", Stage: "discovery", ReviewTarget: strings.Repeat("a", 64)}}
 	if err = s.persist(st); err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestIntentDocumentsEntryAndAccepted(t *testing.T) {
 }
 func TestIntentDocumentsNewADRBindingPersists(t *testing.T) {
 	s := flowStore(t)
-	st, err := s.Create("Documents")
+	st, err := createExecutionFixture(t, s, "Documents")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestIntentDocumentsLegacyFieldsRejected(t *testing.T) {
 	for _, field := range []string{"feature_knowledge", "refs"} {
 		t.Run(field, func(t *testing.T) {
 			s := flowStore(t)
-			st, err := s.Create("Documents")
+			st, err := createExecutionFixture(t, s, "Documents")
 			if err != nil {
 				t.Fatal(err)
 			}

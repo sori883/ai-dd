@@ -1,6 +1,7 @@
 package flow
 
 import (
+	"encoding/json"
 	"github.com/sori883/ai-dd/src/internal/okfmemory"
 	"github.com/sori883/ai-dd/src/internal/workflow"
 	"path"
@@ -68,13 +69,17 @@ func (c *boundaryCollector) references(st State, refs []workflow.Reference) []Fi
 	prefix := "aidlc/spaces/" + c.store.Space + "/knowledge/"
 	var visit func(workflow.Reference)
 	visit = func(ref workflow.Reference) {
+		if ref.Version == "accepted" && precedingStep(st, ref.AcceptedAt) == "" {
+			return
+		}
+
 		if ref.Declared != "" {
 			declarations := st.Config.DocumentInputs
 			if c.outputs {
 				declarations = st.Config.DocumentOutputs
 			}
 			for _, doc := range declarations {
-				if doc.Stage == st.Stage {
+				if doc.StepID == st.CurrentStepID && doc.Stage == st.Stage {
 					metadata := doc.Metadata
 					visit(workflow.Reference{Path: doc.Path, Metadata: &metadata})
 				}
@@ -124,14 +129,14 @@ func (c *boundaryCollector) references(st State, refs []workflow.Reference) []Fi
 func (c *boundaryCollector) workInputs(st State, refs []workflow.Reference) {
 	current := c.references(st, refs)
 	current = append(current, c.requiredInputs(st)...)
-	if st.Entry == nil || st.Entry.Stage != st.Stage {
+	if st.Entry == nil || st.Entry.Stage != st.Stage || st.Entry.StepID != st.CurrentStepID {
 		c.require(false, "intent begin required")
 		return
 	}
 	for _, old := range st.Entry.Inputs {
-		if st.Stage == "integration" {
+		if st.Stage == "integration" && precedingStep(st, "tdd") != "" {
 			proof := false
-			for _, f := range st.Accepted["tdd"].Outputs {
+			for _, f := range st.Accepted[precedingStep(st, "tdd")].Outputs {
 				if f.Path == old.Path {
 					proof = true
 				}
@@ -150,7 +155,7 @@ func (c *boundaryCollector) workInputs(st State, refs []workflow.Reference) {
 					mutable = doc.String("type") == "CurrentAnalysis" || doc.String("type") == "Architecture"
 				}
 				for _, output := range st.Config.DocumentOutputs {
-					if output.Stage == st.Stage && output.Path == now.Path {
+					if output.StepID == st.CurrentStepID && output.Stage == st.Stage && output.Path == now.Path {
 						mutable = true
 					}
 				}
@@ -159,8 +164,8 @@ func (c *boundaryCollector) workInputs(st State, refs []workflow.Reference) {
 		}
 		c.require(found, "entry input disappeared or changed selection: "+old.Path)
 	}
-	if st.Stage == "integration" {
-		a, ok := st.Accepted["tdd"]
+	if st.Stage == "integration" && precedingStep(st, "tdd") != "" {
+		a, ok := st.Accepted[precedingStep(st, "tdd")]
 		c.require(ok, "accepted tdd required")
 		for _, f := range a.Outputs {
 			c.accepted(st, "tdd", f.Path)
@@ -176,6 +181,8 @@ type ResolvedReference struct {
 
 // ProcedureView is a read-only view of the bound current procedure.
 type ProcedureView struct {
+	StepID         string                `json:"step_id"`
+	PlanRevision   uint64                `json:"plan_revision"`
 	Inputs         []ResolvedReference   `json:"inputs"`
 	Outputs        []DocumentDeclaration `json:"outputs"`
 	Diagnostics    []string              `json:"diagnostics"`
@@ -195,12 +202,23 @@ func (s Store) Procedure(id string) (ProcedureView, error) {
 	if err != nil {
 		return ProcedureView{}, err
 	}
-	view := ProcedureView{Stage: st.Stage, DefinitionHash: d.Hash, Procedure: d.Procedures[st.Stage], Advance: d.Next(st.Stage), Reopen: []string{}}
-	for _, stage := range d.Graph.Stages {
-		if d.CanReopen(st.Stage, stage.ID) {
-			view.Reopen = append(view.Reopen, stage.ID)
+	view := ProcedureView{StepID: st.CurrentStepID, PlanRevision: st.ExecutionPlan.Revision, Stage: st.Stage, DefinitionHash: d.Hash, Procedure: d.Procedures[st.Stage], Reopen: []string{}}
+	steps := executionSteps(st)
+	for i, step := range steps {
+		if step.Status == "completed" {
+			view.Reopen = append(view.Reopen, step.ID)
+		}
+		if step.ID == st.CurrentStepID && i+1 < len(steps) {
+			view.Advance = steps[i+1].ID
 		}
 	}
+	filtered := []workflow.Reference{}
+	for _, ref := range view.Procedure.Inputs {
+		if ref.Version != "accepted" || precedingStep(st, ref.AcceptedAt) != "" {
+			filtered = append(filtered, ref)
+		}
+	}
+	view.Procedure.Inputs = filtered
 	c := boundaryCollector{store: s}
 	view.Inputs = []ResolvedReference{}
 	view.Outputs = []DocumentDeclaration{}
@@ -214,14 +232,14 @@ func (s Store) Procedure(id string) (ProcedureView, error) {
 	for _, ref := range view.Procedure.Outputs {
 		if ref.Declared != "" {
 			for _, doc := range st.Config.DocumentOutputs {
-				if doc.Stage == st.Stage {
+				if doc.StepID == st.CurrentStepID && doc.Stage == st.Stage {
 					view.Outputs = append(view.Outputs, doc)
 				}
 			}
 			continue
 		}
 		if ref.Metadata != nil {
-			view.Outputs = append(view.Outputs, DocumentDeclaration{Stage: st.Stage, Path: strings.ReplaceAll(strings.ReplaceAll(ref.Path, "${knowledge_root}", prefix), "${intent_id}", st.ID), Metadata: expandedMatch(st, *ref.Metadata)})
+			view.Outputs = append(view.Outputs, DocumentDeclaration{StepID: st.CurrentStepID, Stage: st.Stage, Path: strings.ReplaceAll(strings.ReplaceAll(ref.Path, "${knowledge_root}", prefix), "${intent_id}", st.ID), Metadata: expandedMatch(st, *ref.Metadata)})
 		}
 	}
 	view.Diagnostics = append(view.Diagnostics, c.failures...)
@@ -232,12 +250,26 @@ func (s Store) Procedure(id string) (ProcedureView, error) {
 // additional declarations, while sharing the same selector and byte collector.
 func (c *boundaryCollector) requiredInputs(st State) []FileVersion {
 	refs := []workflow.Reference{{Path: c.store.documentPath(st, "Rule"), Metadata: &okfmemory.DocumentMatch{Type: "Rule"}}}
-	if st.Stage != "discovery" {
+	if st.Stage != "discovery" && st.Stage != "initialization" {
 		id := st.ID
 		refs = append(refs, workflow.Reference{Match: &okfmemory.DocumentMatch{Type: "Requirements", IntentID: &id}, Count: "one", Version: "accepted", AcceptedAt: "discovery"})
 		if st.Stage == "tdd" || st.Stage == "integration" {
 			refs = append(refs, workflow.Reference{Match: &okfmemory.DocumentMatch{Type: "ImplementationPlan", IntentID: &id}, Count: "one", Version: "accepted", AcceptedAt: "planning"})
 		}
 	}
-	return c.references(st, refs)
+	files := c.references(st, refs)
+	if st.Stage == "initialization" {
+		for _, name := range []string{".codex/hooks.json", ".agents/skills/aidlc/SKILL.md"} {
+			raw, ok := c.file(name)
+			if !ok {
+				continue
+			}
+			c.require(strings.TrimSpace(string(raw)) != "", "empty initialization input: "+name)
+			if strings.HasSuffix(name, ".json") {
+				c.require(json.Valid(raw), "invalid CLI hook configuration")
+			}
+		}
+		files = append([]FileVersion{}, c.files...)
+	}
+	return files
 }

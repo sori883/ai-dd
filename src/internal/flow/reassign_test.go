@@ -17,11 +17,11 @@ func reassignFixture(t *testing.T) (Store, State, UnitRequest) {
 	st.Config.Units[0].Status = "needs_confirmation"
 	st.Config.Units[1].Status = "needs_confirmation"
 	var err error
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return s, st, UnitRequest{Action: "reassign", Unit: "a", Session: "new-worker", Root: worker, Commit: st.Config.CodeRevision, Reason: "old worker stopped", PreviousRunStopped: true}
+	return s, st, UnitRequest{StepID: "s04", Action: "reassign", Unit: "a", Session: "new-worker", Root: worker, Commit: st.Config.CodeRevision, Reason: "old worker stopped", PreviousRunStopped: true}
 }
 func TestFlowUnitReassignStoppedAndIdentity(t *testing.T) {
 	s, st, r := reassignFixture(t)
@@ -55,11 +55,11 @@ func TestFlowUnitReassignStoppedAndIdentity(t *testing.T) {
 		t.Fatal("old run accepted")
 	}
 	// A later explicit pause/resume must allow a fresh reassignment after a successful one.
-	next, err = s.Transition(st.ID, next.Revision, TransitionRequest{Action: "pause", Reason: "later stop"})
+	next, err = transitionExecutionFixture(t, s, st.ID, next.Revision, TransitionRequest{Action: "pause", Reason: "later stop"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	next, err = s.Transition(st.ID, next.Revision, TransitionRequest{Action: "resume", Reason: "later handoff"})
+	next, err = transitionExecutionFixture(t, s, st.ID, next.Revision, TransitionRequest{Action: "resume", Reason: "later handoff"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestFlowUnitReassignMissingRuntimeScope(t *testing.T) {
 	s, st, r := reassignFixture(t)
 	st.Config.Units[1].Scope = []string{"a.txt"}
 	var err error
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestFlowUnitReassignOtherAssignments(t *testing.T) {
 			s, st, r := reassignFixture(t)
 			st.Config.Units[1].Status = tc.otherStatus
 			var err error
-			st, err = s.Save(st, st.Revision)
+			st, err = saveExecutionFixture(t, s, st, st.Revision)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -168,7 +168,7 @@ func TestFlowUnitReassignScopeAndDependency(t *testing.T) {
 			if name == "dependency" {
 				st.Config.Units[0].DependsOn = []string{"b"}
 				var err error
-				st, err = s.Save(st, st.Revision)
+				st, err = saveExecutionFixture(t, s, st, st.Revision)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -203,11 +203,11 @@ func TestFlowUnitReassignReplacesOldRunWithoutOldAccess(t *testing.T) {
 	s, st, r := reassignFixture(t)
 	st.Config.Units[0].ResultCommit = st.Config.CodeRevision
 	var err error
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := UnitRequest{Action: "claim", Unit: "a", Session: "stopped", Root: "/missing/old/worker", RunID: "old-run"}
+	old := UnitRequest{StepID: "s04", Action: "claim", Unit: "a", Session: "stopped", Root: "/missing/old/worker", RunID: "old-run"}
 	raw, _ := json.Marshal(old)
 	p := filepath.Join(s.Root, s.assignmentPath(st.ID, "a"))
 	if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
@@ -241,7 +241,7 @@ func TestFlowUnitReassignPendingBlocksStateUpdates(t *testing.T) {
 			s.write = nil
 			switch operation {
 			case "configure":
-				_, err = s.Save(st, st.Revision)
+				_, err = saveExecutionFixture(t, s, st, st.Revision)
 			case "other_unit":
 				worker := filepath.Join(t.TempDir(), "worker-b")
 				flowGit(t, s.Root, "worktree", "add", "--detach", worker, st.Config.CodeRevision)
@@ -251,7 +251,7 @@ func TestFlowUnitReassignPendingBlocksStateUpdates(t *testing.T) {
 				other.Root = worker
 				_, err = s.Unit(st.ID, st.Revision, other)
 			case "pause":
-				_, err = s.Transition(st.ID, st.Revision, TransitionRequest{Action: "pause", Reason: "unrelated update"})
+				_, err = transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "pause", Reason: "unrelated update"})
 			}
 			if err == nil || !strings.Contains(err.Error(), "incomplete reassignment") {
 				t.Fatalf("pending request did not block %s: %v", operation, err)
@@ -270,11 +270,11 @@ func TestFlowUnitReassignPendingBlocksStateUpdates(t *testing.T) {
 			if recovered.RunID != original.RunID {
 				t.Fatal("recovery issued another run")
 			}
-			next, err = s.Transition(st.ID, next.Revision, TransitionRequest{Action: "pause", Reason: "later stop"})
+			next, err = transitionExecutionFixture(t, s, st.ID, next.Revision, TransitionRequest{Action: "pause", Reason: "later stop"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			next, err = s.Transition(st.ID, next.Revision, TransitionRequest{Action: "resume", Reason: "later handoff"})
+			next, err = transitionExecutionFixture(t, s, st.ID, next.Revision, TransitionRequest{Action: "resume", Reason: "later handoff"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -306,7 +306,7 @@ func TestFlowUnitReassignLiteralPaths(t *testing.T) {
 					s, st, r := reassignFixture(t)
 					st.Config.Units[0].Scope = []string{tc.path}
 					var err error
-					st, err = s.Save(st, st.Revision)
+					st, err = saveExecutionFixture(t, s, st, st.Revision)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -334,7 +334,7 @@ func TestFlowUnitReassignLiteralPaths(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					result := UnitRequest{Action: "result", Unit: "a", Root: r.Root, Session: r.Session, RunID: assignment.RunID, Commit: flowGit(t, r.Root, "rev-parse", "HEAD")}
+					result := UnitRequest{StepID: "s04", Action: "result", Unit: "a", Root: r.Root, Session: r.Session, RunID: assignment.RunID, Commit: flowGit(t, r.Root, "rev-parse", "HEAD")}
 					if _, err := s.Unit(st.ID, next.Revision, result); err != nil {
 						t.Fatalf("literal result rejected: %v", err)
 					}
@@ -348,11 +348,11 @@ func TestFlowUnitResultLiteralPaths(t *testing.T) {
 	name := "src/日本\n file.go"
 	st.Config.Units[0].Scope = []string{name}
 	var err error
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err = s.Unit(st.ID, st.Revision, UnitRequest{Action: "claim", Unit: "a", Session: "a", Root: worker})
+	st, err = s.Unit(st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "claim", Unit: "a", Session: "a", Root: worker})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +366,7 @@ func TestFlowUnitResultLiteralPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Unit(st.ID, st.Revision, UnitRequest{Action: "result", Unit: "a", Root: worker, Session: "a", RunID: assignment.RunID, Commit: flowGit(t, worker, "rev-parse", "HEAD")}); err != nil {
+	if _, err := s.Unit(st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "result", Unit: "a", Root: worker, Session: "a", RunID: assignment.RunID, Commit: flowGit(t, worker, "rev-parse", "HEAD")}); err != nil {
 		t.Fatal(err)
 	}
 }

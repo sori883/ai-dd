@@ -52,15 +52,26 @@ func (s Store) checkStateSnapshot(st State) (Gate, *boundaryCollector, error) {
 	if err := s.guardWorkflow(st); err != nil {
 		return Gate{}, nil, err
 	}
+	if st.Stage == "initialization" {
+		c := s.endDocuments(st)
+		gate := c.gate(st.CurrentStepID)
+		gate.StepID = st.CurrentStepID
+		return gate, c, nil
+	}
 	config := st.Config
 	config.Units = append([]Unit(nil), st.Config.Units...)
 	for i := range config.Units {
 		config.Units[i].Status = ""
 	}
+	revision, planHash := evidencePlan(st)
 	raw, err := json.Marshal(struct {
-		Stage  string
-		Config Config
-	}{st.Stage, config})
+		Stage          string
+		StepID         string
+		PlanRevision   uint64
+		PlanHash       string
+		DefinitionHash string
+		Config         Config
+	}{st.Stage, st.CurrentStepID, revision, planHash, st.DefinitionHash, config})
 	if err != nil {
 		return Gate{}, nil, err
 	}
@@ -103,14 +114,19 @@ func (s Store) checkStateSnapshot(st State) (Gate, *boundaryCollector, error) {
 	}
 	c := &boundaryCollector{store: s}
 
-	stages := map[string]int{"discovery": 0, "planning": 1, "tdd": 2, "integration": 3}
+	stages := map[string]int{}
+	for i, step := range executionSteps(st) {
+		if _, exists := stages[step.Stage]; !exists {
+			stages[step.Stage] = i
+		}
+	}
 	for _, artifact := range config.Artifacts {
 		if !fs.ValidPath(artifact.Path) || strings.Contains(artifact.Path, "\\") {
 			require(false, "invalid artifact path")
 			continue
 		}
-		artifactStage, knownStage := stages[artifact.Stage]
-		if !knownStage {
+		artifactStage, selectedStage := stages[artifact.Stage]
+		if !supportedStage(artifact.Stage) {
 			require(false, "unknown artifact stage")
 			continue
 		}
@@ -122,7 +138,7 @@ func (s Store) checkStateSnapshot(st State) (Gate, *boundaryCollector, error) {
 			require(false, "state/runtime cannot be a review artifact")
 			continue
 		}
-		if artifactStage > stages[st.Stage] {
+		if !selectedStage || artifactStage > stages[st.Stage] {
 			continue
 		}
 
@@ -155,8 +171,10 @@ func (s Store) checkStateSnapshot(st State) (Gate, *boundaryCollector, error) {
 	if !config.ADR.Required {
 		require(strings.TrimSpace(config.ADR.Reason) != "", "reason for no ADR required")
 	}
-	if st.Stage != "discovery" {
+	if st.Stage == "planning" || precedingStep(st, "planning") != "" {
 		require(strings.TrimSpace(config.Plan) != "", "implementation plan required")
+	}
+	if st.Stage == "planning" || st.Stage == "tdd" || st.Stage == "integration" {
 		if len(config.Units) == 0 {
 			require(len(config.Tests) > 0, "direct implementation verification required")
 		}
@@ -187,7 +205,7 @@ func (s Store) checkStateSnapshot(st State) (Gate, *boundaryCollector, error) {
 		return Gate{}, nil, err
 	}
 	h.Write(extra)
-	gate := Gate{Target: fmt.Sprintf("%x", h.Sum(nil)), Status: "pass", Summary: "requirements satisfied"}
+	gate := Gate{StepID: st.CurrentStepID, Target: fmt.Sprintf("%x", h.Sum(nil)), Status: "pass", Summary: "requirements satisfied"}
 	if len(failures) > 0 {
 		gate.Status = "fail"
 		gate.Summary = strings.Join(failures, "; ")

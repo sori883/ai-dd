@@ -33,8 +33,11 @@ func (s Store) collectEndDocuments(st State, c *boundaryCollector) *boundaryColl
 		c.recordProof(version)
 	}
 	c.outputs = false
+	if st.Stage == "initialization" {
+		return c
+	}
 	kinds := []string{"Requirements"}
-	if st.Stage != "discovery" {
+	if st.Stage == "planning" || precedingStep(st, "planning") != "" {
 		kinds = append(kinds, "ImplementationPlan")
 	}
 	for _, kind := range kinds {
@@ -44,7 +47,7 @@ func (s Store) collectEndDocuments(st State, c *boundaryCollector) *boundaryColl
 			if kind == "Requirements" && st.Stage != "discovery" {
 				c.accepted(st, "discovery", name)
 			}
-			if kind == "ImplementationPlan" && d.Before("planning", st.Stage) {
+			if kind == "ImplementationPlan" && precedingStep(st, "planning") != "" {
 				c.accepted(st, "planning", name)
 			}
 		}
@@ -60,7 +63,7 @@ func (s Store) collectEndDocuments(st State, c *boundaryCollector) *boundaryColl
 	c.failures = append(c.failures, materials.failures...)
 	for _, kind := range []string{"CurrentAnalysis", "Architecture"} {
 		count := "optional"
-		if len(st.Config.MaterialSources) > 0 || st.Stage == "integration" {
+		if st.Stage == "architecture-analysis" {
 			count = "one"
 		}
 		for _, name := range c.selected(st, okfmemory.DocumentMatch{Type: kind}, count) {
@@ -68,20 +71,17 @@ func (s Store) collectEndDocuments(st State, c *boundaryCollector) *boundaryColl
 		}
 	}
 	if st.Stage == "integration" {
-		feature := false
-		prefix := "aidlc/spaces/" + s.Space + "/knowledge/codekb/"
 		for _, doc := range st.Config.DocumentOutputs {
-			if doc.Stage == "integration" && doc.Metadata.Type == "Knowledge" && strings.HasPrefix(doc.Path, prefix) && doc.Path != s.documentPath(st, "CurrentAnalysis") && doc.Path != s.documentPath(st, "Architecture") {
-				feature = true
+			if doc.StepID == st.CurrentStepID && doc.Metadata.Type == "Knowledge" {
+				c.require(strings.HasPrefix(doc.Path, "aidlc/spaces/"+s.Space+"/knowledge/codekb/"), "integration Knowledge must use codekb")
 			}
 		}
-		c.require(feature, "declared feature Knowledge output required")
 	}
 	if st.Config.ADR.Required {
 		adopted := false
 		for _, list := range [][]DocumentDeclaration{st.Config.DocumentInputs, st.Config.DocumentOutputs} {
 			for _, declaration := range list {
-				if declaration.Metadata.Type != "adr" || (declaration.Stage != st.Stage && !d.Before(declaration.Stage, st.Stage)) {
+				if declaration.Metadata.Type != "adr" || (declaration.StepID != st.CurrentStepID && declaration.StepID != precedingStep(st, declaration.Stage)) {
 					continue
 				}
 				match := expandedMatch(st, declaration.Metadata)
@@ -170,8 +170,9 @@ type resultRun struct {
 	OutputPath string `json:"output_path"`
 }
 type resultDocument struct {
-	Stage string      `json:"stage"`
-	Runs  []resultRun `json:"runs"`
+	StepID string      `json:"step_id"`
+	Stage  string      `json:"stage"`
+	Runs   []resultRun `json:"runs"`
 }
 
 func (c *boundaryCollector) results(st State) {
@@ -218,7 +219,11 @@ func (c *boundaryCollector) results(st State) {
 			c.require(false, "invalid test results JSON: "+name)
 			continue
 		}
-		if result.Stage != st.Stage {
+		if executionStage(st, result.StepID) != result.Stage {
+			c.require(false, "test result execution mismatch: "+name)
+			continue
+		}
+		if result.StepID != st.CurrentStepID {
 			for _, run := range result.Runs {
 				_, err := git(c.store.Root, "cat-file", "-e", run.Commit+"^{commit}")
 				output, ok := record.file(run.OutputPath)

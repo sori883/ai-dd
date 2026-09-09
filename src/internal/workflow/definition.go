@@ -31,12 +31,13 @@ type Reopen struct {
 	Ancestors bool `json:"allow_ancestors"`
 }
 type Graph struct {
-	SchemaVersion int     `json:"schema_version"`
-	Start         string  `json:"start_stage"`
-	Completion    string  `json:"completion_stage"`
-	Stages        []Stage `json:"stages"`
-	Advance       []Edge  `json:"advance"`
-	Reopen        Reopen  `json:"reopen"`
+	SchemaVersion  int      `json:"schema_version"`
+	Start          string   `json:"-"`
+	Completion     string   `json:"-"`
+	Stages         []Stage  `json:"stages"`
+	Advance        []Edge   `json:"-"`
+	Reopen         Reopen   `json:"-"`
+	RequiredPrefix []string `json:"required_prefix"`
 }
 type Agent struct {
 	Role  string `yaml:"role" json:"role"`
@@ -100,11 +101,6 @@ func Load(root string) (Definition, error) {
 		if err != nil {
 			return d, fmt.Errorf("%s: %w", name, err)
 		}
-		for _, ref := range p.Inputs {
-			if ref.Version == "accepted" && !d.Before(ref.AcceptedAt, stage.ID) {
-				return d, fmt.Errorf("accepted input must precede current stage")
-			}
-		}
 		d.Procedures[stage.ID] = p
 		fmt.Fprintf(h, "%d:%s%d:", len(name), name, len(raw))
 		h.Write(raw)
@@ -166,40 +162,18 @@ func (d Definition) CanReopen(from, to string) bool {
 }
 func (d Definition) validateGraph() error {
 	g := d.Graph
-	if g.SchemaVersion != 1 || len(g.Stages) != 4 || len(g.Advance) != 3 {
-		return fmt.Errorf("unsupported workflow graph")
+	if g.SchemaVersion != 2 || len(g.Stages) != 6 || len(g.RequiredPrefix) != 2 || g.RequiredPrefix[0] != "initialization" || g.RequiredPrefix[1] != "discovery" {
+		return fmt.Errorf("unsupported workflow catalog")
 	}
 	ids := map[string]bool{}
 	paths := map[string]bool{}
 	for _, s := range g.Stages {
-		supported := s.ID == "discovery" || s.ID == "planning" || s.ID == "tdd" || s.ID == "integration"
+		supported := s.ID == "initialization" || s.ID == "discovery" || s.ID == "architecture-analysis" || s.ID == "planning" || s.ID == "tdd" || s.ID == "integration"
 		if !supported || ids[s.ID] || strings.TrimSpace(s.Name) == "" || !fs.ValidPath(s.Procedure) || !strings.HasPrefix(s.Procedure, "stages/") || path.Ext(s.Procedure) != ".md" || paths[s.Procedure] || strings.Contains(s.Procedure, "\\") {
 			return fmt.Errorf("invalid stage or procedure path")
 		}
 		ids[s.ID] = true
 		paths[s.Procedure] = true
-	}
-	outgoing := map[string]bool{}
-	incoming := map[string]bool{}
-	for _, e := range g.Advance {
-		if !ids[e.From] || !ids[e.To] || outgoing[e.From] || incoming[e.To] {
-			return fmt.Errorf("invalid graph edge")
-		}
-		outgoing[e.From] = true
-		incoming[e.To] = true
-	}
-	seen := map[string]bool{}
-	for at := g.Start; at != ""; at = d.Next(at) {
-		if seen[at] || !ids[at] {
-			return fmt.Errorf("cyclic or missing stage")
-		}
-		seen[at] = true
-	}
-	if len(seen) != 4 || g.Start != "discovery" || g.Completion != "integration" || d.Next(g.Completion) != "" {
-		return fmt.Errorf("unreachable completion")
-	}
-	if !d.Before("discovery", "planning") || !d.Before("planning", "tdd") || !d.Before("tdd", "integration") {
-		return fmt.Errorf("reversed required artifact prerequisites")
 	}
 	return nil
 }
@@ -280,7 +254,7 @@ func validateReference(r Reference, output bool) error {
 	}
 	if r.Version == "accepted" {
 		switch r.AcceptedAt {
-		case "discovery", "planning", "tdd", "integration":
+		case "initialization", "discovery", "architecture-analysis", "planning", "tdd", "integration":
 		default:
 			return fmt.Errorf("accepted stage required")
 		}

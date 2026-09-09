@@ -25,6 +25,7 @@ type Session struct {
 
 // HookInput contains only policy fields from the observed Codex hook protocol.
 type HookInput struct {
+	Prompt  string `json:"prompt"`
 	Event   string `json:"hook_event_name"`
 	Session string `json:"session_id"`
 	Turn    string `json:"turn_id"`

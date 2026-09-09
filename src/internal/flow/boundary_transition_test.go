@@ -27,18 +27,18 @@ func TestBoundaryTransitionBegin(t *testing.T) {
 	if err = s.CheckWork(st.ID); err != nil {
 		t.Fatal(err)
 	}
-	paused, err := s.Transition(st.ID, started.Revision, TransitionRequest{Action: "pause", Reason: "break"})
+	paused, err := transitionExecutionFixture(t, s, st.ID, started.Revision, TransitionRequest{Action: "pause", Reason: "break"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err = s.CheckWork(st.ID); err == nil {
 		t.Fatal("paused work accepted")
 	}
-	resumed, err := s.Transition(st.ID, paused.Revision, TransitionRequest{Action: "resume", Reason: "back"})
+	resumed, err := transitionExecutionFixture(t, s, st.ID, paused.Revision, TransitionRequest{Action: "resume", Reason: "back"})
 	if err != nil || !reflect.DeepEqual(resumed.Entry, started.Entry) {
 		t.Fatalf("resume lost entry: %+v %v", resumed, err)
 	}
-	reopened, err := s.Transition(st.ID, resumed.Revision, TransitionRequest{Action: "reopen", Stage: "discovery", Reason: "revise"})
+	reopened, err := transitionExecutionFixture(t, s, st.ID, resumed.Revision, TransitionRequest{Action: "reopen", Stage: "discovery", Reason: "revise"})
 	if err != nil || reopened.Entry != nil {
 		t.Fatalf("reopen kept entry: %+v %v", reopened, err)
 	}
@@ -59,7 +59,7 @@ func TestBoundaryTransitionAcceptAndImmutable(t *testing.T) {
 	req := boundaryDoc(t, s, st, "Requirements")
 	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: flowGit(t, s.Root, "rev-parse", "HEAD")}
 	var err error
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,11 +71,11 @@ func TestBoundaryTransitionAcceptAndImmutable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st.Review = Gate{Status: "pass", Target: gate.Target}
+	st.Review = Gate{StepID: st.CurrentStepID, Status: "pass", Target: gate.Target}
 	if err = s.persist(st); err != nil {
 		t.Fatal(err)
 	}
-	st, err = s.Transition(st.ID, st.Revision, TransitionRequest{Action: "advance"})
+	st, err = transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "advance"})
 	if err != nil || st.Stage != "planning" || st.Entry != nil || len(st.Accepted) != 1 {
 		t.Fatalf("advance: %+v %v", st, err)
 	}
@@ -92,8 +92,8 @@ func TestBoundaryTransitionAcceptAndImmutable(t *testing.T) {
 	if err = s.CheckWork(st.ID); err == nil {
 		t.Fatal("changed accepted input allowed")
 	}
-	st, err = s.Transition(st.ID, st.Revision, TransitionRequest{Action: "reopen", Stage: "discovery", Reason: "requirements changed"})
-	if err != nil || len(st.Accepted) != 0 || st.Entry != nil {
+	st, err = transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "reopen", Stage: "discovery", Reason: "requirements changed"})
+	if err != nil || len(st.Accepted) != 1 || st.Accepted["s02"].StepID != "s02" || st.CurrentStepID == "s02" || st.Entry != nil {
 		t.Fatalf("reopen acceptances: %+v %v", st, err)
 	}
 }
@@ -105,7 +105,7 @@ func TestBoundaryTransitionMaterialsConfigure(t *testing.T) {
 		t.Fatal(err)
 	}
 	st.Config.NoMaterialsReason = "new"
-	st, err = s.Save(st, st.Revision)
+	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil || st.Entry != nil {
 		t.Fatalf("material change did not invalidate: %+v %v", st, err)
 	}
@@ -119,9 +119,9 @@ func TestSelectedDocumentsIntegrationDoesNotFreezeMaterials(t *testing.T) {
 	boundaryDoc(t, s, st, "Architecture")
 	boundaryFile(t, s, "inputs/source", "before")
 	head := flowGit(t, s.Root, "rev-parse", "HEAD")
-	st.Stage = "tdd"
-	st.Entry = &StageEntry{Stage: "tdd"}
-	st.Accepted = map[string]StageAcceptance{"discovery": {Stage: "discovery", ReviewTarget: strings.Repeat("a", 64), Outputs: []FileVersion{boundaryVersion(t, s, req)}}, "planning": {Stage: "planning", ReviewTarget: strings.Repeat("b", 64), Outputs: []FileVersion{boundaryVersion(t, s, plan)}}}
+	fixtureExecutionStage(t, s, &st, "tdd")
+	st.Entry = &StageEntry{StepID: "s04", Stage: "tdd"}
+	st.Accepted = map[string]StageAcceptance{"s02": {StepID: "s02", Stage: "discovery", ReviewTarget: strings.Repeat("a", 64), Outputs: []FileVersion{boundaryVersion(t, s, req)}}, "s03": {StepID: "s03", Stage: "planning", ReviewTarget: strings.Repeat("b", 64), Outputs: []FileVersion{boundaryVersion(t, s, plan)}}}
 	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, MaterialSources: []string{"inputs"}, ADR: ADR{Reason: "none"}, CodeRevision: head, DirectCommit: head, Plan: "Implement", Tests: []string{"go test"}}
 	prepareBoundaryResults(t, s, &st)
 	if err := s.persist(st); err != nil {
@@ -131,11 +131,11 @@ func TestSelectedDocumentsIntegrationDoesNotFreezeMaterials(t *testing.T) {
 	if err != nil || g.Status != "pass" {
 		t.Fatalf("tdd: %+v %v", g, err)
 	}
-	st.Review = Gate{Status: "pass", Target: g.Target}
+	st.Review = Gate{StepID: st.CurrentStepID, Status: "pass", Target: g.Target}
 	if err = s.persist(st); err != nil {
 		t.Fatal(err)
 	}
-	st, err = s.Transition(st.ID, st.Revision, TransitionRequest{Action: "advance"})
+	st, err = transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "advance"})
 	if err != nil {
 		t.Fatal(err)
 	}

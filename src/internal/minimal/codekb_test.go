@@ -23,6 +23,7 @@ func TestCodeKBBeginRepair(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, st := setup(t)
+			st = executionFixtureState(t, flow.Store{Root: s.Root, Space: "default"}, st, "architecture-analysis")
 			hook(t, s, "SessionStart", "", "", "", false)
 			hook(t, s, "UserPromptSubmit", "", "", "", false)
 			bind(t, s, st.ID)

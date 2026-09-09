@@ -37,7 +37,7 @@ func TestBoundaryTransitionUsesOneSensorSnapshot(t *testing.T) {
 	for _, remove := range []bool{false, true} {
 		t.Run(fmt.Sprint(remove), func(t *testing.T) {
 			s, st := boundaryFixture(t)
-			st.Stage = "tdd"
+			fixtureExecutionStage(t, s, &st, "tdd")
 			prepareBoundaryStage(t, s, &st)
 			head := flowGit(t, s.Root, "rev-parse", "HEAD")
 			st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: head, DirectCommit: head, Plan: "Implement", Tests: []string{"go test"}}
@@ -49,7 +49,7 @@ func TestBoundaryTransitionUsesOneSensorSnapshot(t *testing.T) {
 			if err != nil || g.Status != "pass" {
 				t.Fatalf("gate %+v %v", g, err)
 			}
-			st.Review = Gate{Status: "pass", Target: g.Target}
+			st.Review = Gate{StepID: st.CurrentStepID, Status: "pass", Target: g.Target}
 			if err = s.persist(st); err != nil {
 				t.Fatal(err)
 			}
@@ -71,12 +71,12 @@ func TestBoundaryTransitionUsesOneSensorSnapshot(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-			next, err := s.Transition(st.ID, st.Revision, TransitionRequest{Action: "advance"})
+			next, err := transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "advance"})
 			if err != nil {
 				t.Fatal(err)
 			}
 			found := false
-			for _, f := range next.Accepted["tdd"].Outputs {
+			for _, f := range next.Accepted["s04"].Outputs {
 				if f.Path == output {
 					found = f == want
 				}
@@ -96,13 +96,13 @@ func TestBoundaryTransitionEvidenceRole(t *testing.T) {
 	for _, changed := range []string{"results.json", "output.log"} {
 		t.Run(changed, func(t *testing.T) {
 			s, st := boundaryFixture(t)
-			st.Stage = "tdd"
+			fixtureExecutionStage(t, s, &st, "tdd")
 			prepareBoundaryStage(t, s, &st)
 			head := flowGit(t, s.Root, "rev-parse", "HEAD")
 			st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: head, DirectCommit: head, Plan: "Implement", Tests: []string{"go test"}}
 			prefix := "aidlc/spaces/" + s.Space + "/knowledge/evidence/"
 			boundaryFile(t, s, prefix+"output.log", "PASS")
-			boundaryFile(t, s, prefix+"results.json", fmt.Sprintf(`{"stage":"tdd","runs":[{"command":"go test","commit":%q,"exit_code":0,"output_path":%q}]}`, head, prefix+"output.log"))
+			boundaryFile(t, s, prefix+"results.json", fmt.Sprintf(`{"step_id":"s04","stage":"tdd","runs":[{"command":"go test","commit":%q,"exit_code":0,"output_path":%q}]}`, head, prefix+"output.log"))
 			st.Config.TestResults = []string{prefix + "results.json"}
 			if err := s.persist(st); err != nil {
 				t.Fatal(err)
@@ -111,23 +111,23 @@ func TestBoundaryTransitionEvidenceRole(t *testing.T) {
 			if err != nil || gate.Status != "pass" {
 				t.Fatalf("%+v %v", gate, err)
 			}
-			st.Review = Gate{Status: "pass", Target: gate.Target}
+			st.Review = Gate{StepID: st.CurrentStepID, Status: "pass", Target: gate.Target}
 			if err = s.persist(st); err != nil {
 				t.Fatal(err)
 			}
-			st, err = s.Transition(st.ID, st.Revision, TransitionRequest{Action: "advance"})
+			st, err = transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "advance"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(st.Accepted["tdd"].Outputs) != 2 {
-				t.Errorf("TDD acceptance includes shared documents: %+v", st.Accepted["tdd"].Outputs)
+			if len(st.Accepted["s04"].Outputs) != 2 {
+				t.Errorf("TDD acceptance includes shared documents: %+v", st.Accepted["s04"].Outputs)
 			}
 			boundaryFile(t, s, prefix+changed, "changed")
 			start, _, _ := s.startState(st)
 			if start.Status == "pass" {
 				t.Error("integration start ignored changed knowledge evidence")
 			}
-			st.Entry = &StageEntry{Stage: "integration"}
+			st.Entry = &StageEntry{StepID: "s05", Stage: "integration"}
 			if err = s.checkWorkState(st); err == nil {
 				t.Error("work ignored changed knowledge evidence")
 			}

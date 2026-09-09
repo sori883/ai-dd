@@ -21,7 +21,7 @@ func workLogPath(s Store, id string) string {
 
 func TestOKFWorkLogDocument(t *testing.T) {
 	s := flowStore(t)
-	st, err := s.Create("検索できる記録")
+	st, err := createExecutionFixture(t, s, "検索できる記録")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func TestOKFWorkLogDocument(t *testing.T) {
 	}
 	started := time.Now().UTC()
 	for _, reason := range []string{"first reason", "second reason"} {
-		st, err = s.Transition(st.ID, st.Revision, TransitionRequest{Action: "reopen", Stage: "discovery", Reason: reason})
+		st, err = transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "reopen", Stage: "discovery", Reason: reason})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -108,7 +108,7 @@ func TestOKFWorkLogRecovery(t *testing.T) {
 		for _, point := range points {
 			t.Run(map[bool]string{false: "fresh", true: "existing"}[existing]+"/"+point, func(t *testing.T) {
 				s := flowStore(t)
-				st, err := s.Create("recover")
+				st, err := createExecutionFixture(t, s, "recover")
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -116,8 +116,12 @@ func TestOKFWorkLogRecovery(t *testing.T) {
 					seedWorkLog(t, s, st, "old history\n")
 				}
 				writes := 0
+				request := TransitionRequest{Action: "reopen", Stage: "discovery", Reason: "recover reason"}
+				st = prepareReopenFixture(t, s, st, request)
 				s.write = func(root, name string, raw []byte) error {
-					writes++
+					if !strings.Contains(name, "/history/") {
+						writes++
+					}
 					n := map[string]int{"base": 1, "pending": 2, "log": 3, "final": 4}[point]
 					if existing {
 						n--
@@ -127,8 +131,7 @@ func TestOKFWorkLogRecovery(t *testing.T) {
 					}
 					return filestore.WriteFile(root, name, raw)
 				}
-				request := TransitionRequest{Action: "reopen", Stage: "discovery", Reason: "recover reason"}
-				if _, err = s.Transition(st.ID, st.Revision, request); err == nil {
+				if _, err = transitionExecutionFixture(t, s, st.ID, st.Revision, request); err == nil {
 					t.Fatal("partial write returned success")
 				}
 				current, err := s.Read(st.ID)
@@ -163,12 +166,12 @@ func TestOKFWorkLogRecovery(t *testing.T) {
 					}
 					different := request
 					different.Reason = "different"
-					if _, err = s.Transition(st.ID, st.Revision, different); err == nil {
+					if _, err = transitionExecutionFixture(t, s, st.ID, st.Revision, different); err == nil {
 						t.Fatal("different request accepted")
 					}
 				}
 				s.write = nil
-				result, err := s.Transition(st.ID, st.Revision, request)
+				result, err := transitionExecutionFixture(t, s, st.ID, st.Revision, request)
 				if err != nil {
 					t.Fatal("same request recovery failed", err)
 				}
@@ -202,7 +205,7 @@ func TestOKFWorkLogRecoveryPendingValidation(t *testing.T) {
 		for _, value := range []any{nil, "bad"} {
 			t.Run(field+"/"+map[bool]string{true: "missing", false: "bad"}[value == nil], func(t *testing.T) {
 				s := flowStore(t)
-				st, err := s.Create("pending validation")
+				st, err := createExecutionFixture(t, s, "pending validation")
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -240,13 +243,14 @@ func TestOKFWorkLogRecoveryRejects(t *testing.T) {
 	for _, mode := range []string{"malformed", "wrong type", "wrong intent", "directory", "symlink", "oversize", "metadata overflow", "missing pending", "changed pending"} {
 		t.Run(mode, func(t *testing.T) {
 			s := flowStore(t)
-			st, err := s.Create("reject")
+			st, err := createExecutionFixture(t, s, "reject")
 			if err != nil {
 				t.Fatal(err)
 			}
 			name := workLogPath(s, st.ID)
 			original := seedWorkLog(t, s, st, "history\n")
 			request := TransitionRequest{Action: "reopen", Stage: "discovery", Reason: "retry"}
+			st = prepareReopenFixture(t, s, st, request)
 			switch mode {
 			case "malformed":
 				original = []byte("plain markdown")
@@ -273,7 +277,7 @@ func TestOKFWorkLogRecoveryRejects(t *testing.T) {
 					}
 					return filestore.WriteFile(root, path, raw)
 				}
-				if _, err = s.Transition(st.ID, st.Revision, request); err == nil {
+				if _, err = transitionExecutionFixture(t, s, st.ID, st.Revision, request); err == nil {
 					t.Fatal("expected save failure")
 				}
 				s.write = nil
@@ -305,7 +309,7 @@ func TestOKFWorkLogRecoveryRejects(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err = s.Transition(st.ID, st.Revision, request); err == nil {
+			if _, err = transitionExecutionFixture(t, s, st.ID, st.Revision, request); err == nil {
 				t.Fatal("invalid log accepted")
 			}
 			after, err := filestore.ReadFile(s.Root, s.path(st.ID))
@@ -327,7 +331,7 @@ func TestOKFWorkLogRecoveryFIFO(t *testing.T) {
 		t.Skip("named-pipe fixture uses POSIX mkfifo")
 	}
 	s := flowStore(t)
-	st, err := s.Create("special file")
+	st, err := createExecutionFixture(t, s, "special file")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +344,7 @@ func TestOKFWorkLogRecoveryFIFO(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := s.Transition(st.ID, st.Revision, TransitionRequest{Action: "reopen", Stage: "discovery", Reason: "retry"})
+		_, err := transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "reopen", Stage: "discovery", Reason: "retry"})
 		done <- err
 	}()
 	select {

@@ -10,41 +10,8 @@ func (s Store) Transition(id string, expect uint64, r TransitionRequest) (State,
 		return s.reopen(id, expect, r)
 	}
 	return s.change(id, expect, func(st *State) error {
-		d, err := s.definition()
-		if err != nil {
-			return err
-		}
 		if r.Action == "advance" {
-			if st.Status != "active" {
-				return invalid("only active Intent can advance")
-			}
-			gate, c, err := s.checkStateSnapshot(*st)
-			if err != nil {
-				return err
-			}
-			if gate.Status != "pass" {
-				return invalid("Sensor failed: " + gate.Summary)
-			}
-			if st.Review.Status != "pass" || st.Review.Target != gate.Target {
-				return invalid("current independent review pass required")
-			}
-			if st.Accepted == nil {
-				st.Accepted = map[string]StageAcceptance{}
-			}
-			outputs := c.files
-			if st.Stage == "tdd" {
-				outputs = c.proof
-			}
-			st.Accepted[st.Stage] = StageAcceptance{Stage: st.Stage, ReviewTarget: gate.Target, Outputs: outputs}
-			st.Entry = nil
-			st.Sensor = Gate{}
-			st.Review = Gate{}
-			if st.Stage == d.Graph.Completion {
-				st.Status = "completed"
-			} else {
-				st.Stage = d.Next(st.Stage)
-			}
-			return nil
+			return invalid("advance was replaced by intent finish")
 		}
 		if strings.TrimSpace(r.Reason) == "" {
 			return invalid("reason required")

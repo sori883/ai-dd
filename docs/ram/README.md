@@ -1,5 +1,15 @@
 # 開発プロジェクトRAM
 
+- [Intent実行計画のintegration fixture修復](decisions/2026-09-09-intent-execution-plan-integration-repair.md): Issue153、親finalで再現した初期化設定順・Unit step_id・保存retry revision期待をtest-only修復。E2E再実測は親final。
+
+- [Intent実行計画のトップhelp残存一覧修復](decisions/2026-09-09-intent-execution-plan-review-repair-2.md): Issue153、再reviewで指摘された末尾の旧4段階一覧を6段階・計画選択と会話承認へ修正。
+
+- [Intent実行計画の独立review修復1](decisions/2026-09-09-intent-execution-plan-review-repair-1.md): Issue153、reopen実体と再初期化順序、確定履歴head anchor、トップhelpを回帰test付きで修復。
+
+- [Intent実行計画・会話承認のloop実装証拠](decisions/2026-09-09-intent-execution-plan-evidence.md): Issue153、6段階・step_id・選択Sensor・別承認・reopen履歴の8項目TDDと保存復旧。mandatory順序と未完了回の新ID置換、同一Draftの2承認を具体化。独立review/finalは親担当。
+
+- [Intentごとの承認済み実行計画へ変更する依頼](decisions/2026-09-09-intent-execution-plan-request.md): 初期化→目的整理を必須とし、構成分析等を選択。途中の計画変更も都度承認。具体案への「hai」で一体実装の直接承認を確認。[実装計画](../design/intent-execution-plan-implementation.md)にschema・CLI・8項目TDD・承認/保存の検証を具体化。
+
 - [codekb配置変更の実装証拠](decisions/2026-09-09-knowledge-codekb-evidence.md): Issue #151、配布・Sensor・修復hook・手順のTDD実測。metadata selector契約を維持し、機能Knowledgeの既定配置をcodekbへ変更。finalは親担当。
 
 - [現行知識の保存先をcodekbへ変更](decisions/2026-09-09-knowledge-codekb-approved.md): knowledge/codekbへ配布・Sensor・手順を統一する直接実装依頼。外側のOKF検索rootと他文書folderは維持。

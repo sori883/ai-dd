@@ -13,9 +13,7 @@ func TestMemoryHelpHook(t *testing.T) {
 			s, st := setup(t)
 			if mode == "inactive" {
 				st.Status = "completed"
-				if _, err := (flow.Store{Root: s.Root, Space: "default"}).Save(st, st.Revision); err != nil {
-					t.Fatal(err)
-				}
+				st = writeExecutionFixture(t, flow.Store{Root: s.Root, Space: "default"}, st)
 			}
 			if mode != "unselected" {
 				hook(t, s, "UserPromptSubmit", "", "", "", false)

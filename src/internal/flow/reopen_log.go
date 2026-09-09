@@ -12,6 +12,9 @@ import (
 )
 
 type PendingReopen struct {
+	StepID       string `json:"step_id"`
+	PlanRevision uint64 `json:"plan_revision"`
+	PlanHash     string `json:"plan_hash"`
 	Revision     uint64 `json:"revision"`
 	From         string `json:"from"`
 	To           string `json:"to"`
@@ -24,7 +27,7 @@ type PendingReopen struct {
 
 func logHash(raw []byte) string { return fmt.Sprintf("%x", sha256.Sum256(raw)) }
 func (p PendingReopen) block() string {
-	return fmt.Sprintf("\n## Reopen revision %d\nUTC: %s\nFrom: %s\nTo: %s\nReason: %q\nConfirmed only when state revision exceeds %d.\n", p.Revision, p.At, p.From, p.To, p.Reason, p.Revision)
+	return fmt.Sprintf("\n## Reopen revision %d\nUTC: %s\nFrom: %s\nTo: %s\nReason: %q\nConfirmed only when state revision exceeds %d.\n", p.Revision, p.At, p.From, p.To, p.Reason, p.Revision) + fmt.Sprintf("Plan revision: %d\nPlan hash: %s\nReopen step: %s\n", p.PlanRevision, p.PlanHash, p.StepID)
 }
 func (s Store) reopen(id string, expect uint64, r TransitionRequest) (State, error) {
 	if err := s.check(); err != nil {

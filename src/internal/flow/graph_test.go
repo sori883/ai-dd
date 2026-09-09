@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -32,24 +31,24 @@ func deployFlowDefinition(t *testing.T, s Store) {
 		t.Fatal(err)
 	}
 }
-func TestGraphTransitionUsesReopenDefinition(t *testing.T) {
+func TestGraphTransitionUsesBoundDefinition(t *testing.T) {
 	s, st := boundaryFixture(t)
-	deployFlowDefinition(t, s)
 	p := filepath.Join(s.Root, "aidlc/workflow/stage-graph.json")
-	raw, _ := os.ReadFile(p)
-	os.WriteFile(p, []byte(strings.Replace(string(raw), `"allow_current": true`, `"allow_current": false`, 1)), 0644)
-	st, err := s.Create("bound no-current graph")
+	raw, err := os.ReadFile(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Transition(st.ID, st.Revision, TransitionRequest{Action: "reopen", Stage: "discovery", Reason: "repeat"}); err == nil {
-		t.Fatal("graph disallows current reopen but transition accepted")
+	if err = os.WriteFile(p, append(raw, byte(10)), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Reopen(st.ID, st.Revision, st.CurrentStepID, "repeat"); err == nil {
+		t.Fatal("changed bound definition allowed reopen")
 	}
 }
 func TestGraphTransitionMissingDefinition(t *testing.T) {
 	s, st := boundaryFixture(t)
 	os.Remove(filepath.Join(s.Root, "aidlc/workflow/stage-graph.json"))
-	if _, err := s.Transition(st.ID, st.Revision, TransitionRequest{Action: "reopen", Stage: "discovery", Reason: "repeat"}); err == nil {
+	if _, err := transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "reopen", Stage: "discovery", Reason: "repeat"}); err == nil {
 		t.Fatal("missing graph silently used fixed transition")
 	}
 }
