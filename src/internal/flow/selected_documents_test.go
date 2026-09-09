@@ -53,7 +53,7 @@ func TestSelectedDocumentsSharedUpdate(t *testing.T) {
 	if err = s.CheckWork(st.ID); err != nil {
 		t.Fatalf("shared current update rejected: %v", err)
 	}
-	if err = os.Rename(filepath.Join(s.Root, name), filepath.Join(s.Root, "aidlc/spaces/default/knowledge/knowledge/replaced.md")); err != nil {
+	if err = os.Rename(filepath.Join(s.Root, name), filepath.Join(s.Root, "aidlc/spaces/default/knowledge/codekb/replaced.md")); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.CheckWork(st.ID); err == nil {
@@ -69,7 +69,7 @@ func TestSelectedDocumentsOutputPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	boundaryDoc(t, s, st, "Requirements")
-	output := declaredDoc("discovery", "knowledge/exact", "Note")
+	output := declaredDoc("discovery", "codekb/exact", "Note")
 	st, err = s.SetDocuments(st.ID, st.Revision, IntentDocuments{Inputs: []DocumentDeclaration{}, Outputs: []DocumentDeclaration{output}})
 	if err != nil {
 		t.Fatal(err)
@@ -79,7 +79,7 @@ func TestSelectedDocumentsOutputPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := []byte("---\ntype: Note\ntitle: Document\ndescription: Purpose\n---\nContent.\n")
-	if err = filestore.WriteFile(s.Root, "aidlc/spaces/default/knowledge/knowledge/other.md", content); err != nil {
+	if err = filestore.WriteFile(s.Root, "aidlc/spaces/default/knowledge/codekb/other.md", content); err != nil {
 		t.Fatal(err)
 	}
 	gate, err := s.Check(st.ID)
@@ -112,7 +112,7 @@ func TestSelectedDocumentsSharedPaths(t *testing.T) {
 	boundaryDoc(t, s, st, "Requirements")
 	for _, kind := range []string{"CurrentAnalysis", "Architecture"} {
 		name := boundaryDoc(t, s, st, kind)
-		if err = os.Rename(filepath.Join(s.Root, name), filepath.Join(s.Root, "aidlc/spaces/default/knowledge/knowledge/selected-"+kind+".md")); err != nil {
+		if err = os.Rename(filepath.Join(s.Root, name), filepath.Join(s.Root, "aidlc/spaces/default/knowledge/codekb/selected-"+kind+".md")); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -108,7 +108,7 @@ func runBoundaryJourney(t *testing.T) {
 		writeMinimalFixture(t, file, string(raw))
 		return file
 	}
-	knowledge := "aidlc/spaces/default/knowledge/knowledge/current.md"
+	knowledge := "aidlc/spaces/default/knowledge/codekb/current.md"
 	writeMinimalFixture(t, filepath.Join(root, knowledge), "---\ntype: Design\ntitle: Addition\ndescription: Adds two integers\n---\nAdd returns the sum.\n")
 	head := string(bytes.TrimSpace(runMinimalProcess(t, root, "git", "rev-parse", "HEAD")))
 	config := flow.Config{NoMaterialsReason: "fresh project", Objective: "Addition", Scope: []string{"add.go"}, Acceptance: []string{"Add(2,3)=5"}, CodeRevision: head, ADR: flow.ADR{Reason: "No architectural decision"}, Artifacts: []flow.Artifact{{Path: knowledge, Kind: "Knowledge", Stage: "discovery"}}}

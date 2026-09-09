@@ -57,13 +57,13 @@ stateのrevisionが要求revisionを超えて確定するまで、記録の存�
 ## KnowledgeとADR
 
 Knowledgeは現行のwhat/how、ADRはwhy・代替案・影響。毎操作の日誌や一律ADRは作らない。
-草稿には本文だけを書く。frontmatterはCLIが引数から生成する。Concept IDは拡張子なしで、例は `knowledge/addition`。
+草稿には本文だけを書く。frontmatterはCLIが引数から生成する。Concept IDは拡張子なしで、例は `codekb/addition`。
 引数・型・選択肢に迷ったら `A memory create --help` / `A memory update --help` を参照する。
 
 ```text
-A memory create knowledge/NAME --space SPACE --body-file FILE --actor process:codex --type TYPE --title TITLE --description DESCRIPTION
-A memory show knowledge/NAME --space SPACE
-A memory update knowledge/NAME --space SPACE --body-file FILE --actor process:codex --expect HASH
+A memory create codekb/NAME --space SPACE --body-file FILE --actor process:codex --type TYPE --title TITLE --description DESCRIPTION
+A memory show codekb/NAME --space SPACE
+A memory update codekb/NAME --space SPACE --body-file FILE --actor process:codex --expect HASH
 A memory search QUERY --space SPACE [--intent-id ID]
 ```
 

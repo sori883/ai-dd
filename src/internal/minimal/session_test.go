@@ -117,7 +117,7 @@ func TestSessionMemoryWritesAndSearchPreserveSelection(t *testing.T) {
 	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatal(err)
 	}
-	_, err = os.ReadFile(filepath.Join(s.Root, "aidlc/spaces/default/knowledge/knowledge/note.md"))
+	_, err = os.ReadFile(filepath.Join(s.Root, "aidlc/spaces/default/knowledge/codekb/note.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestSessionMemoryBoundaries(t *testing.T) {
 	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatal(err)
 	}
-	savedPath := filepath.Join(s.Root, "aidlc/spaces/default/knowledge/knowledge/note.md")
+	savedPath := filepath.Join(s.Root, "aidlc/spaces/default/knowledge/codekb/note.md")
 	_, err = os.ReadFile(savedPath)
 	if err != nil {
 		t.Fatal(err)
@@ -173,7 +173,7 @@ func TestSessionMemoryBoundaries(t *testing.T) {
 	if _, err := s.Execute(r); err != nil {
 		t.Fatal(err)
 	}
-	doc, err := okfmemory.Read(filepath.Dir(filepath.Dir(savedPath)), "knowledge/note")
+	doc, err := okfmemory.Read(filepath.Dir(filepath.Dir(savedPath)), "codekb/note")
 	if err != nil || doc.String("custom") != "keep" {
 		t.Fatal("memory update dropped unknown metadata", err)
 	}
@@ -187,20 +187,20 @@ func TestSessionMemoryBoundaries(t *testing.T) {
 	if err != nil || strings.TrimSpace(string(out)) != "[]" {
 		t.Fatalf("cross-Space search = %s, %v", out, err)
 	}
-	index := filepath.Join(s.Root, "aidlc/spaces/default/knowledge/knowledge/index.md")
+	index := filepath.Join(s.Root, "aidlc/spaces/default/knowledge/codekb/index.md")
 	if err := os.Remove(index); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Mkdir(index, 0755); err != nil {
 		t.Fatal(err)
 	}
-	r.Target = "knowledge/partial"
+	r.Target = "codekb/partial"
 	r.Metadata = bodyRequest(draft).Metadata
 	partial, err := s.Execute(r)
 	if err == nil || !json.Valid(partial) {
 		t.Fatalf("partial write was hidden: %s, %v", partial, err)
 	}
-	if _, err := os.ReadFile(filepath.Join(s.Root, "aidlc/spaces/default/knowledge/knowledge/partial.md")); err != nil {
+	if _, err := os.ReadFile(filepath.Join(s.Root, "aidlc/spaces/default/knowledge/codekb/partial.md")); err != nil {
 		t.Fatal("partial saved Concept was lost", err)
 	}
 }
@@ -208,11 +208,11 @@ func TestSessionMemoryBoundaries(t *testing.T) {
 func TestSessionMemoryShowOriginalHash(t *testing.T) {
 	s, _ := setup(t)
 	raw := []byte("---\ntype: Knowledge\ntitle: 'Original quoting'\n---\nExact bytes.\n")
-	path := filepath.Join(s.Root, "aidlc/spaces/default/knowledge/knowledge/exact.md")
+	path := filepath.Join(s.Root, "aidlc/spaces/default/knowledge/codekb/exact.md")
 	if err := os.WriteFile(path, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
-	out, err := s.Execute(cli.MinimalRequest{Command: "memory", Action: "show", Target: "knowledge/exact", Space: "default"})
+	out, err := s.Execute(cli.MinimalRequest{Command: "memory", Action: "show", Target: "codekb/exact", Space: "default"})
 	if err != nil {
 		t.Fatal(err)
 	}

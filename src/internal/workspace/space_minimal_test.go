@@ -33,7 +33,7 @@ func TestCreateSpaceOKF(t *testing.T) {
 	if string(got) != rule {
 		t.Fatal("new Space tracks mutable default")
 	}
-	for _, p := range []string{"index.md", "rules/entry.md", "knowledge/index.md", "design/index.md", "adr/index.md"} {
+	for _, p := range []string{"index.md", "rules/entry.md", "codekb/index.md", "design/index.md", "adr/index.md"} {
 		if _, err := os.Stat(filepath.Join(root, "aidlc/spaces/team-alpha/knowledge", p)); err != nil {
 			t.Error(err)
 		}

@@ -7,7 +7,7 @@ import (
 )
 
 func TestMemoryMetadataCLI(t *testing.T) {
-	base := []string{"memory", "create", "knowledge/auth", "--space", "default", "--body-file", "body.md", "--actor", "process:codex", "--type", "Design", "--title", "Auth", "--description", "How"}
+	base := []string{"memory", "create", "codekb/auth", "--space", "default", "--body-file", "body.md", "--actor", "process:codex", "--type", "Design", "--title", "Auth", "--description", "How"}
 	r, err := ParseMinimal(append(append([]string{}, base...), "--tag", "one", "--tag", "two", "--status", "draft", "--intent-id", strings.Repeat("a", 32), "--resource", "source", "--stale-after", "2026-09-08T00:00:00Z", "--sources-json", "[]", "--verified-json", "[]", "--metadata-json", `{"custom":true}`))
 	if err != nil {
 		t.Fatal(err)
@@ -15,7 +15,7 @@ func TestMemoryMetadataCLI(t *testing.T) {
 	if r.BodyFile != "body.md" || r.File != "" || r.Metadata.Type == nil || *r.Metadata.Type != "Design" || !reflect.DeepEqual(r.Metadata.Tags, []string{"one", "two"}) || r.Metadata.IntentID == nil || r.Metadata.ExtraJSON == nil {
 		t.Fatalf("request %+v", r)
 	}
-	update := []string{"memory", "update", "knowledge/auth", "--space", "default", "--body-file", "body.md", "--actor", "human:me", "--expect", "hash"}
+	update := []string{"memory", "update", "codekb/auth", "--space", "default", "--body-file", "body.md", "--actor", "human:me", "--expect", "hash"}
 	r, err = ParseMinimal(update)
 	if err != nil || r.Metadata.Type != nil || r.Metadata.Tags != nil || r.Metadata.Status != nil {
 		t.Fatalf("omitted metadata lost: %+v %v", r, err)

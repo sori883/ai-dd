@@ -341,7 +341,7 @@ func (s Service) documentRepair(input HookInput, session *Session, st flow.State
 	}
 	prefix := "aidlc/spaces/" + session.Space + "/knowledge/"
 	name := prefix + r.Target + ".md"
-	allowed := []string{prefix + "design/" + session.Intent + "/requirements.md", prefix + "design/" + session.Intent + "/implementation-plan.md", prefix + "knowledge/current-analysis.md", prefix + "knowledge/architecture.md"}
+	allowed := []string{prefix + "design/" + session.Intent + "/requirements.md", prefix + "design/" + session.Intent + "/implementation-plan.md", prefix + "codekb/current-analysis.md", prefix + "codekb/architecture.md"}
 	for _, list := range [][]flow.DocumentDeclaration{st.Config.DocumentInputs, st.Config.DocumentOutputs} {
 		for _, doc := range list {
 			if doc.Stage == st.Stage {

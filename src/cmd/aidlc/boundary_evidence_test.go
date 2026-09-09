@@ -92,7 +92,7 @@ func verifyBoundaryEvidence(binary string, records []boundaryObservation, execut
 		if err != nil {
 			continue
 		}
-		if denied && r.Command == "memory" && (r.Action == "create" || r.Action == "update") && r.Space == "default" && r.Target == "knowledge/current-analysis" {
+		if denied && r.Command == "memory" && (r.Action == "create" || r.Action == "update") && r.Space == "default" && r.Target == "codekb/current-analysis" {
 			repaired = true
 		}
 		if repaired && r.Command == "intent" && r.Action == "begin" && r.Target == id {
@@ -132,7 +132,7 @@ func TestBoundaryEvidenceSequence(t *testing.T) {
 		execs["session/"+command] = 0
 	}
 	add("PreToolUse", "deny", "touch boundary-before.txt", "deny", false)
-	for i, command := range []string{"/aidlc memory update knowledge/current-analysis --space default --body-file draft --actor process:a --expect hash", "/aidlc intent begin " + st.ID + " --space default --expect 2", "touch boundary-after.txt"} {
+	for i, command := range []string{"/aidlc memory update codekb/current-analysis --space default --body-file draft --actor process:a --expect hash", "/aidlc intent begin " + st.ID + " --space default --expect 2", "touch boundary-after.txt"} {
 		add("PreToolUse", fmt.Sprint(i), command, "", i == 2)
 		add("PostToolUse", fmt.Sprint(i), command, "", i >= 1)
 	}

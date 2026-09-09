@@ -120,9 +120,9 @@ func TestInstallMemoryCommandGuidance(t *testing.T) {
 	}
 	raw = append(raw, procedure...)
 	for _, want := range []string{
-		"memory create knowledge/NAME --space SPACE --body-file FILE --actor process:codex --type TYPE --title TITLE --description DESCRIPTION",
-		"memory update knowledge/NAME --space SPACE --body-file FILE --actor process:codex --expect HASH",
-		"memory show knowledge/NAME --space SPACE",
+		"memory create codekb/NAME --space SPACE --body-file FILE --actor process:codex --type TYPE --title TITLE --description DESCRIPTION",
+		"memory update codekb/NAME --space SPACE --body-file FILE --actor process:codex --expect HASH",
+		"memory show codekb/NAME --space SPACE",
 		"memory search QUERY --space SPACE [--intent-id ID]",
 		"拡張子なし", "adr/NAME", "hash", "content", "memory create --help", "memory update --help", "本文",
 	} {

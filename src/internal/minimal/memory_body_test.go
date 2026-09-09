@@ -14,7 +14,7 @@ import (
 
 func bodyString(s string) *string { return &s }
 func bodyRequest(file string) cli.MinimalRequest {
-	return cli.MinimalRequest{Command: "memory", Action: "create", Target: "knowledge/note", Space: "default", BodyFile: file, Actor: "process:test", Metadata: okfmemory.MetadataInput{Type: bodyString("Note"), Title: bodyString("Memory"), Description: bodyString("Example"), ExtraJSON: bodyString(`{"custom":"keep"}`)}}
+	return cli.MinimalRequest{Command: "memory", Action: "create", Target: "codekb/note", Space: "default", BodyFile: file, Actor: "process:test", Metadata: okfmemory.MetadataInput{Type: bodyString("Note"), Title: bodyString("Memory"), Description: bodyString("Example"), ExtraJSON: bodyString(`{"custom":"keep"}`)}}
 }
 func TestMemoryBodyWrite(t *testing.T) {
 	s, _ := setup(t)
@@ -57,7 +57,7 @@ func TestMemoryBodyWrite(t *testing.T) {
 	if doc.String("custom") != "keep" || doc.String("title") != "Renamed" || doc.Body != "First.\n" {
 		t.Fatalf("metadata-only update %+v", doc)
 	}
-	raw, err := os.ReadFile(filepath.Join(bundle, "knowledge/note.md"))
+	raw, err := os.ReadFile(filepath.Join(bundle, "codekb/note.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestMemoryBodyWrite(t *testing.T) {
 	if _, err := s.Execute(r); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"knowledge/index.md", "log.md"} {
+	for _, name := range []string{"codekb/index.md", "log.md"} {
 		raw, err := os.ReadFile(filepath.Join(bundle, name))
 		if err != nil || !strings.Contains(string(raw), "note") {
 			t.Fatalf("bookkeeping %s %s %v", name, raw, err)
@@ -110,7 +110,7 @@ func TestMemoryBodyWriteRejectsAndPreserves(t *testing.T) {
 					os.Symlink(outside, draft)
 				}
 			case "destination directory":
-				os.Mkdir(filepath.Join(s.Root, "aidlc/spaces/default/knowledge/knowledge/note.md"), 0700)
+				os.Mkdir(filepath.Join(s.Root, "aidlc/spaces/default/knowledge/codekb/note.md"), 0700)
 			}
 			if out, err := s.Execute(r); err == nil || len(out) != 0 {
 				t.Fatalf("invalid write result %s %v", out, err)

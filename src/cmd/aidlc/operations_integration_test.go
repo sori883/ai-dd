@@ -202,10 +202,10 @@ func (f operationsFixture) tdd() flow.State {
 	f.t.Helper()
 	s := f.create("Unit work")
 	writeMinimalFixture(f.t, filepath.Join(f.root, "body.md"), "Current operation contract.\n")
-	f.ok("memory", "create", "knowledge/current", "--space", "default", "--body-file", "body.md", "--actor", "process:test", "--type", "Design", "--title", "Current", "--description", "Operations")
+	f.ok("memory", "create", "codekb/current", "--space", "default", "--body-file", "body.md", "--actor", "process:test", "--type", "Design", "--title", "Current", "--description", "Operations")
 	f.ok("memory", "create", "adr/current", "--space", "default", "--body-file", "body.md", "--actor", "process:test", "--type", "adr", "--title", "Decision", "--description", "Rationale")
 	head := f.commit("shared assets")
-	c := flow.Config{NoMaterialsReason: "fixture has no prior materials", Objective: "Unit operation", Scope: []string{"a.go", "b.go"}, Acceptance: []string{"operations are isolated"}, CodeRevision: head, ADR: flow.ADR{Reason: "No additional decision"}, Artifacts: []flow.Artifact{{Path: "aidlc/spaces/default/knowledge/knowledge/current.md", Kind: "Knowledge", Stage: "discovery"}}}
+	c := flow.Config{NoMaterialsReason: "fixture has no prior materials", Objective: "Unit operation", Scope: []string{"a.go", "b.go"}, Acceptance: []string{"operations are isolated"}, CodeRevision: head, ADR: flow.ADR{Reason: "No additional decision"}, Artifacts: []flow.Artifact{{Path: "aidlc/spaces/default/knowledge/codekb/current.md", Kind: "Knowledge", Stage: "discovery"}}}
 	s = f.action(s, "configure", "--file", f.request(c))
 	boundaryFixtureDocument(f.t, f.root, s.ID, "Requirements")
 	s = f.action(s, "begin")
@@ -233,7 +233,7 @@ func TestOperationsGitHandoff(t *testing.T) {
 	s = f.action(s, "pause", "--reason", "transfer")
 	f.bind(s, "old-session")
 	saved := f.bytes(s)
-	knowledge := filepath.Join("aidlc", "spaces", "default", "knowledge", "knowledge", "current.md")
+	knowledge := filepath.Join("aidlc", "spaces", "default", "knowledge", "codekb", "current.md")
 	adr := filepath.Join("aidlc", "spaces", "default", "knowledge", "ADR", "current.md")
 	originals := map[string][]byte{}
 	for _, p := range []string{knowledge, adr, ".codex/hooks.json"} {
@@ -410,12 +410,12 @@ func TestOperationsSaveRecovery(t *testing.T) {
 	}
 	body := filepath.Join(f.root, "body.md")
 	writeMinimalFixture(t, body, "Before\n")
-	create := []string{"memory", "create", "knowledge/save", "--space", "default", "--body-file", body, "--actor", "process:test", "--type", "Design", "--title", "Save", "--description", "Recovery"}
+	create := []string{"memory", "create", "codekb/save", "--space", "default", "--body-file", body, "--actor", "process:test", "--type", "Design", "--title", "Save", "--description", "Recovery"}
 	f.ok(create...)
-	concept := filepath.Join(f.root, "aidlc/spaces/default/knowledge/knowledge/save.md")
+	concept := filepath.Join(f.root, "aidlc/spaces/default/knowledge/codekb/save.md")
 	original := operationsRead(t, concept)
 	hash := sha256.Sum256(original)
-	update := []string{"memory", "update", "knowledge/save", "--space", "default", "--body-file", body, "--actor", "process:test", "--expect", fmt.Sprintf("%x", hash)}
+	update := []string{"memory", "update", "codekb/save", "--space", "default", "--body-file", body, "--actor", "process:test", "--expect", fmt.Sprintf("%x", hash)}
 	writeMinimalFixture(t, body, "After\n")
 	restore = operationsReadOnly(t, filepath.Dir(concept))
 	f.rejectCode(1, "permission denied", update...)
@@ -423,7 +423,7 @@ func TestOperationsSaveRecovery(t *testing.T) {
 		t.Fatal("Knowledge pre-save failure changed document")
 	}
 	restore()
-	f.ok("memory", "show", "knowledge/save", "--space", "default")
+	f.ok("memory", "show", "codekb/save", "--space", "default")
 	f.ok(update...)
 	// A real directory collision makes bookkeeping fail after the Concept commit.
 	index := filepath.Join(filepath.Dir(concept), "index.md")
@@ -435,7 +435,7 @@ func TestOperationsSaveRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Remove(index); os.WriteFile(index, indexBytes, 0644) })
-	create[2] = "knowledge/partial"
+	create[2] = "codekb/partial"
 	result := f.run(create...)
 	if result.code != 2 || !json.Valid(result.out) || !strings.Contains(string(result.stderr), "Concept saved; bookkeeping failed: not regular") {
 		t.Fatalf("partial save hidden: %+v", result)
@@ -451,14 +451,14 @@ func TestOperationsSaveRecovery(t *testing.T) {
 	if response.Hash != fmt.Sprintf("%x", sha256.Sum256(saved)) {
 		t.Fatal("partial saved hash missing")
 	}
-	f.ok("memory", "show", "knowledge/partial", "--space", "default")
+	f.ok("memory", "show", "codekb/partial", "--space", "default")
 	if err := os.Remove(index); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(index, indexBytes, 0644); err != nil {
 		t.Fatal(err)
 	}
-	f.ok("memory", "update", "knowledge/partial", "--space", "default", "--body-file", body, "--actor", "process:test", "--expect", response.Hash, "--description", "Recovered bookkeeping")
+	f.ok("memory", "update", "codekb/partial", "--space", "default", "--body-file", body, "--actor", "process:test", "--expect", response.Hash, "--description", "Recovered bookkeeping")
 	f.ok("memory", "check", "--space", "default")
 	if !bytes.Contains(operationsRead(t, index), []byte("partial.md")) {
 		t.Fatal("index not recovered")

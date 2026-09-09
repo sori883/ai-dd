@@ -38,8 +38,8 @@ sensors:
 新規projectはRuleだけでbeginできる。Git未初期化ならbegin後にgit initを行う。
 既存資材があるとき共有解析/図を更新する。なければ開始時のダミー文書は不要。
 要件はdesign/ID/requirements.md。type Requirements、intent_id ID、## 目的・範囲・要件・受入条件・未確定事項を非空にする。
-共有解析はknowledge/current-analysis.md、type CurrentAnalysis、## 現状・構成・動作・根拠・未確認事項（「構成・動作」は一つの見出し）。
-構成図はknowledge/architecture.md、type Architecture、## 構成図・構成要素・データフロー。構成図は非空mermaid fence。
+共有解析はcodekb/current-analysis.md、type CurrentAnalysis、## 現状・構成・動作・根拠・未確認事項（「構成・動作」は一つの見出し）。
+構成図はcodekb/architecture.md、type Architecture、## 構成図・構成要素・データフロー。構成図は非空mermaid fence。
 共有文書へIntentIDや日時だけの変更をしない。要件・コードHEAD・configを揃えて終了検査へ進む。
 
 入口の実行ファイルを `A`、Intentを `ID`、Spaceを `SPACE` とする。
@@ -58,13 +58,13 @@ stateのrevisionが要求revisionを超えて確定するまで、記録の存�
 ## KnowledgeとADR
 
 Knowledgeは現行のwhat/how、ADRはwhy・代替案・影響。毎操作の日誌や一律ADRは作らない。
-草稿には本文だけを書く。frontmatterはCLIが引数から生成する。Concept IDは拡張子なしで、例は `knowledge/addition`。
+草稿には本文だけを書く。frontmatterはCLIが引数から生成する。Concept IDは拡張子なしで、例は `codekb/addition`。
 引数・型・選択肢に迷ったら `A memory create --help` / `A memory update --help` を参照する。
 
 ```text
-A memory create knowledge/NAME --space SPACE --body-file FILE --actor process:codex --type TYPE --title TITLE --description DESCRIPTION
-A memory show knowledge/NAME --space SPACE
-A memory update knowledge/NAME --space SPACE --body-file FILE --actor process:codex --expect HASH
+A memory create codekb/NAME --space SPACE --body-file FILE --actor process:codex --type TYPE --title TITLE --description DESCRIPTION
+A memory show codekb/NAME --space SPACE
+A memory update codekb/NAME --space SPACE --body-file FILE --actor process:codex --expect HASH
 A memory search QUERY --space SPACE [--intent-id ID]
 ```
 

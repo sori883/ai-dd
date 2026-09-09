@@ -23,7 +23,7 @@ func TestConfigureHelpExamples(t *testing.T) {
 			root := t.TempDir()
 			runMinimalProcess(t, root, "git", "init", "-q")
 			runMinimalCLI(t, binary, root, nil, "install", "codex", "--project-dir", root)
-			writeMinimalFixture(t, filepath.Join(root, "aidlc/spaces/default/knowledge/knowledge/current.md"), "---\ntype: Design\ntitle: Addition\ndescription: Current behavior\n---\nAdd returns the sum.\n")
+			writeMinimalFixture(t, filepath.Join(root, "aidlc/spaces/default/knowledge/codekb/current.md"), "---\ntype: Design\ntitle: Addition\ndescription: Current behavior\n---\nAdd returns the sum.\n")
 			runMinimalProcess(t, root, "git", "add", ".")
 			runMinimalProcess(t, root, "git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "assets")
 			head := strings.TrimSpace(string(runMinimalProcess(t, root, "git", "rev-parse", "HEAD")))

@@ -29,7 +29,7 @@ func (c *boundaryCollector) require(ok bool, message string) {
 }
 func (s Store) documentPath(st State, kind string) string {
 	prefix := "aidlc/spaces/" + s.Space + "/knowledge/"
-	return prefix + map[string]string{"Rule": "rules/rule.md", "Requirements": "design/" + st.ID + "/requirements.md", "ImplementationPlan": "design/" + st.ID + "/implementation-plan.md", "CurrentAnalysis": "knowledge/current-analysis.md", "Architecture": "knowledge/architecture.md"}[kind]
+	return prefix + map[string]string{"Rule": "rules/rule.md", "Requirements": "design/" + st.ID + "/requirements.md", "ImplementationPlan": "design/" + st.ID + "/implementation-plan.md", "CurrentAnalysis": "codekb/current-analysis.md", "Architecture": "codekb/architecture.md"}[kind]
 }
 func (c *boundaryCollector) file(name string) ([]byte, bool) {
 	if !safeEvidencePath(name) {

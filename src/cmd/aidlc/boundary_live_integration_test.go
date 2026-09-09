@@ -47,7 +47,7 @@ func TestBoundaryLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A valid OKF document with a missing required section must be repaired through the CLI.
-	writeMinimalFixture(t, filepath.Join(root, "aidlc/spaces/default/knowledge/knowledge/current-analysis.md"), "---\ntype: CurrentAnalysis\ntitle: Current project\ndescription: Empty project\n---\n## 現状\nEmpty repository.\n")
+	writeMinimalFixture(t, filepath.Join(root, "aidlc/spaces/default/knowledge/codekb/current-analysis.md"), "---\ntype: CurrentAnalysis\ntitle: Current project\ndescription: Empty project\n---\n## 現状\nEmpty repository.\n")
 	cfg := flowLiveConfig{Root: root, Binary: binary, Evidence: evidence}
 	cfgPath := filepath.Join(evidence, "config.json")
 	raw, err := json.Marshal(cfg)
