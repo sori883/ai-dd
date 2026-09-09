@@ -36,3 +36,9 @@ work_unit_id: issue155-doc-output-repair、verification_mode: loop。開始HEAD�
 - `go test -count=1 ./src/internal/install -run '^TestStagePlanner'`: exit 0、fcd3c1。
 - `go test -count=1 ./src/internal/flow -run '^TestStagePlanner'`: exit 0、f8b813。
 - `git diff --check`: exit 0、3dd8f3。Goファイル変更なしのためgofmt適用は不要。全体検証は実行していない。
+
+## 文書outputs制約の配布回帰
+
+work_unit_id: issue155-output-regression、verification_mode: loop。開始HEADはa9747bec4510224dc620123b428ed449c8d8d782。再reviewのP2を受け、TestStagePlannerDistributionで「期待する文書（なければなし）」「プログラム・テストコード・commitを文書outputsへ列挙しない」「検証証拠の必要性は文書outputsとは別に説明する」を配置済みagent本文から検査する。原稿は既に正しいためALREADY_GREENであり、人工REDは作っていない。
+
+`go test -count=1 ./src/internal/install -run '^TestStagePlanner'` はexit 0（935239、0.407s）。当該testへのgofmtとgit diff --checkもexit 0。同一work unitでは製品原稿を変更せず、全体検証も実行していない。
