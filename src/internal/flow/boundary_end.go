@@ -152,7 +152,10 @@ func (c *boundaryCollector) results(st State) {
 		}
 	}
 	for _, name := range st.Config.TestResults {
-		record := boundaryCollector{store: c.store}
+		if c.contents == nil {
+			c.contents = map[string][]byte{}
+		}
+		record := boundaryCollector{store: c.store, contents: c.contents}
 		raw, ok := record.file(name)
 		if !ok {
 			c.failures = append(c.failures, record.failures...)
@@ -174,6 +177,9 @@ func (c *boundaryCollector) results(st State) {
 			continue
 		}
 		c.files = append(c.files, record.files...)
+		for _, version := range record.files {
+			c.recordProof(version)
+		}
 		for _, run := range result.Runs {
 			valid := strings.TrimSpace(run.Command) != "" && run.ExitCode != nil && len(run.Commit) == 40
 			_, err := git(c.store.Root, "cat-file", "-e", run.Commit+"^{commit}")
@@ -195,6 +201,14 @@ func (c *boundaryCollector) results(st State) {
 				matches = err == nil && run.Commit == head
 			}
 			output, ok := c.file(run.OutputPath)
+			if ok {
+				for _, version := range c.files {
+					if version.Path == run.OutputPath {
+						c.recordProof(version)
+						break
+					}
+				}
+			}
 			valid = valid && matches && ok && len(bytes.TrimSpace(output)) > 0
 			c.require(valid, "invalid test run or result commit: "+name)
 			if valid && *run.ExitCode == 0 {
@@ -206,4 +220,13 @@ func (c *boundaryCollector) results(st State) {
 	for r := range required {
 		c.require(successes[r], "successful planned test required: "+r.command+" at "+r.commit)
 	}
+}
+
+func (c *boundaryCollector) recordProof(version FileVersion) {
+	for _, existing := range c.proof {
+		if existing.Path == version.Path {
+			return
+		}
+	}
+	c.proof = append(c.proof, version)
 }

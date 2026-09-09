@@ -1,6 +1,6 @@
 # 開発プロジェクトRAM
 
-- [開始・終了Sensorの実装証拠](decisions/2026-09-09-start-end-sensors-evidence.md): schema2、beginと合格版、文書/資材/実行結果、修復hookのloop証拠。Unit別成功・統合HEAD・段階別結果の親境界修復を含む。最終検証と実機の証拠は親PRへ記録。
+- [開始・終了Sensorの実装証拠](decisions/2026-09-09-start-end-sensors-evidence.md): schema2、beginと合格版、文書/資材/実行結果、修復hookのloop証拠。Unit別成功・統合HEAD・段階別結果の親境界修復、同一検査版保存・TDD証拠役割分離・移転fixtureの独立レビュー修復を含む。最終検証と実機の証拠は親PRへ記録。
 
 - [開始・終了Sensorの実装を承認](decisions/2026-09-09-start-end-sensors-approved.md): ファイル別表への直接実装依頼。begin/境界check、共有版とIntent文書、schema2と旧data保持を具体化。
 

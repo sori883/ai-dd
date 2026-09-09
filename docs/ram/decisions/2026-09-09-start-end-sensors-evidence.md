@@ -82,3 +82,20 @@ work_unit_id=start-end-sensors-evidence-repair、verification_mode=loop。同じ
 末尾も同command、help変更は `go test -count=1 ./src/internal/cli -run '^TestBoundary'` で確認し、双方exit 0。
 ログは `/tmp/sensor-repair-final-flow.log` と `/tmp/sensor-repair-final-cli.log`。gofmtとgit diff --checkも成功。
 integration/liveはこのrepairでも実行しない。最終証拠は親PRへ記録する。
+
+## 独立レビューの検査版・証拠役割・移転fixture修復
+
+`work_unit_id=start-end-sensors-review-repair`、`verification_mode=loop`、Issue142の承認範囲内。
+
+1. `TestBoundaryTransitionCollectorSnapshot` と `TestBoundaryTransitionUsesOneSensorSnapshot` は、初回読取り後の変更・削除で検査bytesと保存hashが食い違う問題をrunnable REDとして確認した。collector内で初回bytesを共有し、Sensorの同じcollectorをTransitionへ返すことで再収集せずAcceptedへ保存する。公開API・state形式・注入用製品APIは追加していない。testだけのGit wrapperが旧二回目の収集時に変更/削除する。
+2. `TestBoundaryTransitionEvidenceRole` は、合法な `knowledge/evidence/` の結果JSONとoutput変更をintegration開始/CheckWorkが無視する問題をREDとして確認した。現在段階の検査済みJSON/outputをメモリ内proof一覧に分離し、TDD Accepted.Outputsにはその版だけを保存する。全パスを不変照合し、共有文書はSensor digestに保持する。state形式や許容path、資材の更新可能性は変更していない。
+3. `TestRelocationCommand` の旧Artifactのみのfixtureを `INVALID_TEST_FIXTURE` として訂正。Unit別の実際の `go test -count=1 -run ^TestA$` / `^TestB$` を計画し、実行出力と各ResultCommitからstrict JSONを登録する。全体テスト出力も実測値に置換し、移転元不変・Unit統合・reviewのassertを保持した。integrationはloopでは実行・compileしておらず、親finalで検証する。
+
+実測ログと終了コード:
+
+- 項目1: `go test -count=1 ./src/internal/flow -run '^TestBoundaryTransition'`。`/tmp/sensor-review-1-red.log` exit 1、`/tmp/sensor-review-1-green.log` exit 0。
+- 項目2: `go test -count=1 ./src/internal/flow -run '^(TestBoundaryTransition|TestStartSensor)'`。`/tmp/sensor-review-2-red.log` exit 1、`/tmp/sensor-review-2-green.log` exit 0。
+- 項目3後の通常targeted: 項目1と同command、`/tmp/sensor-review-3-targeted.log` exit 0。
+- 末尾: `go test -count=1 ./src/internal/flow -run '^(TestBoundaryTransition|TestStartSensor|TestEndSensor)'`、`/tmp/sensor-review-final.log` exit 0。
+
+変更Goファイルへgofmtを適用し、git diff --checkを確認。最終検証と移転integrationの証拠は親PRへ記録する。

@@ -45,6 +45,10 @@ func (s Store) Check(id string) (Gate, error) {
 	return s.checkState(st)
 }
 func (s Store) checkState(st State) (Gate, error) {
+	gate, _, err := s.checkStateSnapshot(st)
+	return gate, err
+}
+func (s Store) checkStateSnapshot(st State) (Gate, *boundaryCollector, error) {
 	config := st.Config
 	config.Units = append([]Unit(nil), st.Config.Units...)
 	for i := range config.Units {
@@ -55,7 +59,7 @@ func (s Store) checkState(st State) (Gate, error) {
 		Config Config
 	}{st.Stage, config})
 	if err != nil {
-		return Gate{}, err
+		return Gate{}, nil, err
 	}
 	h := sha256.New()
 	h.Write(raw)
@@ -71,13 +75,13 @@ func (s Store) checkState(st State) (Gate, error) {
 	require(len(config.Unknowns) == 0, "blocking unknowns remain")
 	head, err := git(s.Root, "rev-parse", "HEAD")
 	if err != nil {
-		return Gate{}, err
+		return Gate{}, nil, err
 	}
 	h.Write([]byte(head))
 	require(config.CodeRevision == head, "code_revision must match HEAD")
 	files, err := git(s.Root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
 	if err != nil {
-		return Gate{}, err
+		return Gate{}, nil, err
 	}
 	names := strings.Split(files, "\x00")
 	sort.Strings(names)
@@ -182,7 +186,7 @@ func (s Store) checkState(st State) (Gate, error) {
 	failures = append(failures, c.failures...)
 	extra, err := json.Marshal(append(append([]FileVersion(nil), c.files...), c.sources...))
 	if err != nil {
-		return Gate{}, err
+		return Gate{}, nil, err
 	}
 	h.Write(extra)
 	gate := Gate{Target: fmt.Sprintf("%x", h.Sum(nil)), Status: "pass", Summary: "requirements satisfied"}
@@ -190,7 +194,7 @@ func (s Store) checkState(st State) (Gate, error) {
 		gate.Status = "fail"
 		gate.Summary = strings.Join(failures, "; ")
 	}
-	return gate, nil
+	return gate, c, nil
 }
 func unitPlanProblems(units []Unit) []string {
 	var problems []string

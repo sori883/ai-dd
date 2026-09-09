@@ -89,6 +89,8 @@ Stateへ追加:
 
 - entry: nullまたは{stage, inputs:[{path,sha256}], sources:[{path,sha256}]}。現段階の開始時参照版だけ。
 - accepted: stageをkeyとする{stage,review_target,outputs:[{path,sha256}]}。各段階の直近合格、最大4件。
+  TDDのoutputsはその段階の結果JSONとoutputファイル。置き場所に関係なく全件を後段で照合する。
+  可変の共有文書は終了reviewの対象に含め、TDDの不変証拠とは分ける。
 
 entry/acceptedはCLI所有でconfigureでは変更できない。path/型/hash/重複/段階を厳密に検証する。
 本文snapshot、全操作audit、receipt台帳、別の工程体系は追加しない。合格結果自身をdigestへ入れる自己循環を避ける。
@@ -97,7 +99,8 @@ entry/acceptedはCLI所有でconfigureでは変更できない。path/型/hash/�
 
 configureで通常の現段階成果・計画を更新してもentryを毎回消さない。material_sources/no_materials_reason変更は
 解析前提変更なのでdiscoveryではentryを無効化、後段ではdiscoveryへのreopenを要求する。
-advanceは終了Sensor/reviewを再照合し現在の成果版をacceptedへ保存して次段階entryを未確認にする。
+advanceは終了Sensor/reviewを再照合し、その同じ検査で読んだ成果版をacceptedへ保存して次段階entryを未確認にする。
+検査後の再読込みで別の版へ差し替えず、同一検査内でも本文とhashを一貫させる。
 pause/resumeはentryを保持。reopenは対象段階のentryとその段階以降のacceptedを無効化しbeginから再開する。
 
 ## 実行結果の検査境界

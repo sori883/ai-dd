@@ -102,9 +102,7 @@ func (s Store) checkWorkState(st State) error {
 		a, ok := st.Accepted["tdd"]
 		c.require(ok, "accepted tdd required")
 		for _, f := range a.Outputs {
-			if !strings.HasPrefix(f.Path, "aidlc/spaces/"+s.Space+"/knowledge/") {
-				c.accepted(st, "tdd", f.Path)
-			}
+			c.accepted(st, "tdd", f.Path)
 		}
 	}
 	if len(c.failures) > 0 {

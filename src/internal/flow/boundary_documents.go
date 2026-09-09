@@ -11,6 +11,8 @@ import (
 )
 
 type boundaryCollector struct {
+	proof    []FileVersion
+	contents map[string][]byte
 	store    Store
 	files    []FileVersion
 	sources  []FileVersion
@@ -31,6 +33,10 @@ func (c *boundaryCollector) file(name string) ([]byte, bool) {
 		c.require(false, "unsafe input path: "+name)
 		return nil, false
 	}
+	if raw, ok := c.contents[name]; ok {
+		c.recordFile(name, raw)
+		return raw, true
+	}
 	root, err := os.OpenRoot(c.store.Root)
 	if err != nil {
 		c.require(false, "unreadable input: "+name)
@@ -47,15 +53,22 @@ func (c *boundaryCollector) file(name string) ([]byte, bool) {
 		c.require(false, "unreadable input: "+name)
 		return nil, false
 	}
-	version := FileVersion{name, fmt.Sprintf("%x", sha256.Sum256(raw))}
-	for _, f := range c.files {
-		if f.Path == name {
-			return raw, true
-		}
+	if c.contents == nil {
+		c.contents = map[string][]byte{}
 	}
-	c.files = append(c.files, version)
+	c.contents[name] = raw
+	c.recordFile(name, raw)
 	return raw, true
 }
+func (c *boundaryCollector) recordFile(name string, raw []byte) {
+	for _, f := range c.files {
+		if f.Path == name {
+			return
+		}
+	}
+	c.files = append(c.files, FileVersion{name, fmt.Sprintf("%x", sha256.Sum256(raw))})
+}
+
 func (c *boundaryCollector) document(st State, name, kind string, optional bool) {
 	if optional {
 		root, err := os.OpenRoot(c.store.Root)
@@ -170,9 +183,7 @@ func (s Store) startState(st State) (Gate, []FileVersion, []FileVersion) {
 		a, ok := st.Accepted["tdd"]
 		c.require(ok, "accepted tdd required")
 		for _, f := range a.Outputs {
-			if !strings.HasPrefix(f.Path, "aidlc/spaces/"+s.Space+"/knowledge/") {
-				c.accepted(st, "tdd", f.Path)
-			}
+			c.accepted(st, "tdd", f.Path)
 		}
 	}
 	sources := boundaryCollector{store: s}
