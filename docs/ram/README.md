@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [現行知識の保存先をcodekbへ変更](decisions/2026-09-09-knowledge-codekb-approved.md): knowledge/codekbへ配布・Sensor・手順を統一する直接実装依頼。外側のOKF検索rootと他文書folderは維持。
+
 - [OKF作業記録の実装証拠](decisions/2026-09-09-okf-work-log-evidence.md): Issue #149、Knowledge log配置、metadataと前後hashの保存復旧、公開検索/show、配布手順のTDD実測。文書修復で現在の保存先とpending保存後の時刻固定を明記。finalは親担当。
 
 - [Intent作業記録をOKF検索対象へ移す依頼](decisions/2026-09-09-work-log-okf-request.md): Knowledgeのlog/配下へ`<intent_id>-work-log.md`として保存し、metadata検索へ対応する。保存先補正後の直接承認を確認。
