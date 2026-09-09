@@ -116,3 +116,13 @@ Concept IDは拡張子なし。`adr/NAME` はtype adrで保存する。
 `A memory search QUERY --space SPACE [--intent-id ID]`
 Unitの実操作とJSONは `A unit claim --help`、`A unit result --help`、`A unit integrate --help`。
 必要な実装計画を確認し、独立レビューは `A intent review --help` のassign/acceptを使う。
+
+## 5担当の依頼と結果回収
+
+メインAIがaidlc-requirementsへ目的・要件・受入条件の整理、aidlc-researcherへ根拠の調査を依頼する。
+両結果が揃ったらaidlc-stage-plannerへIntent/Space、state/計画、6段階カタログ・手順、Rule、要件、調査結果、制約と成果物を渡す。
+同担当はread-onlyで採否・順序・理由・省略理由・期待成果物・不足情報とCLI適合PLAN.json案を返す。
+途中の追加・省略・並べ替え・reopenでも同担当へ変更理由と現在の実行回を渡し、案を回収する。
+メインAIがユーザーへ説明し、最終決定を受けてintent plan/plan-approvalへ記録する。担当自身は保存・承認・子起動を行わない。
+実装手順とUnit詳細はplanning、実装はaidlc-worker、独立reviewはaidlc-reviewerが担当する。
+workerだけがworkspace-write、他4担当はread-only。共有state/Knowledge保存と担当起動はメインAIが行う。

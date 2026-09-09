@@ -200,7 +200,7 @@ func parseProcedure(stage Stage, raw []byte) (Procedure, error) {
 	if p.StageID != stage.ID || strings.TrimSpace(string(body)) == "" || p.Inputs == nil || p.Outputs == nil || p.Agents == nil || p.Sensors.Start != stage.ID+"-start" || p.Sensors.End != stage.ID+"-end" {
 		return p, fmt.Errorf("incomplete procedure")
 	}
-	agents := map[string]string{"research": "aidlc-researcher", "requirements": "aidlc-requirements", "implementation": "aidlc-worker", "independent_review": "aidlc-reviewer"}
+	agents := map[string]string{"execution_planning": "aidlc-stage-planner", "research": "aidlc-researcher", "requirements": "aidlc-requirements", "implementation": "aidlc-worker", "independent_review": "aidlc-reviewer"}
 	seen := map[string]bool{}
 	for _, a := range p.Agents {
 		expected, known := agents[a.Role]

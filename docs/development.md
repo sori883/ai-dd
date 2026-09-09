@@ -127,15 +127,23 @@ AIDLC_RELOCATION_LIVE=1 go test -tags=integration -v -count=1 -timeout=15m ./src
 限定liveは親finalで実行し、固定Codex/model/通常sandboxで移転後の同じIntent選択とKnowledge作成更新を観測します。
 2Unitの実CLI引継ぎと実Go testの証拠は、実AI workerの完走とは区別します。
 
-### 製品の4担当
+### 製品の5担当
 
-fresh installは `.codex/agents/aidlc-{researcher,requirements,worker,reviewer}.toml` を配置する。
+fresh installは `.codex/agents/aidlc-{researcher,requirements,stage-planner,worker,reviewer}.toml` を配置する。
 調整役はintent procedureが返す現在手順を読み、調査・要件整理・承認済み実装・固定成果の独立レビューを必要に応じて委譲する。
-workerはworkspace-write、残る3担当はread-only。
+workerはworkspace-write、残る4担当はread-only。
 model/effortは定義で固定せず利用者設定を継承する。共有stateとKnowledge/ADRの保存は調整役が担当する。
-既存配置を自動上書きする更新機能ではないため、利用には4定義と更新されたWORKFLOWが配置された環境が必要。
+既存配置を自動上書きする更新機能ではないため、利用には5定義と更新されたWORKFLOWが配置された環境が必要。
 配置原稿との一致は `go test -count=1 ./src/internal/install -run '^TestProductAgent'` で確認する。
 実際のnamed agent起動は固定Codex環境で別途検証し、配置testだけで実行や任意の成果品質を保証しない。
+
+専用のaidlc-stage-plannerはdiscovery内で要件整理・調査結果が揃った後にメインAIが呼び出します。
+Intent/Space、stateと現在計画、6段階カタログ・手順、Rule、要件、調査結果、制約と利用可能な成果物を渡します。
+採否・順序・理由・省略理由・期待成果物・不足情報とPLAN.json案を回収し、メインAIがユーザーへ説明して
+plan/plan-approvalで保存します。途中の追加・省略・並べ替え・reopenにも同担当を使います。
+実装手順やUnit詳細のplanning、広い追加調査のresearcher、独立reviewのreviewerとは責任を分けます。
+新担当はread-onlyで共有保存・承認・子起動を行いません。model/effortは既存担当と同じく利用者設定を継承します。
+定義hashが変わるため新しい配布と新Intentで利用し、旧Intentを移行したり既設定義を上書きしたりしません。
 
 ### 段階の開始・終了Sensor
 
