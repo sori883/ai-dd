@@ -69,7 +69,7 @@ func Help(args []string) (string, bool) {
 		text += "bindは現在stateと必須Rule全文を読む。--recoverは同じsession/Space/Intentで、失敗toolの終了を確認した後だけ使用する。実行中と推測して解除しない。inspectは読取りのみ。\n"
 	}
 	if key == "install/codex" {
-		text += "移転: aidlc install codex --relocate --project-dir NEW_ROOT --from-project-dir OLD_ROOT --from-binary OLD_BINARY\n新binaryは実行中のaidlc。旧pathは絶対参照文字列で存在不要。移転先AI開始前に端末から実行する。既知Skillと製品hook参照だけを更新し、独自hookやWORKFLOW、Knowledgeを保持する。部分失敗はPathsが更新済み、Pendingが未処理。全件再検査する同じ引数の再試行で復旧する。未知編集は自動上書きしない。新ROOT/.codex/hooks.jsonの絶対pathを確認し、Codexのhook trustを利用者が確認する。trust/認証設定は変更しない。\n"
+		text += "移転: aidlc install codex --relocate --project-dir NEW_ROOT --from-project-dir OLD_ROOT --from-binary OLD_BINARY\n新binaryは実行中のaidlc。旧pathは絶対参照文字列で存在不要。移転先AI開始前に端末から実行する。既知のaidlc/aidlc-cli両skillと製品hooksの3ファイルを事前検査し参照だけを更新する。独自hookや旧WORKFLOW、Knowledgeを保持し、旧版のupgradeを兼ねない。部分失敗はPathsが更新済み、Pendingが未処理。全件再検査する同じ引数の再試行で復旧する。未知編集は自動上書きしない。新ROOT/.codex/hooks.jsonの絶対pathを確認し、Codexのhook trustを利用者が確認する。trust/認証設定は変更しない。\n"
 	}
 	if key == "unit/reassign" {
 		text += "active/tddのneeds_confirmationだけ再割当できる。旧worker終了を確認し、previous_run_stoppedをtrueにする。runningなら先にpause/resumeする。成功まで新workerを開始しない。\nREQUEST.json例: {\"step_id\":\"現在step_id\",\"unit\":\"a\",\"session\":\"new-worker\",\"root\":\"/new/worker\",\"commit\":\"<40桁の現在HEAD>\",\"reason\":\"旧処理終了と成果を確認\",\"previous_run_stopped\":true}\nunit/session/root/commit/reasonは文字列、停止確認は真偽値。run_idは指定せず新規発行する。HEAD・base履歴・依存統合・scope・他担当との衝突を検査する。state保存途中は当該Intentのconfigureや他Unit操作を拒否してrevisionを保持する。同じexpectとJSONで再試行し、異なる残存要求は現在割当を確認する。既にrunningならshowとassignmentで成功済みを確認する。新runで再テスト後result/integrateし、reviewは新root/sessionへassignして現在targetを受け直す。\n"
@@ -95,7 +95,7 @@ func Help(args []string) (string, bool) {
 		text += "inputs/outputs配列を一括置換。各要素はstage、Space内Markdownのpath、metadata(type/title/description必須、status/tags/intent_id任意)。outputsは未存在pathも宣言できる。test_resultsは実行後に存在する結果だけをconfigureへ登録する。受入済み段階の変更はreopenが必要。metadataは完全一致、tagsは順序なし集合。新規adrはknowledge/adr/へ作り現在Intent IDを保持する。\n"
 	}
 	if key == "intent/procedure" {
-		text += "現在step_id・計画revision・現在段階・definition_hash・procedureのpath/frontmatter/本文全文・解決inputs・具体outputs・診断・次回ID・reopen候補をJSONで返す読取り専用操作。IDは32桁小文字16進数、SPACEはSpace名。段階変更や再開後に取り直す。任意path/stageは指定不可。配布Rule selectorは本文のtype/titleで特定しrules/rule.mdのpathも検査する。他のRuleや入口を削除しない。定義変更時は元版を復元するか新Intentを作る。\n"
+		text += "現在step_id・計画revision・現在段階・definition_hash・procedureのpath/frontmatter/本文全文・解決inputs・具体outputs・診断・次回ID・reopen候補をJSONで返す読取り専用操作。IDは32桁小文字16進数、SPACEはSpace名。段階変更や再開後に取り直す。任意path/stageは指定不可。配布Ruleは固定path rules/rule.mdとmetadata type Ruleで特定する。titleは利用者が変更でき、title/description/本文の検証は維持する。他のRuleや入口を削除しない。定義変更時は元版を復元するか新Intentを作る。\n"
 	}
 	if key == "intent/check" || key == "intent/begin" {
 		text += "checkは読取り専用。--boundary start|end（省略end）。beginは開始入力版を保存し同段階の再試行では差し替えない。一般作業/Unit claim前にbeginが必要。文書不足はintent procedureの必須型/節に従いmemory CLIで修復する。\n"

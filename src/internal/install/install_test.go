@@ -2,6 +2,7 @@ package install
 
 import (
 	"encoding/json"
+	"github.com/sori883/ai-dd/src/internal/cli"
 	"os"
 	"path/filepath"
 	"strings"
@@ -118,17 +119,21 @@ func TestInstallMemoryCommandGuidance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	common, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/WORKFLOW.md"))
+	common, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc-cli/SKILL.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw = append(raw, common...)
 	raw = append(raw, procedure...)
+	for _, action := range []string{"create", "update", "show", "search"} {
+		h, ok := cli.Help([]string{"memory", action, "--help"})
+		if !ok {
+			t.Fatal(action)
+		}
+		raw = append(raw, []byte(h)...)
+	}
 	for _, want := range []string{
-		"memory create codekb/NAME --space SPACE --body-file FILE --actor process:codex --type TYPE --title TITLE --description DESCRIPTION",
-		"memory update codekb/NAME --space SPACE --body-file FILE --actor process:codex --expect HASH",
-		"memory show codekb/NAME --space SPACE",
-		"memory search QUERY --space SPACE [--intent-id ID]",
+		"memory create CONCEPT-ID", "memory update CONCEPT-ID", "memory show CONCEPT-ID", "memory search [QUERY]", "--body-file", "--actor", "--type", "--title", "--description", "--expect", "--intent-id",
 		"拡張子なし", "adr/NAME", "hash", "content", "memory create --help", "memory update --help", "本文",
 	} {
 		if !strings.Contains(string(raw), want) {
@@ -149,7 +154,14 @@ func TestFlowInstallInactiveResumeGuidance(t *testing.T) {
 	if len(raw) > 4096 {
 		t.Fatalf("deployed skill %d bytes exceeds 4096", len(raw))
 	}
-	for _, want := range []string{"intent procedure ID --space SPACE", "intent resume ID --space SPACE --expect R --reason TEXT", "intent reopen ID --space SPACE --expect R --reason TEXT --step STEP_ID"} {
+	for _, action := range []string{"resume", "reopen"} {
+		h, ok := cli.Help([]string{"intent", action, "--help"})
+		if !ok {
+			t.Fatal(action)
+		}
+		raw = append(raw, []byte(h)...)
+	}
+	for _, want := range []string{"intent procedure ID --space SPACE", "intent resume ID --space SPACE --expect REVISION --reason TEXT", "intent reopen ID --space SPACE --expect REVISION --reason TEXT --step STEP_ID"} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("missing inactive bootstrap grammar %q", want)
 		}
@@ -165,7 +177,7 @@ func TestMemoryHelpPlacedSkill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(raw) > 4096 || !strings.Contains(string(raw), "--help") || !strings.Contains(string(raw), "迷ったら") {
+	if len(raw) > 4096 || !strings.Contains(string(raw), "../aidlc-cli/SKILL.md") || !strings.Contains(string(raw), "CLI help") {
 		t.Fatalf("missing bounded help entry: %s", raw)
 	}
 }
@@ -175,21 +187,26 @@ func TestOKFWorkLogInstalledGuidance(t *testing.T) {
 	if _, err := Codex(root, "/opt/aidlc"); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"aidlc/workflow/stages/discovery.md", "aidlc/workflow/stages/planning.md", "aidlc/workflow/stages/tdd.md", "aidlc/workflow/stages/integration.md", ".agents/skills/aidlc/WORKFLOW.md"} {
+	for _, name := range []string{"aidlc/workflow/stages/discovery.md", "aidlc/workflow/stages/planning.md", "aidlc/workflow/stages/tdd.md", "aidlc/workflow/stages/integration.md", ".agents/skills/aidlc-cli/SKILL.md"} {
 		t.Run(name, func(t *testing.T) {
 			raw, err := os.ReadFile(filepath.Join(root, name))
 			if err != nil {
 				t.Fatal(err)
 			}
 			if strings.Contains(name, "/stages/") {
-				if !strings.Contains(string(raw), "WORKFLOW.md") {
+				if !strings.Contains(string(raw), "aidlc-cli") {
 					t.Fatal("stage lacks common-operation reference")
 				}
-				raw, err = os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/WORKFLOW.md"))
+				raw, err = os.ReadFile(filepath.Join(root, ".agents/skills/aidlc-cli/SKILL.md"))
 				if err != nil {
 					t.Fatal(err)
 				}
 			}
+			h, ok := cli.Help([]string{"intent", "reopen", "--help"})
+			if !ok {
+				t.Fatal("reopen help")
+			}
+			raw = append(raw, []byte(h)...)
 			for _, want := range []string{"knowledge/log/<intent_id>-work-log.md", "memory search work-log --space SPACE --intent-id ID", "memory show log/ID-work-log --space SPACE", "revision"} {
 				if !strings.Contains(string(raw), want) {
 					t.Errorf("missing %q", want)

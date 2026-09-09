@@ -52,7 +52,7 @@ func TestRelocateReferences(t *testing.T) {
 	old, _ := json.Marshal(shellQuote(oldBinary) + " __minimal-hook --project-dir " + shellQuote(oldRoot))
 	new, _ := json.Marshal(shellQuote("/new/aidlc") + " __minimal-hook --project-dir " + shellQuote(root))
 	want := bytes.ReplaceAll(raw, old, new)
-	if !bytes.Equal(got, want) || len(result.Paths) != 2 {
+	if !bytes.Equal(got, want) || len(result.Paths) != 3 {
 		t.Fatalf("references not relocated: paths=%v\n%s", result.Paths, got)
 	}
 	skill, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/SKILL.md"))
@@ -117,7 +117,7 @@ func TestRelocatePartialAndConcurrentRetry(t *testing.T) {
 				}
 				return nil
 			})
-			if err == nil || len(result.Paths) != 1 || len(result.Pending) != 1 || result.Pending[0] != ".codex/hooks.json" {
+			if err == nil || len(result.Paths) != 2 || len(result.Pending) != 1 || result.Pending[0] != ".codex/hooks.json" {
 				t.Fatalf("partial result %+v %v", result, err)
 			}
 			if conflict && !strings.Contains(err.Error(), "concurrent asset change") {

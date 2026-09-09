@@ -94,12 +94,33 @@ func TestRelocationCommand(t *testing.T) {
 	before := relocationSnapshot(t, clone)
 	g.ok("install", "codex", "--relocate", "--project-dir", clone, "--from-project-dir", f.root, "--from-binary", f.binary)
 	after := relocationSnapshot(t, clone)
+	const runtimeIgnore = "aidlc/.runtime/.gitignore"
+	if _, existed := before[runtimeIgnore]; !existed {
+		got := operationsRead(t, filepath.Join(clone, runtimeIgnore))
+		if string(got) != "*\n" {
+			t.Fatalf("unexpected runtime ignore bytes: %q", got)
+		}
+		before[runtimeIgnore] = filestore.Hash([]byte("*\n"))
+	}
 	for p, hash := range before {
-		if p == ".codex/hooks.json" || p == ".agents/skills/aidlc/SKILL.md" {
+		if p == ".codex/hooks.json" || p == ".agents/skills/aidlc/SKILL.md" || p == ".agents/skills/aidlc-cli/SKILL.md" {
 			continue
 		}
 		if after[p] != hash {
 			t.Fatalf("changed unrelated asset %s", p)
+		}
+	}
+	if len(after) != len(before) {
+		t.Fatal("relocation added or removed assets")
+	}
+	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
+	for _, name := range []string{"aidlc", "aidlc-cli"} {
+		p := filepath.Join(".agents/skills", name, "SKILL.md")
+		old := operationsRead(t, filepath.Join(f.root, p))
+		want := bytes.ReplaceAll(old, []byte(quote(f.binary)), []byte(quote(g.binary)))
+		got := operationsRead(t, filepath.Join(clone, p))
+		if bytes.Equal(old, want) || !bytes.Equal(got, want) {
+			t.Fatalf("skill reference bytes not relocated: %s", p)
 		}
 	}
 	changedHooks := operationsRead(t, filepath.Join(clone, ".codex/hooks.json"))

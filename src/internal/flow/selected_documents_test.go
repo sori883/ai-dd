@@ -30,8 +30,24 @@ func TestSelectedDocumentsStartAndIdentity(t *testing.T) {
 	if err = filestore.WriteFile(s.Root, "aidlc/spaces/default/knowledge/rules/duplicate.md", raw); err != nil {
 		t.Fatal(err)
 	}
+	if err = s.CheckWork(st.ID); err != nil {
+		t.Fatalf("unrelated Rule changed fixed selection: %v", err)
+	}
+	canonical := s.documentPath(st, "Rule")
+	if err = filestore.WriteFile(s.Root, canonical, append(raw, []byte("\nChanged project rule.\n")...)); err != nil {
+		t.Fatal(err)
+	}
 	if err = s.CheckWork(st.ID); err == nil {
-		t.Fatal("new ambiguous match ignored")
+		t.Fatal("changed canonical Rule accepted")
+	}
+	if err = filestore.WriteFile(s.Root, canonical, raw); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Remove(filepath.Join(s.Root, canonical)); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.CheckWork(st.ID); err == nil {
+		t.Fatal("duplicate substituted missing canonical Rule")
 	}
 }
 func TestSelectedDocumentsSharedUpdate(t *testing.T) {

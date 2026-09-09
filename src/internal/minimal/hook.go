@@ -87,7 +87,7 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 			}
 
 			if selected.Status != "active" && !s.workflowRead(input) {
-				return nil, invalid("Intent is waiting, paused or finished; read the deployed procedure with cat .agents/skills/aidlc/WORKFLOW.md, then resume or reopen explicitly")
+				return nil, invalid("Intent is waiting, paused or finished; read the deployed procedure with cat .agents/skills/aidlc-cli/SKILL.md, then resume or reopen explicitly")
 			}
 
 			if !s.workflowRead(input) {
@@ -322,7 +322,7 @@ func (s Service) workflowRead(input HookInput) bool {
 		return false
 	}
 	for _, name := range argv[1:] {
-		if name != ".agents/skills/aidlc/SKILL.md" && name != ".agents/skills/aidlc/WORKFLOW.md" {
+		if name != ".agents/skills/aidlc/SKILL.md" && name != ".agents/skills/aidlc-cli/SKILL.md" {
 			return false
 		}
 		if _, err := okfmemory.ReadFile(s.Root, name); err != nil {

@@ -32,28 +32,30 @@ func relocate(root, binary, fromRoot, fromBinary string, write func(string, stri
 	if err != nil {
 		return result, err
 	}
-	paths := []string{".agents/skills/aidlc/SKILL.md", ".codex/hooks.json"}
-	before := make([][]byte, 2)
-	after := make([][]byte, 2)
+	paths := []string{".agents/skills/aidlc/SKILL.md", ".agents/skills/aidlc-cli/SKILL.md", ".codex/hooks.json"}
+	before := make([][]byte, len(paths))
+	after := make([][]byte, len(paths))
 	for i, p := range paths {
 		before[i], err = filestore.ReadFile(root, p)
 		if err != nil {
 			return result, fmt.Errorf("%s: %w", p, err)
 		}
 	}
-	template, err := fs.ReadFile(codex.Files, "SKILL.md")
-	if err != nil {
-		return result, err
+	for i, source := range []string{"SKILL.md", "aidlc-cli/SKILL.md"} {
+		template, err := fs.ReadFile(codex.Files, source)
+		if err != nil {
+			return result, err
+		}
+		oldSkill := []byte(strings.ReplaceAll(string(template), "@@BINARY@@", shellQuote(fromBinary)))
+		newSkill := []byte(strings.ReplaceAll(string(template), "@@BINARY@@", shellQuote(binary)))
+		if !bytes.Equal(before[i], oldSkill) && !bytes.Equal(before[i], newSkill) {
+			return result, fmt.Errorf("%s: unknown asset bytes: %w", paths[i], fs.ErrInvalid)
+		}
+		after[i] = newSkill
 	}
-	oldSkill := []byte(strings.ReplaceAll(string(template), "@@BINARY@@", shellQuote(fromBinary)))
-	newSkill := []byte(strings.ReplaceAll(string(template), "@@BINARY@@", shellQuote(binary)))
-	if !bytes.Equal(before[0], oldSkill) && !bytes.Equal(before[0], newSkill) {
-		return result, fmt.Errorf("%s: unknown asset bytes: %w", paths[0], fs.ErrInvalid)
-	}
-	after[0] = newSkill
-	after[1], err = relocateHooks(before[1], shellQuote(fromBinary)+" __minimal-hook --project-dir "+shellQuote(fromRoot), shellQuote(binary)+" __minimal-hook --project-dir "+shellQuote(root))
+	after[2], err = relocateHooks(before[2], shellQuote(fromBinary)+" __minimal-hook --project-dir "+shellQuote(fromRoot), shellQuote(binary)+" __minimal-hook --project-dir "+shellQuote(root))
 	if err != nil {
-		return result, fmt.Errorf("%s: %w", paths[1], err)
+		return result, fmt.Errorf("%s: %w", paths[2], err)
 	}
 	for i, p := range paths {
 		if !bytes.Equal(before[i], after[i]) {

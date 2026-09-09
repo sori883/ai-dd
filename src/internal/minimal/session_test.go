@@ -53,7 +53,7 @@ func bind(t *testing.T, s Service, id string) {
 func TestRulesFullTextAndLimit(t *testing.T) {
 	s, _ := setup(t)
 	raw, err := s.Execute(cli.MinimalRequest{Command: "memory", Action: "rules", Space: "default"})
-	if err != nil || !strings.Contains(string(raw), "作業の合意") {
+	if err != nil || !strings.Contains(string(raw), "プロジェクト共通ルール") {
 		t.Fatalf("rules = %s, %v", raw, err)
 	}
 	path := filepath.Join(s.Root, "aidlc/spaces/default/knowledge/rules/rule.md")
