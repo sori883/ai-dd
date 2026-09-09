@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	core "github.com/sori883/ai-dd/src/core/minimal"
 	"github.com/sori883/ai-dd/src/internal/flow"
 )
 
@@ -33,6 +34,32 @@ func TestFlowCommandFailureOutput(t *testing.T) {
 	}
 	store := flow.Store{Root: root, Space: "default"}
 	st, err := store.Create("Work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule, err := core.Files.ReadFile("knowledge/rules/rule.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{"rules/rule.md": string(rule), "design/" + st.ID + "/requirements.md": "---\ntype: Requirements\ntitle: Req\ndescription: Req\nintent_id: " + st.ID + "\n---\n## 目的\nBuild\n## 範囲\nScope\n## 要件\nWork\n## 受入条件\nPass\n## 未確定事項\nなし\n"} {
+		p := filepath.Join(root, "aidlc/spaces/default/knowledge", name)
+		if err = os.MkdirAll(filepath.Dir(p), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(p, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	head, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Config = flow.Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, CodeRevision: strings.TrimSpace(string(head)), NoMaterialsReason: "new", ADR: flow.ADR{Reason: "none"}}
+	st, err = store.Save(st, st.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err = store.Begin(st.ID, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,6 +99,11 @@ func TestFlowCommandFailureOutput(t *testing.T) {
 				t.Fatalf("exit=%d stdout=%q stderr=%q", code, out.String(), errout.String())
 			}
 		})
+	}
+	st.Config.Unknowns = []string{"unresolved"}
+	st, err = store.Save(st, st.Revision)
+	if err != nil {
+		t.Fatal(err)
 	}
 	cmd := mainProcess(t, "intent", "check", st.ID, "--space", "default", "--project-dir", root)
 	var out, errout bytes.Buffer

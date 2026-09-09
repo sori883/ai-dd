@@ -45,6 +45,10 @@ func (s Store) Check(id string) (Gate, error) {
 	return s.checkState(st)
 }
 func (s Store) checkState(st State) (Gate, error) {
+	gate, _, err := s.checkStateSnapshot(st)
+	return gate, err
+}
+func (s Store) checkStateSnapshot(st State) (Gate, *boundaryCollector, error) {
 	config := st.Config
 	config.Units = append([]Unit(nil), st.Config.Units...)
 	for i := range config.Units {
@@ -55,7 +59,7 @@ func (s Store) checkState(st State) (Gate, error) {
 		Config Config
 	}{st.Stage, config})
 	if err != nil {
-		return Gate{}, err
+		return Gate{}, nil, err
 	}
 	h := sha256.New()
 	h.Write(raw)
@@ -71,13 +75,13 @@ func (s Store) checkState(st State) (Gate, error) {
 	require(len(config.Unknowns) == 0, "blocking unknowns remain")
 	head, err := git(s.Root, "rev-parse", "HEAD")
 	if err != nil {
-		return Gate{}, err
+		return Gate{}, nil, err
 	}
 	h.Write([]byte(head))
 	require(config.CodeRevision == head, "code_revision must match HEAD")
 	files, err := git(s.Root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
 	if err != nil {
-		return Gate{}, err
+		return Gate{}, nil, err
 	}
 	names := strings.Split(files, "\x00")
 	sort.Strings(names)
@@ -94,8 +98,6 @@ func (s Store) checkState(st State) (Gate, error) {
 		}
 		h.Write(content)
 	}
-	knowledge := false
-	test := false
 	adrRefs := map[string]bool{}
 	stages := map[string]int{"discovery": 0, "planning": 1, "tdd": 2, "integration": 3}
 	for _, artifact := range config.Artifacts {
@@ -130,7 +132,6 @@ func (s Store) checkState(st State) (Gate, error) {
 		h.Write(content)
 		if artifact.Kind == "test" {
 			require(len(content) > 0, "empty test artifact")
-			test = len(content) > 0
 			continue
 		}
 		prefix := "aidlc/spaces/" + s.Space + "/knowledge/"
@@ -144,14 +145,10 @@ func (s Store) checkState(st State) (Gate, error) {
 		if artifact.Kind == "ADR" {
 			require(doc.String("type") == "ADR", "ADR type mismatch")
 		}
-		if artifact.Kind == "Knowledge" {
-			knowledge = true
-		}
 		if artifact.Kind == "ADR" && strings.HasPrefix(artifact.Path, prefix+"ADR/") {
 			adrRefs[artifact.Path] = true
 		}
 	}
-	require(knowledge, "current Knowledge required")
 	if config.ADR.Required {
 		require(len(config.ADR.Refs) > 0, "ADR reference required")
 		for _, ref := range config.ADR.Refs {
@@ -170,7 +167,6 @@ func (s Store) checkState(st State) (Gate, error) {
 		}
 	}
 	if st.Stage == "tdd" || st.Stage == "integration" {
-		require(test, "test evidence artifact required")
 		if len(config.Units) == 0 {
 			require(config.DirectCommit == head, "direct implementation result must match HEAD")
 		}
@@ -186,12 +182,19 @@ func (s Store) checkState(st State) (Gate, error) {
 			require(integrationErr == nil, "Unit integration not present in current HEAD")
 		}
 	}
+	c := s.endDocuments(st)
+	failures = append(failures, c.failures...)
+	extra, err := json.Marshal(append(append([]FileVersion(nil), c.files...), c.sources...))
+	if err != nil {
+		return Gate{}, nil, err
+	}
+	h.Write(extra)
 	gate := Gate{Target: fmt.Sprintf("%x", h.Sum(nil)), Status: "pass", Summary: "requirements satisfied"}
 	if len(failures) > 0 {
 		gate.Status = "fail"
 		gate.Summary = strings.Join(failures, "; ")
 	}
-	return gate, nil
+	return gate, c, nil
 }
 func unitPlanProblems(units []Unit) []string {
 	var problems []string

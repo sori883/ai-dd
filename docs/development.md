@@ -134,3 +134,18 @@ model/effortは定義で固定せず利用者設定を継承する。共有state
 既存配置を自動上書きする更新機能ではないため、利用には4定義と更新されたWORKFLOWが配置された環境が必要。
 配置原稿との一致は `go test -count=1 ./src/internal/install -run '^TestProductAgent'` で確認する。
 実際のnamed agent起動は固定Codex環境で別途検証し、配置testだけで実行や任意の成果品質を保証しない。
+
+### 段階の開始・終了Sensor
+
+新規Intentはschema2で、旧schemaのIntentはファイルを保持して明示エラーにする。
+各段階の入力を正規memory CLIで整え、`intent check ID --space SPACE --boundary start`、
+`intent begin ID --space SPACE --expect REV`で開始する。終了check（boundary省略時も終了）が合格したら
+独立reviewを割り当て、実報告を受理してadvanceする。次段階もbeginが必要。
+共有文書の日時やIntentIDの空更新は要求せず、前段合格要件・計画と現在の共有版を区別する。
+新しい文書型・必須節・実行証拠JSONは配布WORKFLOWと公開helpを参照する。
+
+限定確認は `go test -count=1 ./src/internal/flow -run '^(TestBoundary|TestStartSensor|TestEndSensor)'`。
+実CLI4段階はfinalで `go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestBoundaryJourney$'`。
+固定Codex 0.153.4の限定実機は `AIDLC_BOUNDARY_LIVE=1 go test -tags=integration -count=1 -v -timeout 15m ./src/cmd/aidlc -run '^TestBoundaryLive$'`。
+後者は未開始拒否→必要文書修復→begin→一般編集の実hook/CLIと現物証拠に限定し、4段階完走と同一視しない。
+既存model/認証/通常sandboxを保ち、test observerは製品hook出力を変更せず一時fixtureに記録する。

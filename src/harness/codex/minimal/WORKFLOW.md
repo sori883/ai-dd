@@ -19,6 +19,7 @@
 - `artifacts`: `{path, kind, stage}` の配列。pathはプロジェクト相対。kindはKnowledge/ADR/test。
   stageはdiscovery/planning/tdd/integration。将来段階の成果物は計画として定義できる。
   stateやruntimeを成果物にしない。Knowledgeは内容に応じたOKF typeを保持できる。
+- `material_sources` / `no_materials_reason` / `feature_knowledge` / `test_results`: 後述の追加情報。
 - `units`: 後述のUnit配列。分割しない場合は空配列とし、`tests` に直接実装の検証コマンド、
   `direct_commit` に検証したコード版を記す。検証前の結果を作らない。
 
@@ -30,7 +31,7 @@
 
 ## Sensorと独立レビュー
 
-`A intent check ID --space SPACE` で実ファイルを検査する。各境界と完了には現在のSensorと
+開始は後述のstart検査とbeginで確認する。`A intent check ID --space SPACE` は終了の実ファイル検査。各境界と完了には現在の終了Sensorと
 独立レビューのpassが必要。失敗、未実施、変更前の古いpassで進めない。
 
 別root・別sessionのread-only reviewerを起動する。reviewerのcheckoutは調整rootと同じコード版・bytesにする。
@@ -124,3 +125,117 @@ requirementsから目的・利用者・範囲・要件・制約・受入条件�
 reviewerから対象版・pass/fail・summary・優先度と根拠path付きfindingを受け取り、既存のreview受理CLIへ渡す。
 追加調査や担当が必要なら子から調整役へ戻す。reviewerに広い新規調査を兼務させない。
 子の報告や本文案は調整役が内容を確認し、必要なKnowledge/ADRをCLIで保存する。
+
+## 段階の開始と終了
+
+Sensorは必要ファイルの形式・Intent対応・版を機械検査する。内容と実測の妥当性は独立reviewerが確認する。
+各段階で入力を用意して開始検査を行い、begin成功後に作業する。A/ID/SPACE/Rは実値へ置き換える。
+
+```text
+A intent check ID --space SPACE --boundary start
+A intent begin ID --space SPACE --expect R
+```
+
+checkは読取り専用。beginは開始時の参照版を保存し、返されたrevisionを次の更新へ使う。
+同段階の再beginは参照版を取り直さない。成果を用意したら終了検査を行う。
+
+```text
+A intent check ID --space SPACE --boundary end
+```
+
+boundary省略も終了検査。終了Sensor合格後にreview assign、実報告pass/failをaccept、
+終了Sensorと独立reviewが現在版で合格したらadvanceする。次段階もbeginが必要。
+開始前もhelp/read/configure/専用draft/同Spaceの必要文書の正規memory修復は可能。
+一般実装・test・Unit claimは開始後に行う。Rule未読や待機中の書込みを修復例外にはしない。
+pause/resumeは開始記録を保持。前段合格要件/計画を変える場合はその段階へreopenしbeginから再確認。
+共有解析/図や現段階成果は更新できるが、変更前のreview passは再利用しない。
+新規Intentはschema2。旧schemaは明示エラーで、手編集による版の付け替えや削除で回避しない。
+
+## 必須文書
+
+以下はaidlc/spaces/SPACE/knowledge/からの相対path。要件/計画のIDとfrontmatter intent_idは現在Intentに一致させる。
+
+| 段階 | 開始 | 終了 |
+| --- | --- | --- |
+| discovery | rules/rule.md、存在する共有解析/図 | design/ID/requirements.md。既存資材があれば共有解析/図 |
+| planning | Rule、合格済要件、参照共有文書 | design/ID/implementation-plan.md、必要ADR、Unit担当/依存/検証 |
+| tdd | Rule、合格済要件/計画、関連ADR/共有文書 | 実装/test、実行結果、変更判断のADR |
+| integration | 合格済実装/test結果、要件/計画/ADR、Rule | knowledge/機能名.md、共有解析/図、必要ADR、統合検証結果 |
+
+共有解析はknowledge/current-analysis.md、構成図はknowledge/architecture.md。
+初回discovery開始時は両文書がなくてもよい。新規開発でも統合終了までに実装後の現状を両文書へ記す。
+共有文書をIntentごとに複製したり、intent_idや日時だけを更新したりしない。
+ADRはADR/判断名.md。必要性と参照先はconfig.adrで宣言する。
+
+## configへ追加する情報
+
+次は追加fieldのみの抜粋であり、完全なconfigure入力ではない。showで現在configを確認し既存fieldを保持した全体JSONへ組み込む。
+SPACE/IDとパスを実値へ置き換える。
+
+```json
+{
+  "material_sources": ["src/service", "docs/specification.md"],
+  "no_materials_reason": "",
+  "feature_knowledge": ["aidlc/spaces/SPACE/knowledge/knowledge/search.md"],
+  "test_results": ["aidlc/evidence/SPACE/ID/tdd.json"]
+}
+```
+
+material_sourcesは今回調べるrepository相対UTF-8ファイル/ディレクトリ。推測で全件探索しない。
+空ならno_materials_reasonを書く。初回beginは未宣言でも可能だがdiscovery終了までに宣言する。
+解析前提を変えるとdiscoveryの開始確認が無効になる。後段ならdiscoveryへreopenする。
+feature_knowledgeは共有解析/図とは別の現行機能説明で、統合終了時に最低1件必要。
+型・入力条件に迷ったらintent configure/check/beginとmemory create/updateの正規--helpを読む。
+OKF sources.resourceの標準意味を保ち、文書の出典と明示資材の意味上の対応はreviewerが確認する。
+
+## 本文の作成
+
+草稿は本文だけ。frontmatterはCLI引数から生成する。各commandの前に対象文書の本文をFILEへ用意する。
+
+```text
+A memory create design/ID/requirements --space SPACE --body-file FILE --actor process:codex --type Requirements --title '今回の要件' --description '目的と受入条件' --intent-id ID
+A memory create design/ID/implementation-plan --space SPACE --body-file FILE --actor process:codex --type ImplementationPlan --title '今回の実装計画' --description '変更手順と検証方法' --intent-id ID
+A memory create knowledge/current-analysis --space SPACE --body-file FILE --actor process:codex --type CurrentAnalysis --title '現状解析' --description '現在の構成と根拠'
+A memory create knowledge/architecture --space SPACE --body-file FILE --actor process:codex --type Architecture --title '現在の構成図' --description '構成要素とデータフロー'
+A memory create knowledge/FEATURE --space SPACE --body-file FILE --actor process:codex --type Knowledge --title '機能の使い方' --description '現行の機能と制約'
+```
+
+既存文書はmemory showで読んでからmemory updateする。HASHはshowの現在hash。
+
+```text
+A memory update design/ID/requirements --space SPACE --body-file FILE --actor process:codex --expect HASH
+```
+
+metadata省略時は既存値を保持する。type/intent_id修復が必要な場合だけ明示する。日時はCLIが生成する。
+status stableは工程合格を意味しない。必須の第2階層見出しと非空内容は次のとおり。
+
+| type | 本文の##見出し |
+| --- | --- |
+| Requirements | 目的、範囲、要件、受入条件、未確定事項 |
+| ImplementationPlan | 変更箇所、実装手順、検証方法 |
+| CurrentAnalysis | 現状、構成・動作、根拠、未確認事項 |
+| Architecture | 構成図、構成要素、データフロー |
+| Knowledge（機能説明） | 機能、利用手順、制約 |
+
+未確定/未確認事項がなければ「なし」と書く。Architectureの構成図節には非空mermaid fenceを置き、実際の構成を描く。
+これらの型はSensorの必須文書の契約で、memory CLI全体の自由なtypeを制限しない。
+
+## テスト実行結果
+
+担当が実際に実行した結果をJSONと非空の出力ファイルで提出する。以下の値は必ず実測値へ置き換える。
+
+```json
+{"stage":"tdd","runs":[{"command":"go test -count=1 ./target","commit":"実在する40桁の成果commit","exit_code":0,"output_path":"aidlc/evidence/SPACE/ID/tdd-output.txt"}]}
+```
+
+stageはtdd/integration、output_pathはrepository相対、exit_codeは必須整数。
+計画の検証を成功結果で満たす。失敗結果は併記できるが失敗だけで合格しない。
+TDD結果はdirect成果commit、Unit分割時は各UnitのcommandとResultCommitの組をそれぞれ満たす。
+同じcommandを使う複数Unitでも、一方の成果版の成功で他方を代用しない。
+integration結果は全Unit統合後の現在HEADで計画commandをすべて成功させる。追加commandも同じHEADを使う。
+コードcommit後に証拠を作り、証拠が未commitでも検査/reviewできる。過去TDD結果を後段HEADへ書換えない。
+test_resultsには現在存在する結果だけを指定する。上の例はtdd.json作成後の値。
+integrationで実行しintegration.jsonとoutputを作成してから、既存tdd.jsonを保って配列へ追記する。
+未来の未存在ファイルは事前宣言しない。別段階のJSONは形式検査し、その内容を現在段階のaccepted outputsへ混ぜない。
+Sensorは形式・版・出力を検査し、証拠/コード変更をreview対象に反映する。Go CLIはshell実行engineやログ認証器ではない。
+RED/GREEN実測、未commitコードを含む検証対象、テストの十分性を独立reviewerへ根拠とともに渡す。

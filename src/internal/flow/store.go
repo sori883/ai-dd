@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -38,17 +39,21 @@ type Unit struct {
 	Tests            []string `json:"tests"`
 }
 type Config struct {
-	Tests        []string   `json:"tests"`
-	DirectCommit string     `json:"direct_commit"`
-	Objective    string     `json:"objective"`
-	Plan         string     `json:"plan"`
-	CodeRevision string     `json:"code_revision"`
-	Scope        []string   `json:"scope"`
-	Acceptance   []string   `json:"acceptance"`
-	Unknowns     []string   `json:"unknowns"`
-	ADR          ADR        `json:"adr"`
-	Artifacts    []Artifact `json:"artifacts"`
-	Units        []Unit     `json:"units"`
+	MaterialSources   []string   `json:"material_sources"`
+	NoMaterialsReason string     `json:"no_materials_reason"`
+	FeatureKnowledge  []string   `json:"feature_knowledge"`
+	TestResults       []string   `json:"test_results"`
+	Tests             []string   `json:"tests"`
+	DirectCommit      string     `json:"direct_commit"`
+	Objective         string     `json:"objective"`
+	Plan              string     `json:"plan"`
+	CodeRevision      string     `json:"code_revision"`
+	Scope             []string   `json:"scope"`
+	Acceptance        []string   `json:"acceptance"`
+	Unknowns          []string   `json:"unknowns"`
+	ADR               ADR        `json:"adr"`
+	Artifacts         []Artifact `json:"artifacts"`
+	Units             []Unit     `json:"units"`
 }
 type Gate struct {
 	Target  string `json:"target"`
@@ -56,18 +61,20 @@ type Gate struct {
 	Summary string `json:"summary"`
 }
 type State struct {
-	SchemaVersion   int    `json:"schema_version"`
-	ID              string `json:"id"`
-	Space           string `json:"space"`
-	Name            string `json:"name"`
-	Revision        uint64 `json:"revision"`
-	Stage           string `json:"stage"`
-	Status          string `json:"status"`
-	Reason          string `json:"reason"`
-	ResumeCondition string `json:"resume_condition"`
-	Config          Config `json:"config"`
-	Sensor          Gate   `json:"sensor"`
-	Review          Gate   `json:"review"`
+	Entry           *StageEntry                `json:"entry"`
+	Accepted        map[string]StageAcceptance `json:"accepted"`
+	SchemaVersion   int                        `json:"schema_version"`
+	ID              string                     `json:"id"`
+	Space           string                     `json:"space"`
+	Name            string                     `json:"name"`
+	Revision        uint64                     `json:"revision"`
+	Stage           string                     `json:"stage"`
+	Status          string                     `json:"status"`
+	Reason          string                     `json:"reason"`
+	ResumeCondition string                     `json:"resume_condition"`
+	Config          Config                     `json:"config"`
+	Sensor          Gate                       `json:"sensor"`
+	Review          Gate                       `json:"review"`
 }
 type Store struct {
 	Root, Space string
@@ -100,11 +107,14 @@ func (s Store) path(id string) string {
 	return "aidlc/spaces/" + s.Space + "/intents/" + id + "/state.json"
 }
 func (s Store) validate(st State) error {
-	if st.SchemaVersion != 1 || !validID(st.ID) || st.Space != s.Space || st.Revision == 0 || strings.TrimSpace(st.Name) == "" || !utf8.ValidString(st.Name) {
+	if st.SchemaVersion != 2 || !validID(st.ID) || st.Space != s.Space || st.Revision == 0 || strings.TrimSpace(st.Name) == "" || !utf8.ValidString(st.Name) {
 		return invalid("invalid state identity or schema")
 	}
 	if !strings.Contains("|discovery|planning|tdd|integration|", "|"+st.Stage+"|") || st.Stage == "" {
 		return invalid("invalid stage")
+	}
+	if err := validateVersions(st); err != nil {
+		return err
 	}
 	switch st.Status {
 	case "active", "waiting", "paused", "completed", "cancelled":
@@ -144,7 +154,7 @@ func (s Store) Create(name string) (State, error) {
 	defer release()
 	id := make([]byte, 16)
 	rand.Read(id)
-	st := State{SchemaVersion: 1, ID: fmt.Sprintf("%x", id), Space: s.Space, Name: name, Revision: 1, Stage: "discovery", Status: "active"}
+	st := State{SchemaVersion: 2, ID: fmt.Sprintf("%x", id), Space: s.Space, Name: name, Revision: 1, Stage: "discovery", Status: "active"}
 	if _, err := os.Lstat(filepath.Join(s.Root, s.path(st.ID))); !os.IsNotExist(err) {
 		return State{}, fmt.Errorf("identity already exists: %w", fs.ErrExist)
 	}
@@ -236,6 +246,15 @@ func (s Store) Save(st State, expect uint64) (State, error) {
 	}
 	if err := s.guardReassignment(current, nil); err != nil {
 		return State{}, err
+	}
+	if !reflect.DeepEqual(st.Entry, current.Entry) || !reflect.DeepEqual(st.Accepted, current.Accepted) {
+		return State{}, invalid("entry and accepted are CLI owned")
+	}
+	if !reflect.DeepEqual(st.Config.MaterialSources, current.Config.MaterialSources) || st.Config.NoMaterialsReason != current.Config.NoMaterialsReason {
+		if current.Stage != "discovery" {
+			return State{}, invalid("material assumptions changed; reopen discovery")
+		}
+		st.Entry = nil
 	}
 	st.Revision++
 	if err := s.persist(st); err != nil {

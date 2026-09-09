@@ -67,6 +67,11 @@ func TestRelocationCommand(t *testing.T) {
 	writeMinimalFixture(t, filepath.Join(f.root, "b.go"), "package relocation\nfunc B()int{return 0}\n")
 	writeMinimalFixture(t, filepath.Join(f.root, "work_test.go"), "package relocation\nimport \"testing\"\nfunc TestA(t *testing.T){if A()!=1{t.Fatal(\"A\")}}\nfunc TestB(t *testing.T){if B()!=2{t.Fatal(\"B\")}}\n")
 	st := f.tdd()
+	planned := st.Config
+	for i := range planned.Units {
+		planned.Units[i].Tests = []string{"go test -count=1 -run ^Test" + strings.ToUpper(planned.Units[i].ID) + "$"}
+	}
+	st = f.action(st, "configure", "--file", f.request(planned))
 	for _, id := range []string{"a", "b"} {
 		st = f.unit(st, "claim", flow.UnitRequest{Unit: id, Session: "old-" + id, Root: f.worktree()})
 	}
@@ -115,6 +120,7 @@ func TestRelocationCommand(t *testing.T) {
 	runMinimalCLI(t, args[0], clone, []byte(`{"hook_event_name":"UserPromptSubmit","session_id":"new-coordinator","turn_id":"turn"}`), args[1:]...)
 	g.bind(st, "new-coordinator")
 	st = g.action(st, "resume", "--reason", "old workers stopped, clone inspected")
+	var runs []map[string]any
 	for i, id := range []string{"a", "b"} {
 		worker := filepath.Join(t.TempDir(), "new-"+id)
 		g.git("worktree", "add", "--detach", worker, st.Config.Units[i].BaseCommit)
@@ -129,19 +135,29 @@ func TestRelocationCommand(t *testing.T) {
 			t.Fatal(err)
 		}
 		writeMinimalFixture(t, filepath.Join(worker, id+".go"), fmt.Sprintf("package relocation\nfunc %s()int{return %d}\n", strings.ToUpper(id), i+1))
-		runMinimalProcess(t, worker, "go", "test", "-count=1", "-run", "^Test"+strings.ToUpper(id)+"$")
+		output := runMinimalProcess(t, worker, "go", "test", "-count=1", "-run", "^Test"+strings.ToUpper(id)+"$")
 		w := operationsFixture{t, g.binary, worker}
 		commit := w.commit("verified " + id)
+		outputPath := "aidlc/evidence/relocated-" + id + ".log"
+		writeMinimalFixture(t, filepath.Join(clone, outputPath), string(output))
+		runs = append(runs, map[string]any{"command": st.Config.Units[i].Tests[0], "commit": commit, "exit_code": 0, "output_path": outputPath})
 		st = g.unit(st, "result", flow.UnitRequest{Unit: id, Session: "new-" + id, Root: worker, RunID: assignment.RunID, Commit: commit})
 		g.git("-c", "user.name=Relocation", "-c", "user.email=relocation@example.invalid", "merge", "--no-edit", commit)
 		st = g.unit(st, "integrate", flow.UnitRequest{Unit: id, Commit: g.git("rev-parse", "HEAD")})
 	}
-	runMinimalProcess(t, clone, "go", "test", "-count=1")
+	output := runMinimalProcess(t, clone, "go", "test", "-count=1")
 	// Record a test artifact and refresh code revision before independent fixture review.
-	writeMinimalFixture(t, filepath.Join(clone, "results.txt"), "go test -count=1 succeeded for relocated workers\n")
+	writeMinimalFixture(t, filepath.Join(clone, "results.txt"), string(output))
 	head := g.commit("integration evidence")
 	c := st.Config
 	c.CodeRevision = head
+	resultPath := "aidlc/evidence/relocated-tdd.json"
+	resultJSON, err := json.Marshal(map[string]any{"stage": "tdd", "runs": runs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeMinimalFixture(t, filepath.Join(clone, resultPath), string(resultJSON))
+	c.TestResults = []string{resultPath}
 	c.Artifacts = append(c.Artifacts, flow.Artifact{Path: "results.txt", Kind: "test", Stage: "tdd"})
 	st = g.action(st, "configure", "--file", g.request(c))
 	st = g.review(st)

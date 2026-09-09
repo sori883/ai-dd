@@ -19,7 +19,7 @@ type MinimalRequest struct {
 	Metadata                                                                 okfmemory.MetadataInput
 	Command, Action, Target, Space, ProjectDir, Session, File, Actor, Expect string
 	IntentID                                                                 *string
-	Reason, ResumeCondition, Stage                                           string
+	Reason, ResumeCondition, Stage, Boundary                                 string
 	Raw, Recover                                                             bool
 }
 
@@ -35,7 +35,7 @@ func isMinimal(args []string) bool {
 			return true
 		}
 		switch args[1] {
-		case "create", "list", "show", "check", "switch", "configure", "review", "advance", "pause", "resume", "reopen", "wait", "cancel":
+		case "create", "list", "show", "check", "begin", "switch", "configure", "review", "advance", "pause", "resume", "reopen", "wait", "cancel":
 			return true
 		}
 		return false
@@ -107,13 +107,16 @@ func ParseMinimal(args []string) (r MinimalRequest, err error) {
 		allowed += " --session --id"
 		required = "--session"
 	case "memory/rules", "memory/check":
-	case "memory/show", "intent/show", "intent/check":
+	case "intent/check":
+		min, max = 1, 1
+		allowed += " --boundary"
+	case "memory/show", "intent/show":
 		min, max = 1, 1
 	case "intent/configure", "intent/review", "unit/claim", "unit/result", "unit/integrate", "unit/confirm", "unit/reassign":
 		min, max = 1, 1
 		allowed += " --expect --file"
 		required = "--expect --file"
-	case "intent/advance":
+	case "intent/advance", "intent/begin":
 		min, max = 1, 1
 		allowed += " --expect"
 		required = "--expect"
@@ -201,6 +204,10 @@ func ParseMinimal(args []string) (r MinimalRequest, err error) {
 	r.Expect = values["--expect"]
 	r.Reason = values["--reason"]
 	r.Stage = values["--stage"]
+	r.Boundary = values["--boundary"]
+	if r.Boundary != "" && r.Boundary != "start" && r.Boundary != "end" {
+		return fail("--boundary must be start or end")
+	}
 	r.ResumeCondition = values["--resume-condition"]
 	r.Raw = values["--raw"] == "true"
 	r.Recover = values["--recover"] == "true"

@@ -57,6 +57,9 @@ func (s Store) Unit(id string, expect uint64, r UnitRequest) (State, error) {
 		case "reassign":
 			return s.reassign(st, unit, expect, r)
 		case "claim":
+			if err := s.checkWorkState(*st); err != nil {
+				return err
+			}
 			if unit.Status != "pending" {
 				return invalid("Unit already assigned or finished")
 			}

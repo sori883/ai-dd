@@ -11,7 +11,7 @@ func (s Store) Transition(id string, expect uint64, r TransitionRequest) (State,
 			if st.Status != "active" {
 				return invalid("only active Intent can advance")
 			}
-			gate, err := s.checkState(*st)
+			gate, c, err := s.checkStateSnapshot(*st)
 			if err != nil {
 				return err
 			}
@@ -21,6 +21,15 @@ func (s Store) Transition(id string, expect uint64, r TransitionRequest) (State,
 			if st.Review.Status != "pass" || st.Review.Target != gate.Target {
 				return invalid("current independent review pass required")
 			}
+			if st.Accepted == nil {
+				st.Accepted = map[string]StageAcceptance{}
+			}
+			outputs := c.files
+			if st.Stage == "tdd" {
+				outputs = c.proof
+			}
+			st.Accepted[st.Stage] = StageAcceptance{Stage: st.Stage, ReviewTarget: gate.Target, Outputs: outputs}
+			st.Entry = nil
 			st.Sensor = Gate{}
 			st.Review = Gate{}
 			switch st.Stage {
@@ -72,6 +81,12 @@ func (s Store) Transition(id string, expect uint64, r TransitionRequest) (State,
 			to, ok := stages[r.Stage]
 			if !ok || to > stages[st.Stage] {
 				return invalid("reopen cannot skip forward")
+			}
+			st.Entry = nil
+			for stage := range st.Accepted {
+				if stages[stage] >= to {
+					delete(st.Accepted, stage)
+				}
 			}
 			st.Stage = r.Stage
 			st.Status = "active"
