@@ -94,8 +94,6 @@ func (s Store) checkState(st State) (Gate, error) {
 		}
 		h.Write(content)
 	}
-	knowledge := false
-	test := false
 	adrRefs := map[string]bool{}
 	stages := map[string]int{"discovery": 0, "planning": 1, "tdd": 2, "integration": 3}
 	for _, artifact := range config.Artifacts {
@@ -130,7 +128,6 @@ func (s Store) checkState(st State) (Gate, error) {
 		h.Write(content)
 		if artifact.Kind == "test" {
 			require(len(content) > 0, "empty test artifact")
-			test = len(content) > 0
 			continue
 		}
 		prefix := "aidlc/spaces/" + s.Space + "/knowledge/"
@@ -144,14 +141,10 @@ func (s Store) checkState(st State) (Gate, error) {
 		if artifact.Kind == "ADR" {
 			require(doc.String("type") == "ADR", "ADR type mismatch")
 		}
-		if artifact.Kind == "Knowledge" {
-			knowledge = true
-		}
 		if artifact.Kind == "ADR" && strings.HasPrefix(artifact.Path, prefix+"ADR/") {
 			adrRefs[artifact.Path] = true
 		}
 	}
-	require(knowledge, "current Knowledge required")
 	if config.ADR.Required {
 		require(len(config.ADR.Refs) > 0, "ADR reference required")
 		for _, ref := range config.ADR.Refs {
@@ -170,7 +163,6 @@ func (s Store) checkState(st State) (Gate, error) {
 		}
 	}
 	if st.Stage == "tdd" || st.Stage == "integration" {
-		require(test, "test evidence artifact required")
 		if len(config.Units) == 0 {
 			require(config.DirectCommit == head, "direct implementation result must match HEAD")
 		}
@@ -186,6 +178,13 @@ func (s Store) checkState(st State) (Gate, error) {
 			require(integrationErr == nil, "Unit integration not present in current HEAD")
 		}
 	}
+	c := s.endDocuments(st)
+	failures = append(failures, c.failures...)
+	extra, err := json.Marshal(append(append([]FileVersion(nil), c.files...), c.sources...))
+	if err != nil {
+		return Gate{}, err
+	}
+	h.Write(extra)
 	gate := Gate{Target: fmt.Sprintf("%x", h.Sum(nil)), Status: "pass", Summary: "requirements satisfied"}
 	if len(failures) > 0 {
 		gate.Status = "fail"

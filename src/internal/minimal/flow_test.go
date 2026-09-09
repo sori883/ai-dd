@@ -56,6 +56,10 @@ func TestFlowHookSelectionRulesAndRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	st, err = (flow.Store{Root: root, Space: "default"}).Begin(st.ID, st.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
 	hook(t, s, "SessionStart", "", "", "", false)
 	hook(t, s, "UserPromptSubmit", "", "", "", false)
 	if !deny(hook(t, s, "PreToolUse", "Bash", "unbound", "touch code.go", false)) {
@@ -158,7 +162,7 @@ func TestFlowInactiveWorkflowReadAndResume(t *testing.T) {
 			s, st := setup(t)
 			store := flow.Store{Root: s.Root, Space: "default"}
 			st.Status = status
-			st.Stage = "integration"
+			st.Stage = "discovery"
 			var err error
 			st, err = store.Save(st, st.Revision)
 			if err != nil {
@@ -189,13 +193,20 @@ func TestFlowInactiveWorkflowReadAndResume(t *testing.T) {
 			command := "/opt/aidlc intent resume " + st.ID + " --space default --expect " + strconv.FormatUint(st.Revision, 10) + " --reason retry"
 			if status == "completed" {
 				action = "reopen"
-				command = "/opt/aidlc intent reopen " + st.ID + " --space default --expect " + strconv.FormatUint(st.Revision, 10) + " --reason retry --stage integration"
+				command = "/opt/aidlc intent reopen " + st.ID + " --space default --expect " + strconv.FormatUint(st.Revision, 10) + " --reason retry --stage discovery"
 			}
 			if out := hook(t, s, "PreToolUse", "Bash", "resume", command, false); deny(out) {
 				t.Fatalf("valid resume denied: %+v", out)
 			}
-			_, err = s.Execute(cli.MinimalRequest{Command: "intent", Action: action, Target: st.ID, Space: "default", Expect: strconv.FormatUint(st.Revision, 10), Reason: "retry", Stage: "integration"})
+			_, err = s.Execute(cli.MinimalRequest{Command: "intent", Action: action, Target: st.ID, Space: "default", Expect: strconv.FormatUint(st.Revision, 10), Reason: "retry", Stage: "discovery"})
 			if err != nil {
+				t.Fatal(err)
+			}
+			current, err := store.Read(st.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = store.Begin(st.ID, current.Revision); err != nil {
 				t.Fatal(err)
 			}
 			if out := hook(t, s, "PreToolUse", "Bash", "work", "go test ./...", false); deny(out) {

@@ -1,5 +1,13 @@
 # 開発プロジェクトRAM
 
+- [開始・終了Sensorの実装証拠](decisions/2026-09-09-start-end-sensors-evidence.md): schema2、beginと合格版、文書/資材/実行結果、修復hookのloop証拠。Unit別成功・統合HEAD・段階別結果の親境界修復を含む。最終検証と実機の証拠は親PRへ記録。
+
+- [開始・終了Sensorの実装を承認](decisions/2026-09-09-start-end-sensors-approved.md): ファイル別表への直接実装依頼。begin/境界check、共有版とIntent文書、schema2と旧data保持を具体化。
+
+- [現状解析をSpace共有にし、構成図を別文書にする](decisions/2026-09-09-space-shared-analysis-and-diagram.md): Intent別の現状解析案を置換。共有文書の参照版による検査を提案し、日時・IDの一律更新を避ける。
+
+- [4段階で使うSensorの整理案](decisions/2026-09-08-sensor-catalog-proposal.md): 共通4検査と段階別検査、既存基盤と追加候補、機械検査と独立レビューの境界。提案段階。
+
 - [製品4担当の実装証拠](decisions/2026-09-08-product-agent-roles-evidence.md): 配置RED/GREEN、共有writer境界、旧Rule期待値の修復。固定Codexで4担当の起動・終了と全体検証を実測。
 
 - [ステージ拡張より先に製品4担当を定義する](decisions/2026-09-08-product-four-agents-approved.md): 調査・要件整理・worker・reviewerの直接実装依頼。Sensorの2問と配布更新は後続へ保留。

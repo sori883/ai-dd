@@ -8,6 +8,13 @@ import (
 
 func passReview(t *testing.T, s Store, st State) State {
 	t.Helper()
+	if st.Entry == nil {
+		var err error
+		st, err = s.Begin(st.ID, st.Revision)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	root := flowReviewRoot(t, s.Root)
 	st, err := s.Review(st.ID, st.Revision, ReviewRequest{Action: "assign", CoordinatorSession: "coordinator", Session: "reviewer", Root: root})
 	if err != nil {
@@ -38,6 +45,7 @@ func TestFlowTransitionGatesAndStages(t *testing.T) {
 	if _, err := s.Transition(st.ID, previous, TransitionRequest{Action: "advance"}); err == nil {
 		t.Fatal("duplicate advance accepted")
 	}
+	boundaryDoc(t, s, st, "ImplementationPlan")
 	st.Config.Plan = "Direct change"
 	st.Config.Tests = []string{"go test"}
 	st, err = s.Save(st, st.Revision)
@@ -55,11 +63,22 @@ func TestFlowTransitionGatesAndStages(t *testing.T) {
 	}
 	st.Config.Artifacts = append(st.Config.Artifacts, Artifact{Path: file, Kind: "test", Stage: "tdd"})
 	st.Config.DirectCommit = st.Config.CodeRevision
+	prepareBoundaryResults(t, s, &st)
 	st, err = s.Save(st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"integration", "completed"} {
+		if st.Stage == "integration" {
+			boundaryDoc(t, s, st, "CurrentAnalysis")
+			boundaryDoc(t, s, st, "Architecture")
+			st.Config.FeatureKnowledge = []string{boundaryDoc(t, s, st, "Knowledge")}
+			prepareBoundaryResults(t, s, &st)
+			st, err = s.Save(st, st.Revision)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
 		st = passReview(t, s, st)
 		st, err = s.Transition(st.ID, st.Revision, TransitionRequest{Action: "advance"})
 		if err != nil {

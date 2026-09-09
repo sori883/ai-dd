@@ -63,6 +63,9 @@ func (s Store) Review(id string, expect uint64, request ReviewRequest) (State, e
 		name := "aidlc/.runtime/flow/reviews/" + s.Space + "-" + id + ".json"
 		switch request.Action {
 		case "assign":
+			if gate.Status != "pass" {
+				return invalid("end Sensor failed: " + gate.Summary)
+			}
 			if request.CoordinatorSession == "" || request.CoordinatorSession == request.Session {
 				return invalid("reviewer must be independent")
 			}

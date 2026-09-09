@@ -48,7 +48,9 @@ func TestConfigureHelpExamples(t *testing.T) {
 				base := []string{"intent", action, st.ID, "--space", "default", "--expect", strconv.FormatUint(st.Revision, 10)}
 				read(runMinimalCLI(t, binary, root, nil, append(base, args...)...))
 			}
+			boundaryFixtureDocument(t, root, st.ID, "Requirements")
 			call("configure", "--file", file)
+			call("begin")
 			reviewer := filepath.Join(t.TempDir(), "review")
 			runMinimalProcess(t, root, "git", "worktree", "add", "--detach", reviewer, head)
 			request := func(r flow.ReviewRequest) string {
@@ -81,6 +83,8 @@ func TestConfigureHelpExamples(t *testing.T) {
 				t.Fatalf("stage=%s", st.Stage)
 			}
 			// Reapply the public help example at planning, then evaluate its real prerequisites.
+			boundaryFixtureDocument(t, root, st.ID, "ImplementationPlan")
+			call("begin")
 			call("configure", "--file", file)
 			check()
 			if st.Config.CodeRevision != head || len(st.Config.Units) != tc.index {

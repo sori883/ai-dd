@@ -20,10 +20,8 @@ func flowGit(t *testing.T, root string, args ...string) string {
 }
 func sensorFixture(t *testing.T) (Store, State) {
 	t.Helper()
-	s := flowStore(t)
-	flowGit(t, s.Root, "init", "-q")
-	flowGit(t, s.Root, "commit", "--allow-empty", "-qm", "base")
-	st, err := s.Create("Work")
+	s, st := boundaryFixture(t)
+	var err error
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,8 +33,13 @@ func sensorFixture(t *testing.T) (Store, State) {
 	if err := os.WriteFile(filepath.Join(s.Root, name), []byte(raw), 0600); err != nil {
 		t.Fatal(err)
 	}
-	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, ADR: ADR{Reason: "No architectural decision"}, Artifacts: []Artifact{{Path: name, Kind: "Knowledge", Stage: "discovery"}}, CodeRevision: flowGit(t, s.Root, "rev-parse", "HEAD")}
+	st.Config = Config{NoMaterialsReason: "new project", Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, ADR: ADR{Reason: "No architectural decision"}, Artifacts: []Artifact{{Path: name, Kind: "Knowledge", Stage: "discovery"}}, CodeRevision: flowGit(t, s.Root, "rev-parse", "HEAD")}
 	st, err = s.Save(st, st.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundaryDoc(t, s, st, "Requirements")
+	st, err = s.Begin(st.ID, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,6 +92,7 @@ func TestFlowSensorUnitGraph(t *testing.T) {
 	for _, units := range [][]Unit{{{ID: "a", DependsOn: []string{"missing"}}}, {{ID: "a", DependsOn: []string{"b"}}, {ID: "b", DependsOn: []string{"a"}}}, {{ID: "a"}, {ID: "a"}}} {
 		s, st := sensorFixture(t)
 		st.Stage = "planning"
+		prepareBoundaryStage(t, s, &st)
 		st.Config.Plan = "A plan"
 		st.Config.Units = units
 		st, err := s.Save(st, st.Revision)
@@ -104,6 +108,7 @@ func TestFlowSensorUnitGraph(t *testing.T) {
 func TestFlowSensorDirectImplementation(t *testing.T) {
 	s, st := sensorFixture(t)
 	st.Stage = "planning"
+	prepareBoundaryStage(t, s, &st)
 	st.Config.Plan = "Direct implementation"
 	st, err := s.Save(st, st.Revision)
 	if err != nil {
@@ -123,6 +128,7 @@ func TestFlowSensorDirectImplementation(t *testing.T) {
 		t.Fatalf("direct plan rejected: %+v %v", gate, err)
 	}
 	st.Stage = "tdd"
+	prepareBoundaryStage(t, s, &st)
 	st, err = s.Save(st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
@@ -137,6 +143,7 @@ func TestFlowSensorDirectImplementation(t *testing.T) {
 	}
 	st.Config.Artifacts = append(st.Config.Artifacts, Artifact{Path: file, Kind: "test", Stage: "tdd"})
 	st.Config.DirectCommit = st.Config.CodeRevision
+	prepareBoundaryResults(t, s, &st)
 	st, err = s.Save(st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
@@ -185,6 +192,7 @@ func TestFlowSensorRequiredADR(t *testing.T) {
 func TestFlowSensorRejectsInventedIntegratedCommit(t *testing.T) {
 	s, st := sensorFixture(t)
 	st.Stage = "tdd"
+	prepareBoundaryStage(t, s, &st)
 	st.Config.Plan = "Unit plan"
 	st.Config.Units = []Unit{{ID: "a", Bolt: "one", BaseCommit: st.Config.CodeRevision, Scope: []string{"a.go"}, Tests: []string{"test a"}, Status: "integrated", ResultCommit: strings.Repeat("f", 40), IntegratedCommit: strings.Repeat("f", 40)}}
 	if err := os.WriteFile(filepath.Join(s.Root, "results.txt"), []byte("PASS"), 0600); err != nil {
@@ -231,6 +239,7 @@ func TestFlowSensorUnitIDsAreComponents(t *testing.T) {
 	for _, id := range []string{"../escape", "a/b", "a\\b", ".", ""} {
 		s, st := sensorFixture(t)
 		st.Stage = "planning"
+		prepareBoundaryStage(t, s, &st)
 		st.Config.Plan = "Plan"
 		st.Config.Units = []Unit{{ID: id, Bolt: "one", BaseCommit: st.Config.CodeRevision, Scope: []string{"a.go"}, Tests: []string{"test"}}}
 		st, err := s.Save(st, st.Revision)

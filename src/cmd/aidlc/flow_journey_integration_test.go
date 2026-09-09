@@ -64,7 +64,10 @@ func writeMinimalFixture(t *testing.T, path, body string) {
 
 // This deterministic executable journey covers failure/recovery boundaries;
 // actual asynchronous Codex transport pairing is separately live-probed.
-func TestFlowJourney(t *testing.T) {
+func TestFlowJourney(t *testing.T)     { runBoundaryJourney(t) }
+func TestBoundaryJourney(t *testing.T) { runBoundaryJourney(t) }
+func runBoundaryJourney(t *testing.T) {
+	t.Helper()
 	binary := buildMinimalBinary(t)
 	root := t.TempDir()
 	runMinimalProcess(t, root, "git", "init", "-q")
@@ -96,7 +99,7 @@ func TestFlowJourney(t *testing.T) {
 	knowledge := "aidlc/spaces/default/knowledge/knowledge/current.md"
 	writeMinimalFixture(t, filepath.Join(root, knowledge), "---\ntype: Design\ntitle: Addition\ndescription: Adds two integers\n---\nAdd returns the sum.\n")
 	head := string(bytes.TrimSpace(runMinimalProcess(t, root, "git", "rev-parse", "HEAD")))
-	config := flow.Config{Objective: "Addition", Scope: []string{"add.go"}, Acceptance: []string{"Add(2,3)=5"}, CodeRevision: head, ADR: flow.ADR{Reason: "No architectural decision"}, Artifacts: []flow.Artifact{{Path: knowledge, Kind: "Knowledge", Stage: "discovery"}}}
+	config := flow.Config{NoMaterialsReason: "fresh project", Objective: "Addition", Scope: []string{"add.go"}, Acceptance: []string{"Add(2,3)=5"}, CodeRevision: head, ADR: flow.ADR{Reason: "No architectural decision"}, Artifacts: []flow.Artifact{{Path: knowledge, Kind: "Knowledge", Stage: "discovery"}}}
 	call("configure", "--file", writeRequest("config.json", config))
 	review := func(status string) {
 		t.Helper()
@@ -120,6 +123,8 @@ func TestFlowJourney(t *testing.T) {
 		}
 		call("review", "--file", writeRequest("review.json", flow.ReviewRequest{Action: "accept", Session: "r", Root: reviewRoot, Target: gate.Target, Status: status, Summary: "Fixture review for CLI integration; not actual AI evidence"}))
 	}
+	boundaryFixtureDocument(t, root, st.ID, "Requirements")
+	call("begin")
 	review("fail")
 	cmd := exec.Command(binary, "intent", "advance", st.ID, "--space", "default", "--expect", strconv.FormatUint(st.Revision, 10))
 	cmd.Dir = root
@@ -128,11 +133,14 @@ func TestFlowJourney(t *testing.T) {
 	}
 	review("pass")
 	call("advance")
+	boundaryFixtureDocument(t, root, st.ID, "ImplementationPlan")
+	call("begin")
 	config.Plan = "Implement Add using a failing example then verification"
 	config.Tests = []string{"go test -run ^TestAdd$"}
 	call("configure", "--file", writeRequest("config.json", config))
 	review("pass")
 	call("advance")
+	call("begin")
 	writeMinimalFixture(t, filepath.Join(root, "go.mod"), "module example.invalid/add\n\ngo 1.26\n")
 	writeMinimalFixture(t, filepath.Join(root, "add.go"), "package add\nfunc Add(a,b int)int{return 0}\n")
 	writeMinimalFixture(t, filepath.Join(root, "add_test.go"), "package add\nimport \"testing\"\nfunc TestAdd(t *testing.T){if Add(2,3)!=5{t.Fatal(\"wrong sum\")}}\n")
@@ -150,11 +158,19 @@ func TestFlowJourney(t *testing.T) {
 	config.CodeRevision = head
 	config.DirectCommit = head
 	config.Artifacts = append(config.Artifacts, flow.Artifact{Path: "results.txt", Kind: "test", Stage: "tdd"})
+	config.TestResults = []string{boundaryFixtureResults(t, root, "tdd", head, config.Tests, green)}
 	call("configure", "--file", writeRequest("config.json", config))
 	review("pass")
 	call("advance")
+	call("begin")
 	call("pause", "--reason", "session ended")
 	call("resume", "--reason", "new session inspected persisted state")
+	boundaryFixtureDocument(t, root, st.ID, "CurrentAnalysis")
+	boundaryFixtureDocument(t, root, st.ID, "Architecture")
+	config.FeatureKnowledge = []string{boundaryFixtureDocument(t, root, st.ID, "Knowledge")}
+	integrationOutput := runMinimalProcess(t, root, "go", "test", "-count=1", "-run", "^TestAdd$")
+	config.TestResults = append(config.TestResults, boundaryFixtureResults(t, root, "integration", head, config.Tests, integrationOutput))
+	call("configure", "--file", writeRequest("config.json", config))
 	runMinimalCLI(t, binary, root, nil, "session", "bind", st.ID, "--space", "default", "--session", "second")
 	review("pass")
 	call("advance")

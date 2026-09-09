@@ -205,16 +205,21 @@ func (f operationsFixture) tdd() flow.State {
 	f.ok("memory", "create", "knowledge/current", "--space", "default", "--body-file", "body.md", "--actor", "process:test", "--type", "Design", "--title", "Current", "--description", "Operations")
 	f.ok("memory", "create", "ADR/current", "--space", "default", "--body-file", "body.md", "--actor", "process:test", "--type", "ADR", "--title", "Decision", "--description", "Rationale")
 	head := f.commit("shared assets")
-	c := flow.Config{Objective: "Unit operation", Scope: []string{"a.go", "b.go"}, Acceptance: []string{"operations are isolated"}, CodeRevision: head, ADR: flow.ADR{Reason: "No additional decision"}, Artifacts: []flow.Artifact{{Path: "aidlc/spaces/default/knowledge/knowledge/current.md", Kind: "Knowledge", Stage: "discovery"}}}
+	c := flow.Config{NoMaterialsReason: "fixture has no prior materials", Objective: "Unit operation", Scope: []string{"a.go", "b.go"}, Acceptance: []string{"operations are isolated"}, CodeRevision: head, ADR: flow.ADR{Reason: "No additional decision"}, Artifacts: []flow.Artifact{{Path: "aidlc/spaces/default/knowledge/knowledge/current.md", Kind: "Knowledge", Stage: "discovery"}}}
 	s = f.action(s, "configure", "--file", f.request(c))
+	boundaryFixtureDocument(f.t, f.root, s.ID, "Requirements")
+	s = f.action(s, "begin")
 	s = f.review(s)
 	s = f.action(s, "advance")
+	boundaryFixtureDocument(f.t, f.root, s.ID, "ImplementationPlan")
+	s = f.action(s, "begin")
 	c.Plan = "Separate workers"
 	c.Tests = []string{"go test"}
 	c.Units = []flow.Unit{{ID: "a", Bolt: "one", BaseCommit: head, Scope: []string{"a.go"}, Tests: []string{"go test"}}, {ID: "b", Bolt: "one", BaseCommit: head, Scope: []string{"b.go"}, Tests: []string{"go test"}}}
 	s = f.action(s, "configure", "--file", f.request(c))
 	s = f.review(s)
-	return f.action(s, "advance")
+	s = f.action(s, "advance")
+	return f.action(s, "begin")
 }
 func (f operationsFixture) unit(s flow.State, action string, r flow.UnitRequest) flow.State {
 	f.t.Helper()

@@ -10,6 +10,7 @@ func unitFixture(t *testing.T) (Store, State, string) {
 	t.Helper()
 	s, st := sensorFixture(t)
 	st.Stage = "tdd"
+	prepareBoundaryStage(t, s, &st)
 	st.Config.Units = []Unit{{ID: "a", Bolt: "one", Scope: []string{"a.txt"}, Tests: []string{"verify a"}, BaseCommit: st.Config.CodeRevision, Status: "pending"}, {ID: "b", Bolt: "one", Scope: []string{"b.txt"}, Tests: []string{"verify b"}, BaseCommit: st.Config.CodeRevision, Status: "pending"}, {ID: "c", Bolt: "two", DependsOn: []string{"a", "b"}, Scope: []string{"c.txt"}, Tests: []string{"verify c"}, BaseCommit: st.Config.CodeRevision, Status: "pending"}}
 	st, err := s.Save(st, st.Revision)
 	if err != nil {

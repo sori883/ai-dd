@@ -34,7 +34,11 @@ func (s Service) executeFlow(r cli.MinimalRequest) ([]byte, error) {
 		return encode(st)
 	}
 	if r.Action == "check" {
-		gate, err := store.Check(r.Target)
+		boundary := flow.Boundary(r.Boundary)
+		if boundary == "" {
+			boundary = flow.BoundaryEnd
+		}
+		gate, err := store.CheckBoundary(r.Target, boundary)
 		out, _ := encode(gate)
 		return out, err
 	}
@@ -57,6 +61,8 @@ func (s Service) executeFlow(r cli.MinimalRequest) ([]byte, error) {
 	}
 	var result flow.State
 	switch {
+	case r.Action == "begin":
+		result, err = store.Begin(r.Target, expect)
 	case r.Command == "unit":
 		var request flow.UnitRequest
 		if err := s.decodeDraft(r.File, &request); err != nil {

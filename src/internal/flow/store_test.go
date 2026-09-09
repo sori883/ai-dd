@@ -113,10 +113,10 @@ func TestFlowStoreWireSchema(t *testing.T) {
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		t.Fatal(err)
 	}
-	if fields["schema_version"] != float64(1) || fields["id"] != st.ID {
+	if fields["schema_version"] != float64(2) || fields["id"] != st.ID {
 		t.Fatalf("noncanonical JSON: %s", raw)
 	}
-	for _, bad := range []string{strings.Replace(string(raw), `"schema_version": 1`, `"schema_version": 1, "schema_version": 1`, 1), strings.Replace(string(raw), `"schema_version": 1`, `"schema_version": 1, "unexpected": true`, 1), string(raw) + `{}`, strings.Replace(string(raw), st.ID, strings.Repeat("a", 32), 1)} {
+	for _, bad := range []string{strings.Replace(string(raw), `"schema_version": 2`, `"schema_version": 2, "schema_version": 2`, 1), strings.Replace(string(raw), `"schema_version": 2`, `"schema_version": 2, "unexpected": true`, 1), string(raw) + `{}`, strings.Replace(string(raw), st.ID, strings.Repeat("a", 32), 1)} {
 		if err := os.WriteFile(filepath.Join(s.Root, s.path(st.ID)), []byte(bad), 0600); err != nil {
 			t.Fatal(err)
 		}

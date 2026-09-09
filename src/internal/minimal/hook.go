@@ -85,6 +85,11 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 				return nil, invalid("Intent is waiting, paused or finished; read the deployed procedure with cat .agents/skills/aidlc/WORKFLOW.md, then resume or reopen explicitly")
 			}
 
+			if !s.workflowRead(input) && !s.documentRepair(input, state, selected) {
+				if err := (flow.Store{Root: s.Root, Space: state.Space}).CheckWork(state.Intent); err != nil {
+					return nil, err
+				}
+			}
 			state.Tool = input.ID
 		case "PostToolUse":
 			if state.Tool == input.ID && input.ID != "" {
@@ -163,7 +168,7 @@ func (s Service) exception(input HookInput, state *Session) bool {
 			return true
 		}
 		return state.Tool == "" && r.Session == input.Session
-	case "intent/configure", "intent/review", "intent/advance", "intent/wait", "intent/pause", "intent/resume", "intent/reopen", "intent/cancel", "unit/claim", "unit/result", "unit/integrate", "unit/confirm", "unit/reassign":
+	case "intent/begin", "intent/configure", "intent/review", "intent/advance", "intent/wait", "intent/pause", "intent/resume", "intent/reopen", "intent/cancel", "unit/claim", "unit/result", "unit/integrate", "unit/confirm", "unit/reassign":
 		return state.Tool == "" && r.Space == state.Space && r.Target == state.Intent
 
 	}
@@ -306,4 +311,38 @@ func (s Service) workflowRead(input HookInput) bool {
 		}
 	}
 	return true
+}
+
+// documentRepair bypasses only the start gate, after turn Rules and active checks.
+func (s Service) documentRepair(input HookInput, session *Session, st flow.State) bool {
+	if input.Tool != "Bash" {
+		return false
+	}
+	argv, ok := shellWords(input.Input.Command)
+	if !ok || len(argv) < 2 || !sameBinary(argv[0], s.Binary) {
+		return false
+	}
+	r, err := cli.ParseMinimal(argv[1:])
+	if err != nil || r.Command != "memory" || (r.Action != "create" && r.Action != "update") || r.Space != session.Space {
+		return false
+	}
+	if r.ProjectDir != "" && filepath.Clean(r.ProjectDir) != filepath.Clean(s.Root) {
+		return false
+	}
+	prefix := "aidlc/spaces/" + session.Space + "/knowledge/"
+	name := prefix + r.Target + ".md"
+	allowed := []string{prefix + "design/" + session.Intent + "/requirements.md", prefix + "design/" + session.Intent + "/implementation-plan.md", prefix + "knowledge/current-analysis.md", prefix + "knowledge/architecture.md"}
+	allowed = append(allowed, st.Config.FeatureKnowledge...)
+	allowed = append(allowed, st.Config.ADR.Refs...)
+	for _, a := range st.Config.Artifacts {
+		if a.Kind == "Knowledge" || a.Kind == "ADR" {
+			allowed = append(allowed, a.Path)
+		}
+	}
+	for _, p := range allowed {
+		if name == p && strings.HasPrefix(p, prefix) {
+			return true
+		}
+	}
+	return false
 }

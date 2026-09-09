@@ -24,3 +24,9 @@ Knowledgeは現行what/how、ADRはwhyと代替案・影響。必要なADRだけ
 子担当は共有stateとOKF Knowledge/ADRを直接更新せず、根拠付き報告や本文案を調整役へ返す。
 調整役が内容を確認してCLIで保存する。不足する情報・承認・追加調査は調整役へ戻し、回答を捏造しない。
 各担当は他者の編集を保全する。reviewerは裏付けの限定読取りに留め、広い新規調査を抱えない。
+
+各段階は開始Sensorとintent beginで参照版を確認してから一般作業・Unit claimを行う。
+終了SensorはIntent別の要件・実装計画、共有解析・構成図、必要ADR、実行結果と現行機能知識を段階別に検査する。
+開始前も正規の読取り・設定・専用草稿・同Spaceの必要文書修復は行える。修復で当該turnのRule確認やactive条件を省略しない。
+共有文書のIntentIDや日時だけを更新しない。前段合格の要件・計画を変える場合は対応段階へreopenする。
+Sensorは実行結果JSONの形式・成果版・成功commandを確認し、実行の真正性とRED/GREENの意味は独立reviewerが確認する。
