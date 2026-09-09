@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [ステージ実行計画を提案する専用エージェント](decisions/2026-09-09-stage-planner-agent-request.md): discovery内と計画変更時にaidlc-stage-plannerへ採否・順序の立案を委譲する新要望。ユーザー承認・共有保存はメインAI。具体実装案を直接承認済み。Issue #155で実装する。
+
 - [Intent実行計画のintegration fixture修復](decisions/2026-09-09-intent-execution-plan-integration-repair.md): Issue153、親finalで再現した初期化設定順・Unit step_id・保存retry revision期待をtest-only修復。E2E再実測は親final。
 
 - [Intent実行計画のトップhelp残存一覧修復](decisions/2026-09-09-intent-execution-plan-review-repair-2.md): Issue153、再reviewで指摘された末尾の旧4段階一覧を6段階・計画選択と会話承認へ修正。
