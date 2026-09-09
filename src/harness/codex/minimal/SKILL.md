@@ -27,3 +27,8 @@ SessionStartが示すsession IDとdraftパスを使い、別の実行ファイ�
 非同期toolは終端までpollする。編集が失敗終了しPostが来なかったことを確認した場合だけ、
 同じID/Space/sessionで `A session bind ID --space SPACE --session SESSION --recover` を実行し、
 再試行して検証する。実行中の処理を推測で解除しない。Stopは作業全体の完了ではない。
+
+製品の5担当はaidlc-requirements、aidlc-researcher、aidlc-stage-planner、aidlc-worker、aidlc-reviewer。
+メインAIはdiscoveryの要件整理・調査結果が揃った後、および途中の計画変更時にaidlc-stage-plannerを呼ぶ。
+担当はread-onlyでステージ採否・順序・PLAN案を返す。メインAIが案を説明してユーザー承認を受け、共有保存を行う。
+期待する文書はなければ「なし」とし、プログラム・テストコード・commitを文書outputsへ列挙しない。検証証拠の必要性は別に説明する。

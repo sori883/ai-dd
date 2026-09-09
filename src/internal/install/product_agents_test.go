@@ -15,7 +15,7 @@ func TestProductAgentAssets(t *testing.T) {
 	if _, err := Codex(root, "/opt/aidlc"); err != nil {
 		t.Fatal(err)
 	}
-	names := []string{"aidlc-researcher", "aidlc-requirements", "aidlc-worker", "aidlc-reviewer"}
+	names := []string{"aidlc-researcher", "aidlc-requirements", "aidlc-worker", "aidlc-reviewer", "aidlc-stage-planner"}
 	entries, err := os.ReadDir(filepath.Join(root, ".codex/agents"))
 	if err != nil {
 		t.Fatal(err)

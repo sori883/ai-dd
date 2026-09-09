@@ -5,6 +5,8 @@ agents:
     agent: aidlc-requirements
   - role: research
     agent: aidlc-researcher
+  - role: execution_planning
+    agent: aidlc-stage-planner
   - role: independent_review
     agent: aidlc-reviewer
 inputs:
@@ -31,6 +33,15 @@ sensors:
 # 目的整理と深掘り
 
 目的・範囲・受入条件・未確定事項を具体化し、任意段階の採否と省略理由を整理する。資材があるだけで解析・構成図を要求しない。
+
+## 要件整理と調査の後に実行計画を提案する
+
+メインAIがaidlc-requirementsへ目的・要件・受入条件の整理、aidlc-researcherへ根拠の調査を依頼する。
+両結果が揃った後、aidlc-stage-plannerへ現在state/計画、6段階の定義、Rule、要件、調査結果、制約と成果物を渡す。
+担当から採否・順序・理由・省略理由・期待する文書（なければなし）・不足情報とPLAN.json案を受け取り、ユーザーへ説明する。
+プログラム・テストコード・commitを文書outputsへ列挙しない。検証証拠の必要性は文書outputsとは別に説明する。
+メインAIが案をintent planへ提示し、実際の回答をplan-approvalへ記録する。最終決定者はユーザー。
+計画承認と成果承認は分ける。担当はread-onlyで、共有保存・承認・子起動を行わない。
 
 ## 現在回の操作
 
