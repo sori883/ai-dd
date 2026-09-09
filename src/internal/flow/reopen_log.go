@@ -57,6 +57,11 @@ func (s Store) reopen(id string, expect uint64, r TransitionRequest) (State, err
 			return State{}, err
 		}
 
+		pending := &PendingReopen{Revision: expect, From: st.Stage, To: r.Stage, Reason: r.Reason, At: time.Now().UTC().Format(time.RFC3339Nano), LogHash: logHash(raw), HadLog: true}
+		if len(raw)+len(pending.block()) > filestore.MaxBytes {
+			return State{}, invalid("work-log exceeds 256 KiB")
+		}
+
 		if os.IsNotExist(readErr) {
 			write := s.write
 			if write == nil {
@@ -68,7 +73,7 @@ func (s Store) reopen(id string, expect uint64, r TransitionRequest) (State, err
 			raw = []byte{}
 			readErr = nil
 		}
-		st.PendingReopen = &PendingReopen{Revision: expect, From: st.Stage, To: r.Stage, Reason: r.Reason, At: time.Now().UTC().Format(time.RFC3339Nano), LogHash: logHash(raw), HadLog: readErr == nil}
+		st.PendingReopen = pending
 		if err = s.persist(st); err != nil {
 			return State{}, err
 		}
@@ -84,6 +89,9 @@ func (s Store) reopen(id string, expect uint64, r TransitionRequest) (State, err
 		return State{}, invalid("work-log changed or missing; restore the recorded previous version")
 	}
 	if before {
+		if len(raw)+len(block) > filestore.MaxBytes {
+			return State{}, invalid("work-log exceeds 256 KiB")
+		}
 		write := s.write
 		if write == nil {
 			write = filestore.WriteFile

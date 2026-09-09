@@ -26,7 +26,9 @@ func (s Store) endDocuments(st State) *boundaryCollector {
 		c.require(false, err.Error())
 	}
 	c.references(st, d.Procedures[st.Stage].Inputs)
-	c.references(st, d.Procedures[st.Stage].Outputs)
+	for _, version := range c.references(st, d.Procedures[st.Stage].Outputs) {
+		c.recordProof(version)
+	}
 	c.require(st.Status == "active", "Intent is not active")
 	c.require(st.Entry != nil && st.Entry.Stage == st.Stage, "intent begin required")
 	c.document(st, s.documentPath(st, "Rule"), "Rule", false)

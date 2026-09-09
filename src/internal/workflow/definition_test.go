@@ -109,3 +109,22 @@ func TestDefinitionAcceptedInputMustPrecedeStage(t *testing.T) {
 		t.Fatal("future accepted input creates an impossible prerequisite")
 	}
 }
+
+func TestDefinitionRejectsEmptyOrUnknownAgent(t *testing.T) {
+	for _, agent := range []string{"{}", "{role: unsupported}", "{agent: aidlc-worker}"} {
+		t.Run(agent, func(t *testing.T) {
+			root := definitionFixture(t)
+			p := filepath.Join(root, "aidlc/workflow/stages/tdd.md")
+			raw, err := os.ReadFile(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = os.WriteFile(p, []byte(strings.Replace(string(raw), "agents: []", "agents: ["+agent+"]", 1)), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(root); err == nil {
+				t.Fatal("empty or unknown agent accepted")
+			}
+		})
+	}
+}

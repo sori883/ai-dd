@@ -50,3 +50,70 @@ func TestProcedureBoundaryEmptyOutputsKeepTests(t *testing.T) {
 		t.Fatal("empty outputs disabled test gate")
 	}
 }
+
+func TestProcedureBoundaryAcceptedTDDOutput(t *testing.T) {
+	s, _ := boundaryFixture(t)
+	doc := "aidlc/spaces/default/knowledge/knowledge/decision.md"
+	for _, stage := range []string{"tdd", "integration"} {
+		p := filepath.Join(s.Root, "aidlc/workflow/stages", stage+".md")
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stage == "tdd" {
+			raw = []byte(strings.Replace(string(raw), "outputs: []", "outputs:\n  - role: decision\n    path: \"${knowledge_root}/knowledge/decision.md\"", 1))
+		} else {
+			raw = []byte(strings.Replace(string(raw), "inputs:\n", "inputs:\n  - path: \"${knowledge_root}/knowledge/decision.md\"\n    version: accepted\n    accepted_at: tdd\n", 1))
+		}
+		if err = os.WriteFile(p, raw, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st, err := s.Create("explicit output")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Stage = "tdd"
+	prepareBoundaryStage(t, s, &st)
+	head := flowGit(t, s.Root, "rev-parse", "HEAD")
+	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: head, DirectCommit: head, Plan: "Implement", Tests: []string{"go test"}}
+	boundaryFile(t, s, doc, "---\ntype: Design\ntitle: Decision\ndescription: Decision\n---\nReviewed decision.\n")
+	boundaryDoc(t, s, st, "CurrentAnalysis")
+	prepareBoundaryResults(t, s, &st)
+	if err = s.persist(st); err != nil {
+		t.Fatal(err)
+	}
+	gate, err := s.Check(st.ID)
+	if err != nil || gate.Status != "pass" {
+		t.Fatalf("gate %+v %v", gate, err)
+	}
+	st.Review = Gate{Status: "pass", Target: gate.Target}
+	if err = s.persist(st); err != nil {
+		t.Fatal(err)
+	}
+	st, err = s.Transition(st.ID, st.Revision, TransitionRequest{Action: "advance"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, v := range st.Accepted["tdd"].Outputs {
+		if v.Path == doc {
+			found = true
+		}
+		if v.Path == s.documentPath(st, "CurrentAnalysis") {
+			t.Fatal("shared current input frozen")
+		}
+	}
+	if !found {
+		t.Error("explicit TDD output not accepted")
+	}
+	start, _, _ := s.startState(st)
+	if start.Status != "pass" {
+		t.Errorf("unchanged explicit output rejected: %s", start.Summary)
+	}
+	boundaryFile(t, s, doc, "---\ntype: Design\ntitle: Decision\ndescription: Decision\n---\nChanged.\n")
+	start, _, _ = s.startState(st)
+	if start.Status == "pass" {
+		t.Fatal("changed accepted output allowed")
+	}
+}

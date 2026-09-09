@@ -1,6 +1,6 @@
 # 開発プロジェクトRAM
 
-- [Stage Graph実装証拠](decisions/2026-09-09-stage-graph-evidence.md): 7項目のTDD、schema3 binding、差戻しの保存失敗・同一retry、現在手順とfresh配置のloop実測。最終検証と実機の証拠は親PRへ記録。
+- [Stage Graph実装証拠](decisions/2026-09-09-stage-graph-evidence.md): 7項目のTDD、schema3 binding、差戻しの保存失敗・同一retry、現在手順とfresh配置のloop実測。log容量・明示TDD文書outputs・不正agentの独立レビュー修復を含む。最終検証と実機の証拠は親PRへ記録。
 
 - [Stage Graphと段階別手順の実装依頼](decisions/2026-09-09-stage-graph-implementation-approved.md): 直接承認。outputsは文書のみ・空でも可、差戻し理由はIntent作業記録。定義変更時は元版復元または新Intent、既設自動更新は保留で承認済み。
 

@@ -9,7 +9,9 @@ import (
 	"github.com/sori883/ai-dd/src/internal/workflow"
 )
 
-func (c *boundaryCollector) references(st State, refs []workflow.Reference) {
+func (c *boundaryCollector) references(st State, refs []workflow.Reference) []FileVersion {
+	checked := []FileVersion{}
+	seen := map[string]bool{}
 	prefix := "aidlc/spaces/" + c.store.Space + "/knowledge/"
 	for _, ref := range refs {
 		if ref.RequiredWhen == "adr_required" && !st.Config.ADR.Required {
@@ -70,8 +72,15 @@ func (c *boundaryCollector) references(st State, refs []workflow.Reference) {
 			if ref.Version == "accepted" {
 				c.accepted(st, ref.AcceptedAt, name)
 			}
+			for _, version := range c.files {
+				if version.Path == name && !seen[name] {
+					checked = append(checked, version)
+					seen[name] = true
+				}
+			}
 		}
 	}
+	return checked
 }
 
 // ProcedureView is a read-only view of the bound current procedure.

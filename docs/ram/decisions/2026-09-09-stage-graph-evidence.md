@@ -87,3 +87,31 @@ loopではintegrationのcompile/実行、live、全package、race、vet、crossb
 本製品は承認済み4段階のJSON遷移と段階MDをruntime正本にする。読込み量と二重管理の削減が理由。
 新fresh配置が必要で、既設の自動上書きや33段階/audit機構の復元は行わない。
 最新upstreamや未確認の生成経路との一致は主張しない。実際のtoken削減効果は未測定。
+
+## 独立レビュー3件の契約修復
+
+`work_unit_id=stage-graph-review-repair`、`verification_mode=loop`。
+開始HEADは `fa7e57f6b72094abe9678c3f7402d4771a43589c`。Issue144の直接承認範囲で修復した。
+
+1. `TestReopenLogCapacity` はMaxBytes近傍の既存logに通常理由を追記して成功扱いとなり、次回読取り不能になる問題をREDで再現した。
+   freshのescape後に容量超過する理由でも、拒否前に空logを作る問題を確認した。
+   決定的な追記blockを完全にencodeして総bytesを検査し、超過はpending・state・logへの変更前に拒否する。
+   既存state/log bytesの保持と容量内成功を同じ回帰で確認した。retryの書込み前にも容量を検査する。
+2. `TestProcedureBoundaryAcceptedTDDOutput` は合法なTDD文書outputをintegrationからaccepted参照した場合、
+   TDD終了passなのにAcceptedへ文書版が残らず、変更していない次段階の開始が失敗する問題をREDで再現した。
+   同じcollectorが検査した明示outputsのFileVersionを返し、test proofと重複排除してTDD Acceptedへ保存する。
+   別bytesの再読取りをしない。共有current入力は保存対象へ追加せず、明示output改変は次段階で拒否する。
+   既存のpathに依存しないTDD test証拠の固定を維持した。
+3. `TestDefinitionRejectsEmptyOrUnknownAgent` は `{}` と `{role: unsupported}` がmapの空値一致で通る問題をREDで再現した。
+   roleの存在boolとagentの一致を両方要求する。agentだけの不完全な定義の拒否はALREADY_GREEN。
+
+指定commandとログ（各RED exit 1→GREEN exit 0）:
+
+- `go test -count=1 ./src/internal/flow -run '^TestReopenLog'`: `/tmp/graph-review-1-{red,green}.log`
+- `go test -count=1 ./src/internal/flow -run '^(TestProcedureBoundary|TestBoundaryTransition|TestStartSensor)'`: `/tmp/graph-review-2-{red,green}.log`
+- `go test -count=1 ./src/internal/workflow -run '^TestDefinition'`: `/tmp/graph-review-3-{red,green}.log`
+
+末尾に同じ3commandを実行し、`/tmp/graph-review-final-{1,2,3}.log`へ保存した。
+許可されたaffected通常testは `go test -count=1 ./src/internal/flow ./src/internal/workflow`、ログは `/tmp/graph-review-affected.log`。末尾3targetedとaffectedはすべてexit 0。
+変更Goファイルはgofmtし、git diff --checkを確認。integration/live・race・vet・全packageは実行しない。
+最終検証の証拠は親PRへ記録する。

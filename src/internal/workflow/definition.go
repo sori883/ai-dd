@@ -226,7 +226,8 @@ func parseProcedure(stage Stage, raw []byte) (Procedure, error) {
 	agents := map[string]string{"research": "aidlc-researcher", "requirements": "aidlc-requirements", "implementation": "aidlc-worker", "independent_review": "aidlc-reviewer"}
 	seen := map[string]bool{}
 	for _, a := range p.Agents {
-		if agents[a.Role] != a.Agent || seen[a.Role] {
+		expected, known := agents[a.Role]
+		if !known || expected != a.Agent || seen[a.Role] {
 			return p, fmt.Errorf("invalid agent role")
 		}
 		seen[a.Role] = true

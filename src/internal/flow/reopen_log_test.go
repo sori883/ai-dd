@@ -189,3 +189,62 @@ func TestReopenLogFreshDeletionRequiresRestore(t *testing.T) {
 		t.Fatal("deleted fresh log silently regenerated")
 	}
 }
+
+func TestReopenLogCapacity(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		size   int
+		reason string
+		fits   bool
+	}{
+		{"overflow", filestore.MaxBytes - 10, "reconsider", false},
+		{"fits", filestore.MaxBytes - 256, "reconsider", true},
+		{"fresh encoded reason", -1, strings.Repeat("\x00", filestore.MaxBytes/4), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := flowStore(t)
+			st, err := s.Create("capacity")
+			if err != nil {
+				t.Fatal(err)
+			}
+			name := strings.TrimSuffix(s.path(st.ID), "state.json") + "work-log.md"
+			original := []byte{}
+			if tc.size >= 0 {
+				original = []byte(strings.Repeat("a", tc.size))
+				if err = filestore.WriteFile(s.Root, name, original); err != nil {
+					t.Fatal(err)
+				}
+			}
+			stateBefore, err := filestore.ReadFile(s.Root, s.path(st.ID))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = s.Transition(st.ID, st.Revision, TransitionRequest{Action: "reopen", Stage: "discovery", Reason: tc.reason})
+			if tc.fits {
+				if err != nil {
+					t.Fatal(err)
+				}
+				raw, err := filestore.ReadFile(s.Root, name)
+				if err != nil || len(raw) > filestore.MaxBytes {
+					t.Fatal("successful log unreadable", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Error("overflow returned success")
+			}
+			stateAfter, err := filestore.ReadFile(s.Root, s.path(st.ID))
+			if err != nil || string(stateBefore) != string(stateAfter) {
+				t.Error("rejected overflow changed state")
+			}
+			raw, err := filestore.ReadFile(s.Root, name)
+			if tc.size < 0 {
+				if !os.IsNotExist(err) {
+					t.Error("rejected fresh request created log")
+				}
+			} else if err != nil || string(raw) != string(original) {
+				t.Error("rejected overflow changed existing log")
+			}
+		})
+	}
+}
