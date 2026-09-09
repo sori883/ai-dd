@@ -1,5 +1,12 @@
 # 開発プロジェクトRAM
 
+- [固定Codexでの担当起動制限の実測結果](decisions/2026-09-10-agent-guard-preflight-result.md): 正常応答での起動前拒否を確認。Stop後のprocess継続とhook故障時の子開始も観測。root・子ID・終了/再開の契約が未確定のため製品guardへ進まず、明示割当・停止確認等の代案を整理。
+- [G0 fixtureのloop実装証拠](decisions/2026-09-10-agent-guard-preflight-evidence.md): test-first実装、独立review後の修復、固定Codexで観測したwire形式と故障挙動の詳細。最終ソースの検証証拠は対応PRへ記録する。
+
+- [担当起動制限の推奨案とG0先行を承認](decisions/2026-09-10-stage-agent-worker-guard-approved.md): 各段階のstage-planner、Unitなし予約、1調整root集約で進める。[G0作業単位](../design/agent-guard-preflight-work-unit.md)を固定Codexで実測し、対応/root/停止・再開の不明点が残る場合は製品guardへ進まない。
+
+- [ステージ別担当の起動制限とworkerのworktree排他の計画](decisions/2026-09-10-stage-agent-worker-guard-planning.md): 計画時点の記録（承認状態は後続RAMで置換）。[具体計画](../design/stage-agent-worker-guard-plan.md)に固定Codexの前提gate、実行予約・停止/再開・競合・TDD・配布を整理。stage-plannerの許可段階、Unitなし予約、複数調整rootの3点を整理した履歴。
+
 - [RuleとCLIスキル分離の実装証拠](decisions/2026-09-10-project-rule-and-cli-skills-evidence.md): Issue #157、5項目のTDDと限定回帰、3ファイル移転・Rule/承認gate保持。reviewで固定Ruleのtype-only厳密化と正本変更拒否回帰を追加。finalで判明した移転E2Eの旧2ファイル期待を3ファイルへ追従し、lockのruntime初期.gitignoreだけを厳密な期待setへ追加。実機で判明した初回Space/Intent ID/help案内の移管漏れも復元。実読込は親finalへ引継ぎ。
 - [プロジェクトRuleとAI-DLCスキルの責任分離](decisions/2026-09-10-project-rule-and-cli-skill-approved.md): rule.mdを利用プロジェクト専用にし、AI-DLC進行はaidlc、操作案内はaidlc-cliへ。WORKFLOW原稿廃止を直接承認。[実装計画](../design/project-rule-and-cli-skills-plan.md)へ配布・hook・Rule検査と5項目TDDを具体化。必須Rule固定pathに限る入力parser接続の必要性を追記。
 
