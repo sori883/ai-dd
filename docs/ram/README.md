@@ -1,6 +1,6 @@
 # 開発プロジェクトRAM
 
-- [OKF作業記録の実装証拠](decisions/2026-09-09-okf-work-log-evidence.md): Issue #149、Knowledge log配置、metadataと前後hashの保存復旧、公開検索/show、配布手順のTDD実測。finalは親担当。
+- [OKF作業記録の実装証拠](decisions/2026-09-09-okf-work-log-evidence.md): Issue #149、Knowledge log配置、metadataと前後hashの保存復旧、公開検索/show、配布手順のTDD実測。文書修復で現在の保存先とpending保存後の時刻固定を明記。finalは親担当。
 
 - [Intent作業記録をOKF検索対象へ移す依頼](decisions/2026-09-09-work-log-okf-request.md): Knowledgeのlog/配下へ`<intent_id>-work-log.md`として保存し、metadata検索へ対応する。保存先補正後の直接承認を確認。
 
@@ -103,7 +103,7 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 各ステージ間にSensorとレビューを設け、必要な検査とレビューに合格してからstateを次へ進める。
 **Knowledgeは現行で何を・どう実現しているか、ADRはアーキテクチャ設計のなぜ**を記録する。
 整理・深掘りの成果もこの分担で反映し、ADRはSpaceの `knowledge/ADR/` 配下にOKF文書として置く。
-Intent・Unitの進捗はstateで管理する。全作業の日誌は要求せず、差戻し理由だけはIntent配下の作業記録Markdownにも保存する。
+Intent・Unitの進捗はstateで管理する。全作業の日誌は要求せず、差戻し理由だけは`aidlc/spaces/<space>/knowledge/log/<intent_id>-work-log.md`へOKF文書として保存する。
 過去の記録にある旧称KDRと実装識別子は履歴として保持し、名称とstateの最新方針は先頭の記録を参照する。
 
 | 種別 | 記録 | 状態 |
