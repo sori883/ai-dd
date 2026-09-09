@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [Intent実行計画のトップhelp残存一覧修復](decisions/2026-09-09-intent-execution-plan-review-repair-2.md): Issue153、再reviewで指摘された末尾の旧4段階一覧を6段階・計画選択と会話承認へ修正。
+
 - [Intent実行計画の独立review修復1](decisions/2026-09-09-intent-execution-plan-review-repair-1.md): Issue153、reopen実体と再初期化順序、確定履歴head anchor、トップhelpを回帰test付きで修復。
 
 - [Intent実行計画・会話承認のloop実装証拠](decisions/2026-09-09-intent-execution-plan-evidence.md): Issue153、6段階・step_id・選択Sensor・別承認・reopen履歴の8項目TDDと保存復旧。mandatory順序と未完了回の新ID置換、同一Draftの2承認を具体化。独立review/finalは親担当。

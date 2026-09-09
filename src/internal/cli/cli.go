@@ -48,7 +48,7 @@ Usage:
   aidlc session inspect --session <session>
   aidlc help | version
 
-Stages: discovery, planning, tdd, integration. Each boundary needs Sensor and independent review.
+Stages: initialization → discoveryは必須。architecture-analysis, planning, tdd, integrationは採否と順序を計画で承認する。各実行の完了にはSensor、独立review、成果の会話承認が必要。
 Use --project-dir <root> for explicit project selection. Concept IDs have no .md extension.
 Exit codes: 0 success, 2 invalid input or conflict, 1 operational failure.
 `

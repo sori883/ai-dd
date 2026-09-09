@@ -20,7 +20,7 @@ func TestExecutionPlanReviewHelp(t *testing.T) {
 					t.Errorf("help missing %q", want)
 				}
 			}
-			for _, old := range []string{"four-stage", "intent advance ", "--stage <stage>"} {
+			for _, old := range []string{"four-stage", "intent advance ", "--stage <stage>", "Stages: discovery, planning, tdd, integration."} {
 				if strings.Contains(text, old) {
 					t.Errorf("stale help %q", old)
 				}
