@@ -45,3 +45,9 @@ collectorはraw call outputを変えず、出典sessionとprocess観測を含む
 許可対照の試験印は、fixture manifestのnonce・有限helper command、実子sessionのPostToolUse、同session/同call IDの実exec_command入出力、nonceを持つ終了済みprocess記録を照合して判断する。markerのagent/nonceを手組みで注入する経路は削除した。回帰fixtureではwait/closeを含む正例に加え、未知wrapper、重複spawn/出力、session不一致、process欠落、nonce不一致、子call欠落、opaque code-modeをinconclusiveとして確認した。
 
 これは既知wireに対する収集・評価経路の修復であり、固定0.153.4の実spawn wireがその形式で得られると断定するものではない。実機未実行を維持し、未知wireや根拠不足はinconclusiveとする。G0-2〜6のraw実測評価は引き続き親が行う。gofmt適用と `git diff --check` を確認し、製品コード・外部依存・既存helper・Issue/PRを変更していない。
+
+## 非lifecycleの有限process待機時間修復
+
+`work_unit_id=agent-probe-yield-repair`、開始HEAD `b9af85a09c28a03ee7c45895a9fa846a54e4525b`。再reviewの指摘に従い、15秒の有限helperに対する非lifecycleの `exec_command` を `yield_time_ms=20000` とpromptへ明示した。lifecycleはprocess残存を観測するため `yield_time_ms=1` を維持する。markerのexit 0要件や未知wireの扱いは変更しない。
+
+先行した `TestAgentHookProbeFixtureYield` は全9caseの保存済みpromptを検査する。`go test -count=1 ./src/cmd/aidlc -run '^TestAgentHookProbeFixture'` で、非lifecycleの20秒指定が欠けるRED（exit 1）を確認した。lifecycleの既存1ミリ秒指定は初回から成立（ALREADY_GREEN）。case別指示の修正後に同じcommandがGREEN（exit 0）。末尾再実行、gofmt、`git diff --check` も成功。実機live・全体検証・Issue/PR操作は未実行。

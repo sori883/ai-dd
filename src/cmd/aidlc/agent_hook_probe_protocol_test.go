@@ -522,3 +522,25 @@ func agentProbeRecordedControl(t *testing.T, wrapper, mutation string) (string, 
 	}
 	return dirs[0], dirs[1]
 }
+
+func TestAgentHookProbeFixtureYield(t *testing.T) {
+	for _, scenario := range agentProbeScenarios() {
+		t.Run(scenario.Name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "probe")
+			if _, err := agentProbePrepare(dir, "/test/binary", scenario); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(filepath.Join(dir, "prompt.txt"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, other := "yield_time_ms=20000", "yield_time_ms=1"
+			if scenario.Name == "lifecycle" {
+				want, other = "yield_time_ms=1", "yield_time_ms=20000"
+			}
+			if !strings.Contains(string(data), want) || strings.Contains(string(data), other) {
+				t.Fatalf("%s prompt must specify %s only; got %s", scenario.Name, want, data)
+			}
+		})
+	}
+}

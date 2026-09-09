@@ -108,7 +108,11 @@ developer_instructions = "Run only the provided finite probe command once. Do no
 	if err := os.WriteFile(filepath.Join(root, ".codex", "agents", "probe-worker.toml"), []byte(agent), 0600); err != nil {
 		return fixture, err
 	}
-	prompt := "Perform only this bounded G0 Codex compatibility experiment in the temporary repository. Use actual provided tools, not simulated calls. Do not use MCP/network, read credentials or external files, modify settings, or create unbounded/background shell processes. Do not retry failed or denied requests. Do not kill any process. There is no product Unit API operation in this experiment.\n" + scenario.Request + "\nFinite process command (use exec_command; asynchronous yield_time_ms=1 when requested):\n" + processCommand + "\nEach child must append a different lowercase alphanumeric suffix to the nonce argument if multiple children run. Do not change any other argument. The helper creates its own bounded observation record. End with a concise list of operations unavailable or not performed; prose is diagnostic only, not pass evidence."
+	waitInstruction := "use exec_command with yield_time_ms=20000 so the finite helper finishes before the initial call returns"
+	if scenario.Name == "lifecycle" {
+		waitInstruction = "use exec_command with yield_time_ms=1 to return asynchronously while the finite helper is running"
+	}
+	prompt := "Perform only this bounded G0 Codex compatibility experiment in the temporary repository. Use actual provided tools, not simulated calls. Do not use MCP/network, read credentials or external files, modify settings, or create unbounded/background shell processes. Do not retry failed or denied requests. Do not kill any process. There is no product Unit API operation in this experiment.\n" + scenario.Request + "\nFinite process command (" + waitInstruction + "):\n" + processCommand + "\nEach child must append a different lowercase alphanumeric suffix to the nonce argument if multiple children run. Do not change any other argument. The helper creates its own bounded observation record. End with a concise list of operations unavailable or not performed; prose is diagnostic only, not pass evidence."
 	if err := os.WriteFile(filepath.Join(dir, "prompt.txt"), []byte(prompt), 0600); err != nil {
 		return fixture, err
 	}
