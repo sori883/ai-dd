@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [Intent作業記録をOKF検索対象へ移す依頼](decisions/2026-09-09-work-log-okf-request.md): Knowledgeのlog/配下へ`<intent_id>-work-log.md`として保存し、metadata検索へ対応する。保存先補正後の直接承認を確認。
+
 - [OKF selectorと具体的文書一覧の実装証拠](decisions/2026-09-09-stage-okf-documents-evidence.md): Issue147の7項目TDD、schema4登録、共有current/accepted版、lowercase adr配布とfixture追従。独立レビューのFIFO登録・空一覧roundtrip・help型例の修復を含む。最終検証は親PRに記録。
 
 - [ステージ入力をOKF検索し、出力は保存先とmetadataを定義する](decisions/2026-09-09-stage-okf-selectors-approved.md): 方式への直接承認。必須入力の件数と版を検査し、出力先を明示する。Intentごとの保存先一覧と必要metadataも承認済み。[実装計画](../design/stage-okf-documents-plan.md)へ具体化。
