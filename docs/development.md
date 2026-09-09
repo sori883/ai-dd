@@ -159,9 +159,13 @@ fresh配置は `aidlc/workflow/stage-graph.json` と `stages/*.md` を含む。
 定義のpathとbytesはIntent作成時に結び付く。変更・欠落時は作業を停止し、元版の復元または新Intentで再開する。
 show/list診断は維持する。旧schemaの移行や既設assetの自動上書きは行わない。
 
-reopenは理由をIntentのwork-log.mdへ追記し、戻り先以降の合格を無効化する。
-保存途中は元revisionとpending要求を保持し、同一要求のretryだけで完了する。logが変わったら元版を復元する。
-初回logはpending前に空の通常fileを作り、途中で削除された場合も診断できる。
+reopenは理由を`aidlc/spaces/<space>/knowledge/log/<intent_id>-work-log.md`へOKFで追記し、戻り先以降の合格を無効化する。
+`aidlc memory search work-log --space SPACE --intent-id ID`でmetadataを検索し、
+`aidlc memory show log/ID-work-log --space SPACE`で本文を読む。検索はtitle/description/tagsを対象とし、intent_idは完全一致で絞り込む。本文全文検索ではない。
+初回logはpending前に、正しいmetadataと空の本文を持つOKF文書を原子的に作る。
+pending保存前に失敗すると有効な土台が残る場合があるが、要求は未保存なので再試行で新しい時刻を選べる。
+pending保存後は元revision・要求・時刻・文書の前後hashを保持し、同一要求のretryだけで完了する。logが変わったり削除されたら元版を復元する。
+完成文書が保存済みなら追記や日時更新をせずstate確定だけを再試行する。stateのrevision確定前は文書の存在だけで成功扱いしない。
 文書outputsが空でも、既存の実装・テスト・必要ADRの検査は継続する。
 
 loopの指定targetedとaffected通常testの証拠はRAMへ記録する。親final用の限定実行は次のとおり。

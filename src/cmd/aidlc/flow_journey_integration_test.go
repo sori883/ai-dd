@@ -153,9 +153,28 @@ func runBoundaryJourney(t *testing.T) {
 	review("pass")
 	call("advance")
 	call("reopen", "--stage", "planning", "--reason", "recheck implementation plan")
-	log, err := os.ReadFile(filepath.Join(root, "aidlc/spaces/default/intents", st.ID, "work-log.md"))
+	log, err := os.ReadFile(filepath.Join(root, "aidlc/spaces/default/knowledge/log", st.ID+"-work-log.md"))
 	if err != nil || !bytes.Contains(log, []byte("recheck implementation plan")) {
 		t.Fatal("missing reopen log", err)
+	}
+	if _, err := okfmemory.Parse(log); err != nil {
+		t.Fatal("reopen log is not OKF", err)
+	}
+	found := runMinimalCLI(t, binary, root, nil, "memory", "search", "work-log", "--space", "default", "--intent-id", st.ID)
+	var records []map[string]string
+	if err := json.Unmarshal(found, &records); err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 || records[0]["concept_id"] != "log/"+st.ID+"-work-log" {
+		t.Fatalf("reopen log search: %s", found)
+	}
+	shown := runMinimalCLI(t, binary, root, nil, "memory", "show", records[0]["concept_id"], "--space", "default")
+	var record map[string]string
+	if err := json.Unmarshal(shown, &record); err != nil {
+		t.Fatal(err)
+	}
+	if record["content"] != string(log) {
+		t.Fatalf("reopen log show: %s", shown)
 	}
 	call("begin")
 	review("pass")

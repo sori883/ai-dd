@@ -47,7 +47,9 @@ config.plan・testsまたはUnit.testsと対応させる。設計判断が必要
 引数・型・値とJSON例は `A intent configure --help`、`A memory create --help`、`A memory update --help` を参照する。
 段階変更・再開後は `A intent procedure ID --space SPACE` で現在手順を取り直す。
 質問待ちはwait、回答後resume。差戻しは `A intent reopen ID --space SPACE --expect R --reason TEXT --stage STAGE`。
-理由はwork-log.mdにCLIが保存する。保存失敗は同じexpect・元/先段階・理由でretryし、記録改変時は元版を復元する。
+理由は`aidlc/spaces/<space>/knowledge/log/<intent_id>-work-log.md`にCLIがOKF（type: work-log）で保存する。保存失敗は同じexpect・元/先段階・理由でretryし、記録改変時は元版を復元する。
+stateのrevisionが要求revisionを超えて確定するまで、記録の存在だけで成功扱いしない。generated.atはCLIが生成する内容更新時のUTC日時で、承認・検証済みを意味しない。
+`A memory search work-log --space SPACE --intent-id ID`で検索し、`A memory show log/ID-work-log --space SPACE`で本文を読む。
 定義変更時は元版を復元するか新Intentにする。差戻し理由だけでADRを作らない。
 
 ## KnowledgeとADR

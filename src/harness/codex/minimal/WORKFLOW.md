@@ -15,7 +15,9 @@
 
 定義JSONと全段階MDのpath・本文bytesはIntent作成時に固定される。変更時は元版へ復元するか新Intentを作る。
 既設配置を上書き更新しない。欠落時に旧手順や内包版を代用しない。
-差戻し理由はIntentのwork-log.mdへCLIが保存し、設計判断のADRとは区別する。
+差戻し理由は`aidlc/spaces/<space>/knowledge/log/<intent_id>-work-log.md`へCLIがOKF（type: work-log）で保存し、設計判断のADRとは区別する。
+`A memory search work-log --space SPACE --intent-id ID`で検索し、`A memory show log/ID-work-log --space SPACE`で本文を読む。
+stateのrevisionが要求revisionを超えて確定するまで、記録の存在だけで成功扱いしない。generated.atは内容更新時のUTC日時であり、承認・検証済みを意味しない。
 途中保存は成功ではない。同じexpect・元/先段階・理由で再試行する。logが変わった場合は元版へ復元する。
 非同期toolは終端までpollし、失敗終了を確認した同session/Intent/Spaceだけsession bind --recoverを使う。
 

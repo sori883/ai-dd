@@ -119,7 +119,10 @@ func (s Store) validate(st State) error {
 	}
 	if p := st.PendingReopen; p != nil {
 		_, err := time.Parse(time.RFC3339Nano, p.At)
-		if p.Revision != st.Revision || p.From != st.Stage || !supportedStage(p.To) || strings.TrimSpace(p.Reason) == "" || !utf8.ValidString(p.Reason) || err != nil || !hashPattern.MatchString(p.LogHash) {
+		invalidTarget := p.Revision != st.Revision || p.From != st.Stage || !supportedStage(p.To)
+		invalidReason := strings.TrimSpace(p.Reason) == "" || !utf8.ValidString(p.Reason)
+		invalidHashes := !hashPattern.MatchString(p.LogHash) || !hashPattern.MatchString(p.LogAfterHash)
+		if invalidTarget || invalidReason || err != nil || invalidHashes {
 			return invalid("invalid pending reopen")
 		}
 	}

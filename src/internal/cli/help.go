@@ -73,7 +73,7 @@ func Help(args []string) (string, bool) {
 		text += "REVIEW.json: actionはassign / accept。assignはcoordinator_session、別session、別rootを指定。acceptは同じsession/root/targetと、実報告のstatus pass / fail、summaryを指定する。古いtargetや未割当結果は拒否する。\n"
 	}
 	if key == "intent/reopen" {
-		text += "graphの現在段階または祖先だけへ差し戻す。理由はUTC日時・元/先・要求revisionとwork-log.mdへ記録し、戻り先以降の合格を無効化する。途中保存時は同じexpect/from/to/reasonの要求だけretryできる。異なる操作は停止する。記録の改変・欠落は元版を復元する。成功後の古いexpectはrevision conflict。\n"
+		text += "graphの現在段階または祖先だけへ差し戻す。理由はUTC日時・元/先・要求revisionとaidlc/spaces/<space>/knowledge/log/<intent_id>-work-log.mdへOKF（type: work-log）で記録し、戻り先以降の合格を無効化する。途中保存時は同じexpect/from/to/reasonの要求だけretryできる。異なる操作は停止する。記録の改変・欠落は元版を復元する。成功後の古いexpectはrevision conflict。stateのrevisionが要求revisionを超えて確定するまで、記録の存在だけで成功扱いしない。generated.atはCLIが生成する内容更新時のUTC日時であり、承認や検証済みを意味しない。\n検索: aidlc memory search work-log --space SPACE --intent-id ID\n本文: aidlc memory show log/ID-work-log --space SPACE\n"
 	}
 	if key == "intent/documents" {
 		text += "DOCUMENTS.json例: {\"inputs\":[],\"outputs\":[{\"stage\":\"integration\",\"path\":\"aidlc/spaces/default/knowledge/knowledge/feature.md\",\"metadata\":{\"type\":\"Knowledge\",\"title\":\"Feature\",\"description\":\"Current behavior\"}}]}\nstatusはdraft/stable/deprecated、tagsは文字列配列、intent_idは32桁小文字16進数。Requirements/ImplementationPlanと新規adrの登録結果のintent_idをmemory create --intent-idへ渡す。generated日時はmemory CLIが生成する。\n"
