@@ -8,7 +8,7 @@ description: AI-DLC CLIの操作目的からコマンドとhelpを選ぶ。Inten
 
 | 目的 | help |
 | --- | --- |
-| Space作成・選択、Intent作成・選択 | `A space --help`、`A intent create --help`、`A intent switch --help` |
+| Space作成・選択、Intent作成・選択 | `A space --help`、`A intent create --help`、`A intent list --help`、`A intent switch --help` |
 | 現在状態と手順 | `A intent show --help`、`A intent procedure --help` |
 | 段階の採否・順序と計画承認 | `A intent plan --help`、`A intent plan-approval --help` |
 | 設定・文書宣言・実測結果 | `A intent configure --help`、`A intent documents --help` |

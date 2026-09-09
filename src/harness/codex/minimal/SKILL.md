@@ -4,7 +4,8 @@ description: AI-DLCでIntentの計画、段階実行、担当依頼、会話承�
 ---
 # AI-DLCの進め方
 
-実行ファイルは @@BINARY@@（以下A）。SessionStartのsession IDを使い、各turnで `A intent switch --id ID --space SPACE --session SESSION` または `A session bind ID --space SPACE --session SESSION` が返すプロジェクトRule全文を読む。このスキルだけではRule読了にならない。
+実行ファイルは @@BINARY@@（以下A）。Spaceはユーザー指定、未指定なら初期配置のdefaultを使う。ID不明なら `A intent list --space SPACE` で確認し、名前を--idへ渡さない。引数不明時は選択前でも `A intent ACTION --help` を読める。
+SessionStartのsession IDを使い、各turnで `A intent switch --id ID --space SPACE --session SESSION` または `A session bind ID --space SPACE --session SESSION` が返すプロジェクトRule全文を読む。このスキルだけではRule読了にならない。
 `A intent procedure ID --space SPACE` で現在のstep_id、手順、担当、入力・文書outputsを取得する。段階変更・再開後は取り直す。操作選択は [aidlc-cli](../aidlc-cli/SKILL.md)、正確な引数・JSONは各CLI helpを読む。
 
 initialization→discoveryが初回必須。他4段階の採否・順序・省略理由はユーザーが計画を承認する。bootstrapを承認済みと扱わない。変更ごとに承認し、計画承認と成果承認を別requestで記録する。提示後の実際のUserPromptSubmit回答だけを引用する。両requestを提示していた場合だけ同じ回答を使え、後で生成したrequestや過去turnに転用しない。

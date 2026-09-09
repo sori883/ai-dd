@@ -121,3 +121,18 @@ work_unit_id=rule-skills-relocation-runtime-fixture、verification_mode=loop。�
 before未存在の場合だけ当該1ファイルのafter実在と正確なbytes「*\n」を確認し、期待snapshotへhashを追加する。runtime全体を除外せず、他の追加・削除・hash変更と、既存.gitignore変更は引き続き拒否する。製品コード変更なし。fixture補正で人工REDなし。
 
 `go test -tags=integration -run '^$' ./src/cmd/aidlc` はexit 0（452086、no tests to run）。compile-only確認でE2E本体は未実行。当該Goへのgofmtとgit diff --checkもexit 0。親がfresh final冒頭で失敗したintegrationを先に再実行する。
+
+## 初回選択案内の移管漏れ修復
+
+work_unit_id=rule-skills-bootstrap-guidance-repair、verification_mode=loop。開始HEADは1fb6d910a0f46a71f68f7f3d157278de8dc4fe95。親final報告ではintegration/fulltest/race/vet/build/skillvalidate/memoryliveが成功し、humanapprovalliveだけ失敗した。rawは/private/var/folders/9w/921pjkys39q28sk4xsc0hs000000gn/T/aidlc-human-approval-live-4199907882。未選択cat、Spaceなしintent list、名前を--idへ渡す試行が拒否され、移管前base511fe99にあったdefault SpaceとIntent一覧の案内欠落を親が確認した。
+
+入口へユーザー指定Space優先・未指定default、ID不明時のintent list --space SPACE、名前とIDの区別、選択前の正規helpを簡潔に復元した。aidlc-cli索引へintent list --helpを追加した。既存規約は削除せず、製品Go/hook/live promptは変更していない。文書修復のため人工REDなし。
+
+末尾確認（9407f3、すべてexit 0）:
+
+- `go test -count=1 ./src/internal/install -run '^TestRuleSkillSeparationAssets'`
+- `go test -count=1 ./src/internal/minimal -run '^(TestHookBootstrapBinaryIdentity|TestSessionStart)'`
+- UTF-8 bytes測定: aidlc原稿3860、/opt/aidlc引用置換後3862、上記live root + /bin/aidlc引用置換後3955。各4096以下。任意長binary pathを無条件に保証するものではなく、実配布時の既存容量検査は維持する。
+- `git diff --check`。Go変更なしでgofmt適用不要。
+
+全体final/E2E/liveは実行していない。修復後の人間承認実機は親fresh finalへ引き継ぐ。
