@@ -640,7 +640,7 @@ func agentProbeReadChild(candidate agentProbeChildCandidate) ([]byte, agentProbe
 		return nil, meta, false, nil
 	}
 	meta = row.Payload
-	if meta.ID != candidate.Agent || meta.Parent != candidate.Parent || meta.ForkedFrom != candidate.Parent || meta.AgentPath != candidate.Task {
+	if meta.ID != candidate.Agent || meta.Parent != candidate.Parent || !agentProbeForkMatches(meta.ForkedFrom, candidate.Parent) || meta.AgentPath != candidate.Task {
 		return nil, meta, false, nil
 	}
 	rest, err := io.ReadAll(reader)

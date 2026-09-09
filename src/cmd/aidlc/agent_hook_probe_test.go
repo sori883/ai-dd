@@ -196,6 +196,11 @@ func agentProbeResultObject(raw string) json.RawMessage {
 	}
 	var text string
 	if json.Unmarshal(data, &text) == nil {
+		const observed = "Tool call blocked by PreToolUse hook: Expected G0 probe denial. Do not retry or substitute another agent.. Tool: collaborationspawn_agent"
+		if text == observed {
+			encoded, _ := json.Marshal(map[string]string{"error": "Expected G0 probe denial. Do not retry or substitute another agent."})
+			return encoded
+		}
 		if json.Unmarshal([]byte(text), &object) == nil && object != nil {
 			return []byte(text)
 		}
@@ -369,10 +374,10 @@ func agentProbeSpawnTool(name string) bool {
 // This association is a G0 observation for the pinned transcript format, not a
 // stable runtime API or a guarantee about reusing task names.
 type agentProbeChildMetadata struct {
-	ID         string `json:"id"`
-	AgentPath  string `json:"agent_path"`
-	Parent     string `json:"parent_thread_id"`
-	ForkedFrom string `json:"forked_from_id"`
+	ID         string          `json:"id"`
+	AgentPath  string          `json:"agent_path"`
+	Parent     string          `json:"parent_thread_id"`
+	ForkedFrom json.RawMessage `json:"forked_from_id,omitempty"`
 }
 
 func agentProbeObservedAllowed(e agentProbeEvidence, call agentProbeCall, task string) bool {
@@ -405,7 +410,7 @@ func agentProbeObservedAllowed(e agentProbeEvidence, call agentProbeCall, task s
 		}
 		if input.Event == "SubagentStart" {
 			meta, ok := e.Children[input.Agent]
-			if !ok || input.Session != call.Session || input.Agent == "" || meta.ID != input.Agent || meta.Parent != call.Session || meta.ForkedFrom != call.Session || meta.AgentPath != task {
+			if !ok || input.Session != call.Session || input.Agent == "" || meta.ID != input.Agent || meta.Parent != call.Session || !agentProbeForkMatches(meta.ForkedFrom, call.Session) || meta.AgentPath != task {
 				return false
 			}
 			child = input.Agent
@@ -459,4 +464,14 @@ func agentProbeObservedMarker(e agentProbeEvidence, parent, child string) bool {
 	// Empty Bash output plus the helper's side effect proves execution here;
 	// neither the Post event nor this empty response proves exit 0 or child stop.
 	return json.Unmarshal(post[0].Response, &response) == nil && response == ""
+}
+
+// A missing forked_from_id is observed with fork_turns=none. A present value,
+// including null, must still be a string identifying the same explicit parent.
+func agentProbeForkMatches(raw json.RawMessage, parent string) bool {
+	if len(raw) == 0 {
+		return true
+	}
+	var fork string
+	return json.Unmarshal(raw, &fork) == nil && fork == parent && parent != ""
 }

@@ -820,3 +820,81 @@ func TestAgentHookProbeFixtureObservedSchema(t *testing.T) {
 		})
 	}
 }
+
+func TestAgentHookProbeEvidenceObservedOptionalFields(t *testing.T) {
+	const observedDenial = "Tool call blocked by PreToolUse hook: Expected G0 probe denial. Do not retry or substitute another agent.. Tool: collaborationspawn_agent"
+	for _, tc := range []struct {
+		name, denial string
+		fork         any
+		absent       bool
+		want         string
+	}{
+		{"observed_fork_present", observedDenial, "parent-allow", false, "pass"},
+		{"observed_fork_absent", observedDenial, nil, true, "pass"},
+		{"fork_null", observedDenial, nil, false, "inconclusive"},
+		{"fork_empty", observedDenial, "", false, "inconclusive"},
+		{"fork_number", observedDenial, 12, false, "inconclusive"},
+		{"fork_mismatch", observedDenial, "other-parent", false, "inconclusive"},
+		{"denial_other_tool", strings.ReplaceAll(observedDenial, "collaborationspawn_agent", "other_tool"), "parent-allow", false, "inconclusive"},
+		{"denial_other_reason", strings.ReplaceAll(observedDenial, "Expected G0 probe denial", "Other denial"), "parent-allow", false, "inconclusive"},
+		{"denial_similar_text", observedDenial + " extra", "parent-allow", false, "inconclusive"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			denyDir, allowDir := agentProbeObservedControl(t, "")
+			path := filepath.Join(denyDir, "rollout-parent-deny.jsonl")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var rows []byte
+			for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+				var row map[string]any
+				if err := json.Unmarshal([]byte(line), &row); err != nil {
+					t.Fatal(err)
+				}
+				p := row["payload"].(map[string]any)
+				if p["type"] == "function_call_output" && p["call_id"] == "spawn1" {
+					p["output"] = tc.denial
+				}
+				b, _ := json.Marshal(row)
+				rows = append(rows, b...)
+				rows = append(rows, '\n')
+			}
+			if err := os.WriteFile(path, rows, 0600); err != nil {
+				t.Fatal(err)
+			}
+			childPath := filepath.Join(allowDir, "rollout-child1.jsonl")
+			child, err := os.ReadFile(childPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parts := bytes.SplitN(child, []byte("\n"), 2)
+			var meta map[string]any
+			if err := json.Unmarshal(parts[0], &meta); err != nil {
+				t.Fatal(err)
+			}
+			payload := meta["payload"].(map[string]any)
+			if tc.absent {
+				delete(payload, "forked_from_id")
+			} else {
+				payload["forked_from_id"] = tc.fork
+			}
+			first, _ := json.Marshal(meta)
+			rewritten := append(append(first, '\n'), parts[1]...)
+			if err := os.WriteFile(childPath, rewritten, 0600); err != nil {
+				t.Fatal(err)
+			}
+			denied, err := agentProbeCollectEvidence(denyDir, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			allowed, err := agentProbeCollectEvidence(allowDir, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := agentProbeAggregate(denied, allowed)["G0-1"]; got.Status != tc.want {
+				t.Fatalf("captured observed shape=%+v want %s", got, tc.want)
+			}
+		})
+	}
+}

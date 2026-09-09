@@ -87,3 +87,37 @@ Bashは親session＋子agent_id＋内部exec IDの実Pre/Post、command/nonceと
 loop開始時の `go test -count=1 ./src/cmd/aidlc -run '^TestAgentHookProbeProtocolObservedFault$'` は通常buildでexit 0（ALREADY_GREEN）。人工REDやdeadline値を鏡写しに検査するtestは作らなかった。通常のmissing/nonzero/save-failureは既存helper呼出しと同じ3秒待機、意図したtimeoutだけhelperの3秒sleepより短い1秒deadlineへ分離した。missingは正常exit 0とcontext未取消、nonzero/save-failureは実exit code 2/74とcontext未取消を検査し、deadlineによるkillを故障応答成功にしない。timeoutはdeadline到達と呼出し失敗を区別して確認する。
 
 修正後および末尾の同targeted commandはexit 0。gofmtと `git diff --check` も成功。loopではraceを再実行せず、親の再review/fresh finalへ返す。変更はprotocol testと本記録・索引だけで、実装・依存・Issue/PRは変更していない。
+
+## 2回目実機結果と観測済み省略fieldの修復
+
+`work_unit_id=agent-probe-observed-optional-fields-repair`、開始HEAD `05df6d1e951eb22e38b8a674079f1a9e6040cb20`。親の2回目final結果 `/var/folders/9w/921pjkys39q28sk4xsc0hs000000gn/T/ai-dd-agent-guard-final-45kzg_s3/results.json` を読み、同HEADのnormal test/race/integration/vet、6構成build、tidy/format/diff、CLI help/version、新live runnerのexit 0を確認した。raw保存先は `/var/folders/9w/921pjkys39q28sk4xsc0hs000000gn/T/aidlc-agent-hook-probe-3375108718`。
+
+自動G0-1は新たに観測された拒否文字列とfork_turns=none時のmetadata省略に未対応のためinconclusiveだった。一方、rawのdenyはPreでdeny/selected exit 0を返し、実function outputに拒否文、子Start 0件・process印0件があった。allowは子Start 1件・process印1件で、child ID、agent_path、明示parent_thread_id、source内の親IDが一致していた。forked_from_idは欠落していた。モデルの説明だけで拒否成立を判断したものではない。
+
+### 既存故障caseとlifecycleの観測
+
+4つの故障caseすべてでspawn実結果がtask_name `/root/g0_probe` を返し、子Startが1件あった。
+
+| case | Pre記録のselected exit | Pre記録の応答 | 子Start |
+| --- | --- | --- | --- |
+| missing-response | 0 | 空 | 1 |
+| nonzero-exit | 2 | 空 | 1 |
+| save-failure | 74 | 空 | 1 |
+| hook-timeout | 0 | 空 | 1 |
+
+これらのhook故障条件で起動が拒否されたとはいえず、故障時に必ず拒否する保証へは使えない。selected exitはhelperが記録した予定の終了値で、特にtimeoutで実際にその値を返した証拠ではない。既存の試験用故障helperの実測結果であり、fixtureの未発火やコード異常とは分ける。
+
+hook-timeoutの同spawn Pre記録は `2026-09-09T18:30:52.189277Z`、Post記録は `18:30:53.291216Z` で、差は1.101939秒だった。fixtureのhook timeout設定は1秒、対象helperは記録後3秒sleepする。したがって、3秒待機するhookの完了前（約1.1秒後）にspawn Postと子開始へ進んだ観測である。stdout/stderrに明示timeout診断は確認されておらず、OSがhook processをkillしたとは主張しない。
+
+lifecycleではfollowup_task、send_message、interrupt_agentのPre/Postが各1組、list_agentsが4組記録された。ただしinterrupt_agentの実結果は `previous_status.completed="Acknowledged."` で、すでにcompletedの子に対する操作だった。実行中の割込みはこの実験では未実証。特定操作名の存在やhook記録だけを、active割込みや完全停止の成功へ読み替えない。
+
+### 最小修復と検証
+
+実ファイルのcollector→aggregate回帰 `TestAgentHookProbeEvidenceObservedOptionalFields` を先に追加し、`go test -count=1 ./src/cmd/aidlc -run '^TestAgentHookProbe(Evidence|Fixture)'` で、観測拒否文＋fork field存在/欠落の2正例がinconclusiveになるRED（exit 1）を確認した。
+
+修正は次の2点に限定した。
+
+- 実測JSON stringの完全な拒否文 `Tool call blocked by PreToolUse hook: Expected G0 probe denial. Do not retry or substitute another agent.. Tool: collaborationspawn_agent` だけを既知の拒否errorへ正規化。別tool・別理由・類似文は認めない。
+- forked_from_idをraw fieldとして保持し、欠落時だけ許容。存在するnull・空文字・不正型・別親は拒否する。collectorと評価器は同じ検査を使い、明示parent_thread_id・child ID・agent_path・Pre/Post/Startの厳密な対応を維持する。
+
+同commandは修正後と末尾でexit 0。gofmtと `git diff --check` も成功。このloopではlive/full test/race等を再実行していない。scenario・matcher・lifecycle・製品コード・依存・Issue/PRは変更していない。省略fieldへの対応はG0観測限定で、製品APIの安定性を承認するものではない。今回のコード変更で旧finalは新コードに対してstaleとなり、親の再review/fresh finalが必要。
