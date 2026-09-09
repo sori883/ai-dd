@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [Intent実行計画のintegration fixture修復](decisions/2026-09-09-intent-execution-plan-integration-repair.md): Issue153、親finalで再現した初期化設定順・Unit step_id・保存retry revision期待をtest-only修復。E2E再実測は親final。
+
 - [Intent実行計画のトップhelp残存一覧修復](decisions/2026-09-09-intent-execution-plan-review-repair-2.md): Issue153、再reviewで指摘された末尾の旧4段階一覧を6段階・計画選択と会話承認へ修正。
 
 - [Intent実行計画の独立review修復1](decisions/2026-09-09-intent-execution-plan-review-repair-1.md): Issue153、reopen実体と再初期化順序、確定履歴head anchor、トップhelpを回帰test付きで修復。

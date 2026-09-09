@@ -278,7 +278,7 @@ func TestOperationsGitHandoff(t *testing.T) {
 	g.bind(s, "new-session")
 	s = g.action(s, "resume", "--reason", "clone inspected")
 	before := g.bytes(s)
-	g.rejectCode(1, "aidlc/.runtime/flow/units", "unit", "confirm", s.ID, "--space", "default", "--expect", strconv.FormatUint(s.Revision, 10), "--file", g.request(flow.UnitRequest{Unit: "a", Session: "old-worker", Root: worker, RunID: "old", Commit: f.git("rev-parse", "HEAD")}))
+	g.rejectCode(1, "aidlc/.runtime/flow/units", "unit", "confirm", s.ID, "--space", "default", "--expect", strconv.FormatUint(s.Revision, 10), "--file", g.request(flow.UnitRequest{StepID: s.CurrentStepID, Unit: "a", Session: "old-worker", Root: worker, RunID: "old", Commit: f.git("rev-parse", "HEAD")}))
 	if !bytes.Equal(before, g.bytes(s)) || s.Config.Units[0].Status != "needs_confirmation" {
 		t.Fatal("old assignment accepted")
 	}
@@ -352,7 +352,7 @@ func TestOperationsUnitConflicts(t *testing.T) {
 			g := f
 			g.t = t
 			before := g.bytes(s)
-			g.reject(tc.message, "unit", "claim", s.ID, "--space", "default", "--expect", strconv.FormatUint(s.Revision, 10), "--file", g.request(flow.UnitRequest{Unit: tc.unit, Session: "worker-b", Root: b}))
+			g.reject(tc.message, "unit", "claim", s.ID, "--space", "default", "--expect", strconv.FormatUint(s.Revision, 10), "--file", g.request(flow.UnitRequest{StepID: s.CurrentStepID, Unit: tc.unit, Session: "worker-b", Root: b}))
 			if !bytes.Equal(before, g.bytes(s)) {
 				t.Fatal("rejected claim changed state")
 			}
@@ -413,8 +413,9 @@ func TestOperationsSaveRecovery(t *testing.T) {
 	}
 	restore()
 	s = f.show(s)
+	previousRevision := s.Revision
 	s = f.action(s, "pause", "--reason", "permission restored")
-	if s.Revision != 2 || s.Status != "paused" {
+	if s.Revision != previousRevision+1 || s.Status != "paused" {
 		t.Fatal("state retry failed")
 	}
 	body := filepath.Join(f.root, "body.md")

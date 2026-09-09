@@ -112,7 +112,6 @@ func runBoundaryJourney(t *testing.T) {
 	writeMinimalFixture(t, filepath.Join(root, knowledge), "---\ntype: Design\ntitle: Addition\ndescription: Adds two integers\n---\nAdd returns the sum.\n")
 	head := string(bytes.TrimSpace(runMinimalProcess(t, root, "git", "rev-parse", "HEAD")))
 	config := flow.Config{NoMaterialsReason: "fresh project", Objective: "Addition", Scope: []string{"add.go"}, Acceptance: []string{"Add(2,3)=5"}, CodeRevision: head, ADR: flow.ADR{Reason: "No architectural decision"}, Artifacts: []flow.Artifact{{Path: knowledge, Kind: "Knowledge", Stage: "discovery"}}}
-	call("configure", "--file", writeRequest("config.json", config))
 	review := func(status string) {
 		t.Helper()
 		reviewRoot := filepath.Join(t.TempDir(), "review")
@@ -139,6 +138,7 @@ func runBoundaryJourney(t *testing.T) {
 	call("begin")
 	review("pass")
 	st = f.finish(st)
+	call("configure", "--file", writeRequest("config.json", config))
 	st = f.selectPlan(st)
 	boundaryFixtureDocument(t, root, st.ID, "Requirements")
 	call("begin")
