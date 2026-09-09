@@ -1,6 +1,7 @@
 # 開発プロジェクトRAM
 
-- [G0 fixtureのloop実装証拠](decisions/2026-09-10-agent-guard-preflight-evidence.md): 初回実機でStop後のprocess継続を観測。2回目で拒否成立・4故障caseの子開始を観測。拒否文と省略fieldの追従修復完了、再review・fresh final待ち。
+- [固定Codexでの担当起動制限の実測結果](decisions/2026-09-10-agent-guard-preflight-result.md): 正常応答での起動前拒否を確認。Stop後のprocess継続とhook故障時の子開始も観測。root・子ID・終了/再開の契約が未確定のため製品guardへ進まず、明示割当・停止確認等の代案を整理。
+- [G0 fixtureのloop実装証拠](decisions/2026-09-10-agent-guard-preflight-evidence.md): test-first実装、独立review後の修復、固定Codexで観測したwire形式と故障挙動の詳細。最終ソースの検証証拠は対応PRへ記録する。
 
 - [担当起動制限の推奨案とG0先行を承認](decisions/2026-09-10-stage-agent-worker-guard-approved.md): 各段階のstage-planner、Unitなし予約、1調整root集約で進める。[G0作業単位](../design/agent-guard-preflight-work-unit.md)を固定Codexで実測し、対応/root/停止・再開の不明点が残る場合は製品guardへ進まない。
 

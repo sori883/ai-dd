@@ -2,6 +2,8 @@
 
 状態: 実施許可あり。[ユーザー直接承認](../ram/decisions/2026-09-10-stage-agent-worker-guard-approved.md)に基づく前提検証。製品guardの実装とは分ける。
 
+実施後の追記: [実測結果](../ram/decisions/2026-09-10-agent-guard-preflight-result.md)へ成立した条件と未確定を記録した。以下は実施契約であり、製品guardのgate通過を表すものではない。最終ソースのreview/finalは対応PRに記録する。
+
 対応Issue: [#159 固定Codexで担当起動制限の前提を実測する](https://github.com/sori883/ai-dd/issues/159)。
 
 ## 背景、成果、範囲

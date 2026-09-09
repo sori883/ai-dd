@@ -1,6 +1,6 @@
 # ステージ別の担当起動とworkerの同一worktree排他 — 実装前計画
 
-作成日: 2026-09-10。状態: **推奨運用方針とG0先行の実施を承認済み**。製品guardの技術契約には未確定事項が残るため、まずG0を実測する。
+作成日: 2026-09-10。状態: **G0実測済み、製品guardの契約確定は保留**。[実測結果](../ram/decisions/2026-09-10-agent-guard-preflight-result.md)では正常応答での起動前拒否を確認したが、root対応・終了/再開・hook故障時の契約が未確定。以下の製品案は条件付き計画として保持する。
 
 更新: ユーザーの「変更してください。承認。」を受け、Q1〜Q3の推奨方針とG0先行の実施を[承認記録](../ram/decisions/2026-09-10-stage-agent-worker-guard-approved.md)へ追記した。[具体的なG0作業単位](agent-guard-preflight-work-unit.md)から進め、実機で未確定の契約や専用scheduler等の代案を自動承認とは扱わない。
 
@@ -50,7 +50,7 @@
 
 ## G0: 固定Codexで確認してから契約を決める
 
-今回確認したのは手元の`codex --version`が`codex-cli 0.153.4`であることまで。起動・拒否・終了・再開の実機実験やテストは実行していない。
+計画作成時に確認したのは手元の`codex --version`が`codex-cli 0.153.4`であることまでだった。その後、承認済みG0として起動・拒否・終了・再開を実測した。結果と未実証の操作は[実測結果](../ram/decisions/2026-09-10-agent-guard-preflight-result.md)を参照する。以下のgateは製品実装に必要な条件を示し、全てを通過したという意味ではない。
 
 [公式hook仕様](https://learn.chatgpt.com/docs/hooks)では、`spawn_agent`はPreToolUse対象で`Agent`にもマッチする。拒否には`permissionDecision: deny`を使う。`SubagentStart`の`continue: false`では起動を止められない。`SubagentStop`には子ID等があるが、継続を要求する応答もあり、OSプロセスの消滅を保証するとの記載はない。一部のtool経路はhook対象外になり得る。これらは2026-09-10に読んだ公開仕様であり、固定0.153.4やDesktop上の全経路を実測した証拠ではない。
 
@@ -207,4 +207,4 @@ Q1で段階のagentsを変更するとdefinition hashも変わる。既存Intent
 - 理由と影響: 別worktreeでの並列実装を維持しながら、不適切な担当と同一作業場所のworker重複を防ぐ。保留予約のため明示復旧が必要になる場合がある。従来通った起動の一部は拒否される。
 - 未確認: 本家の全scheduler/worker排他・全ハーネス・最新upstreamの挙動。確認したファイルだけから「本家に同等機能がない」「差分がない」と断定しない。G0後に比較範囲と採用差分を計画・承認RAMへ確定する。
 
-現在はQ1〜Q3の推奨方針とG0先行を承認済みであり、具体的なG0作業単位のIssue・fixture・review・実測を進める。製品guardへ進むには、実測結果と起動/再開/停止/復旧/runtimeの契約を確定する必要がある。必要な保証を確認できない場合は未確定事項と代案を提示して止まる。今回の承認を、専用起動schedulerや未知の永続形式の採用へ拡張しない。
+Q1〜Q3の推奨方針とG0先行は承認済みであり、G0のfixtureと実測結果をIssue #159で扱う。実測により、製品guardへ進むには起動/再開/停止/復旧/runtimeの契約を追加で確定する必要があると分かった。[結果と代案](../ram/decisions/2026-09-10-agent-guard-preflight-result.md)を提示し、製品実装は保留する。今回の承認を、専用起動schedulerや未知の永続形式の採用へ拡張しない。

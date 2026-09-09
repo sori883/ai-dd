@@ -1,8 +1,8 @@
 # G0 fixtureのloop実装証拠
 
-状態: 初回実機結果を保持し、観測wire追従のloop修復完了。再review・fresh final待ち。2026-09-10。
+状態: loop実装・修復の履歴。2026-09-10。[実測結果と未確定事項](2026-09-10-agent-guard-preflight-result.md)を別記し、最終ソースの独立reviewとfresh finalは対応PRへ記録する。以下の実機未実行・検証待ちは各節の作業時点を示す。
 
-対応Issue: #159。実装許可は[直接承認](2026-09-10-stage-agent-worker-guard-approved.md)、作業単位は[agent-guard-preflight](../../design/agent-guard-preflight-work-unit.md)。開始・終了HEADは `e2566c2bf1634436b435c6abbfd27d26b17232e3`（未commitの実装差分）。製品コード・既存helper・外部依存を変更していない。
+対応Issue: #159。実装許可は[直接承認](2026-09-10-stage-agent-worker-guard-approved.md)、作業単位は[agent-guard-preflight](../../design/agent-guard-preflight-work-unit.md)。初回loopの開始HEADは `e2566c2bf1634436b435c6abbfd27d26b17232e3`（初回の実装結果は未commit差分として返却）。製品コード・既存helper・外部依存を変更していない。
 
 ## RED／GREEN証拠
 
