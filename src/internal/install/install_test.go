@@ -164,3 +164,23 @@ func TestMemoryHelpPlacedSkill(t *testing.T) {
 		t.Fatalf("missing bounded help entry: %s", raw)
 	}
 }
+
+func TestOKFWorkLogInstalledGuidance(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Codex(root, "/opt/aidlc"); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"aidlc/workflow/stages/discovery.md", "aidlc/workflow/stages/planning.md", "aidlc/workflow/stages/tdd.md", "aidlc/workflow/stages/integration.md", ".agents/skills/aidlc/WORKFLOW.md"} {
+		t.Run(name, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join(root, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range []string{"knowledge/log/<intent_id>-work-log.md", "memory search work-log --space SPACE --intent-id ID", "memory show log/ID-work-log --space SPACE", "revision"} {
+				if !strings.Contains(string(raw), want) {
+					t.Errorf("missing %q", want)
+				}
+			}
+		})
+	}
+}

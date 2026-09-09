@@ -8,16 +8,18 @@ import (
 	"time"
 
 	"github.com/sori883/ai-dd/src/internal/filestore"
+	"github.com/sori883/ai-dd/src/internal/okfmemory"
 )
 
 type PendingReopen struct {
-	Revision uint64 `json:"revision"`
-	From     string `json:"from"`
-	To       string `json:"to"`
-	Reason   string `json:"reason"`
-	At       string `json:"at"`
-	LogHash  string `json:"log_hash"`
-	HadLog   bool   `json:"had_log"`
+	Revision     uint64 `json:"revision"`
+	From         string `json:"from"`
+	To           string `json:"to"`
+	Reason       string `json:"reason"`
+	At           string `json:"at"`
+	LogHash      string `json:"log_hash"`
+	LogAfterHash string `json:"log_after_hash"`
+	HadLog       bool   `json:"had_log"`
 }
 
 func logHash(raw []byte) string { return fmt.Sprintf("%x", sha256.Sum256(raw)) }
@@ -47,8 +49,8 @@ func (s Store) reopen(id string, expect uint64, r TransitionRequest) (State, err
 	if strings.TrimSpace(r.Reason) == "" || !d.CanReopen(st.Stage, r.Stage) {
 		return State{}, invalid("reason and graph reopen candidate required")
 	}
-	name := strings.TrimSuffix(s.path(id), "state.json") + "work-log.md"
-	raw, readErr := filestore.ReadFile(s.Root, name)
+	name := "aidlc/spaces/" + s.Space + "/knowledge/log/" + id + "-work-log.md"
+	raw, readErr := readWorkLog(s.Root, name)
 	if readErr != nil && !os.IsNotExist(readErr) {
 		return State{}, readErr
 	}
@@ -57,20 +59,31 @@ func (s Store) reopen(id string, expect uint64, r TransitionRequest) (State, err
 			return State{}, err
 		}
 
-		pending := &PendingReopen{Revision: expect, From: st.Stage, To: r.Stage, Reason: r.Reason, At: time.Now().UTC().Format(time.RFC3339Nano), LogHash: logHash(raw), HadLog: true}
-		if len(raw)+len(pending.block()) > filestore.MaxBytes {
-			return State{}, invalid("work-log exceeds 256 KiB")
+		pending := &PendingReopen{
+			Revision: expect, From: st.Stage, To: r.Stage, Reason: r.Reason,
+			At: time.Now().UTC().Format(time.RFC3339Nano), HadLog: true,
 		}
+		if os.IsNotExist(readErr) {
+			raw, err = workLogBytes(st, pending.At)
+			if err != nil {
+				return State{}, err
+			}
+		}
+		pending.LogHash = logHash(raw)
+		completed, err := appendWorkLog(st, raw, *pending)
+		if err != nil {
+			return State{}, err
+		}
+		pending.LogAfterHash = logHash(completed)
 
 		if os.IsNotExist(readErr) {
 			write := s.write
 			if write == nil {
 				write = filestore.WriteFile
 			}
-			if err = write(s.Root, name, []byte{}); err != nil {
+			if err = write(s.Root, name, raw); err != nil {
 				return State{}, err
 			}
-			raw = []byte{}
 			readErr = nil
 		}
 		st.PendingReopen = pending
@@ -82,21 +95,24 @@ func (s Store) reopen(id string, expect uint64, r TransitionRequest) (State, err
 	if p.Revision != expect || p.From != st.Stage || p.To != r.Stage || p.Reason != r.Reason {
 		return State{}, invalid("different reopen pending")
 	}
-	block := p.block()
-	before := logHash(raw) == p.LogHash && (readErr == nil || !p.HadLog)
-	after := readErr == nil && strings.HasSuffix(string(raw), block) && logHash(raw[:len(raw)-len(block)]) == p.LogHash
+	before := readErr == nil && logHash(raw) == p.LogHash
+	after := readErr == nil && logHash(raw) == p.LogAfterHash
 	if !before && !after {
 		return State{}, invalid("work-log changed or missing; restore the recorded previous version")
 	}
 	if before {
-		if len(raw)+len(block) > filestore.MaxBytes {
-			return State{}, invalid("work-log exceeds 256 KiB")
+		completed, err := appendWorkLog(st, raw, *p)
+		if err != nil {
+			return State{}, err
+		}
+		if logHash(completed) != p.LogAfterHash {
+			return State{}, invalid("work-log completed hash mismatch")
 		}
 		write := s.write
 		if write == nil {
 			write = filestore.WriteFile
 		}
-		if err = write(s.Root, name, append(raw, []byte(block)...)); err != nil {
+		if err = write(s.Root, name, completed); err != nil {
 			return State{}, err
 		}
 	}
@@ -118,4 +134,64 @@ func (s Store) reopen(id string, expect uint64, r TransitionRequest) (State, err
 		return State{}, err
 	}
 	return st, nil
+}
+
+func workLogBytes(st State, at string) ([]byte, error) {
+	now, err := time.Parse(time.RFC3339Nano, at)
+	if err != nil {
+		return nil, err
+	}
+	kind, title, description := "work-log", st.Name+" work-log", "Intentの差戻し記録"
+	input := okfmemory.MetadataInput{
+		Type: &kind, Title: &title, Description: &description,
+		IntentID: &st.ID, Tags: []string{"work-log"}, Actor: "process:aidlc",
+	}
+	body := []byte{}
+	doc, err := okfmemory.BuildMetadata(nil, body, input, now)
+	if err != nil {
+		return nil, err
+	}
+	return doc.Bytes()
+}
+
+func appendWorkLog(st State, raw []byte, p PendingReopen) ([]byte, error) {
+	old, err := okfmemory.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("read work-log: %w", err)
+	}
+	if old.String("type") != "work-log" || old.String("intent_id") != st.ID {
+		return nil, invalid("work-log type or intent mismatch")
+	}
+	now, err := time.Parse(time.RFC3339Nano, p.At)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := okfmemory.BuildMetadata(
+		&old,
+		[]byte(old.Body+p.block()),
+		okfmemory.MetadataInput{Actor: "process:aidlc"},
+		now,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("append work-log: %w", err)
+	}
+	return doc.Bytes()
+}
+
+// readWorkLog checks the leaf before opening it so a FIFO cannot block reopen.
+// filestore additionally rejects symlinks in every parent component.
+func readWorkLog(root, name string) ([]byte, error) {
+	directory, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	defer directory.Close()
+	info, err := directory.Lstat(name)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, invalid("work-log is not a regular file")
+	}
+	return filestore.ReadFile(root, name)
 }

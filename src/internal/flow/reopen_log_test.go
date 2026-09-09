@@ -49,10 +49,8 @@ func TestReopenLogFailures(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			logPath := strings.TrimSuffix(s.path(st.ID), "state.json") + "work-log.md"
-			if err = filestore.WriteFile(s.Root, logPath, []byte("Existing note.\n")); err != nil {
-				t.Fatal(err)
-			}
+			logPath := workLogPath(s, st.ID)
+			seedWorkLog(t, s, st, "Existing note.\n")
 			count := 0
 			s.write = func(root, name string, raw []byte) error {
 				count++
@@ -95,7 +93,7 @@ func TestReopenLogFailures(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.HasPrefix(string(raw), "Existing note.\n") || strings.Count(string(raw), "forged marker") != 1 || strings.Contains(string(raw), "\n## forged marker") {
+			if !strings.Contains(string(raw), "\nExisting note.\n") || strings.Count(string(raw), "forged marker") != 1 || strings.Contains(string(raw), "\n## forged marker") {
 				t.Fatalf("history or escaped reason corrupted: %s", raw)
 			}
 			if _, err = s.Transition(st.ID, st.Revision, request); err == nil {
@@ -111,8 +109,8 @@ func TestReopenLogChangedHistoryRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	name := strings.TrimSuffix(s.path(st.ID), "state.json") + "work-log.md"
-	filestore.WriteFile(s.Root, name, []byte("history\n"))
+	name := workLogPath(s, st.ID)
+	seedWorkLog(t, s, st, "history\n")
 	count := 0
 	s.write = func(root, path string, raw []byte) error {
 		count++
@@ -181,7 +179,7 @@ func TestReopenLogFreshDeletionRequiresRestore(t *testing.T) {
 		t.Fatal("final failed but returned success")
 	}
 	s.write = nil
-	name := strings.TrimSuffix(s.path(st.ID), "state.json") + "work-log.md"
+	name := workLogPath(s, st.ID)
 	if err = os.Remove(filepath.Join(s.Root, name)); err != nil {
 		t.Fatal(err)
 	}
@@ -207,13 +205,11 @@ func TestReopenLogCapacity(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			name := strings.TrimSuffix(s.path(st.ID), "state.json") + "work-log.md"
+			name := workLogPath(s, st.ID)
 			original := []byte{}
 			if tc.size >= 0 {
-				original = []byte(strings.Repeat("a", tc.size))
-				if err = filestore.WriteFile(s.Root, name, original); err != nil {
-					t.Fatal(err)
-				}
+				base := seedWorkLog(t, s, st, "")
+				original = seedWorkLog(t, s, st, strings.Repeat("a", tc.size-len(base)))
 			}
 			stateBefore, err := filestore.ReadFile(s.Root, s.path(st.ID))
 			if err != nil {
