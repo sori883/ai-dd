@@ -1,6 +1,6 @@
 # G0 fixtureのloop実装証拠
 
-状態: fixtureのloop完了、独立review・実機final待ち。2026-09-10。
+状態: 初回実機結果を保持し、観測wire追従のloop修復完了。再review・fresh final待ち。2026-09-10。
 
 対応Issue: #159。実装許可は[直接承認](2026-09-10-stage-agent-worker-guard-approved.md)、作業単位は[agent-guard-preflight](../../design/agent-guard-preflight-work-unit.md)。開始・終了HEADは `e2566c2bf1634436b435c6abbfd27d26b17232e3`（未commitの実装差分）。製品コード・既存helper・外部依存を変更していない。
 
@@ -51,3 +51,31 @@ collectorはraw call outputを変えず、出典sessionとprocess観測を含む
 `work_unit_id=agent-probe-yield-repair`、開始HEAD `b9af85a09c28a03ee7c45895a9fa846a54e4525b`。再reviewの指摘に従い、15秒の有限helperに対する非lifecycleの `exec_command` を `yield_time_ms=20000` とpromptへ明示した。lifecycleはprocess残存を観測するため `yield_time_ms=1` を維持する。markerのexit 0要件や未知wireの扱いは変更しない。
 
 先行した `TestAgentHookProbeFixtureYield` は全9caseの保存済みpromptを検査する。`go test -count=1 ./src/cmd/aidlc -run '^TestAgentHookProbeFixture'` で、非lifecycleの20秒指定が欠けるRED（exit 1）を確認した。lifecycleの既存1ミリ秒指定は初回から成立（ALREADY_GREEN）。case別指示の修正後に同じcommandがGREEN（exit 0）。末尾再実行、gofmt、`git diff --check` も成功。実機live・全体検証・Issue/PR操作は未実行。
+
+## 初回実機finalの結果と実測wire追従修復
+
+`work_unit_id=agent-probe-observed-wire-repair`。開始HEADは `4a8dc3fbb0b3fed5ed491c24f915c5c8af937060`。親が実行した初回finalの結果は `/var/folders/9w/921pjkys39q28sk4xsc0hs000000gn/T/ai-dd-agent-guard-final-vpgzpo5u/results.json`、実験rawは `/var/folders/9w/921pjkys39q28sk4xsc0hs000000gn/T/aidlc-agent-hook-probe-579906995` に保存された。結果JSONを読み、旧HEADで全test、race、vet、integration、6構成build、format/tidy/diff、CLI help/version、新live runnerがexit 0だったことを確認した。新live runnerは553.28秒で終了した。
+
+ただし初回の自動G0判定は全項目inconclusiveだった。実hookのtool名が `collaborationspawn_agent` であるのにfixtureがbare `spawn_agent` だけを判定していたため、deny/faultが発火しなかった。runnerのexit 0を起動拒否成功やG0成功と扱わない。今回のコード変更により、初回finalは新コードの成功証拠としてはstaleとなる。再review後のfresh finalが必要。
+
+### 維持する初回G0-4の有効な実測
+
+lifecycleのmanifest nonce `f85ed37c4de8d0c05ae3c8acf0e4c374` と `processes/process-f85ed37c4de8d0c05ae3c8acf0e4c374.json` のnonceが一致した。`events/event-1680116618.json` のBash Pre commandはmanifestの有限helper commandと完全一致し、子agent_idは `01a0874b-6c42-7dd1-b974-a17305f4773a`、親sessionは `01a0874b-3374-70a3-ade4-b0cb5bbe39ab` だった。
+
+- helper StartedAt: `2026-09-09T17:51:12.692478Z`
+- 同子のSubagentStop記録 `events/event-1483143723.json` のObservedAt: `2026-09-09T17:51:16.770721Z`
+- helper EndedAt: `2026-09-09T17:51:27.723715Z`
+
+同じnonceのhelperはSubagentStop後も約10.953秒続いた。したがって、SubagentStopだけから残存process終端やworker枠の安全な解放を保証する案は、この実測では成立しない。これは単なるモデル未操作ではなく、親/子・command/nonce・process記録の対応がある観測である。初回のdeny/fault未発火やG0-2等の未確定とは分けて保持する。任意の外部processや全再開経路の保証へ拡張しない。
+
+### 修復した3項目とTDD証拠
+
+1. `TestAgentHookProbeProtocol` に観測済みtool名でのdenyとmissing/nonzero/save-failure/timeoutの回帰を追加。`go test -count=1 ./src/cmd/aidlc -run '^TestAgentHookProbeProtocol'` で、全て通常応答 `{}` となるRED（exit 1）を観測後、bare名と観測済み名の完全一致だけを認めてGREEN（exit 0）。probe_workerのPre限定を維持し、類似名・別role・Postへは拡大しない。
+2. `TestAgentHookProbeEvidenceObservedWire` で実測形を小さな実ファイルへ再現。`go test -count=1 ./src/cmd/aidlc -run '^TestAgentHookProbe(Evidence|Fixture)'` で正例がinconclusiveになるRED（exit 1）後、collector→aggregateの照合を修正してGREEN（exit 0）。spawnの直接callとnative Pre/Postを結び、返却task_name、Startの明示agent_id/path、child `session_meta` のid/agent_path/parent_thread_id/forked_from_idを厳密照合する。child bodyは先頭metadataが一致してから収集し、未知・欠落・重複・不一致はinconclusive。rawのCRLFが変更される追加RED（exit 1）を確認し、改行を含む元bytesを保持してGREEN（exit 0）。
+3. `TestAgentHookProbeFixtureObservedSchema` で、有効なtask名・条件付きfork_turns・実schemaに沿うlifecycle指示がないRED（同combined command、exit 1）後、promptだけを修正してGREEN（exit 0）。worker_a/worker_b等とroot pathを区別し、schemaにある場合だけ `fork_turns="none"` を指定する。followup_task/send_message/interrupt_agent/list_agents等は実際に公開された意味で使い、idleからの再開と実行中割込みを分ける。追加依頼は短い返答だけでhelper再実行・nonce上書きを禁止し、closeがない場合は完了/割込みで代替しない。9caseと既存時間制限を維持する。
+
+Bashは親session＋子agent_id＋内部exec IDの実Pre/Post、command/nonceとhelperのprocess印を照合する。実測のBash Post tool_responseは空文字であり、exit 0や完全停止へ読み替えない。外側execのJavaScriptから仮想的な内側callを生成せず、外側execがあることだけを理由に直接spawnとnative hookの証拠を捨てることもやめた。
+
+このmetadata対応はG0試験限定の観測候補であり、製品向けの安定API承認ではない。同じtask_nameの再使用・再試行での一意性、transcript APIの安定性、予定worker rootの構造化対応は未確認。fork_turns変更後にも必要metadataが得られるかはfresh liveで確かめ、不足時は推測しない。通常のroot cwdや自然文から割当rootを確定しない。
+
+末尾で上記2commandを再実行し、gofmtと `git diff --check` を確認した。このloopではlive・全体test・race・vet・integration・cross-buildを実行せず、製品コード・依存・Issue/PR・既存helperも変更していない。

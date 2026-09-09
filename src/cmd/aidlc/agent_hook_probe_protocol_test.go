@@ -35,6 +35,10 @@ func TestAgentHookProbeProtocol(t *testing.T) {
 		deny                           bool
 	}{
 		{"deny", "PreToolUse", "spawn_agent", "probe_worker", "deny", true},
+		{"observed_deny", "PreToolUse", "collaborationspawn_agent", "probe_worker", "deny", true},
+		{"observed_other_role", "PreToolUse", "collaborationspawn_agent", "other", "deny", false},
+		{"observed_post", "PostToolUse", "collaborationspawn_agent", "probe_worker", "deny", false},
+		{"similar_name", "PreToolUse", "collaboration_spawn_agent", "probe_worker", "deny", false},
 		{"allow_control", "PreToolUse", "spawn_agent", "probe_worker", "observe", false},
 		{"other_agent", "PreToolUse", "spawn_agent", "other", "deny", false},
 		{"other_tool", "PreToolUse", "send_input", "probe_worker", "deny", false},
@@ -540,6 +544,258 @@ func TestAgentHookProbeFixtureYield(t *testing.T) {
 			}
 			if !strings.Contains(string(data), want) || strings.Contains(string(data), other) {
 				t.Fatalf("%s prompt must specify %s only; got %s", scenario.Name, want, data)
+			}
+		})
+	}
+}
+
+func TestAgentHookProbeProtocolObservedFault(t *testing.T) {
+	for _, mode := range []string{"missing", "nonzero", "save-failure", "timeout"} {
+		t.Run(mode, func(t *testing.T) {
+			dir := t.TempDir()
+			binary, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, binary, "-test.run=^TestAgentHookProbeHelper$", "--", "agent-hook", dir, mode)
+			cmd.Stdin = strings.NewReader(`{"hook_event_name":"PreToolUse","tool_name":"collaborationspawn_agent","tool_input":{"agent_type":"probe_worker"}}`)
+			out, err := cmd.Output()
+			if len(out) != 0 || (err != nil) != (mode != "missing") {
+				t.Fatalf("mode=%s output=%q err=%v", mode, out, err)
+			}
+			if mode == "timeout" && ctx.Err() != context.DeadlineExceeded {
+				t.Fatalf("timeout mode returned early: %v", ctx.Err())
+			}
+			files, _ := filepath.Glob(filepath.Join(dir, "event-*.json"))
+			if len(files) != 1 {
+				t.Fatalf("fault intent records=%v", files)
+			}
+		})
+	}
+}
+
+func TestAgentHookProbeEvidenceObservedWire(t *testing.T) {
+	for _, mutation := range []string{"", "crlf_metadata", "duplicate_metadata", "metadata_parent", "metadata_fork", "metadata_agent", "metadata_path", "missing_metadata", "duplicate_start", "bash_agent", "missing_bash_pre", "bash_call", "missing_process"} {
+		name := mutation
+		if name == "" {
+			name = "observed_control"
+		}
+		t.Run(name, func(t *testing.T) {
+			denyDir, allowDir := agentProbeObservedControl(t, mutation)
+			denied, err := agentProbeCollectEvidence(denyDir, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			allowed, err := agentProbeCollectEvidence(allowDir, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "inconclusive"
+			if mutation == "" || mutation == "crlf_metadata" {
+				want = "pass"
+			}
+			if got := agentProbeAggregate(denied, allowed)["G0-1"]; got.Status != want {
+				t.Fatalf("observed wire=%+v want %s", got, want)
+			}
+			if mutation == "" || mutation == "crlf_metadata" {
+				data, err := os.ReadFile(filepath.Join(allowDir, "transcript-child1.jsonl"))
+				if err != nil || !strings.Contains(string(data), `"session_meta"`) {
+					t.Fatalf("explicit child transcript not captured: %s %v", data, err)
+				}
+				source, readErr := os.ReadFile(filepath.Join(allowDir, "rollout-child1.jsonl"))
+				if readErr != nil || !bytes.Equal(source, data) {
+					t.Fatalf("child raw changed during capture: %v", readErr)
+				}
+				if got := agentProbeAggregate(denied, allowed)["G0-4"]; got.Status != "inconclusive" {
+					t.Fatalf("empty Bash result inferred termination: %+v", got)
+				}
+			}
+		})
+	}
+}
+
+func agentProbeObservedControl(t *testing.T, mutation string) (string, string) {
+	t.Helper()
+	denyDir, allowDir := agentProbeRecordedControl(t, "string", "")
+	for _, dir := range []string{denyDir, allowDir} {
+		allow := dir == allowDir
+		parent := "parent-deny"
+		if allow {
+			parent = "parent-allow"
+		}
+		transcript := filepath.Join(dir, "rollout-"+parent+".jsonl")
+		data, err := os.ReadFile(transcript)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rows []map[string]any
+		for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+			var row map[string]any
+			if err := json.Unmarshal([]byte(line), &row); err != nil {
+				t.Fatal(err)
+			}
+			payload := row["payload"].(map[string]any)
+			if payload["name"] == "spawn_agent" {
+				var input map[string]any
+				_ = json.Unmarshal([]byte(payload["arguments"].(string)), &input)
+				input["task_name"] = "g0_probe"
+				encoded, _ := json.Marshal(input)
+				payload["arguments"] = string(encoded)
+			}
+			if allow && payload["type"] == "function_call_output" && payload["call_id"] == "spawn1" {
+				payload["output"] = `{"task_name":"/root/g0_probe"}`
+			}
+			rows = append(rows, row)
+		}
+		// An unrelated outer exec is recorded, never decoded into virtual inner tools.
+		rows = append(rows, map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call", "name": "exec", "call_id": "tool-discovery", "input": "text(ALL_TOOLS);"}}, map[string]any{"type": "response_item", "payload": map[string]any{"type": "custom_tool_call_output", "call_id": "tool-discovery", "output": []any{map[string]any{"type": "input_text", "text": "opaque inventory"}}}})
+		var rewritten []byte
+		for _, row := range rows {
+			encoded, _ := json.Marshal(row)
+			rewritten = append(rewritten, encoded...)
+			rewritten = append(rewritten, '\n')
+		}
+		if err := os.WriteFile(transcript, rewritten, 0600); err != nil {
+			t.Fatal(err)
+		}
+		files, _ := filepath.Glob(filepath.Join(dir, "events", "event-*.json"))
+		for _, path := range files {
+			data, _ := os.ReadFile(path)
+			var record agentProbeRecord
+			_ = json.Unmarshal(data, &record)
+			var event map[string]any
+			_ = json.Unmarshal([]byte(record.Raw), &event)
+			if event["tool_name"] == "spawn_agent" {
+				event["tool_name"] = "collaborationspawn_agent"
+				event["tool_input"].(map[string]any)["task_name"] = "g0_probe"
+				if allow {
+					post := map[string]any{}
+					for k, v := range event {
+						post[k] = v
+					}
+					post["hook_event_name"] = "PostToolUse"
+					post["tool_response"] = `{"task_name":"/root/g0_probe"}`
+					raw, _ := json.Marshal(post)
+					if err := agentProbeWriteJSON(filepath.Join(dir, "events", "event-spawn-post.json"), agentProbeRecord{Raw: string(raw), Response: "{}"}); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if allow && event["hook_event_name"] == "SessionStart" && event["session_id"] == "child1" {
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+				continue
+			}
+			if allow && event["hook_event_name"] == "SubagentStart" {
+				event["transcript_path"] = filepath.Join(dir, "rollout-child1.jsonl")
+				if mutation == "duplicate_start" {
+					raw, _ := json.Marshal(event)
+					if err := agentProbeWriteJSON(filepath.Join(dir, "events", "event-start-duplicate.json"), agentProbeRecord{Raw: string(raw), Response: "{}"}); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if allow && event["tool_name"] == "Bash" {
+				event["session_id"] = parent
+				event["agent_id"] = "child1"
+				event["turn_id"] = "child-turn"
+				event["tool_use_id"] = "exec-internal1"
+				event["tool_response"] = ""
+				if mutation == "bash_agent" {
+					event["agent_id"] = "other-child"
+				}
+				if mutation != "missing_bash_pre" {
+					pre := map[string]any{}
+					for k, v := range event {
+						pre[k] = v
+					}
+					pre["hook_event_name"] = "PreToolUse"
+					delete(pre, "tool_response")
+					if mutation == "bash_call" {
+						pre["tool_use_id"] = "exec-other"
+					}
+					raw, _ := json.Marshal(pre)
+					if err := agentProbeWriteJSON(filepath.Join(dir, "events", "event-bash-pre.json"), agentProbeRecord{Raw: string(raw), Response: "{}"}); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			raw, _ := json.Marshal(event)
+			record.Raw = string(raw)
+			if err := agentProbeWriteJSON(path, record); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if allow {
+			meta := map[string]any{"id": "child1", "agent_path": "/root/g0_probe", "parent_thread_id": parent, "forked_from_id": parent}
+			switch mutation {
+			case "metadata_parent":
+				meta["parent_thread_id"] = "unrelated"
+			case "metadata_fork":
+				meta["forked_from_id"] = "unrelated"
+			case "metadata_agent":
+				meta["id"] = "unrelated"
+			case "metadata_path":
+				meta["agent_path"] = "/root/unrelated"
+			}
+			row, _ := json.Marshal(map[string]any{"type": "session_meta", "payload": meta})
+			child := append(row, '\n')
+			child = append(child, []byte(`{"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"outer-child-call","input":"opaque JavaScript, not parsed"}}`+"\n")...)
+			if mutation == "crlf_metadata" {
+				child = bytes.Replace(child, []byte("\n"), []byte("\r\n"), 1)
+			}
+			if mutation == "duplicate_metadata" {
+				child = append(child, append(row, '\n')...)
+			}
+			if strings.HasPrefix(mutation, "metadata_") {
+				child = append(row, []byte("\nTHIS BODY MUST NOT BE PARSED\n")...)
+			}
+			if mutation == "missing_metadata" {
+				child = []byte(`{"type":"response_item","payload":{}}` + "\n")
+			}
+			if err := os.WriteFile(filepath.Join(dir, "rollout-child1.jsonl"), child, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if mutation == "missing_process" {
+				files, _ := filepath.Glob(filepath.Join(dir, "processes", "process-*.json"))
+				for _, path := range files {
+					if err := os.Remove(path); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+		}
+	}
+	return denyDir, allowDir
+}
+
+func TestAgentHookProbeFixtureObservedSchema(t *testing.T) {
+	for _, scenario := range agentProbeScenarios() {
+		t.Run(scenario.Name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "probe")
+			if _, err := agentProbePrepare(dir, "/test/binary", scenario); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := os.ReadFile(filepath.Join(dir, "prompt.txt"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			prompt := string(raw)
+			if !strings.Contains(prompt, `fork_turns="none"`) || !strings.Contains(prompt, "if the actual schema exposes fork_turns") {
+				t.Error("spawn inheritance must be conditional on the actual schema and use none")
+			}
+			if scenario.Name == "parallel-roots" && (!strings.Contains(prompt, "task_name worker_a") || !strings.Contains(prompt, "task_name worker_b")) {
+				t.Error("parallel task names must be valid identifiers distinct from root paths")
+			}
+			if scenario.Name == "lifecycle" {
+				for _, term := range []string{"followup_task", "send_message", "interrupt_agent", "list_agents", "Do not run the finite helper again", "Do not treat completion or interruption as close"} {
+					if !strings.Contains(prompt, term) {
+						t.Errorf("lifecycle instruction missing %q", term)
+					}
+				}
 			}
 		})
 	}

@@ -36,13 +36,13 @@ func agentProbeLiveReady(enabled, goos, arch, version string) bool {
 }
 
 func agentProbeScenarios() []agentProbeScenario {
-	spawn := "Call spawn_agent exactly once with agent_type probe_worker. Ask the child to run the finite process command below once and return. Wait for the actual child if created, then close_agent if available. Do not substitute other agents after denial."
+	spawn := "Call spawn_agent exactly once with agent_type probe_worker and task_name g0_probe if that field is required. Ask the child to run the finite process command below once and return. Wait for the actual child if created, then close_agent if available. Do not substitute other agents after denial."
 	return []agentProbeScenario{
 		{"deny", "deny", spawn},
 		{"allow", "observe", spawn},
-		{"parallel-roots", "observe", "Attempt two concurrent spawn_agent calls of probe_worker, assigning worker-a and worker-b using structured root/worktree parameters only if the actual tool schema provides them. Do not invent tool fields. If there is no structured root parameter, report that limitation and still attempt the two ordinary children, asking each to run the finite process command once. Wait and close both."},
-		{"lifecycle", "observe", "Call spawn_agent for probe_worker, asking it to run the finite process command asynchronously and return immediately while the process is still running. Wait for its reply. Use send_input for an additional request. Then send_input with interrupt if supported, close_agent, resume_agent for the same actual agent ID, send_input again, wait and close_agent. Use the actual tool names and fields exposed to you. Do not substitute other operations if unavailable. Preserve all actual results. A reply is not proof that its process ended."},
-		{"unit-and-alias", "observe", "Attempt two probe_worker children, one described as Unit fixture-u1 and one without Unit. This is metadata only; do not call product Unit APIs. Attempt structured root assignments to worker-a and worker-alias (a symlink to worker-a), then worker-a from coordination-b. Do not infer root support from a prompt or chdir. If schema has no such field, say so. Children run the finite process command once. Wait and close each real child."},
+		{"parallel-roots", "observe", "Attempt two concurrent spawn_agent calls of probe_worker: use task_name worker_a for root worker-a and task_name worker_b for root worker-b. Assign roots using structured root/worktree parameters only if the actual tool schema provides them. Do not invent tool fields. If there is no structured root parameter, report that limitation and still attempt the two ordinary children, asking each to run the finite process command once. Wait and close both."},
+		{"lifecycle", "observe", "Call spawn_agent for probe_worker with task_name lifecycle_worker if required. Ask it to run the finite helper asynchronously exactly once and return immediately. Wait for its reply, then inspect available agent-operation schemas by their documented meanings. Use list_agents or an actual status operation if available to record the current state. Attempt an additional message using send_message if exposed, noting that it may not start an idle child. Attempt an idle-to-running follow-up using followup_task if its schema starts an idle child; send_input or resume_agent may be used only if actually exposed and appropriate. Request only a short acknowledgement. Do not run the finite helper again or overwrite its nonce record. If a follow-up is running, attempt interrupt_agent or the actual interruption operation, recording the status and response. Do not infer interruption of running work when the child was already idle. Attempt close_agent only if a real close operation exists. Do not treat completion or interruption as close. Missing tool names alone do not prove the semantic operation is unavailable: inspect available schemas, then report operations not performed without substituting incompatible actions. Preserve every actual result. A reply, an interruption, or Stop does not prove process termination."},
+		{"unit-and-alias", "observe", "Attempt two probe_worker children with distinct valid task names unit_worker and plain_worker, one described as Unit fixture-u1 and one without Unit. This is metadata only; do not call product Unit APIs. Attempt structured root assignments to worker-a and worker-alias (a symlink to worker-a), then worker-a from coordination-b. Do not infer root support from a prompt or chdir. If schema has no such field, say so. Children run the finite process command once. Wait and close each real child."},
 		{"missing-response", "missing", spawn},
 		{"nonzero-exit", "nonzero", spawn},
 		{"save-failure", "save-failure", spawn},
@@ -112,7 +112,7 @@ developer_instructions = "Run only the provided finite probe command once. Do no
 	if scenario.Name == "lifecycle" {
 		waitInstruction = "use exec_command with yield_time_ms=1 to return asynchronously while the finite helper is running"
 	}
-	prompt := "Perform only this bounded G0 Codex compatibility experiment in the temporary repository. Use actual provided tools, not simulated calls. Do not use MCP/network, read credentials or external files, modify settings, or create unbounded/background shell processes. Do not retry failed or denied requests. Do not kill any process. There is no product Unit API operation in this experiment.\n" + scenario.Request + "\nFinite process command (" + waitInstruction + "):\n" + processCommand + "\nEach child must append a different lowercase alphanumeric suffix to the nonce argument if multiple children run. Do not change any other argument. The helper creates its own bounded observation record. End with a concise list of operations unavailable or not performed; prose is diagnostic only, not pass evidence."
+	prompt := "Perform only this bounded G0 Codex compatibility experiment in the temporary repository. Use actual provided tools, not simulated calls. Do not use MCP/network, read credentials or external files, modify settings, or create unbounded/background shell processes. Do not retry failed or denied requests. Do not kill any process. There is no product Unit API operation in this experiment. For each spawn, if the actual schema exposes fork_turns, set fork_turns=\"none\" and provide a self-contained child request. Use only lowercase letters, digits, and underscores in task names; task names are distinct from root paths. Do not reuse a task name in this experiment.\n" + scenario.Request + "\nFinite process command (" + waitInstruction + "):\n" + processCommand + "\nEach child must append a different lowercase alphanumeric suffix to the nonce argument if multiple children run. Do not change any other argument. The helper creates its own bounded observation record. End with a concise list of operations unavailable or not performed; prose is diagnostic only, not pass evidence."
 	if err := os.WriteFile(filepath.Join(dir, "prompt.txt"), []byte(prompt), 0600); err != nil {
 		return fixture, err
 	}
@@ -402,6 +402,56 @@ func agentProbeCollectEvidence(dir string, complete bool) (e agentProbeEvidence,
 		}
 		calls = append(calls, parsed...)
 	}
+	children := map[string]agentProbeChildMetadata{}
+	candidates := map[string]agentProbeChildCandidate{}
+	invalidChildren := false
+	for _, record := range records {
+		var input agentProbeInput
+		_ = json.Unmarshal([]byte(record.Raw), &input)
+		childPath := ""
+		if input.Event == "SubagentStart" {
+			childPath = input.Transcript
+		}
+		if input.Event == "SubagentStop" {
+			childPath = input.AgentTranscript
+		}
+		if childPath == "" || input.Agent == "" {
+			continue
+		}
+		candidate := agentProbeChildCandidate{Path: childPath, Parent: input.Session, Agent: input.Agent}
+		candidate.Task = agentProbeObservedTask(records, input.Session)
+		if existing, ok := candidates[input.Agent]; ok && existing != candidate {
+			invalidChildren = true
+		}
+		candidates[input.Agent] = candidate
+	}
+	if !invalidChildren {
+		for agent, candidate := range candidates {
+			data, meta, valid, readErr := agentProbeReadChild(candidate)
+			if readErr != nil {
+				return e, readErr
+			}
+			if !valid {
+				invalidChildren = true
+				continue
+			}
+			children[agent] = meta
+			if err := os.WriteFile(filepath.Join(dir, "transcript-"+agent+".jsonl"), data, 0600); err != nil {
+				return e, err
+			}
+			parsed, err := agentProbeTranscriptCalls(data)
+			if err != nil {
+				return e, err
+			}
+			for i := range parsed {
+				parsed[i].Session = agent
+			}
+			calls = append(calls, parsed...)
+		}
+	}
+	if err := agentProbeWriteJSON(filepath.Join(dir, "child-metadata.json"), map[string]any{"validated": children, "inconclusive": invalidChildren}); err != nil {
+		return e, err
+	}
 	if err := agentProbeWriteJSON(filepath.Join(dir, "calls.json"), calls); err != nil {
 		return e, err
 	}
@@ -423,7 +473,7 @@ func agentProbeCollectEvidence(dir string, complete bool) (e agentProbeEvidence,
 	if err := agentProbeWriteJSON(filepath.Join(dir, "process-observations.json"), map[string]any{"captured_at": time.Now().UTC(), "before_cleanup": true, "processes": processSnapshots}); err != nil {
 		return e, err
 	}
-	e = agentProbeEvidence{Complete: complete, Records: records, Calls: calls, Processes: processSnapshots}
+	e = agentProbeEvidence{Complete: complete && !invalidChildren, Records: records, Calls: calls, Processes: processSnapshots, Children: children}
 	manifest, readErr := os.ReadFile(filepath.Join(dir, "manifest.json"))
 	if readErr == nil {
 		var m struct {
@@ -526,4 +576,96 @@ func agentProbeCaseTimeout(name string) time.Duration {
 func agentProbeAggregate(denied, allowed agentProbeEvidence) map[string]agentProbeResult {
 	denied.Control = &allowed
 	return agentProbeEvaluate(denied)
+}
+
+type agentProbeChildCandidate struct{ Path, Parent, Agent, Task string }
+
+func agentProbeObservedTask(records []agentProbeRecord, parent string) string {
+	task := ""
+	count := 0
+	for _, record := range records {
+		var input agentProbeInput
+		_ = json.Unmarshal([]byte(record.Raw), &input)
+		if input.Event != "PostToolUse" || !agentProbeSpawnTool(input.Tool) || input.Session != parent {
+			continue
+		}
+		var response struct {
+			Task string `json:"task_name"`
+		}
+		if json.Unmarshal(agentProbeResultObject(string(input.Response)), &response) != nil {
+			return ""
+		}
+		task = response.Task
+		count++
+	}
+	if count != 1 {
+		return ""
+	}
+	return task
+}
+
+func agentProbeReadChild(candidate agentProbeChildCandidate) ([]byte, agentProbeChildMetadata, bool, error) {
+	var meta agentProbeChildMetadata
+	if candidate.Parent == "" || candidate.Agent == "" || candidate.Task == "" || strings.ContainsAny(candidate.Agent, "/\\") || !filepath.IsAbs(candidate.Path) || !strings.Contains(filepath.Base(candidate.Path), candidate.Agent) {
+		return nil, meta, false, nil
+	}
+	file, err := os.Open(candidate.Path)
+	if err != nil {
+		return nil, meta, false, err
+	}
+	defer file.Close()
+	// Inspect only the bounded first metadata line before accepting any child
+	// transcript body. A hook-provided path alone is not sufficient provenance.
+	reader := bufio.NewReader(io.LimitReader(file, 32<<20))
+	var first []byte
+	for len(first) <= 1<<20 {
+		part, readErr := reader.ReadSlice('\n')
+		first = append(first, part...)
+		if readErr == bufio.ErrBufferFull {
+			continue
+		}
+		if readErr != nil && readErr != io.EOF {
+			return nil, meta, false, readErr
+		}
+		break
+	}
+	if len(first) > 1<<20 {
+		return nil, meta, false, nil
+	}
+	var row struct {
+		Type    string                  `json:"type"`
+		Payload agentProbeChildMetadata `json:"payload"`
+	}
+	if json.Unmarshal(first, &row) != nil || row.Type != "session_meta" {
+		return nil, meta, false, nil
+	}
+	meta = row.Payload
+	if meta.ID != candidate.Agent || meta.Parent != candidate.Parent || meta.ForkedFrom != candidate.Parent || meta.AgentPath != candidate.Task {
+		return nil, meta, false, nil
+	}
+	rest, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, meta, false, err
+	}
+	data := append(first, rest...)
+	if len(data) >= 32<<20 {
+		return nil, meta, false, fmt.Errorf("child transcript exceeds capture bound")
+	}
+	scanner := bufio.NewScanner(strings.NewReader(string(rest)))
+	scanner.Buffer(make([]byte, 4096), 4<<20)
+	for scanner.Scan() {
+		var next struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(scanner.Bytes(), &next) != nil {
+			return nil, meta, false, nil
+		}
+		if next.Type == "session_meta" {
+			return nil, meta, false, nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, meta, false, err
+	}
+	return data, meta, true, nil
 }

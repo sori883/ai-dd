@@ -21,15 +21,17 @@ type agentProbeRecord struct {
 }
 
 type agentProbeInput struct {
-	Event    string          `json:"hook_event_name"`
-	Tool     string          `json:"tool_name"`
-	Input    json.RawMessage `json:"tool_input"`
-	Response json.RawMessage `json:"tool_response"`
-	Session  string          `json:"session_id"`
-	Turn     string          `json:"turn_id"`
-	Call     string          `json:"tool_use_id"`
-	Agent    string          `json:"agent_id"`
-	CWD      string          `json:"cwd"`
+	Event           string          `json:"hook_event_name"`
+	Tool            string          `json:"tool_name"`
+	Input           json.RawMessage `json:"tool_input"`
+	Response        json.RawMessage `json:"tool_response"`
+	Session         string          `json:"session_id"`
+	Turn            string          `json:"turn_id"`
+	Call            string          `json:"tool_use_id"`
+	Agent           string          `json:"agent_id"`
+	CWD             string          `json:"cwd"`
+	Transcript      string          `json:"transcript_path"`
+	AgentTranscript string          `json:"agent_transcript_path"`
 }
 
 func TestAgentHookProbeHelper(t *testing.T) {
@@ -59,11 +61,11 @@ func TestAgentHookProbeHelper(t *testing.T) {
 		Agent string `json:"agent_type"`
 	}
 	_ = json.Unmarshal(input.Input, &spawn)
-	if args[2] == "deny" && input.Event == "PreToolUse" && input.Tool == "spawn_agent" && spawn.Agent == "probe_worker" {
+	if args[2] == "deny" && input.Event == "PreToolUse" && agentProbeSpawnTool(input.Tool) && spawn.Agent == "probe_worker" {
 		response = `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Expected G0 probe denial. Do not retry or substitute another agent."}}`
 	}
 	exit := 0
-	fault := input.Event == "PreToolUse" && input.Tool == "spawn_agent" && spawn.Agent == "probe_worker"
+	fault := input.Event == "PreToolUse" && agentProbeSpawnTool(input.Tool) && spawn.Agent == "probe_worker"
 	if fault {
 		switch args[2] {
 		case "missing", "timeout":
@@ -116,6 +118,7 @@ type agentProbeEvidence struct {
 	Calls                          []agentProbeCall
 	Control                        *agentProbeEvidence
 	Processes                      map[string]json.RawMessage
+	Children                       map[string]agentProbeChildMetadata
 	ExpectedNonce, ExpectedCommand string
 	ProcessAfterStop               bool
 }
@@ -161,8 +164,9 @@ func agentProbeSpawn(e agentProbeEvidence) (agentProbeCall, bool) {
 			spawn = call
 			count++
 		}
-		// Opaque code-mode calls cannot exclude another hidden spawn.
-		if call.Name == "exec" || call.Name == "" {
+		// Opaque calls stay raw. Only a direct spawn plus its native hook
+		// evidence is evaluated; no inner calls are synthesized.
+		if call.Name == "" {
 			return spawn, false
 		}
 	}
@@ -242,7 +246,7 @@ func agentProbeDenied(e agentProbeEvidence) bool {
 		if input.Event == "SubagentStart" {
 			return false
 		}
-		if input.Event == "PreToolUse" && input.Tool == "spawn_agent" {
+		if input.Event == "PreToolUse" && agentProbeSpawnTool(input.Tool) {
 			if input.Call != call.ID || input.Session != call.Session || record.Exit != 0 || !agentProbeSameInput(input.Input, call.Input) {
 				return false
 			}
@@ -267,6 +271,10 @@ func agentProbeAllowed(e agentProbeEvidence) bool {
 	}
 	var output struct {
 		Agent string `json:"agent_id"`
+		Task  string `json:"task_name"`
+	}
+	if json.Unmarshal(agentProbeResultObject(call.Output), &output) == nil && output.Task != "" && output.Agent == "" {
+		return agentProbeObservedAllowed(e, call, output.Task)
 	}
 	if json.Unmarshal(agentProbeResultObject(call.Output), &output) != nil || output.Agent == "" || output.Agent == call.Session {
 		return false
@@ -277,7 +285,7 @@ func agentProbeAllowed(e agentProbeEvidence) bool {
 		if json.Unmarshal([]byte(record.Raw), &input) != nil {
 			return false
 		}
-		if input.Event == "PreToolUse" && input.Tool == "spawn_agent" {
+		if input.Event == "PreToolUse" && agentProbeSpawnTool(input.Tool) {
 			if input.Call != call.ID || input.Session != call.Session || record.Exit != 0 || record.Response != "{}" || !agentProbeSameInput(input.Input, call.Input) {
 				return false
 			}
@@ -352,4 +360,103 @@ func agentProbeExitZero(raw string) bool {
 		Exit *int `json:"exit_code"`
 	}
 	return json.Unmarshal(agentProbeResultObject(raw), &result) == nil && result.Exit != nil && *result.Exit == 0
+}
+
+func agentProbeSpawnTool(name string) bool {
+	return name == "spawn_agent" || name == "collaborationspawn_agent"
+}
+
+// This association is a G0 observation for the pinned transcript format, not a
+// stable runtime API or a guarantee about reusing task names.
+type agentProbeChildMetadata struct {
+	ID         string `json:"id"`
+	AgentPath  string `json:"agent_path"`
+	Parent     string `json:"parent_thread_id"`
+	ForkedFrom string `json:"forked_from_id"`
+}
+
+func agentProbeObservedAllowed(e agentProbeEvidence, call agentProbeCall, task string) bool {
+	pre, post, start := 0, 0, 0
+	child := ""
+	for _, record := range e.Records {
+		var input agentProbeInput
+		if json.Unmarshal([]byte(record.Raw), &input) != nil {
+			return false
+		}
+		if agentProbeSpawnTool(input.Tool) {
+			if input.Session != call.Session || input.Call != call.ID || record.Exit != 0 || !agentProbeSameInput(input.Input, call.Input) {
+				return false
+			}
+			switch input.Event {
+			case "PreToolUse":
+				if record.Response != "{}" {
+					return false
+				}
+				pre++
+			case "PostToolUse":
+				var result struct {
+					Task string `json:"task_name"`
+				}
+				if json.Unmarshal(agentProbeResultObject(string(input.Response)), &result) != nil || result.Task != task {
+					return false
+				}
+				post++
+			}
+		}
+		if input.Event == "SubagentStart" {
+			meta, ok := e.Children[input.Agent]
+			if !ok || input.Session != call.Session || input.Agent == "" || meta.ID != input.Agent || meta.Parent != call.Session || meta.ForkedFrom != call.Session || meta.AgentPath != task {
+				return false
+			}
+			child = input.Agent
+			start++
+		}
+	}
+	return pre == 1 && post == 1 && start == 1 && agentProbeObservedMarker(e, call.Session, child)
+}
+
+func agentProbeObservedMarker(e agentProbeEvidence, parent, child string) bool {
+	if e.ExpectedNonce == "" || !strings.Contains(e.ExpectedCommand, " "+e.ExpectedNonce+" 15000") || len(e.Processes) != 1 {
+		return false
+	}
+	raw, ok := e.Processes["process-"+e.ExpectedNonce+".json"]
+	if !ok {
+		return false
+	}
+	var process agentProbeProcessState
+	if json.Unmarshal(raw, &process) != nil || process.Nonce != e.ExpectedNonce || process.PID <= 0 || process.StartedAt.IsZero() || process.EndedAt.Before(process.StartedAt) || process.ObservedAt != process.EndedAt {
+		return false
+	}
+	var pre, post []agentProbeInput
+	for _, record := range e.Records {
+		var input agentProbeInput
+		if json.Unmarshal([]byte(record.Raw), &input) != nil {
+			return false
+		}
+		if input.Tool != "Bash" {
+			continue
+		}
+		var command struct {
+			Command string `json:"command"`
+		}
+		if json.Unmarshal(input.Input, &command) != nil || command.Command != e.ExpectedCommand {
+			continue
+		}
+		if input.Session != parent || input.Agent != child || input.Call == "" || input.Turn == "" || record.Exit != 0 {
+			return false
+		}
+		if input.Event == "PreToolUse" {
+			pre = append(pre, input)
+		}
+		if input.Event == "PostToolUse" {
+			post = append(post, input)
+		}
+	}
+	if len(pre) != 1 || len(post) != 1 || pre[0].Call != post[0].Call || pre[0].Turn != post[0].Turn {
+		return false
+	}
+	var response string
+	// Empty Bash output plus the helper's side effect proves execution here;
+	// neither the Post event nor this empty response proves exit 0 or child stop.
+	return json.Unmarshal(post[0].Response, &response) == nil && response == ""
 }
