@@ -1,6 +1,6 @@
 # 開発プロジェクトRAM
 
-- [G0 fixtureのloop実装証拠](decisions/2026-09-10-agent-guard-preflight-evidence.md): P1〜P3のloop完了。独立review・実機final待ち。
+- [G0 fixtureのloop実装証拠](decisions/2026-09-10-agent-guard-preflight-evidence.md): P1〜P3とcollector接続のreview修復が完了。再review・実機final待ち。
 
 - [担当起動制限の推奨案とG0先行を承認](decisions/2026-09-10-stage-agent-worker-guard-approved.md): 各段階のstage-planner、Unitなし予約、1調整root集約で進める。[G0作業単位](../design/agent-guard-preflight-work-unit.md)を固定Codexで実測し、対応/root/停止・再開の不明点が残る場合は製品guardへ進まない。
 

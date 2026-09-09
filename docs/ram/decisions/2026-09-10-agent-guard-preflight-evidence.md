@@ -31,3 +31,17 @@ cleanup前のprocess観測ファイルがないRED（exit 1）も追加し、観
 有限processは独自nonceで排他的な観測ファイルを作り、最大20秒以内で終わる。cleanupは同じnonceの停止用ファイルだけを作り、PIDへのsignalや他processの停止はしない。process記録のnonce・時刻は生hookと実tool呼出しの照合資料であり、子agent_idやrootを自己申告から確定する証拠ではない。
 
 既存Codex 0.153.4 macOS arm64、gpt-6-astra/xhigh、通常CLI認証を使う。認証fileの読取り・複製をしない。`--ignore-user-config`、一時rootのtrustとhook trust bypassを使い、`--add-dir` は同じ専用tempの証拠保存先だけをsandboxの書込み対象へ含める。製品の導入手順・保証ではない。現時点でG0の実機pass/unsupportedは未確定。
+
+## 独立review後のcollector接続修復
+
+`work_unit_id=agent-guard-preflight-review-repair`、開始HEAD `dd95e3f41726c4a5d0659e8e018b3471a7092a10`。Issue #159と同じ承認範囲で、親から一つにまとめて委譲されたblocking findingを修正した。
+
+reviewでは、live collectorから許可対照が評価器へ渡らない、全tool callが1件だけという条件が正常なwait/closeを拒む、raw function string/custom array wrapperを直接agent_id objectとして扱ってしまう、というG0-1経路の欠陥が見つかった。
+
+回帰commandは `go test -count=1 ./src/cmd/aidlc -run '^TestAgentHookProbe(Evidence|Fixture)'`。実ファイルのhook・親/子transcript・manifest・process記録をcollectorへ読み込ませ、aggregate→評価器へ渡す `TestAgentHookProbeEvidenceCollectedControl` を追加した。API scaffold段階のREDに加え、既存collectorと評価器を接続した時点でobject/function string/custom arrayの正例がすべてinconclusiveとなる意図したRED（exit 1）を確認した。修正後は同じcommandでGREEN（exit 0）、末尾再実行も成功。
+
+collectorはraw call outputを変えず、出典sessionとprocess観測を含む証拠を返す。live末尾で独立したdeny/allowの証拠を集約し、実験rootの `aggregate-summary.json` にG0-1評価を保存する。spawnだけを一意に選び、無関係なwait/closeが存在しても照合できる。既知のJSON object、function outputのJSON string、固定CLIで確認済みの2つのinput_text block形式だけを評価時に正規化する。code-mode JavaScriptから仮想の内側callを作らない。
+
+許可対照の試験印は、fixture manifestのnonce・有限helper command、実子sessionのPostToolUse、同session/同call IDの実exec_command入出力、nonceを持つ終了済みprocess記録を照合して判断する。markerのagent/nonceを手組みで注入する経路は削除した。回帰fixtureではwait/closeを含む正例に加え、未知wrapper、重複spawn/出力、session不一致、process欠落、nonce不一致、子call欠落、opaque code-modeをinconclusiveとして確認した。
+
+これは既知wireに対する収集・評価経路の修復であり、固定0.153.4の実spawn wireがその形式で得られると断定するものではない。実機未実行を維持し、未知wireや根拠不足はinconclusiveとする。G0-2〜6のraw実測評価は引き続き親が行う。gofmt適用と `git diff --check` を確認し、製品コード・外部依存・既存helper・Issue/PRを変更していない。

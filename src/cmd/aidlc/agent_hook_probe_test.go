@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -108,17 +109,17 @@ func TestAgentHookProbeHelper(t *testing.T) {
 	os.Exit(exit)
 }
 
-type agentProbeCall struct{ ID, Name, Input, Output string }
+type agentProbeCall struct{ ID, Name, Input, Output, Session string }
 type agentProbeEvidence struct {
-	Complete                 bool
-	Records                  []agentProbeRecord
-	Calls                    []agentProbeCall
-	Control                  *agentProbeEvidence
-	ProcessAfterStop         bool
-	MarkerAgent, MarkerNonce string
-	MarkerCommand            string
-	MarkerEvent              agentProbeRecord
+	Complete                       bool
+	Records                        []agentProbeRecord
+	Calls                          []agentProbeCall
+	Control                        *agentProbeEvidence
+	Processes                      map[string]json.RawMessage
+	ExpectedNonce, ExpectedCommand string
+	ProcessAfterStop               bool
 }
+
 type agentProbeResult struct {
 	Status string `json:"status"`
 	Reason string `json:"reason"`
@@ -144,31 +145,92 @@ func agentProbeEvaluate(e agentProbeEvidence) map[string]agentProbeResult {
 }
 
 func agentProbeSpawn(e agentProbeEvidence) (agentProbeCall, bool) {
-	if !e.Complete || len(e.Calls) != 1 {
+	if !e.Complete {
 		return agentProbeCall{}, false
 	}
-	call := e.Calls[0]
-	if call.ID == "" || call.Name != "spawn_agent" || call.Output == "" {
-		return call, false
+	var spawn agentProbeCall
+	count := 0
+	seen := map[string]bool{}
+	for _, call := range e.Calls {
+		key := call.Session + "\x00" + call.ID
+		if call.Session == "" || call.ID == "" || seen[key] {
+			return spawn, false
+		}
+		seen[key] = true
+		if call.Name == "spawn_agent" {
+			spawn = call
+			count++
+		}
+		// Opaque code-mode calls cannot exclude another hidden spawn.
+		if call.Name == "exec" || call.Name == "" {
+			return spawn, false
+		}
+	}
+	if count != 1 || spawn.Output == "" {
+		return spawn, false
 	}
 	var input struct {
 		Agent string `json:"agent_type"`
 	}
-	if json.Unmarshal([]byte(call.Input), &input) != nil || input.Agent != "probe_worker" {
-		return call, false
+	if json.Unmarshal([]byte(spawn.Input), &input) != nil || input.Agent != "probe_worker" {
+		return spawn, false
 	}
-	return call, true
+	return spawn, true
+}
+
+// Normalize only a JSON object, a function-call JSON string, or the two
+// input_text blocks recorded by the fixed CLI. Output itself remains raw.
+// This never interprets JavaScript or invents an inner code-mode call.
+func agentProbeResultObject(raw string) json.RawMessage {
+	data := []byte(raw)
+	if len(data) == 0 {
+		return nil
+	}
+	var object map[string]json.RawMessage
+	if json.Unmarshal(data, &object) == nil && object != nil {
+		return data
+	}
+	var text string
+	if json.Unmarshal(data, &text) == nil {
+		if json.Unmarshal([]byte(text), &object) == nil && object != nil {
+			return []byte(text)
+		}
+		return nil
+	}
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(data, &blocks) != nil || len(blocks) != 2 || blocks[0].Type != "input_text" || blocks[1].Type != "input_text" {
+		return nil
+	}
+	if strings.HasPrefix(blocks[0].Text, "Script completed\n") {
+		if json.Unmarshal([]byte(blocks[1].Text), &object) == nil && object != nil {
+			return []byte(blocks[1].Text)
+		}
+	}
+	reason := "Expected G0 probe denial. Do not retry or substitute another agent."
+	if strings.HasPrefix(blocks[0].Text, "Script failed\n") && blocks[1].Text == "Script error:\nCommand blocked by PreToolUse hook: "+reason {
+		encoded, _ := json.Marshal(map[string]string{"error": reason})
+		return encoded
+	}
+	return nil
+}
+
+func agentProbeSameInput(raw json.RawMessage, input string) bool {
+	var left, right any
+	return json.Unmarshal(raw, &left) == nil && json.Unmarshal([]byte(input), &right) == nil && reflect.DeepEqual(left, right)
 }
 
 func agentProbeDenied(e agentProbeEvidence) bool {
 	call, ok := agentProbeSpawn(e)
-	if !ok || e.MarkerAgent != "" || e.MarkerNonce != "" {
+	if !ok || len(e.Processes) != 0 {
 		return false
 	}
 	var output struct {
 		Error string `json:"error"`
 	}
-	if json.Unmarshal([]byte(call.Output), &output) != nil || output.Error != "Expected G0 probe denial. Do not retry or substitute another agent." {
+	if json.Unmarshal(agentProbeResultObject(call.Output), &output) != nil || output.Error != "Expected G0 probe denial. Do not retry or substitute another agent." {
 		return false
 	}
 	pre := 0
@@ -181,7 +243,7 @@ func agentProbeDenied(e agentProbeEvidence) bool {
 			return false
 		}
 		if input.Event == "PreToolUse" && input.Tool == "spawn_agent" {
-			if input.Call != call.ID || input.Session == "" || record.Exit != 0 {
+			if input.Call != call.ID || input.Session != call.Session || record.Exit != 0 || !agentProbeSameInput(input.Input, call.Input) {
 				return false
 			}
 			var response struct {
@@ -206,20 +268,7 @@ func agentProbeAllowed(e agentProbeEvidence) bool {
 	var output struct {
 		Agent string `json:"agent_id"`
 	}
-	if json.Unmarshal([]byte(call.Output), &output) != nil || output.Agent == "" || e.MarkerAgent != output.Agent || e.MarkerNonce == "" {
-		return false
-	}
-	var marker agentProbeInput
-	if json.Unmarshal([]byte(e.MarkerEvent.Raw), &marker) != nil || marker.Event != "PostToolUse" || marker.Session != output.Agent || marker.Call == "" || marker.Tool != "Bash" {
-		return false
-	}
-	var command struct {
-		Command string `json:"command"`
-	}
-	var result struct {
-		Exit *int `json:"exit_code"`
-	}
-	if json.Unmarshal(marker.Input, &command) != nil || command.Command != e.MarkerCommand || !strings.Contains(command.Command, e.MarkerNonce) || json.Unmarshal(marker.Response, &result) != nil || result.Exit == nil || *result.Exit != 0 {
+	if json.Unmarshal(agentProbeResultObject(call.Output), &output) != nil || output.Agent == "" || output.Agent == call.Session {
 		return false
 	}
 	pre, start := 0, 0
@@ -229,17 +278,78 @@ func agentProbeAllowed(e agentProbeEvidence) bool {
 			return false
 		}
 		if input.Event == "PreToolUse" && input.Tool == "spawn_agent" {
-			if input.Call != call.ID || input.Session == "" || record.Exit != 0 || record.Response != "{}" {
+			if input.Call != call.ID || input.Session != call.Session || record.Exit != 0 || record.Response != "{}" || !agentProbeSameInput(input.Input, call.Input) {
 				return false
 			}
 			pre++
 		}
 		if input.Event == "SubagentStart" {
-			if input.Agent != output.Agent {
+			if input.Agent != output.Agent || input.Session != call.Session {
 				return false
 			}
 			start++
 		}
 	}
-	return pre == 1 && start == 1
+	return pre == 1 && start == 1 && agentProbeHasMarker(e, output.Agent)
+}
+
+func agentProbeHasMarker(e agentProbeEvidence, agent string) bool {
+	if e.ExpectedNonce == "" || e.ExpectedCommand == "" || !strings.Contains(e.ExpectedCommand, " "+e.ExpectedNonce+" 15000") || len(e.Processes) != 1 {
+		return false
+	}
+	raw, ok := e.Processes["process-"+e.ExpectedNonce+".json"]
+	if !ok {
+		return false
+	}
+	var process agentProbeProcessState
+	if json.Unmarshal(raw, &process) != nil || process.Nonce != e.ExpectedNonce || process.PID <= 0 || process.StartedAt.IsZero() || process.EndedAt.Before(process.StartedAt) || process.ObservedAt != process.EndedAt {
+		return false
+	}
+	matches := 0
+	for _, record := range e.Records {
+		var marker agentProbeInput
+		if json.Unmarshal([]byte(record.Raw), &marker) != nil {
+			return false
+		}
+		if marker.Event != "PostToolUse" || marker.Tool != "Bash" {
+			continue
+		}
+		var input struct {
+			Command string `json:"command"`
+		}
+		if json.Unmarshal(marker.Input, &input) != nil || input.Command != e.ExpectedCommand {
+			continue
+		}
+		if marker.Session != agent || marker.Call == "" || record.Exit != 0 || !agentProbeExitZero(string(marker.Response)) {
+			return false
+		}
+		matched := false
+		for _, call := range e.Calls {
+			if call.ID != marker.Call || call.Session != agent {
+				continue
+			}
+			var command struct {
+				Command string `json:"cmd"`
+			}
+			if call.Name != "exec_command" || json.Unmarshal([]byte(call.Input), &command) != nil || command.Command != e.ExpectedCommand || !agentProbeExitZero(call.Output) {
+				return false
+			}
+			if matched {
+				return false
+			}
+			matched = true
+		}
+		if !matched {
+			return false
+		}
+		matches++
+	}
+	return matches == 1
+}
+
+func agentProbeExitZero(raw string) bool {
+	var result struct {
+		Exit *int `json:"exit_code"`
+	}
+	return json.Unmarshal(agentProbeResultObject(raw), &result) == nil && result.Exit != nil && *result.Exit == 0
 }

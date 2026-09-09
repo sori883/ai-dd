@@ -116,7 +116,7 @@ developer_instructions = "Run only the provided finite probe command once. Do no
 	if err := agentProbeWriteJSON(filepath.Join(dir, "command.json"), append([]string{"codex"}, args...)); err != nil {
 		return fixture, err
 	}
-	if err := agentProbeWriteJSON(filepath.Join(dir, "manifest.json"), map[string]any{"scenario": scenario, "nonce": nonce, "root": root, "model": "gpt-6-astra", "effort": "xhigh", "hook_trust_bypass": "temporary experiment only", "authentication": "inherited through normal CLI; no credential file reads/copies", "case_timeout_seconds": agentProbeCaseTimeout(scenario.Name).Seconds(), "process_maximum_ms": 20000, "hook_records": filepath.Join(dir, "events"), "process_records": filepath.Join(dir, "processes"), "transcripts": filepath.Join(dir, "transcript-SESSION.jsonl"), "operation_inventory": filepath.Join(dir, "calls.json"), "execution_result": filepath.Join(dir, "execution.json"), "summary": filepath.Join(dir, "summary.json")}); err != nil {
+	if err := agentProbeWriteJSON(filepath.Join(dir, "manifest.json"), map[string]any{"scenario": scenario, "nonce": nonce, "root": root, "model": "gpt-6-astra", "effort": "xhigh", "hook_trust_bypass": "temporary experiment only", "authentication": "inherited through normal CLI; no credential file reads/copies", "case_timeout_seconds": agentProbeCaseTimeout(scenario.Name).Seconds(), "process_command": processCommand, "process_maximum_ms": 20000, "hook_records": filepath.Join(dir, "events"), "process_records": filepath.Join(dir, "processes"), "transcripts": filepath.Join(dir, "transcript-SESSION.jsonl"), "operation_inventory": filepath.Join(dir, "calls.json"), "execution_result": filepath.Join(dir, "execution.json"), "summary": filepath.Join(dir, "summary.json")}); err != nil {
 		return fixture, err
 	}
 	return agentProbeFixture{root, args}, nil
@@ -257,6 +257,7 @@ func TestAgentHookProbeLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	caseEvidence := map[string]agentProbeEvidence{}
 	for _, scenario := range agentProbeScenarios() {
 		t.Run(scenario.Name, func(t *testing.T) {
 			dir := filepath.Join(evidence, scenario.Name)
@@ -286,8 +287,11 @@ func TestAgentHookProbeLive(t *testing.T) {
 			if err := agentProbeWriteJSON(filepath.Join(dir, "execution.json"), map[string]any{"exit": agentProbeExitCode(command), "error": fmt.Sprint(runErr), "context_error": fmt.Sprint(ctx.Err()), "completed_at": time.Now().UTC()}); err != nil {
 				t.Error(err)
 			}
-			if err := agentProbeCollect(dir, runErr == nil); err != nil {
-				t.Errorf("collect evidence: %v", err)
+			captured, collectErr := agentProbeCollectEvidence(dir, runErr == nil)
+			if collectErr != nil {
+				t.Errorf("collect evidence: %v", collectErr)
+			} else {
+				caseEvidence[scenario.Name] = captured
 			}
 			cleanupErr := agentProbeCleanup(filepath.Join(dir, "processes"))
 			if err := agentProbeWriteJSON(filepath.Join(dir, "cleanup.json"), map[string]any{"completed_at": time.Now().UTC(), "error": fmt.Sprint(cleanupErr), "mechanism": "nonce-specific stop files only; no PID kill; finite helper maximum 20 seconds"}); err != nil {
@@ -304,6 +308,11 @@ func TestAgentHookProbeLive(t *testing.T) {
 			t.Logf("case raw and operation inventory: %s; gate conclusions require parent evidence review", dir)
 		})
 	}
+	gates := agentProbeAggregate(caseEvidence["deny"], caseEvidence["allow"])
+	if err := agentProbeWriteJSON(filepath.Join(evidence, "aggregate-summary.json"), map[string]any{"gates": gates, "deny_case": "deny", "allow_case": "allow", "assessment": "G0-1 uses captured independent controls; other gates require parent raw review"}); err != nil {
+		t.Error(err)
+	}
+	t.Logf("aggregate G0-1=%s; %s", gates["G0-1"].Status, filepath.Join(evidence, "aggregate-summary.json"))
 }
 
 func agentProbeExitCode(command *exec.Cmd) int {
@@ -314,9 +323,14 @@ func agentProbeExitCode(command *exec.Cmd) int {
 }
 
 func agentProbeCollect(dir string, complete bool) error {
+	_, err := agentProbeCollectEvidence(dir, complete)
+	return err
+}
+
+func agentProbeCollectEvidence(dir string, complete bool) (e agentProbeEvidence, err error) {
 	files, err := filepath.Glob(filepath.Join(dir, "events", "event-*.json"))
 	if err != nil {
-		return err
+		return e, err
 	}
 	eventCounts, toolCounts := map[string]int{}, map[string]int{}
 	var records []agentProbeRecord
@@ -324,16 +338,16 @@ func agentProbeCollect(dir string, complete bool) error {
 	for _, path := range files {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return err
+			return e, err
 		}
 		var record agentProbeRecord
 		if err := json.Unmarshal(data, &record); err != nil {
-			return err
+			return e, err
 		}
 		records = append(records, record)
 		var input agentProbeInput
 		if err := json.Unmarshal([]byte(record.Raw), &input); err != nil {
-			return err
+			return e, err
 		}
 		eventCounts[input.Event]++
 		if input.Tool != "" {
@@ -342,7 +356,7 @@ func agentProbeCollect(dir string, complete bool) error {
 		var raw struct{ Session, Transcript string }
 		var wire map[string]json.RawMessage
 		if err := json.Unmarshal([]byte(record.Raw), &wire); err != nil {
-			return err
+			return e, err
 		}
 		_ = json.Unmarshal(wire["session_id"], &raw.Session)
 		_ = json.Unmarshal(wire["transcript_path"], &raw.Transcript)
@@ -356,54 +370,72 @@ func agentProbeCollect(dir string, complete bool) error {
 	for path, session := range transcripts {
 		file, err := os.Open(path)
 		if err != nil {
-			return err
+			return e, err
 		}
 		data, readErr := io.ReadAll(io.LimitReader(file, 32<<20))
 		closeErr := file.Close()
 		if readErr != nil {
-			return readErr
+			return e, readErr
 		}
 		if closeErr != nil {
-			return closeErr
+			return e, closeErr
 		}
 		if len(data) >= 32<<20 {
-			return fmt.Errorf("probe transcript exceeds capture bound")
+			return e, fmt.Errorf("probe transcript exceeds capture bound")
 		}
 		if strings.ContainsAny(session, "/\\") {
-			return fmt.Errorf("invalid session identifier")
+			return e, fmt.Errorf("invalid session identifier")
 		}
 		if err := os.WriteFile(filepath.Join(dir, "transcript-"+session+".jsonl"), data, 0600); err != nil {
-			return err
+			return e, err
 		}
 		parsed, err := agentProbeTranscriptCalls(data)
 		if err != nil {
-			return err
+			return e, err
+		}
+		for i := range parsed {
+			parsed[i].Session = session
 		}
 		calls = append(calls, parsed...)
 	}
 	if err := agentProbeWriteJSON(filepath.Join(dir, "calls.json"), calls); err != nil {
-		return err
+		return e, err
 	}
 	processFiles, err := filepath.Glob(filepath.Join(dir, "processes", "process-*.json"))
 	if err != nil {
-		return err
+		return e, err
 	}
 	processSnapshots := map[string]json.RawMessage{}
 	for _, path := range processFiles {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return err
+			return e, err
 		}
 		if !json.Valid(data) {
-			return fmt.Errorf("invalid process observation %s", path)
+			return e, fmt.Errorf("invalid process observation %s", path)
 		}
 		processSnapshots[filepath.Base(path)] = data
 	}
 	if err := agentProbeWriteJSON(filepath.Join(dir, "process-observations.json"), map[string]any{"captured_at": time.Now().UTC(), "before_cleanup": true, "processes": processSnapshots}); err != nil {
-		return err
+		return e, err
+	}
+	e = agentProbeEvidence{Complete: complete, Records: records, Calls: calls, Processes: processSnapshots}
+	manifest, readErr := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if readErr == nil {
+		var m struct {
+			Nonce   string `json:"nonce"`
+			Command string `json:"process_command"`
+		}
+		if err := json.Unmarshal(manifest, &m); err != nil {
+			return e, err
+		}
+		e.ExpectedNonce = m.Nonce
+		e.ExpectedCommand = m.Command
+	} else if !os.IsNotExist(readErr) {
+		return e, readErr
 	}
 	summary := map[string]any{"capture_complete": complete, "hook_events": eventCounts, "hook_tools": toolCounts, "transcript_count": len(transcripts), "call_count": len(calls), "gates": agentProbeEvaluate(agentProbeEvidence{Complete: complete, Records: records, Calls: calls}), "assessment": "inconclusive defaults require parent raw review; absent operations are not unsupported; opaque code-mode calls are retained without invented inner schema"}
-	return agentProbeWriteJSON(filepath.Join(dir, "summary.json"), summary)
+	return e, agentProbeWriteJSON(filepath.Join(dir, "summary.json"), summary)
 }
 
 func agentProbeTranscriptCalls(raw []byte) ([]agentProbeCall, error) {
@@ -485,4 +517,9 @@ func agentProbeCaseTimeout(name string) time.Duration {
 		return 5 * time.Minute
 	}
 	return 2 * time.Minute
+}
+
+func agentProbeAggregate(denied, allowed agentProbeEvidence) map[string]agentProbeResult {
+	denied.Control = &allowed
+	return agentProbeEvaluate(denied)
 }
