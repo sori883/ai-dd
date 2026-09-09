@@ -94,6 +94,14 @@ func TestRelocationCommand(t *testing.T) {
 	before := relocationSnapshot(t, clone)
 	g.ok("install", "codex", "--relocate", "--project-dir", clone, "--from-project-dir", f.root, "--from-binary", f.binary)
 	after := relocationSnapshot(t, clone)
+	const runtimeIgnore = "aidlc/.runtime/.gitignore"
+	if _, existed := before[runtimeIgnore]; !existed {
+		got := operationsRead(t, filepath.Join(clone, runtimeIgnore))
+		if string(got) != "*\n" {
+			t.Fatalf("unexpected runtime ignore bytes: %q", got)
+		}
+		before[runtimeIgnore] = filestore.Hash([]byte("*\n"))
+	}
 	for p, hash := range before {
 		if p == ".codex/hooks.json" || p == ".agents/skills/aidlc/SKILL.md" || p == ".agents/skills/aidlc-cli/SKILL.md" {
 			continue

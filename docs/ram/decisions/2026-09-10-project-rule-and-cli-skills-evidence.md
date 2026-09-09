@@ -113,3 +113,11 @@ work_unit_id=rule-skills-relocation-fixture-repair、verification_mode=loop。�
 承認済み3ファイル移転へfixtureを追従し、両skillは旧binaryのshell引用済み参照だけを新binaryへ置換した期待bytesと一致することを追加検査する。新旧bytesの差、ファイル数不変、他全ファイルhash不変、独自hook保持の検査を維持する。製品Goコードは変更していない。明白な旧fixture補正なので人工REDなし。
 
 `go test -tags=integration -run '^$' ./src/cmd/aidlc` はexit 0（abd8f3、no tests to run）。これは明示許可されたcompile-only確認であり、E2E成功/RED/GREENとは扱わない。当該Goへのgofmt、git diff --checkもexit 0。実CLI移転E2Eは親のfresh finalで再実行する。
+
+## runtime初期ファイルの移転fixture補正
+
+work_unit_id=rule-skills-relocation-runtime-fixture、verification_mode=loop。開始HEADは89e401a05bcbe818b0eb85943486e39a4cc7abba。親再finalのintegrationログ（/var/folders/9w/921pjkys39q28sk4xsc0hs000000gn/T/ai-dd-rule-skills-final-i2lknkc_/integration.log）で、新しく追加したファイル数検査がlockの正規初期ファイルaidlc/.runtime/.gitignoreを誤拒否した。
+
+before未存在の場合だけ当該1ファイルのafter実在と正確なbytes「*\n」を確認し、期待snapshotへhashを追加する。runtime全体を除外せず、他の追加・削除・hash変更と、既存.gitignore変更は引き続き拒否する。製品コード変更なし。fixture補正で人工REDなし。
+
+`go test -tags=integration -run '^$' ./src/cmd/aidlc` はexit 0（452086、no tests to run）。compile-only確認でE2E本体は未実行。当該Goへのgofmtとgit diff --checkもexit 0。親がfresh final冒頭で失敗したintegrationを先に再実行する。
