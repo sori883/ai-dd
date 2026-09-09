@@ -85,6 +85,14 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 				return nil, invalid("Intent is waiting, paused or finished; read the deployed procedure with cat .agents/skills/aidlc/WORKFLOW.md, then resume or reopen explicitly")
 			}
 
+			if !s.workflowRead(input) {
+				if selected.PendingReopen != nil {
+					return nil, invalid("reopen save pending; retry the identical request")
+				}
+				if _, err := (flow.Store{Root: s.Root, Space: state.Space}).Procedure(state.Intent); err != nil {
+					return nil, err
+				}
+			}
 			if !s.workflowRead(input) && !s.documentRepair(input, state, selected) {
 				if err := (flow.Store{Root: s.Root, Space: state.Space}).CheckWork(state.Intent); err != nil {
 					return nil, err
@@ -159,7 +167,7 @@ func (s Service) exception(input HookInput, state *Session) bool {
 		return false
 	}
 	switch r.Command + "/" + r.Action {
-	case "memory/rules", "memory/search", "memory/show", "memory/check", "intent/list", "intent/show", "intent/check", "session/inspect":
+	case "memory/rules", "memory/search", "memory/show", "memory/check", "intent/list", "intent/show", "intent/procedure", "intent/check", "session/inspect":
 		return true
 	case "intent/create":
 		return state.Tool == ""

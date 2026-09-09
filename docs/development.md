@@ -128,7 +128,7 @@ AIDLC_RELOCATION_LIVE=1 go test -tags=integration -v -count=1 -timeout=15m ./src
 ### 製品の4担当
 
 fresh installは `.codex/agents/aidlc-{researcher,requirements,worker,reviewer}.toml` を配置する。
-調整役は配置済みWORKFLOWを読み、調査・要件整理・承認済み実装・固定成果の独立レビューを必要に応じて委譲する。
+調整役はintent procedureが返す現在手順を読み、調査・要件整理・承認済み実装・固定成果の独立レビューを必要に応じて委譲する。
 workerはworkspace-write、残る3担当はread-only。
 model/effortは定義で固定せず利用者設定を継承する。共有stateとKnowledge/ADRの保存は調整役が担当する。
 既存配置を自動上書きする更新機能ではないため、利用には4定義と更新されたWORKFLOWが配置された環境が必要。
@@ -137,15 +137,42 @@ model/effortは定義で固定せず利用者設定を継承する。共有state
 
 ### 段階の開始・終了Sensor
 
-新規Intentはschema2で、旧schemaのIntentはファイルを保持して明示エラーにする。
+新規Intentはschema3で、旧schemaのIntentはファイルを保持して明示エラーにする。
 各段階の入力を正規memory CLIで整え、`intent check ID --space SPACE --boundary start`、
 `intent begin ID --space SPACE --expect REV`で開始する。終了check（boundary省略時も終了）が合格したら
 独立reviewを割り当て、実報告を受理してadvanceする。次段階もbeginが必要。
 共有文書の日時やIntentIDの空更新は要求せず、前段合格要件・計画と現在の共有版を区別する。
-新しい文書型・必須節・実行証拠JSONは配布WORKFLOWと公開helpを参照する。
+新しい文書型・必須節・実行証拠JSONはintent procedureが返す段階手順と公開helpを参照する。
 
 限定確認は `go test -count=1 ./src/internal/flow -run '^(TestBoundary|TestStartSensor|TestEndSensor)'`。
 実CLI4段階はfinalで `go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestBoundaryJourney$'`。
 固定Codex 0.153.4の限定実機は `AIDLC_BOUNDARY_LIVE=1 go test -tags=integration -count=1 -v -timeout 15m ./src/cmd/aidlc -run '^TestBoundaryLive$'`。
 後者は未開始拒否→必要文書修復→begin→一般編集の実hook/CLIと現物証拠に限定し、4段階完走と同一視しない。
 既存model/認証/通常sandboxを保ち、test observerは製品hook出力を変更せず一時fixtureに記録する。
+
+
+## Stage Graphと現在手順
+
+fresh配置は `aidlc/workflow/stage-graph.json` と `stages/*.md` を含む。
+`aidlc intent procedure ID --space SPACE` は現在段階、定義hash、手順path・frontmatter・本文、前進先、差戻し候補をJSONで返す。
+入口SKILLはこの読取りとhelpへ案内する。WORKFLOWは共通索引で、段階変更・再開後に現在手順を取り直す。
+定義のpathとbytesはIntent作成時に結び付く。変更・欠落時は作業を停止し、元版の復元または新Intentで再開する。
+show/list診断は維持する。旧schemaの移行や既設assetの自動上書きは行わない。
+
+reopenは理由をIntentのwork-log.mdへ追記し、戻り先以降の合格を無効化する。
+保存途中は元revisionとpending要求を保持し、同一要求のretryだけで完了する。logが変わったら元版を復元する。
+初回logはpending前に空の通常fileを作り、途中で削除された場合も診断できる。
+文書outputsが空でも、既存の実装・テスト・必要ADRの検査は継続する。
+
+loopの指定targetedとaffected通常testの証拠はRAMへ記録する。親final用の限定実行は次のとおり。
+
+```sh
+go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestProcedureJourney$'
+AIDLC_PROCEDURE_LIVE=1 go test -tags=integration -count=1 -v -timeout 15m ./src/cmd/aidlc -run '^TestProcedureLive$'
+```
+
+journeyは実CLIの4段階、TDDからplanningへの差戻し・再前進、Sensor/reviewの拒否を確認する。
+限定liveのhostは実CLIでTDD直前までfixtureを準備する（fixtureのreviewは独立AIの実報告ではない）。
+実Codexが現在手順を取得し、begin、通常作業、planningへのreopen、新しい現在手順取得を行う。
+固定Codex 0.153.4、既存gpt-6-astra/medium・workspace-write・認証保持・test hook方式を使用し、raw Pre/Postとexit、session/Intent、現物を照合する。
+本体からCodexを起動するschedulerや追加権限は設けていない。

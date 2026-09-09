@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	core "github.com/sori883/ai-dd/src/core/minimal"
+	coreworkflow "github.com/sori883/ai-dd/src/core/workflow"
 	codex "github.com/sori883/ai-dd/src/harness/codex/minimal"
 )
 
@@ -30,7 +31,7 @@ func Codex(root, binary string) (result Result, err error) {
 	for _, source := range []struct {
 		files  fs.FS
 		prefix string
-	}{{core.Files, ""}, {codex.Files, ""}} {
+	}{{core.Files, ""}, {codex.Files, ""}, {coreworkflow.Files, "aidlc/workflow/"}} {
 		err = fs.WalkDir(source.files, ".", func(path string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
@@ -44,6 +45,8 @@ func Codex(root, binary string) (result Result, err error) {
 			}
 			destination := ""
 			switch {
+			case source.prefix != "":
+				destination = source.prefix + path
 			case path == "adr-template.md":
 				destination = "aidlc/templates/adr.md"
 			case strings.HasPrefix(path, "knowledge/"):

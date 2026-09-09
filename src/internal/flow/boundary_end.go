@@ -17,8 +17,17 @@ import (
 
 func (s Store) endDocuments(st State) *boundaryCollector {
 	c := &boundaryCollector{store: s}
+	d, err := s.definition()
+	if err != nil {
+		c.require(false, err.Error())
+		return c
+	}
 	if err := s.checkWorkState(st); err != nil {
 		c.require(false, err.Error())
+	}
+	c.references(st, d.Procedures[st.Stage].Inputs)
+	for _, version := range c.references(st, d.Procedures[st.Stage].Outputs) {
+		c.recordProof(version)
 	}
 	c.require(st.Status == "active", "Intent is not active")
 	c.require(st.Entry != nil && st.Entry.Stage == st.Stage, "intent begin required")
@@ -28,7 +37,7 @@ func (s Store) endDocuments(st State) *boundaryCollector {
 		c.accepted(st, "discovery", s.documentPath(st, "Requirements"))
 		c.document(st, s.documentPath(st, "ImplementationPlan"), "ImplementationPlan", false)
 	}
-	if stageOrder[st.Stage] >= 2 {
+	if d.Before("planning", st.Stage) {
 		c.accepted(st, "planning", s.documentPath(st, "ImplementationPlan"))
 	}
 	c.require(len(st.Config.MaterialSources) > 0 || strings.TrimSpace(st.Config.NoMaterialsReason) != "", "material_sources or no_materials_reason required")

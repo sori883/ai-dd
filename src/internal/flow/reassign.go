@@ -155,6 +155,9 @@ func (s Store) reassign(st *State, unit *Unit, expect uint64, r UnitRequest) err
 // guardReassignment runs under the same Intent lock before any mutation or
 // runtime side effect, preserving the revision needed to recover a partial save.
 func (s Store) guardReassignment(st State, request *UnitRequest) error {
+	if err := s.guardWorkflow(st); err != nil {
+		return err
+	}
 	for _, unit := range st.Config.Units {
 		if unit.Status != "needs_confirmation" {
 			continue

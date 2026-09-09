@@ -114,7 +114,7 @@ func TestInstallMemoryCommandGuidance(t *testing.T) {
 	if len(raw) > 4096 {
 		t.Fatalf("deployed skill is %d bytes, limit 4096", len(raw))
 	}
-	procedure, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/WORKFLOW.md"))
+	procedure, err := os.ReadFile(filepath.Join(root, "aidlc/workflow/stages/discovery.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestFlowInstallInactiveResumeGuidance(t *testing.T) {
 	if len(raw) > 4096 {
 		t.Fatalf("deployed skill %d bytes exceeds 4096", len(raw))
 	}
-	for _, want := range []string{"cat .agents/skills/aidlc/WORKFLOW.md", "intent resume ID --space SPACE --expect R --reason TEXT", "intent reopen ID --space SPACE --expect R --reason TEXT --stage STAGE"} {
+	for _, want := range []string{"intent procedure ID --space SPACE", "intent resume ID --space SPACE --expect R --reason TEXT", "intent reopen ID --space SPACE --expect R --reason TEXT --stage STAGE"} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("missing inactive bootstrap grammar %q", want)
 		}

@@ -26,6 +26,13 @@ func (s Service) executeFlow(r cli.MinimalRequest) ([]byte, error) {
 		}
 		return encode(st)
 	}
+	if r.Action == "procedure" {
+		view, err := store.Procedure(r.Target)
+		if err != nil {
+			return nil, err
+		}
+		return encode(view)
+	}
 	if r.Action == "show" {
 		st, err := store.Read(r.Target)
 		if err != nil {

@@ -161,17 +161,26 @@ func (c *boundaryCollector) accepted(st State, stage, name string) {
 }
 func (s Store) startState(st State) (Gate, []FileVersion, []FileVersion) {
 	c := boundaryCollector{store: s}
+	d, err := s.boundDefinition(st)
+	if err != nil {
+		c.require(false, err.Error())
+		return c.gate(st.Stage), nil, nil
+	}
+	if err := s.guardWorkflow(st); err != nil {
+		c.require(false, err.Error())
+	}
+	c.references(st, d.Procedures[st.Stage].Inputs)
 	c.require(st.Status == "active", "Intent is not active")
 	c.document(st, s.documentPath(st, "Rule"), "Rule", false)
 	for _, kind := range []string{"CurrentAnalysis", "Architecture"} {
 		c.document(st, s.documentPath(st, kind), kind, true)
 	}
-	if stageOrder[st.Stage] >= 1 {
+	if d.Before("discovery", st.Stage) {
 		name := s.documentPath(st, "Requirements")
 		c.document(st, name, "Requirements", false)
 		c.accepted(st, "discovery", name)
 	}
-	if stageOrder[st.Stage] >= 2 {
+	if d.Before("planning", st.Stage) {
 		name := s.documentPath(st, "ImplementationPlan")
 		c.document(st, name, "ImplementationPlan", false)
 		c.accepted(st, "planning", name)

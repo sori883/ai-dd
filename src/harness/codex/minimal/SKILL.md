@@ -16,15 +16,13 @@ SessionStartが示すsession IDとdraftパスを使い、別の実行ファイ�
 出力には現在のstate、必須Rule全文、draftパスがある。Ruleを読み、その内容に従う。
 この入口の読込だけでRuleを読んだことにはならない。
 
-選択後、`cat .agents/skills/aidlc/WORKFLOW.md` を単独で実行し、配置済み手順を**全文**読む。
-完了・質問待ち・中断中でも、この手順読込はできる。現在stateのrevisionを `R` とする。
+選択後は `A intent procedure ID --space SPACE` を実行し、返された現在段階の手順全文と文書参照に従う。
+未開始・質問待ち・中断中でも読める。段階変更・再開後は取り直す。共通操作の索引はWORKFLOW.md、正確な引数・型・値は各CLI helpにある。
+手順の欠落や定義変更は停止して診断する。元定義を復元するか新Intentを作り、旧passを流用しない。
 質問待ち・中断後は `A intent resume ID --space SPACE --expect R --reason TEXT`、
-完了後の再検証は `A intent reopen ID --space SPACE --expect R --reason TEXT --stage STAGE`。
-手順とRuleを読んでから明示的に再開し、通常作業へ進む。
-欠落時は診断し、過去の手順や内包された原稿で補わない。
-詳細手順にはconfig、Sensor、独立レビュー、Unit、Knowledge/ADRの正確な操作を記載している。
-段階は discovery → planning → tdd → integration。`intent review` とSensorの現在の合格が
-各境界に必要で、`unit claim` は担当割当だけを行う。調整役AIがworker/reviewerを起動する。
+差戻しは `A intent reopen ID --space SPACE --expect R --reason TEXT --stage STAGE`。
+差戻し保存失敗時は同一要求だけを再試行し、work-logの改変時は元版へ復元する。
+現在のSensorと独立reviewのpassを確認して前進する。調整役が担当を起動し共有state/文書を保存する。
 
 非同期toolは終端までpollする。編集が失敗終了しPostが来なかったことを確認した場合だけ、
 同じID/Space/sessionで `A session bind ID --space SPACE --session SESSION --recover` を実行し、

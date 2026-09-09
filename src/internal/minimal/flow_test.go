@@ -16,6 +16,7 @@ func TestFlowIntentCommand(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "aidlc/spaces/default"), 0700); err != nil {
 		t.Fatal(err)
 	}
+	deployProcedureFixture(t, root)
 	s := Service{Root: root}
 	raw, err := s.Execute(cli.MinimalRequest{Command: "intent", Action: "create", Target: "Work", Space: "default"})
 	if err != nil {
@@ -92,6 +93,7 @@ func TestFlowHookSelectionRulesAndRecovery(t *testing.T) {
 func TestFlowConfigurePreservesActiveAssignment(t *testing.T) {
 	root := t.TempDir()
 	os.MkdirAll(filepath.Join(root, "aidlc/spaces/default"), 0700)
+	deployProcedureFixture(t, root)
 	store := flow.Store{Root: root, Space: "default"}
 	st, err := store.Create("Work")
 	if err != nil {
@@ -121,6 +123,7 @@ func TestFlowConfigureCannotForgeProgress(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
 			os.MkdirAll(filepath.Join(root, "aidlc/spaces/default"), 0700)
+			deployProcedureFixture(t, root)
 			store := flow.Store{Root: root, Space: "default"}
 			st, err := store.Create("Work")
 			if err != nil {

@@ -24,6 +24,11 @@ func TestFlowInstallAssets(t *testing.T) {
 	if len(raw) > 4096 {
 		t.Fatalf("skill exceeds bootstrap: %d", len(raw))
 	}
+	procedure, err := os.ReadFile(filepath.Join(root, "aidlc/workflow/stages/tdd.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = append(raw, procedure...)
 	for _, word := range []string{"discovery", "planning", "tdd", "integration", "intent review", "unit claim"} {
 		if !strings.Contains(string(raw), word) {
 			t.Errorf("missing %s", word)
@@ -45,7 +50,7 @@ func TestFlowInstallJapaneseProcedure(t *testing.T) {
 	if len(skill) > 4096 || !strings.Contains(string(skill), "WORKFLOW.md") || !strings.Contains(string(skill), "全文") {
 		t.Fatal("Japanese bootstrap does not reach full procedure")
 	}
-	procedure, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/WORKFLOW.md"))
+	procedure, err := os.ReadFile(filepath.Join(root, "aidlc/workflow/stages/tdd.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
