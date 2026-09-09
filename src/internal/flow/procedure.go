@@ -1,73 +1,109 @@
 package flow
 
 import (
-	"os"
-	"path"
-	"strings"
-
 	"github.com/sori883/ai-dd/src/internal/okfmemory"
 	"github.com/sori883/ai-dd/src/internal/workflow"
+	"path"
+	"path/filepath"
+	"strings"
 )
 
+func (c *boundaryCollector) snapshot() {
+	if c.scanned {
+		return
+	}
+	c.scanned = true
+	prefix := "aidlc/spaces/" + c.store.Space + "/knowledge/"
+	docs, err := okfmemory.ScanDocuments(filepath.Join(c.store.Root, filepath.FromSlash(prefix)))
+	if err != nil {
+		c.require(false, "document selection: "+err.Error())
+		return
+	}
+	if c.contents == nil {
+		c.contents = map[string][]byte{}
+	}
+	for _, selected := range docs {
+		name := prefix + selected.Path
+		raw, exists := c.contents[name]
+		if !exists {
+			raw = selected.Raw
+			c.contents[name] = raw
+		}
+		doc, err := okfmemory.Parse(raw)
+		if err != nil {
+			c.require(false, "invalid selected document: "+name)
+			continue
+		}
+		c.documents = append(c.documents, resolvedDocument{Path: name, Metadata: doc})
+	}
+}
+
+type resolvedDocument struct {
+	Path     string
+	Metadata okfmemory.Document
+}
+
+func expandedMatch(st State, m okfmemory.DocumentMatch) okfmemory.DocumentMatch {
+	if m.IntentID != nil && *m.IntentID == "${intent_id}" {
+		id := st.ID
+		m.IntentID = &id
+	}
+	return m
+}
+func (c *boundaryCollector) selected(st State, match okfmemory.DocumentMatch, count string) []string {
+	c.snapshot()
+	match = expandedMatch(st, match)
+	names := []string{}
+	for _, doc := range c.documents {
+		if match.Matches(doc.Metadata) {
+			names = append(names, doc.Path)
+		}
+	}
+	c.require(count == "one" && len(names) == 1 || count == "optional" && len(names) <= 1 || count == "many" && len(names) > 0, "selector count "+count+" mismatch: "+match.Type)
+	return names
+}
 func (c *boundaryCollector) references(st State, refs []workflow.Reference) []FileVersion {
 	checked := []FileVersion{}
 	seen := map[string]bool{}
 	prefix := "aidlc/spaces/" + c.store.Space + "/knowledge/"
-	for _, ref := range refs {
-		if ref.RequiredWhen == "adr_required" && !st.Config.ADR.Required {
-			continue
-		}
-		if ref.RequiredWhen == "materials_present" && len(st.Config.MaterialSources) == 0 {
-			continue
+	var visit func(workflow.Reference)
+	visit = func(ref workflow.Reference) {
+		if ref.Declared != "" {
+			declarations := st.Config.DocumentInputs
+			if c.outputs {
+				declarations = st.Config.DocumentOutputs
+			}
+			for _, doc := range declarations {
+				if doc.Stage == st.Stage {
+					metadata := doc.Metadata
+					visit(workflow.Reference{Path: doc.Path, Metadata: &metadata})
+				}
+			}
+			return
 		}
 		names := []string{}
-		switch ref.Refs {
-		case "config.adr.refs":
-			names = st.Config.ADR.Refs
-		case "config.feature_knowledge":
-			names = st.Config.FeatureKnowledge
-		default:
+		var match okfmemory.DocumentMatch
+		if ref.Match != nil {
+			match = expandedMatch(st, *ref.Match)
+			names = c.selected(st, match, ref.Count)
+		} else if ref.Metadata != nil {
+			match = expandedMatch(st, *ref.Metadata)
 			names = []string{strings.ReplaceAll(strings.ReplaceAll(ref.Path, "${knowledge_root}", strings.TrimSuffix(prefix, "/")), "${intent_id}", st.ID)}
-		}
-		if ref.RequiredWhen != "exists" {
-			c.require(len(names) > 0, "declared document refs required: "+ref.Refs)
 		}
 		for _, name := range names {
 			if !strings.HasPrefix(name, prefix) || path.Ext(name) != ".md" || !safeEvidencePath(name) {
 				c.require(false, "unsafe declared document: "+name)
 				continue
 			}
-			kind := ""
-			for _, candidate := range []string{"Rule", "Requirements", "ImplementationPlan", "CurrentAnalysis", "Architecture"} {
-				if name == c.store.documentPath(st, candidate) {
-					kind = candidate
-				}
+			raw, ok := c.file(name)
+			if !ok {
+				continue
 			}
-			if ref.Refs == "config.adr.refs" {
-				kind = "ADR"
-			}
-			if ref.Refs == "config.feature_knowledge" {
-				kind = "Knowledge"
-			}
-			optional := ref.RequiredWhen == "exists"
-			if kind != "" {
-				c.document(st, name, kind, optional)
-			} else {
-				if optional {
-					root, err := os.OpenRoot(c.store.Root)
-					if err == nil {
-						_, err = root.Lstat(name)
-						root.Close()
-					}
-					if os.IsNotExist(err) {
-						continue
-					}
-				}
-				raw, ok := c.file(name)
-				if ok {
-					doc, err := okfmemory.Parse(raw)
-					c.require(err == nil && strings.TrimSpace(doc.String("type")) != "" && strings.TrimSpace(doc.String("title")) != "" && strings.TrimSpace(doc.String("description")) != "" && strings.TrimSpace(doc.Body) != "", "invalid declared OKF document: "+name)
-				}
+			doc, err := okfmemory.Parse(raw)
+			c.require(err == nil && match.Matches(doc), "declared metadata mismatch: "+name)
+			c.document(st, name, match.Type, false)
+			if match.Type == "Rule" {
+				c.require(name == c.store.documentPath(st, "Rule"), "Rule must use required rules path")
 			}
 			if ref.Version == "accepted" {
 				c.accepted(st, ref.AcceptedAt, name)
@@ -80,16 +116,74 @@ func (c *boundaryCollector) references(st State, refs []workflow.Reference) []Fi
 			}
 		}
 	}
+	for _, ref := range refs {
+		visit(ref)
+	}
 	return checked
+}
+func (c *boundaryCollector) workInputs(st State, refs []workflow.Reference) {
+	current := c.references(st, refs)
+	current = append(current, c.requiredInputs(st)...)
+	if st.Entry == nil || st.Entry.Stage != st.Stage {
+		c.require(false, "intent begin required")
+		return
+	}
+	for _, old := range st.Entry.Inputs {
+		if st.Stage == "integration" {
+			proof := false
+			for _, f := range st.Accepted["tdd"].Outputs {
+				if f.Path == old.Path {
+					proof = true
+				}
+			}
+			if proof {
+				continue
+			}
+		}
+		found := false
+		for _, now := range current {
+			if now.Path == old.Path {
+				found = true
+				mutable := false
+				doc, err := okfmemory.Parse(c.contents[now.Path])
+				if err == nil {
+					mutable = doc.String("type") == "CurrentAnalysis" || doc.String("type") == "Architecture"
+				}
+				for _, output := range st.Config.DocumentOutputs {
+					if output.Stage == st.Stage && output.Path == now.Path {
+						mutable = true
+					}
+				}
+				c.require(mutable || now.SHA256 == old.SHA256, "entry input changed: "+old.Path)
+			}
+		}
+		c.require(found, "entry input disappeared or changed selection: "+old.Path)
+	}
+	if st.Stage == "integration" {
+		a, ok := st.Accepted["tdd"]
+		c.require(ok, "accepted tdd required")
+		for _, f := range a.Outputs {
+			c.accepted(st, "tdd", f.Path)
+		}
+	}
+}
+
+type ResolvedReference struct {
+	Reference   workflow.Reference `json:"reference"`
+	Candidates  []FileVersion      `json:"candidates"`
+	Diagnostics []string           `json:"diagnostics"`
 }
 
 // ProcedureView is a read-only view of the bound current procedure.
 type ProcedureView struct {
-	Stage          string             `json:"stage"`
-	DefinitionHash string             `json:"definition_hash"`
-	Procedure      workflow.Procedure `json:"procedure"`
-	Advance        string             `json:"advance"`
-	Reopen         []string           `json:"reopen"`
+	Inputs         []ResolvedReference   `json:"inputs"`
+	Outputs        []DocumentDeclaration `json:"outputs"`
+	Diagnostics    []string              `json:"diagnostics"`
+	Stage          string                `json:"stage"`
+	DefinitionHash string                `json:"definition_hash"`
+	Procedure      workflow.Procedure    `json:"procedure"`
+	Advance        string                `json:"advance"`
+	Reopen         []string              `json:"reopen"`
 }
 
 func (s Store) Procedure(id string) (ProcedureView, error) {
@@ -107,5 +201,43 @@ func (s Store) Procedure(id string) (ProcedureView, error) {
 			view.Reopen = append(view.Reopen, stage.ID)
 		}
 	}
+	c := boundaryCollector{store: s}
+	view.Inputs = []ResolvedReference{}
+	view.Outputs = []DocumentDeclaration{}
+	view.Diagnostics = []string{}
+	for _, ref := range view.Procedure.Inputs {
+		before := len(c.failures)
+		candidates := c.references(st, []workflow.Reference{ref})
+		view.Inputs = append(view.Inputs, ResolvedReference{Reference: ref, Candidates: candidates, Diagnostics: append([]string{}, c.failures[before:]...)})
+	}
+	prefix := "aidlc/spaces/" + s.Space + "/knowledge"
+	for _, ref := range view.Procedure.Outputs {
+		if ref.Declared != "" {
+			for _, doc := range st.Config.DocumentOutputs {
+				if doc.Stage == st.Stage {
+					view.Outputs = append(view.Outputs, doc)
+				}
+			}
+			continue
+		}
+		if ref.Metadata != nil {
+			view.Outputs = append(view.Outputs, DocumentDeclaration{Stage: st.Stage, Path: strings.ReplaceAll(strings.ReplaceAll(ref.Path, "${knowledge_root}", prefix), "${intent_id}", st.ID), Metadata: expandedMatch(st, *ref.Metadata)})
+		}
+	}
+	view.Diagnostics = append(view.Diagnostics, c.failures...)
 	return view, nil
+}
+
+// requiredInputs keeps the built-in prerequisite gates independent of optional
+// additional declarations, while sharing the same selector and byte collector.
+func (c *boundaryCollector) requiredInputs(st State) []FileVersion {
+	refs := []workflow.Reference{{Path: c.store.documentPath(st, "Rule"), Metadata: &okfmemory.DocumentMatch{Type: "Rule"}}}
+	if st.Stage != "discovery" {
+		id := st.ID
+		refs = append(refs, workflow.Reference{Match: &okfmemory.DocumentMatch{Type: "Requirements", IntentID: &id}, Count: "one", Version: "accepted", AcceptedAt: "discovery"})
+		if st.Stage == "tdd" || st.Stage == "integration" {
+			refs = append(refs, workflow.Reference{Match: &okfmemory.DocumentMatch{Type: "ImplementationPlan", IntentID: &id}, Count: "one", Version: "accepted", AcceptedAt: "planning"})
+		}
+	}
+	return c.references(st, refs)
 }

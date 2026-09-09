@@ -33,6 +33,13 @@ func (s Service) executeFlow(r cli.MinimalRequest) ([]byte, error) {
 		}
 		return encode(view)
 	}
+	if r.Action == "documents" && r.File == "" {
+		st, err := store.Read(r.Target)
+		if err != nil {
+			return nil, err
+		}
+		return encode(flow.IntentDocuments{Inputs: append([]flow.DocumentDeclaration{}, st.Config.DocumentInputs...), Outputs: append([]flow.DocumentDeclaration{}, st.Config.DocumentOutputs...)})
+	}
 	if r.Action == "show" {
 		st, err := store.Read(r.Target)
 		if err != nil {
@@ -68,6 +75,12 @@ func (s Service) executeFlow(r cli.MinimalRequest) ([]byte, error) {
 	}
 	var result flow.State
 	switch {
+	case r.Action == "documents":
+		var documents flow.IntentDocuments
+		if err := s.decodeDraft(r.File, &documents); err != nil {
+			return nil, err
+		}
+		result, err = store.SetDocuments(r.Target, expect, documents)
 	case r.Action == "begin":
 		result, err = store.Begin(r.Target, expect)
 	case r.Command == "unit":
@@ -78,6 +91,15 @@ func (s Service) executeFlow(r cli.MinimalRequest) ([]byte, error) {
 		request.Action = r.Action
 		result, err = store.Unit(r.Target, expect, request)
 	case r.Action == "configure":
+		var fields map[string]json.RawMessage
+		if err := s.decodeDraft(r.File, &fields); err != nil {
+			return nil, err
+		}
+		for _, key := range []string{"document_inputs", "document_outputs"} {
+			if _, ok := fields[key]; ok {
+				return nil, invalid("document lists are managed by intent documents")
+			}
+		}
 		var config flow.Config
 		if err := s.decodeDraft(r.File, &config); err != nil {
 			return nil, err
@@ -110,6 +132,8 @@ func (s Service) executeFlow(r cli.MinimalRequest) ([]byte, error) {
 					return nil, invalid("configure cannot remove an uncollected Unit")
 				}
 			}
+			config.DocumentInputs = result.Config.DocumentInputs
+			config.DocumentOutputs = result.Config.DocumentOutputs
 			result.Config = config
 			result, err = store.Save(result, expect)
 		}

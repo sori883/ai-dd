@@ -11,12 +11,15 @@ import (
 )
 
 type boundaryCollector struct {
-	proof    []FileVersion
-	contents map[string][]byte
-	store    Store
-	files    []FileVersion
-	sources  []FileVersion
-	failures []string
+	scanned   bool
+	documents []resolvedDocument
+	outputs   bool
+	proof     []FileVersion
+	contents  map[string][]byte
+	store     Store
+	files     []FileVersion
+	sources   []FileVersion
+	failures  []string
 }
 
 func (c *boundaryCollector) require(ok bool, message string) {
@@ -170,24 +173,8 @@ func (s Store) startState(st State) (Gate, []FileVersion, []FileVersion) {
 		c.require(false, err.Error())
 	}
 	c.references(st, d.Procedures[st.Stage].Inputs)
+	c.requiredInputs(st)
 	c.require(st.Status == "active", "Intent is not active")
-	c.document(st, s.documentPath(st, "Rule"), "Rule", false)
-	for _, kind := range []string{"CurrentAnalysis", "Architecture"} {
-		c.document(st, s.documentPath(st, kind), kind, true)
-	}
-	if d.Before("discovery", st.Stage) {
-		name := s.documentPath(st, "Requirements")
-		c.document(st, name, "Requirements", false)
-		c.accepted(st, "discovery", name)
-	}
-	if d.Before("planning", st.Stage) {
-		name := s.documentPath(st, "ImplementationPlan")
-		c.document(st, name, "ImplementationPlan", false)
-		c.accepted(st, "planning", name)
-		for _, name := range st.Config.ADR.Refs {
-			c.document(st, name, "ADR", false)
-		}
-	}
 	if st.Stage == "integration" {
 		a, ok := st.Accepted["tdd"]
 		c.require(ok, "accepted tdd required")
@@ -195,7 +182,10 @@ func (s Store) startState(st State) (Gate, []FileVersion, []FileVersion) {
 			c.accepted(st, "tdd", f.Path)
 		}
 	}
-	sources := boundaryCollector{store: s}
+	if c.contents == nil {
+		c.contents = map[string][]byte{}
+	}
+	sources := boundaryCollector{store: s, contents: c.contents}
 	for _, name := range st.Config.MaterialSources {
 		sources.material(name)
 	}

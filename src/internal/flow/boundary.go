@@ -99,19 +99,7 @@ func (s Store) checkWorkState(st State) error {
 		return invalid("active Intent and intent begin required")
 	}
 	c := boundaryCollector{store: s}
-	if d.Before("discovery", st.Stage) {
-		c.accepted(st, "discovery", s.documentPath(st, "Requirements"))
-	}
-	if d.Before("planning", st.Stage) {
-		c.accepted(st, "planning", s.documentPath(st, "ImplementationPlan"))
-	}
-	if st.Stage == "integration" {
-		a, ok := st.Accepted["tdd"]
-		c.require(ok, "accepted tdd required")
-		for _, f := range a.Outputs {
-			c.accepted(st, "tdd", f.Path)
-		}
-	}
+	c.workInputs(st, d.Procedures[st.Stage].Inputs)
 	if len(c.failures) > 0 {
 		return invalid(strings.Join(c.failures, "; "))
 	}

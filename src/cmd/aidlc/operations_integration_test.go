@@ -120,7 +120,7 @@ func (f operationsFixture) action(s flow.State, action string, extra ...string) 
 }
 func (f operationsFixture) request(value any) string {
 	f.t.Helper()
-	raw, err := json.Marshal(value)
+	raw, err := marshalFlowRequest(value)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func (f operationsFixture) tdd() flow.State {
 	s := f.create("Unit work")
 	writeMinimalFixture(f.t, filepath.Join(f.root, "body.md"), "Current operation contract.\n")
 	f.ok("memory", "create", "knowledge/current", "--space", "default", "--body-file", "body.md", "--actor", "process:test", "--type", "Design", "--title", "Current", "--description", "Operations")
-	f.ok("memory", "create", "ADR/current", "--space", "default", "--body-file", "body.md", "--actor", "process:test", "--type", "ADR", "--title", "Decision", "--description", "Rationale")
+	f.ok("memory", "create", "adr/current", "--space", "default", "--body-file", "body.md", "--actor", "process:test", "--type", "adr", "--title", "Decision", "--description", "Rationale")
 	head := f.commit("shared assets")
 	c := flow.Config{NoMaterialsReason: "fixture has no prior materials", Objective: "Unit operation", Scope: []string{"a.go", "b.go"}, Acceptance: []string{"operations are isolated"}, CodeRevision: head, ADR: flow.ADR{Reason: "No additional decision"}, Artifacts: []flow.Artifact{{Path: "aidlc/spaces/default/knowledge/knowledge/current.md", Kind: "Knowledge", Stage: "discovery"}}}
 	s = f.action(s, "configure", "--file", f.request(c))

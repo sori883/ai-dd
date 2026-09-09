@@ -24,9 +24,8 @@ type Artifact struct {
 	Stage string `json:"stage"`
 }
 type ADR struct {
-	Required bool     `json:"required"`
-	Reason   string   `json:"reason"`
-	Refs     []string `json:"refs"`
+	Required bool   `json:"required"`
+	Reason   string `json:"reason"`
 }
 type Unit struct {
 	ID               string   `json:"id"`
@@ -40,21 +39,22 @@ type Unit struct {
 	Tests            []string `json:"tests"`
 }
 type Config struct {
-	MaterialSources   []string   `json:"material_sources"`
-	NoMaterialsReason string     `json:"no_materials_reason"`
-	FeatureKnowledge  []string   `json:"feature_knowledge"`
-	TestResults       []string   `json:"test_results"`
-	Tests             []string   `json:"tests"`
-	DirectCommit      string     `json:"direct_commit"`
-	Objective         string     `json:"objective"`
-	Plan              string     `json:"plan"`
-	CodeRevision      string     `json:"code_revision"`
-	Scope             []string   `json:"scope"`
-	Acceptance        []string   `json:"acceptance"`
-	Unknowns          []string   `json:"unknowns"`
-	ADR               ADR        `json:"adr"`
-	Artifacts         []Artifact `json:"artifacts"`
-	Units             []Unit     `json:"units"`
+	DocumentInputs    []DocumentDeclaration `json:"document_inputs"`
+	DocumentOutputs   []DocumentDeclaration `json:"document_outputs"`
+	MaterialSources   []string              `json:"material_sources"`
+	NoMaterialsReason string                `json:"no_materials_reason"`
+	TestResults       []string              `json:"test_results"`
+	Tests             []string              `json:"tests"`
+	DirectCommit      string                `json:"direct_commit"`
+	Objective         string                `json:"objective"`
+	Plan              string                `json:"plan"`
+	CodeRevision      string                `json:"code_revision"`
+	Scope             []string              `json:"scope"`
+	Acceptance        []string              `json:"acceptance"`
+	Unknowns          []string              `json:"unknowns"`
+	ADR               ADR                   `json:"adr"`
+	Artifacts         []Artifact            `json:"artifacts"`
+	Units             []Unit                `json:"units"`
 }
 type Gate struct {
 	Target  string `json:"target"`
@@ -110,7 +110,7 @@ func (s Store) path(id string) string {
 	return "aidlc/spaces/" + s.Space + "/intents/" + id + "/state.json"
 }
 func (s Store) validate(st State) error {
-	if st.SchemaVersion != 3 || !validID(st.ID) || st.Space != s.Space || st.Revision == 0 || strings.TrimSpace(st.Name) == "" || !utf8.ValidString(st.Name) {
+	if st.SchemaVersion != 4 || !validID(st.ID) || st.Space != s.Space || st.Revision == 0 || strings.TrimSpace(st.Name) == "" || !utf8.ValidString(st.Name) {
 		return invalid("invalid state identity or schema")
 	}
 	hashPattern := regexp.MustCompile(`^[a-f0-9]{64}$`)
@@ -171,7 +171,7 @@ func (s Store) Create(name string) (State, error) {
 	}
 	id := make([]byte, 16)
 	rand.Read(id)
-	st := State{SchemaVersion: 3, DefinitionHash: d.Hash, ID: fmt.Sprintf("%x", id), Space: s.Space, Name: name, Revision: 1, Stage: d.Graph.Start, Status: "active"}
+	st := State{SchemaVersion: 4, DefinitionHash: d.Hash, ID: fmt.Sprintf("%x", id), Space: s.Space, Name: name, Revision: 1, Stage: d.Graph.Start, Status: "active"}
 	if _, err := os.Lstat(filepath.Join(s.Root, s.path(st.ID))); !os.IsNotExist(err) {
 		return State{}, fmt.Errorf("identity already exists: %w", fs.ErrExist)
 	}
@@ -263,6 +263,9 @@ func (s Store) Save(st State, expect uint64) (State, error) {
 	}
 	if err := s.guardReassignment(current, nil); err != nil {
 		return State{}, err
+	}
+	if !reflect.DeepEqual(st.Config.DocumentInputs, current.Config.DocumentInputs) || !reflect.DeepEqual(st.Config.DocumentOutputs, current.Config.DocumentOutputs) {
+		return State{}, invalid("document lists are managed by intent documents")
 	}
 	if st.DefinitionHash != current.DefinitionHash || !reflect.DeepEqual(st.PendingReopen, current.PendingReopen) {
 		return State{}, invalid("workflow binding is CLI owned")

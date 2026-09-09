@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"github.com/sori883/ai-dd/src/internal/okfmemory"
 	"io"
 	"io/fs"
 	"os"
@@ -17,45 +18,85 @@ import (
 
 func (s Store) endDocuments(st State) *boundaryCollector {
 	c := &boundaryCollector{store: s}
-	d, err := s.definition()
+	return s.collectEndDocuments(st, c)
+}
+func (s Store) collectEndDocuments(st State, c *boundaryCollector) *boundaryCollector {
+	d, err := s.boundDefinition(st)
 	if err != nil {
 		c.require(false, err.Error())
 		return c
 	}
-	if err := s.checkWorkState(st); err != nil {
-		c.require(false, err.Error())
-	}
-	c.references(st, d.Procedures[st.Stage].Inputs)
+	c.require(st.Status == "active", "Intent is not active")
+	c.workInputs(st, d.Procedures[st.Stage].Inputs)
+	c.outputs = true
 	for _, version := range c.references(st, d.Procedures[st.Stage].Outputs) {
 		c.recordProof(version)
 	}
-	c.require(st.Status == "active", "Intent is not active")
-	c.require(st.Entry != nil && st.Entry.Stage == st.Stage, "intent begin required")
-	c.document(st, s.documentPath(st, "Rule"), "Rule", false)
-	c.document(st, s.documentPath(st, "Requirements"), "Requirements", false)
+	c.outputs = false
+	kinds := []string{"Requirements"}
 	if st.Stage != "discovery" {
-		c.accepted(st, "discovery", s.documentPath(st, "Requirements"))
-		c.document(st, s.documentPath(st, "ImplementationPlan"), "ImplementationPlan", false)
+		kinds = append(kinds, "ImplementationPlan")
 	}
-	if d.Before("planning", st.Stage) {
-		c.accepted(st, "planning", s.documentPath(st, "ImplementationPlan"))
+	for _, kind := range kinds {
+		id := st.ID
+		for _, name := range c.selected(st, okfmemory.DocumentMatch{Type: kind, IntentID: &id}, "one") {
+			c.document(st, name, kind, false)
+			if kind == "Requirements" && st.Stage != "discovery" {
+				c.accepted(st, "discovery", name)
+			}
+			if kind == "ImplementationPlan" && d.Before("planning", st.Stage) {
+				c.accepted(st, "planning", name)
+			}
+		}
 	}
 	c.require(len(st.Config.MaterialSources) > 0 || strings.TrimSpace(st.Config.NoMaterialsReason) != "", "material_sources or no_materials_reason required")
-	materials := boundaryCollector{store: s}
+	if c.contents == nil {
+		c.contents = map[string][]byte{}
+	}
+	materials := boundaryCollector{store: s, contents: c.contents}
 	for _, source := range st.Config.MaterialSources {
 		materials.material(source)
 	}
 	c.failures = append(c.failures, materials.failures...)
 	for _, kind := range []string{"CurrentAnalysis", "Architecture"} {
-		c.document(st, s.documentPath(st, kind), kind, len(st.Config.MaterialSources) == 0 && st.Stage != "integration")
+		count := "optional"
+		if len(st.Config.MaterialSources) > 0 || st.Stage == "integration" {
+			count = "one"
+		}
+		for _, name := range c.selected(st, okfmemory.DocumentMatch{Type: kind}, count) {
+			c.document(st, name, kind, false)
+		}
 	}
 	if st.Stage == "integration" {
-		c.require(len(st.Config.FeatureKnowledge) > 0, "feature_knowledge required")
+		feature := false
 		prefix := "aidlc/spaces/" + s.Space + "/knowledge/knowledge/"
-		for _, name := range st.Config.FeatureKnowledge {
-			c.require(strings.HasPrefix(name, prefix) && name != s.documentPath(st, "CurrentAnalysis") && name != s.documentPath(st, "Architecture"), "invalid feature Knowledge path")
-			c.document(st, name, "Knowledge", false)
+		for _, doc := range st.Config.DocumentOutputs {
+			if doc.Stage == "integration" && doc.Metadata.Type == "Knowledge" && strings.HasPrefix(doc.Path, prefix) && doc.Path != s.documentPath(st, "CurrentAnalysis") && doc.Path != s.documentPath(st, "Architecture") {
+				feature = true
+			}
 		}
+		c.require(feature, "declared feature Knowledge output required")
+	}
+	if st.Config.ADR.Required {
+		adopted := false
+		for _, list := range [][]DocumentDeclaration{st.Config.DocumentInputs, st.Config.DocumentOutputs} {
+			for _, declaration := range list {
+				if declaration.Metadata.Type != "adr" || (declaration.Stage != st.Stage && !d.Before(declaration.Stage, st.Stage)) {
+					continue
+				}
+				match := expandedMatch(st, declaration.Metadata)
+				raw, ok := c.file(declaration.Path)
+				if !ok {
+					continue
+				}
+				doc, err := okfmemory.Parse(raw)
+				valid := err == nil && match.Matches(doc) && strings.HasPrefix(declaration.Path, "aidlc/spaces/"+s.Space+"/knowledge/adr/")
+				c.require(valid, "invalid adopted adr: "+declaration.Path)
+				c.document(st, declaration.Path, "adr", false)
+				adopted = adopted || valid
+			}
+		}
+		c.require(adopted, "declared adr required")
 	}
 	if st.Stage == "tdd" || st.Stage == "integration" {
 		c.results(st)

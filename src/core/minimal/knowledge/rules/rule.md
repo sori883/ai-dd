@@ -35,3 +35,5 @@ Sensorは実行結果JSONの形式・成果版・成功commandを確認し、実
 定義のpath・bytesが変わったIntentは元定義復元または新Intentで再開し、暗黙に結び直さない。
 reopenの理由はIntent作業記録へCLIが保存する。保存途中は同一要求のみ再試行し、記録を消して成功扱いしない。
 outputsは必要な文書だけで空でもよい。コード・テスト・ADR要否の検査は引き続き必要。
+
+入力は procedure の metadata 条件と解決 path/版を確認する。可変成果は intent documents の具体 outputs に全件登録してから保存する。受入済み文書の変更は reopen する。ADR は knowledge/adr/ と type adr を使い、新規 ADR の Intent ID は保持する。

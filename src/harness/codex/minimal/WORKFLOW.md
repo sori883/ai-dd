@@ -32,3 +32,8 @@ runningなら既存pause/resumeでneeds_confirmationにする。`previous_run_st
 CLI成功まで新workerを開始しない。runtimeはGit共有しない。保存途中は他のstate更新（configureや別Unit操作など）が拒否される。同じexpect/JSONで再試行し、
 既にrunningならshowと現在assignmentで成功を確認する。新run_idと現在HEADで再テスト後result/integrateする。
 レビューは新root/sessionへassignし、現在targetの独立reviewを受け直す。
+
+## 文書の選択と保存
+
+段階の入力は `intent procedure` に示す metadata 条件と解決済み path を確認する。出力は具体 path と metadata に従う。可変の文書は `intent documents ID --space SPACE` で読み、`--expect REV --file DOCUMENTS.json` を付けて inputs/outputs 両一覧を置換する。詳細と JSON の型は `intent documents --help` で確認する。新しい出力は未存在でも登録できる。実行結果 test_results は実行後の存在するファイルだけを登録する。
+ADR の保存は `adr/NAME`、type は `adr`。Knowledge は現行の what/how、adr は判断の why。既存共有文書の ID/日時を形式だけのために付け直さない。

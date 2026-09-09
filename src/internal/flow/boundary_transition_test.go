@@ -111,7 +111,7 @@ func TestBoundaryTransitionMaterialsConfigure(t *testing.T) {
 	}
 }
 
-func TestBoundaryTransitionIntegrationDoesNotFreezeMaterials(t *testing.T) {
+func TestSelectedDocumentsIntegrationDoesNotFreezeMaterials(t *testing.T) {
 	s, st := boundaryFixture(t)
 	req := boundaryDoc(t, s, st, "Requirements")
 	plan := boundaryDoc(t, s, st, "ImplementationPlan")

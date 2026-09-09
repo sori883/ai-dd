@@ -35,7 +35,7 @@ func isMinimal(args []string) bool {
 			return true
 		}
 		switch args[1] {
-		case "create", "list", "show", "procedure", "check", "begin", "switch", "configure", "review", "advance", "pause", "resume", "reopen", "wait", "cancel":
+		case "create", "list", "show", "documents", "procedure", "check", "begin", "switch", "configure", "review", "advance", "pause", "resume", "reopen", "wait", "cancel":
 			return true
 		}
 		return false
@@ -112,6 +112,9 @@ func ParseMinimal(args []string) (r MinimalRequest, err error) {
 		allowed += " --boundary"
 	case "memory/show", "intent/show", "intent/procedure":
 		min, max = 1, 1
+	case "intent/documents":
+		min, max = 1, 1
+		allowed += " --expect --file"
 	case "intent/configure", "intent/review", "unit/claim", "unit/result", "unit/integrate", "unit/confirm", "unit/reassign":
 		min, max = 1, 1
 		allowed += " --expect --file"
@@ -261,6 +264,9 @@ func ParseMinimal(args []string) (r MinimalRequest, err error) {
 		if status := r.Metadata.Status; status != nil && *status != "draft" && *status != "stable" && *status != "deprecated" {
 			return fail("--status must be draft, stable or deprecated")
 		}
+	}
+	if r.Command == "intent" && r.Action == "documents" && ((r.Expect == "") != (r.File == "")) {
+		return fail("--expect and --file must be supplied together")
 	}
 	return r, nil
 }

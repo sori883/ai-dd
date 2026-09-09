@@ -101,7 +101,8 @@ func (s Store) checkStateSnapshot(st State) (Gate, *boundaryCollector, error) {
 		}
 		h.Write(content)
 	}
-	adrRefs := map[string]bool{}
+	c := &boundaryCollector{store: s}
+
 	stages := map[string]int{"discovery": 0, "planning": 1, "tdd": 2, "integration": 3}
 	for _, artifact := range config.Artifacts {
 		if !fs.ValidPath(artifact.Path) || strings.Contains(artifact.Path, "\\") {
@@ -125,10 +126,9 @@ func (s Store) checkStateSnapshot(st State) (Gate, *boundaryCollector, error) {
 			continue
 		}
 
-		content, err := filestore.ReadFile(s.Root, artifact.Path)
+		content, good := c.file(artifact.Path)
 		h.Write([]byte(artifact.Path))
-		if err != nil {
-			h.Write([]byte(err.Error()))
+		if !good {
 			require(false, "unreadable artifact: "+artifact.Path)
 			continue
 		}
@@ -146,18 +146,13 @@ func (s Store) checkStateSnapshot(st State) (Gate, *boundaryCollector, error) {
 		}
 		require(strings.TrimSpace(doc.String("type")) != "", "artifact type required")
 		if artifact.Kind == "ADR" {
-			require(doc.String("type") == "ADR", "ADR type mismatch")
+			require(doc.String("type") == "adr", "ADR type mismatch")
 		}
-		if artifact.Kind == "ADR" && strings.HasPrefix(artifact.Path, prefix+"ADR/") {
-			adrRefs[artifact.Path] = true
+		if artifact.Kind == "ADR" {
+			require(strings.HasPrefix(artifact.Path, prefix+"adr/"), "ADR outside lowercase adr directory")
 		}
 	}
-	if config.ADR.Required {
-		require(len(config.ADR.Refs) > 0, "ADR reference required")
-		for _, ref := range config.ADR.Refs {
-			require(adrRefs[ref], "ADR reference missing or outside ADR directory")
-		}
-	} else {
+	if !config.ADR.Required {
 		require(strings.TrimSpace(config.ADR.Reason) != "", "reason for no ADR required")
 	}
 	if st.Stage != "discovery" {
@@ -185,7 +180,7 @@ func (s Store) checkStateSnapshot(st State) (Gate, *boundaryCollector, error) {
 			require(integrationErr == nil, "Unit integration not present in current HEAD")
 		}
 	}
-	c := s.endDocuments(st)
+	c = s.collectEndDocuments(st, c)
 	failures = append(failures, c.failures...)
 	extra, err := json.Marshal(append(append([]FileVersion(nil), c.files...), c.sources...))
 	if err != nil {

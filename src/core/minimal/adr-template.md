@@ -1,5 +1,5 @@
 ---
-type: ADR
+type: adr
 title: 判断の名前
 description: 判断理由と影響
 status: draft

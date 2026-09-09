@@ -11,7 +11,7 @@ func TestFlowSpaceADR(t *testing.T) {
 	if _, err := CreateSpace(RootInput{ExplicitDir: root}, "new"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(root, "aidlc/spaces/new/knowledge/ADR/index.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, "aidlc/spaces/new/knowledge/adr/index.md")); err != nil {
 		t.Fatal(err)
 	}
 }

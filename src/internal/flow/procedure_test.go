@@ -15,9 +15,9 @@ func TestProcedureBoundaryReferences(t *testing.T) {
 			p := filepath.Join(s.Root, "aidlc/workflow/stages/discovery.md")
 			raw, _ := os.ReadFile(p)
 			if boundary == "start" {
-				raw = []byte(strings.Replace(string(raw), "inputs:\n", "inputs:\n  - path: \"${knowledge_root}/knowledge/extra.md\"\n    version: current\n", 1))
+				raw = []byte(strings.Replace(string(raw), "inputs:\n", "inputs:\n  - match: {type: Note}\n    count: one\n    version: current\n", 1))
 			} else {
-				raw = []byte(strings.Replace(string(raw), "outputs: \n", "outputs: \n  - role: supporting_document\n    path: \"${knowledge_root}/knowledge/extra.md\"\n", 1))
+				raw = []byte(strings.Replace(string(raw), "outputs:\n", "outputs:\n  - role: supporting_document\n    path: \"${knowledge_root}/knowledge/extra.md\"\n    metadata: {type: Note}\n", 1))
 			}
 			os.WriteFile(p, raw, 0644)
 			st, err := s.Create("modified procedure")
@@ -61,9 +61,9 @@ func TestProcedureBoundaryAcceptedTDDOutput(t *testing.T) {
 			t.Fatal(err)
 		}
 		if stage == "tdd" {
-			raw = []byte(strings.Replace(string(raw), "outputs: []", "outputs:\n  - role: decision\n    path: \"${knowledge_root}/knowledge/decision.md\"", 1))
+			raw = []byte(strings.Replace(string(raw), "outputs:\n", "outputs:\n  - role: decision\n    path: \"${knowledge_root}/knowledge/decision.md\"\n    metadata: {type: Design}\n", 1))
 		} else {
-			raw = []byte(strings.Replace(string(raw), "inputs:\n", "inputs:\n  - path: \"${knowledge_root}/knowledge/decision.md\"\n    version: accepted\n    accepted_at: tdd\n", 1))
+			raw = []byte(strings.Replace(string(raw), "inputs:\n", "inputs:\n  - match: {type: Design}\n    count: one\n    version: accepted\n    accepted_at: tdd\n", 1))
 		}
 		if err = os.WriteFile(p, raw, 0644); err != nil {
 			t.Fatal(err)

@@ -12,7 +12,7 @@ func TestFlowInstallAssets(t *testing.T) {
 	if _, err := Codex(root, "/opt/aidlc"); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"aidlc/spaces/default/knowledge/ADR/index.md", "aidlc/templates/adr.md", ".agents/skills/aidlc/SKILL.md", ".codex/agents/aidlc-reviewer.toml"} {
+	for _, name := range []string{"aidlc/spaces/default/knowledge/adr/index.md", "aidlc/templates/adr.md", ".agents/skills/aidlc/SKILL.md", ".codex/agents/aidlc-reviewer.toml"} {
 		if _, err := os.Stat(filepath.Join(root, name)); err != nil {
 			t.Error(err)
 		}
