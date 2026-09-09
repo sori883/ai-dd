@@ -38,7 +38,8 @@ sensors:
 
 メインAIがaidlc-requirementsへ目的・要件・受入条件の整理、aidlc-researcherへ根拠の調査を依頼する。
 両結果が揃った後、aidlc-stage-plannerへ現在state/計画、6段階の定義、Rule、要件、調査結果、制約と成果物を渡す。
-担当から採否・順序・理由・省略理由・期待成果物・不足情報とPLAN.json案を受け取り、ユーザーへ説明する。
+担当から採否・順序・理由・省略理由・期待する文書（なければなし）・不足情報とPLAN.json案を受け取り、ユーザーへ説明する。
+プログラム・テストコード・commitを文書outputsへ列挙しない。検証証拠の必要性は文書outputsとは別に説明する。
 メインAIが案をintent planへ提示し、実際の回答をplan-approvalへ記録する。最終決定者はユーザー。
 計画承認と成果承認は分ける。担当はread-onlyで、共有保存・承認・子起動を行わない。
 

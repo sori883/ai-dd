@@ -25,3 +25,14 @@ discoveryの定義と共通入口、開発文書を更新した。schemaと6段�
 ## 親finalへの引継ぎ
 
 loopでは全体test/race/vet/build/E2E/liveを実行していない。既存4担当smokeを適応した親の `/tmp/ai-dd-stage-planner-final.py` と `/tmp/ai-dd-stage-planner-live.py` を利用する。fresh install後にexact named agentを起動し、SubagentStart/Stop、全文返答の6段階/PLAN適合、共有プロジェクト不変更を照合する。配置testの成功を実機起動や成果品質の保証としない。定義hash変更に伴う新配布・新Intent利用は既存契約どおり。
+
+## 実機観測後の文書指示修正
+
+work_unit_id: issue155-doc-output-repair、verification_mode: loop。開始HEADはdf51a82373d05195ec691d3371b1bce8d0f9dacf。親の実機検証では新agent起動・返答・共有ファイル不変更が成功したが、期待成果欄にTDDのテスト、help変更、commitが文書成果と混在した。既決のoutputsは文書だけで、ない場合は「なし」とする境界に合わせ、agent原稿・discovery・共通入口・開発文書を明確化した。プログラム、テストコード、commitは文書outputsへ列挙せず、検証証拠の必要性は別に説明する。schema/API変更はない。文書指示修正のため人工REDは作らない。
+
+修正後の確認:
+
+- `go test -count=1 ./src/internal/workflow -run '^TestStagePlanner'`: exit 0、b51eaf。
+- `go test -count=1 ./src/internal/install -run '^TestStagePlanner'`: exit 0、fcd3c1。
+- `go test -count=1 ./src/internal/flow -run '^TestStagePlanner'`: exit 0、f8b813。
+- `git diff --check`: exit 0、3dd8f3。Goファイル変更なしのためgofmt適用は不要。全体検証は実行していない。

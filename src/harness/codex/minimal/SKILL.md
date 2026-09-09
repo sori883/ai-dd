@@ -31,3 +31,4 @@ SessionStartが示すsession IDとdraftパスを使い、別の実行ファイ�
 製品の5担当はaidlc-requirements、aidlc-researcher、aidlc-stage-planner、aidlc-worker、aidlc-reviewer。
 メインAIはdiscoveryの要件整理・調査結果が揃った後、および途中の計画変更時にaidlc-stage-plannerを呼ぶ。
 担当はread-onlyでステージ採否・順序・PLAN案を返す。メインAIが案を説明してユーザー承認を受け、共有保存を行う。
+期待する文書はなければ「なし」とし、プログラム・テストコード・commitを文書outputsへ列挙しない。検証証拠の必要性は別に説明する。

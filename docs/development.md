@@ -139,8 +139,9 @@ model/effortは定義で固定せず利用者設定を継承する。共有state
 
 専用のaidlc-stage-plannerはdiscovery内で要件整理・調査結果が揃った後にメインAIが呼び出します。
 Intent/Space、stateと現在計画、6段階カタログ・手順、Rule、要件、調査結果、制約と利用可能な成果物を渡します。
-採否・順序・理由・省略理由・期待成果物・不足情報とPLAN.json案を回収し、メインAIがユーザーへ説明して
-plan/plan-approvalで保存します。途中の追加・省略・並べ替え・reopenにも同担当を使います。
+採否・順序・理由・省略理由・期待する文書（なければなし）・不足情報とPLAN.json案を回収し、メインAIがユーザーへ説明して
+plan/plan-approvalで保存します。
+プログラム・テストコード・commitを文書outputsへ列挙しない。検証証拠の必要性は文書outputsとは別に説明する。途中の追加・省略・並べ替え・reopenにも同担当を使います。
 実装手順やUnit詳細のplanning、広い追加調査のresearcher、独立reviewのreviewerとは責任を分けます。
 新担当はread-onlyで共有保存・承認・子起動を行いません。model/effortは既存担当と同じく利用者設定を継承します。
 定義hashが変わるため新しい配布と新Intentで利用し、旧Intentを移行したり既設定義を上書きしたりしません。
