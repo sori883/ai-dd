@@ -105,3 +105,11 @@ P2: 固定Rule入力のtype以外のtitle/description/status/tags/intent_idの�
 - 変更Goへのgofmtと`git diff --check`。
 
 一般metadata selectorの件数・完全一致・曖昧重複拒否は既存okfmemory回帰で維持を確認。全体finalは実行していない。上記hash一覧のworkflow定義/関連testは本修復で更新され、確定内容は修復commitを参照する。
+
+## final後の移転fixture追従
+
+work_unit_id=rule-skills-relocation-fixture-repair、verification_mode=loop。開始HEADは3f05b3ddc691aea31c7adea88b20b1dacf661afc。親finalのintegrationログ（/var/folders/9w/921pjkys39q28sk4xsc0hs000000gn/T/ai-dd-rule-skills-final-4o0nvb07/integration.log）でTestRelocationCommandが新CLI skillを無関係ファイルとして扱って失敗した。親報告では全test/race/vet/tidy/format/diffは成功していた。
+
+承認済み3ファイル移転へfixtureを追従し、両skillは旧binaryのshell引用済み参照だけを新binaryへ置換した期待bytesと一致することを追加検査する。新旧bytesの差、ファイル数不変、他全ファイルhash不変、独自hook保持の検査を維持する。製品Goコードは変更していない。明白な旧fixture補正なので人工REDなし。
+
+`go test -tags=integration -run '^$' ./src/cmd/aidlc` はexit 0（abd8f3、no tests to run）。これは明示許可されたcompile-only確認であり、E2E成功/RED/GREENとは扱わない。当該Goへのgofmt、git diff --checkもexit 0。実CLI移転E2Eは親のfresh finalで再実行する。
