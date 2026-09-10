@@ -10,16 +10,16 @@ import (
 	"strings"
 )
 
-const usage = `Usage: aidlc-dist --input-dir DIR --output-dir NEW_DIR --version VERSION --commit SHA --go-version GO_VERSION [--targets OS/ARCH,...]
+const usage = `使い方: aidlc-dist --input-dir DIR --output-dir NEW_DIR --version VERSION --commit SHA --go-version GO_VERSION [--targets OS/ARCH,...]
 
-Developer-only local packaging; no upload or release is performed.
---input-dir    Built aidlc-OS-ARCH binaries (.exe for Windows)
---output-dir   A directory that does not exist yet
---version      Safe candidate version, for example dev-abcdef0
---commit       40 lowercase hexadecimal source commit digits
---go-version   Go toolchain version, for example go1.26.4
---targets      Nonempty subset of darwin/linux/windows x amd64/arm64; defaults to all six
-Exit codes: 0 success/help, 2 invalid arguments, 1 filesystem or output failure.
+開発者向けにローカルで配布候補を梱包します。アップロードや公開は行いません。
+--input-dir    ビルド済みの aidlc-OS-ARCH を置いたディレクトリ（Windowsは末尾に .exe）
+--output-dir   出力先の新しいディレクトリ（既存のディレクトリは指定不可）
+--version      配布候補の版名。例: dev-abcdef0
+--commit       ソースのコミットID（小文字の16進数40桁）
+--go-version   ビルドに使用したGoの版。例: go1.26.4
+--targets      darwin/linux/windows と amd64/arm64 の組合せを1つ以上指定。省略時は全6対象
+終了コード: 0は成功またはヘルプ表示、2は引数の不正、1はファイル操作や出力の失敗。
 `
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
