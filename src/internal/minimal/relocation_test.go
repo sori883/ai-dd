@@ -33,6 +33,9 @@ func TestRelocationHook(t *testing.T) {
 		t.Fatal(err)
 	}
 	hook(t, s, "UserPromptSubmit", "", "", "", false)
+	if err := os.WriteFile(filepath.Join(s.Root, "request.json"), []byte(`{"coordinator_session":"session"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
 	command := "/opt/aidlc unit reassign " + st.ID + " --space default --expect 1 --file request.json"
 	if deny(hook(t, s, "PreToolUse", "Bash", "reassign", command, false)) {
 		t.Fatal("same Intent reassign not recognized")

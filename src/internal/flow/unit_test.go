@@ -1,6 +1,9 @@
 package flow
 
 import (
+	"errors"
+	"fmt"
+	"github.com/sori883/ai-dd/src/internal/assignment"
 	"os"
 	"path/filepath"
 	"testing"
@@ -22,25 +25,25 @@ func unitFixture(t *testing.T) (Store, State, string) {
 }
 func TestFlowUnitClaimDependencyAndOverlap(t *testing.T) {
 	s, st, worker := unitFixture(t)
-	if _, err := s.Unit(st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "claim", Unit: "c", Session: "worker-c", Root: worker}); err == nil {
+	if _, err := assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "claim", Unit: "c", Session: "worker-c", Root: worker}); err == nil {
 		t.Fatal("dependent unit started")
 	}
 	var err error
-	st, err = s.Unit(st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "claim", Unit: "a", Session: "worker-a", Root: worker})
+	st, err = assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "claim", Unit: "a", Session: "worker-a", Root: worker})
 	if err != nil || st.Config.Units[0].Status != "running" {
 		t.Fatalf("claim %+v %v", st, err)
 	}
-	if _, err := s.Unit(st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "claim", Unit: "a", Session: "other", Root: worker}); err == nil {
+	if _, err := assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "claim", Unit: "a", Session: "other", Root: worker}); err == nil {
 		t.Fatal("double claim")
 	}
-	if _, err := s.Unit(st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "claim", Unit: "b", Session: "worker-b", Root: worker}); err == nil {
+	if _, err := assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "claim", Unit: "b", Session: "worker-b", Root: worker}); err == nil {
 		t.Fatal("shared worktree accepted")
 	}
 }
 func TestFlowUnitResultIntegrationAndResume(t *testing.T) {
 	s, st, worker := unitFixture(t)
 	var err error
-	st, err = s.Unit(st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "claim", Unit: "a", Session: "worker-a", Root: worker})
+	st, err = assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "claim", Unit: "a", Session: "worker-a", Root: worker})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +60,7 @@ func TestFlowUnitResultIntegrationAndResume(t *testing.T) {
 	request := UnitRequest{StepID: "s04", Action: "result", Unit: "a", Session: "worker-a", Root: worker, RunID: assignment.RunID, Commit: commit}
 	bad := request
 	bad.RunID = "wrong"
-	if _, err := s.Unit(st.ID, st.Revision, bad); err == nil {
+	if _, err := assignmentUnit(t, s, st.ID, st.Revision, bad); err == nil {
 		t.Fatal("foreign result accepted")
 	}
 	st, err = transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "pause", Reason: "interrupted"})
@@ -68,24 +71,24 @@ func TestFlowUnitResultIntegrationAndResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Unit(st.ID, st.Revision, request); err == nil {
+	if _, err := assignmentUnit(t, s, st.ID, st.Revision, request); err == nil {
 		t.Fatal("unconfirmed result accepted")
 	}
 	confirm := request
 	confirm.Action = "confirm"
-	st, err = s.Unit(st.ID, st.Revision, confirm)
+	st, err = assignmentUnit(t, s, st.ID, st.Revision, confirm)
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err = s.Unit(st.ID, st.Revision, request)
+	st, err = assignmentUnit(t, s, st.ID, st.Revision, request)
 	if err != nil || st.Config.Units[0].Status != "reported" {
 		t.Fatalf("result %+v %v", st, err)
 	}
-	if _, err := s.Unit(st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "integrate", Unit: "a", Commit: st.Config.CodeRevision}); err == nil {
+	if _, err := assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "integrate", Unit: "a", Commit: st.Config.CodeRevision}); err == nil {
 		t.Fatal("unintegrated result accepted")
 	}
 	flowGit(t, s.Root, "merge", "--ff-only", commit)
-	st, err = s.Unit(st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "integrate", Unit: "a", Commit: commit})
+	st, err = assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "integrate", Unit: "a", Commit: commit})
 	if err != nil || st.Config.Units[0].Status != "integrated" {
 		t.Fatalf("integration %+v %v", st, err)
 	}
@@ -96,7 +99,7 @@ func TestFlowUnitTwoParallelThenDependent(t *testing.T) {
 	flowGit(t, s.Root, "worktree", "add", "--detach", two, st.Config.CodeRevision)
 	var err error
 	for _, r := range []UnitRequest{{StepID: "s04", Action: "claim", Unit: "a", Session: "a", Root: one}, {StepID: "s04", Action: "claim", Unit: "b", Session: "b", Root: two}} {
-		st, err = s.Unit(st.ID, st.Revision, r)
+		st, err = assignmentUnit(t, s, st.ID, st.Revision, r)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -116,13 +119,13 @@ func TestFlowUnitTwoParallelThenDependent(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		st, err = s.Unit(st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "result", Unit: unit, Session: unit, Root: root, RunID: a.RunID, Commit: commit})
+		st, err = assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "result", Unit: unit, Session: unit, Root: root, RunID: a.RunID, Commit: commit})
 		if err != nil {
 			t.Fatal(err)
 		}
 		flowGit(t, s.Root, "merge", "--no-edit", commit)
 		head := flowGit(t, s.Root, "rev-parse", "HEAD")
-		st, err = s.Unit(st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "integrate", Unit: unit, Commit: head})
+		st, err = assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "integrate", Unit: unit, Commit: head})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -135,7 +138,7 @@ func TestFlowUnitTwoParallelThenDependent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err = s.Unit(st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "claim", Unit: "c", Session: "c", Root: three})
+	st, err = assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "claim", Unit: "c", Session: "c", Root: three})
 	if err != nil || st.Config.Units[2].Status != "running" {
 		t.Fatalf("dependent start %+v %v", st, err)
 	}
@@ -158,7 +161,31 @@ func TestFlowUnitRejectsPreIntegrationBase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Unit(st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "claim", Unit: "c", Session: "worker-c", Root: worker}); err == nil {
+	if _, err := assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "claim", Unit: "c", Session: "worker-c", Root: worker}); err == nil {
 		t.Fatal("worker base excludes integrated dependencies")
 	}
+}
+
+func assignmentUnit(t *testing.T, s Store, id string, expect uint64, r UnitRequest) (State, error) {
+	t.Helper()
+	if r.Action == "claim" || r.Action == "reassign" {
+		registry := assignment.Store{Root: s.Root}
+		reg, err := registry.Read()
+		if errors.Is(err, os.ErrNotExist) {
+			reg, err = registry.Init(assignment.InitRequest{RequestID: "fixture-init", HumanConfirmed: true, Reason: "synthetic test confirms known workers stopped"})
+		}
+		if err != nil {
+			return State{}, err
+		}
+		if r.RegistryEpoch == "" {
+			r.RegistryEpoch = reg.Epoch
+		}
+		if r.CoordinatorSession == "" {
+			r.CoordinatorSession = "fixture-main"
+		}
+		if r.RequestID == "" {
+			r.RequestID = fmt.Sprintf("%s-%s-%d", r.Action, r.Unit, expect)
+		}
+	}
+	return s.Unit(id, expect, r)
 }

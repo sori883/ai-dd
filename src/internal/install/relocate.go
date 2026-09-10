@@ -49,7 +49,13 @@ func relocate(root, binary, fromRoot, fromBinary string, write func(string, stri
 		oldSkill := []byte(strings.ReplaceAll(string(template), "@@BINARY@@", shellQuote(fromBinary)))
 		newSkill := []byte(strings.ReplaceAll(string(template), "@@BINARY@@", shellQuote(binary)))
 		if !bytes.Equal(before[i], oldSkill) && !bytes.Equal(before[i], newSkill) {
-			return result, fmt.Errorf("%s: unknown asset bytes: %w", paths[i], fs.ErrInvalid)
+			legacy := legacyAssignmentSkills[source]
+			legacyOld := []byte(strings.ReplaceAll(legacy, "@@BINARY@@", shellQuote(fromBinary)))
+			legacyNew := []byte(strings.ReplaceAll(legacy, "@@BINARY@@", shellQuote(binary)))
+			if !bytes.Equal(before[i], legacyOld) && !bytes.Equal(before[i], legacyNew) {
+				return result, fmt.Errorf("%s: unknown asset bytes: %w", paths[i], fs.ErrInvalid)
+			}
+			newSkill = legacyNew
 		}
 		after[i] = newSkill
 	}
@@ -216,7 +222,7 @@ func relocateHooks(raw []byte, old, new string) ([]byte, error) {
 					return fail("unexpected product context limit")
 				}
 				if event == "PreToolUse" || event == "PostToolUse" {
-					if nodeValue(group.object["matcher"]) != "^(Bash|apply_patch)$" {
+					if nodeValue(group.object["matcher"]) != "^(Bash|apply_patch)$" && nodeValue(group.object["matcher"]) != assignmentMatcher {
 						return fail("product matcher mismatch")
 					}
 				} else if group.object["matcher"] != nil {

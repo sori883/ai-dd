@@ -3,13 +3,16 @@ package cli
 import "strings"
 
 var publicActions = map[string]string{
-	"install": "codex", "space": "create list switch", "intent": "create list switch show procedure documents configure check begin review plan plan-approval approval finish history advance pause resume reopen wait cancel", "unit": "claim result integrate confirm reassign", "memory": "create update show search rules check", "session": "bind inspect",
+	"assignment": "init list show reserve check release reset",
+	"install":    "codex", "space": "create list switch", "intent": "create list switch show procedure documents configure check begin review plan plan-approval approval finish history advance pause resume reopen wait cancel", "unit": "claim result integrate confirm reassign", "memory": "create update show search rules check", "session": "bind inspect",
 }
 
 // Help recognizes only complete public help requests, without execution arguments.
 func Help(args []string) (string, bool) {
 	var target []string
 	switch {
+	case len(args) == 0:
+		target = nil
 	case len(args) > 0 && args[0] == "help":
 		target = args[1:]
 	case len(args) > 0 && (args[len(args)-1] == "--help" || args[len(args)-1] == "help"):
@@ -20,7 +23,7 @@ func Help(args []string) (string, bool) {
 		return "", false
 	}
 	if len(target) == 0 {
-		return helpText, true
+		return helpText + "\n  assignment init/list/show/reserve/check/release/reset — native worker作業場所の登録と明示解放（各ACTION --help）\n", true
 	}
 	if len(target) > 2 {
 		return "", false
@@ -36,6 +39,9 @@ func Help(args []string) (string, bool) {
 		return "", false
 	}
 	key := target[0] + "/" + target[1]
+	if target[0] == "assignment" {
+		return assignmentHelp(target[1]), true
+	}
 	if key == "memory/create" || key == "memory/update" {
 		return memoryWriteHelp(target[1]), true
 	}
@@ -62,6 +68,7 @@ func Help(args []string) (string, bool) {
 	case "intent":
 		text += "Intentのstage: initialization → discoveryが必須。その後はarchitecture-analysis / planning / tdd / integrationの採否と順序を計画する。status: active / waiting / paused / completed / cancelled。状態は専用操作で変更する。\n--expect は現在stateの正のrevision。競合時はshowで再読込する。finishはSensor・独立review・人間の成果承認が必要。advanceはfinishへの案内付きエラー。resumeは待機/中断から、reopenは指定実行回の再実行計画を提示する。\n"
 	case "unit":
+		text += "claim/reassignはregistry_epoch、request_id、coordinator_sessionを必須指定する。assignment initで管理を開始し、assignment list/showでtask_nameを取得してメインAIがnative spawnする。reported後も明示releaseまで保持する。\n"
 		text += "Unitのstatus: pending / running / needs_confirmation / reported / integrated。全要求は現在step_idを指定する。JSONはclaimでunit/session/root、resultでunit/session/root/run_id/commit、integrateでunit/commit、confirmでunit/session/root/run_id/commitを指定する。resultとconfirmのcommitは現在のworker HEADと一致する40桁のcommitが必須。claimで割当、resultで成果commit、integrateで統合commit、confirmで既存runを確認する。statusを入力して進捗を偽装しない。\n"
 	case "memory":
 		text += "Concept IDは拡張子なし（例 codekb/authentication、adr/authentication、rules/project）。showは原文contentと現在hashを返す。searchはqueryのAND検索、intent-idは32桁の小文字16進数で完全一致。rulesは必須Rule全文、checkはSpaceのOKF検査。\n"
@@ -71,8 +78,12 @@ func Help(args []string) (string, bool) {
 	if key == "install/codex" {
 		text += "移転: aidlc install codex --relocate --project-dir NEW_ROOT --from-project-dir OLD_ROOT --from-binary OLD_BINARY\n新binaryは実行中のaidlc。旧pathは絶対参照文字列で存在不要。移転先AI開始前に端末から実行する。既知のaidlc/aidlc-cli両skillと製品hooksの3ファイルを事前検査し参照だけを更新する。独自hookや旧WORKFLOW、Knowledgeを保持し、旧版のupgradeを兼ねない。部分失敗はPathsが更新済み、Pendingが未処理。全件再検査する同じ引数の再試行で復旧する。未知編集は自動上書きしない。新ROOT/.codex/hooks.jsonの絶対pathを確認し、Codexのhook trustを利用者が確認する。trust/認証設定は変更しない。\n"
 	}
+	if key == "unit/claim" {
+		text += `REQUEST.json例: {"registry_epoch":"initのepoch","request_id":"一意の要求ID","coordinator_session":"メイン会話ID","step_id":"現在step_id","unit":"a","session":"worker-a","root":"/project-worktrees/a"}
+`
+	}
 	if key == "unit/reassign" {
-		text += "active/tddのneeds_confirmationだけ再割当できる。旧worker終了を確認し、previous_run_stoppedをtrueにする。runningなら先にpause/resumeする。成功まで新workerを開始しない。\nREQUEST.json例: {\"step_id\":\"現在step_id\",\"unit\":\"a\",\"session\":\"new-worker\",\"root\":\"/new/worker\",\"commit\":\"<40桁の現在HEAD>\",\"reason\":\"旧処理終了と成果を確認\",\"previous_run_stopped\":true}\nunit/session/root/commit/reasonは文字列、停止確認は真偽値。run_idは指定せず新規発行する。HEAD・base履歴・依存統合・scope・他担当との衝突を検査する。state保存途中は当該Intentのconfigureや他Unit操作を拒否してrevisionを保持する。同じexpectとJSONで再試行し、異なる残存要求は現在割当を確認する。既にrunningならshowとassignmentで成功済みを確認する。新runで再テスト後result/integrateし、reviewは新root/sessionへassignして現在targetを受け直す。\n"
+		text += "active/tddのneeds_confirmationだけ再割当できる。旧worker終了を確認し、previous_run_stoppedをtrueにする。runningなら先にpause/resumeする。成功まで新workerを開始しない。\nREQUEST.json例: {\"registry_epoch\":\"initのepoch\",\"request_id\":\"一意の要求ID\",\"coordinator_session\":\"メイン会話ID\",\"step_id\":\"現在step_id\",\"unit\":\"a\",\"session\":\"new-worker\",\"root\":\"/new/worker\",\"commit\":\"<40桁の現在HEAD>\",\"reason\":\"旧処理終了と成果を確認\",\"previous_run_stopped\":true}\nunit/session/root/commit/reasonは文字列、停止確認は真偽値。run_idは指定せず新規発行する。HEAD・base履歴・依存統合・scope・他担当との衝突を検査する。state保存途中は当該Intentのconfigureや他Unit操作を拒否してrevisionを保持する。同じexpectとJSONで再試行し、異なる残存要求は現在割当を確認する。既にrunningならshowとassignmentで成功済みを確認する。新runで再テスト後result/integrateし、reviewは新root/sessionへassignして現在targetを受け直す。\n"
 	}
 	if key == "intent/review" {
 		text += "REVIEW.json: actionはassign / accept。assignはcoordinator_session、別session、別rootを指定。acceptは同じsession/root/targetと、実報告のstatus pass / fail、summaryを指定する。古いtargetや未割当結果は拒否する。\n"
@@ -143,5 +154,20 @@ generated.atは内容または明示metadataを変更した保存時の現在UTC
   aidlc memory create codekb/authentication --space default --type Design --title '認証の仕様' --description '現行の方式' --tag authentication --status stable --actor process:codex --body-file body.md
   aidlc memory show codekb/authentication --space default
   aidlc memory update codekb/authentication --space default --body-file body.md --actor process:codex --expect HASH
+`
+}
+
+func assignmentHelp(action string) string {
+	usage := map[string]string{"init": "--file INIT.json", "reset": "--file RESET.json", "list": "", "show": "ASSIGNMENT", "check": "ASSIGNMENT", "reserve": "ID --space SPACE --session MAIN --expect REVISION --file RESERVE.json", "release": "ASSIGNMENT --session MAIN --expect ENTRY_REVISION --file RELEASE.json"}
+	return "使い方: aidlc assignment " + action + " " + usage[action] + ` [--project-dir ROOT]
+管理CLIはagentを起動しない。メインAIが予約のtask_nameとagentをnative spawn_agentへ渡す。worker以外は現在procedureのread-only担当。実child rootや全process停止の証明ではない。
+init: {"request_id":"一意の要求ID","human_confirmed":true,"reason":"人間が既知の作業停止・成果回収を確認した回答と理由"}。初回も人間確認が必要。既存registryは上書きしない。
+reserve: {"registry_epoch":"initのepoch","request_id":"一意のID","step_id":"現在step","agent":"aidlc-worker","root":"/existing-worktree","session":"worker-a"}。--expectは現在Intent revision。別の既存Git top-levelを使い、現在CodeRevisionを含む履歴が必要。同じ管理rootの全Space/Intent/sessionで占有を検査する。
+show/listでassignment_id、entry_revision、task_name、状態を確認する。checkは現在step・担当・Unit・開始条件の再検査。追加依頼は応答確認済みの相対task_nameを使う。Post欠落時は不明として保持し同名再spawnをしない。
+release: {"registry_epoch":"epoch","request_id":"一意の解放ID","previous_run_stopped":true,"no_more_requests":true,"reason":"既知処理終了と成果・残件回収を確認"}。--sessionは予約したメイン会話、--expectはentry_revision。追加依頼終了、既知コマンド/background終了、成果回収をメインAIが確認する。不明なら保持して人間へ確認する。Post/Stop/TTLやunit resultでは解放しない。
+同じepoch/request_idと同一内容でretryする。解放後の古いreserve要求はreleasedを返し再占有しない。保存や応答の喪失時はshowして同一要求を再試行する。
+reset: {"request_id":"一意のID","registry_epoch":"元epoch","registry_hash":"元ファイルSHA-256","human_confirmed":true,"reason":"人間確認の回答と理由"}。全件解放後に世代を更新し旧記録を保管する。復元できる原本を優先。復元不能時のみdiagnosisにunrecoverable（読取可）/missing（欠落）/corrupt（破損）を明示。missingは元epoch/hashなし、corruptは元hash必須。旧epoch要求は拒否する。reset自体はworkerを停止しない。
+長さ上限: request/session/step/agentは160byte、理由2048byte、registry256KiB。容量不足は新規要求を止め、受理済みPostと解放の余裕を残す。人間確認・session文字列は申告であり本人認証ではない。
+Unitありはunit claim/reassign --helpを参照。旧Unitへ予約を後付けせず、停止・成果確認後に新Intentへ新規claimする。
 `
 }

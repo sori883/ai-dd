@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sori883/ai-dd/src/internal/assignment"
 	"github.com/sori883/ai-dd/src/internal/flow"
 	"github.com/sori883/ai-dd/src/internal/minimal"
 )
@@ -206,8 +208,12 @@ func (f operationsFixture) tdd() flow.State {
 	f.t.Helper()
 	s := f.create("Unit work")
 	writeMinimalFixture(f.t, filepath.Join(f.root, "body.md"), "Current operation contract.\n")
-	f.ok("memory", "create", "codekb/current", "--space", "default", "--body-file", "body.md", "--actor", "process:test", "--type", "Design", "--title", "Current", "--description", "Operations")
-	f.ok("memory", "create", "adr/current", "--space", "default", "--body-file", "body.md", "--actor", "process:test", "--type", "adr", "--title", "Decision", "--description", "Rationale")
+	if _, err := os.Stat(filepath.Join(f.root, "aidlc/spaces/default/knowledge/codekb/current.md")); os.IsNotExist(err) {
+		f.ok("memory", "create", "codekb/current", "--space", "default", "--body-file", "body.md", "--actor", "process:test", "--type", "Design", "--title", "Current", "--description", "Operations")
+	}
+	if _, err := os.Stat(filepath.Join(f.root, "aidlc/spaces/default/knowledge/adr/current.md")); os.IsNotExist(err) {
+		f.ok("memory", "create", "adr/current", "--space", "default", "--body-file", "body.md", "--actor", "process:test", "--type", "adr", "--title", "Decision", "--description", "Rationale")
+	}
 	head := f.commit("shared assets")
 	c := flow.Config{NoMaterialsReason: "fixture has no prior materials", Objective: "Unit operation", Scope: []string{"a.go", "b.go"}, Acceptance: []string{"operations are isolated"}, CodeRevision: head, ADR: flow.ADR{Reason: "No additional decision"}, Artifacts: []flow.Artifact{{Path: "aidlc/spaces/default/knowledge/codekb/current.md", Kind: "Knowledge", Stage: "discovery"}}}
 	s = f.action(s, "configure", "--file", f.request(c))
@@ -232,6 +238,22 @@ func (f operationsFixture) tdd() flow.State {
 func (f operationsFixture) unit(s flow.State, action string, r flow.UnitRequest) flow.State {
 	r.StepID = s.CurrentStepID
 	f.t.Helper()
+	if action == "claim" || action == "reassign" {
+		registry := assignment.Store{Root: f.root}
+		reg, err := registry.Read()
+		if errors.Is(err, os.ErrNotExist) {
+			raw := f.ok("assignment", "init", "--file", f.request(assignment.InitRequest{RequestID: "fixture-init", HumanConfirmed: true, Reason: "synthetic fixture human confirmation: known work stopped"}))
+			if err := json.Unmarshal(raw, &reg); err != nil {
+				f.t.Fatal(err)
+			}
+		} else if err != nil {
+			f.t.Fatal(err)
+		}
+		r.RegistryEpoch = reg.Epoch
+		r.CoordinatorSession = "coordinator"
+		r.RequestID = fmt.Sprintf("%s-%s-%d", action, r.Unit, s.Revision)
+	}
+
 	return operationsState(f.t, f.ok("unit", action, s.ID, "--space", "default", "--expect", strconv.FormatUint(s.Revision, 10), "--file", f.request(r)))
 }
 func TestOperationsGitHandoff(t *testing.T) {

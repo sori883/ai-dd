@@ -2,6 +2,7 @@
 package minimal
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"net/url"
@@ -25,15 +26,21 @@ type Session struct {
 
 // HookInput contains only policy fields from the observed Codex hook protocol.
 type HookInput struct {
-	Prompt  string `json:"prompt"`
-	Event   string `json:"hook_event_name"`
-	Session string `json:"session_id"`
-	Turn    string `json:"turn_id"`
-	Tool    string `json:"tool_name"`
-	ID      string `json:"tool_use_id"`
-	Active  bool   `json:"stop_hook_active"`
-	Input   struct {
-		Command string `json:"command"`
+	AgentID   string          `json:"agent_id"`
+	AgentType string          `json:"agent_type"`
+	Response  json.RawMessage `json:"tool_response"`
+	Prompt    string          `json:"prompt"`
+	Event     string          `json:"hook_event_name"`
+	Session   string          `json:"session_id"`
+	Turn      string          `json:"turn_id"`
+	Tool      string          `json:"tool_name"`
+	ID        string          `json:"tool_use_id"`
+	Active    bool            `json:"stop_hook_active"`
+	Input     struct {
+		Command   string `json:"command"`
+		AgentType string `json:"agent_type"`
+		TaskName  string `json:"task_name"`
+		Target    string `json:"target"`
 	} `json:"tool_input"`
 }
 

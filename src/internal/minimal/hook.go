@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/sori883/ai-dd/src/internal/assignment"
 	"github.com/sori883/ai-dd/src/internal/cli"
 	"github.com/sori883/ai-dd/src/internal/flow"
 	"github.com/sori883/ai-dd/src/internal/okfmemory"
@@ -13,6 +14,9 @@ import (
 
 // Hook returns Codex control JSON and never interprets model transcripts.
 func (s Service) Hook(input HookInput) (map[string]any, error) {
+	if input.AgentID != "" || input.AgentType != "" {
+		return s.childHook(input)
+	}
 	out := map[string]any{}
 	if input.Event == "PreToolUse" && input.Tool == "Bash" && input.ID != "" && input.Turn != "" {
 		if _, err := sessionPath(input.Session); err == nil {
@@ -25,6 +29,16 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 		}
 	}
 	_, err := s.withSession(input.Session, func(state *Session) ([]byte, error) {
+		if nativeAction(input.Tool) != "" && input.Event == "PostToolUse" {
+			if nativeAction(input.Tool) == "spawn" {
+				_, err := (assignment.Store{Root: s.Root}).PostSpawn(input.Session, input.ID, input.Response)
+				return nil, err
+			}
+			return nil, nil
+		}
+		if nativeAction(input.Tool) != "" && input.Event == "PreToolUse" {
+			return nil, s.agentPre(input, *state)
+		}
 		switch input.Event {
 		case "SessionStart":
 			state.RuleTurn = ""
@@ -61,6 +75,9 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 			}
 			if input.Tool == "apply_patch" && s.protectedPatch(input.Input.Command) {
 				return nil, invalid("use Intent CLI updates; do not patch canonical state or session state")
+			}
+			if err := s.assignmentCommand(input, state); err != nil {
+				return nil, err
 			}
 			if s.exception(input, state) {
 				return nil, nil
@@ -143,6 +160,47 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 	}
 	return out, nil
 }
+
+// assignmentCommand rejects mismatched managed commands before general Bash gates.
+func (s Service) assignmentCommand(input HookInput, state *Session) error {
+	if input.Tool != "Bash" {
+		return nil
+	}
+	argv, ok := shellWords(input.Input.Command)
+	if !ok || len(argv) < 2 || !sameBinary(argv[0], s.Binary) {
+		return nil
+	}
+	r, err := cli.ParseMinimal(argv[1:])
+	if err != nil {
+		return nil
+	}
+	unit := r.Command == "unit" && (r.Action == "claim" || r.Action == "reassign")
+	if r.Command != "assignment" && !unit {
+		return nil
+	}
+	if r.ProjectDir != "" && filepath.Clean(r.ProjectDir) != filepath.Clean(s.Root) {
+		return invalid("assignment command management root mismatch")
+	}
+	if r.Command == "assignment" && (r.Action == "reserve" || r.Action == "release") && r.Session != input.Session {
+		return invalid("assignment command session mismatch")
+	}
+	if unit || r.Command == "assignment" && r.Action == "reserve" {
+		if state.Space == "" || state.Intent == "" || r.Space != state.Space || r.Target != state.Intent {
+			return invalid("assignment command selected Space or Intent mismatch")
+		}
+	}
+	if unit {
+		var req flow.UnitRequest
+		if err := s.decodeDraft(r.File, &req); err != nil {
+			return err
+		}
+		if req.CoordinatorSession != input.Session {
+			return invalid("Unit coordinator session mismatch")
+		}
+	}
+	return nil
+}
+
 func (s Service) exception(input HookInput, state *Session) bool {
 	if input.Tool == "apply_patch" {
 		files := 0
@@ -176,6 +234,13 @@ func (s Service) exception(input HookInput, state *Session) bool {
 		return false
 	}
 	switch r.Command + "/" + r.Action {
+	case "assignment/init", "assignment/reset", "assignment/list", "assignment/show", "assignment/check":
+		return state.Tool == ""
+	case "assignment/release":
+		return state.Tool == "" && r.Session == input.Session
+	case "assignment/reserve":
+		return state.Tool == "" && r.Session == input.Session && r.Space == state.Space && r.Target == state.Intent
+
 	case "intent/plan", "intent/documents":
 		return r.File == "" || (state.Tool == "" && r.Space == state.Space && r.Target == state.Intent)
 	case "memory/rules", "memory/search", "memory/show", "memory/check", "intent/list", "intent/show", "intent/procedure", "intent/history", "intent/check", "session/inspect":

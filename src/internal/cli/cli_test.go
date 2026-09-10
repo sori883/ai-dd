@@ -73,6 +73,7 @@ Stages: initialization → discoveryは必須。architecture-analysis, planning,
 Use --project-dir <root> for explicit project selection. Concept IDs have no .md extension.
 Exit codes: 0 success, 2 invalid input or conflict, 1 operational failure.
 `
+const wantPublicHelp = wantHelp + "\n  assignment init/list/show/reserve/check/release/reset — native worker作業場所の登録と明示解放（各ACTION --help）\n"
 
 func TestRun_Help(t *testing.T) {
 	t.Parallel()
@@ -106,8 +107,8 @@ func TestRun_Help(t *testing.T) {
 			if exitCode != 0 {
 				t.Errorf("exit code = %d, want 0", exitCode)
 			}
-			if got := stdout.String(); got != wantHelp {
-				t.Errorf("stdout = %q, want %q", got, wantHelp)
+			if got := stdout.String(); got != wantPublicHelp {
+				t.Errorf("stdout = %q, want %q", got, wantPublicHelp)
 			}
 			if got := stderr.String(); got != "" {
 				t.Errorf("stderr = %q, want empty", got)

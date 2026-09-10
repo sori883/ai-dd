@@ -1,6 +1,8 @@
 ---
 stage_id: tdd
 agents:
+  - role: execution_planning
+    agent: aidlc-stage-planner
   - role: implementation
     agent: aidlc-worker
   - role: independent_review

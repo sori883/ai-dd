@@ -1,15 +1,16 @@
 package flow
 
 import (
-	"crypto/rand"
 	"encoding/json"
-	"fmt"
 	"github.com/sori883/ai-dd/src/internal/filestore"
 	"path/filepath"
 	"strings"
 )
 
 type UnitRequest struct {
+	RegistryEpoch      string `json:"registry_epoch"`
+	RequestID          string `json:"request_id"`
+	CoordinatorSession string `json:"coordinator_session"`
 	StepID             string `json:"step_id"`
 	Reason             string `json:"reason"`
 	PreviousRunStopped bool   `json:"previous_run_stopped"`
@@ -37,7 +38,7 @@ func (s Store) assignment(id, unit string) (UnitRequest, error) {
 // Unit records coordinator acceptance of a separate worker's current run.
 func (s Store) Unit(id string, expect uint64, r UnitRequest) (State, error) {
 	var retry *UnitRequest
-	if r.Action == "reassign" {
+	if r.Action == "reassign" || r.Action == "claim" {
 		retry = &r
 	}
 	return s.changeReassignment(id, expect, retry, func(st *State) error {
@@ -126,9 +127,14 @@ func (s Store) Unit(id string, expect uint64, r UnitRequest) (State, error) {
 					}
 				}
 			}
-			random := make([]byte, 16)
-			rand.Read(random)
-			r.RunID = fmt.Sprintf("%x", random)
+			reservation, err := s.reserveUnit(*st, expect, r)
+			if err != nil {
+				return err
+			}
+			if reservation.Status == "released" {
+				return invalid("released claim cannot be resumed")
+			}
+			r.RunID = reservation.RunID
 			r.Root = root
 			raw, err := json.Marshal(r)
 			if err != nil {
@@ -148,6 +154,9 @@ func (s Store) Unit(id string, expect uint64, r UnitRequest) (State, error) {
 			}
 			a, err := s.assignment(id, r.Unit)
 			if err != nil {
+				return err
+			}
+			if err := s.managedUnit(*st, a); err != nil {
 				return err
 			}
 			root, err := filepath.EvalSymlinks(r.Root)

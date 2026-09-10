@@ -1,5 +1,10 @@
 # 開発プロジェクトRAM
 
+- [担当・作業場所管理の具体計画と通常解放・復旧条件を承認](decisions/2026-09-10-native-agent-assignment-implementation-approved.md): 具体計画全体の直接実装承認。通常はメインAIの確認で解放し、初回管理開始・復元不能な記録の作り直しは人間確認。単独TDD実装・review・final・PR/checks/mergeへ進む。
+- [A案の作業割当管理とメインAIによる起動を採用する](decisions/2026-09-10-managed-worker-assignment-approved.md): A案を承認。メインAIの標準ツールで起動し、CLIは管理root内の作業場所の二重割当を防ぐ。[具体計画](../design/native-agent-assignment-plan.md)を作成し、通常解放の確認者・管理記録復旧時の人間確認（Q1/Q2）を確認待ち。
+- [エージェントの起動はメインAIの標準ツールで行う](decisions/2026-09-10-native-agent-launch-required.md): CLIからエージェントを起動しない指定を記録。CLIによる作業登録と区別する。記録時点ではA/B未選択で、採用は上記の後続記録へ。
+- [本家の作業割当方式に合わせる変更案](decisions/2026-09-10-upstream-aligned-worker-control-options.md): A/B比較時点の提案。AはCLIの二重割当防止へ保証対象を変更し、Bは元の実worker稼働制限の検討継続。A採用は上記の後続記録へ。
+- [本家の担当起動・並列作業・終了の定義](decisions/2026-09-10-upstream-agent-dispatch-and-worktree-reference.md): 固定2.6.123の担当frontmatter、コード生成の承認guard、Unitごとのworktree、Team限定claimを確認。作業完了・補助TTLと実process停止を区別し、今回のworker排他要求との境界を整理。
 - [固定Codexでの担当起動制限の実測結果](decisions/2026-09-10-agent-guard-preflight-result.md): 正常応答での起動前拒否を確認。Stop後のprocess継続とhook故障時の子開始も観測。root・子ID・終了/再開の契約が未確定のため製品guardへ進まず、明示割当・停止確認等の代案を整理。
 - [G0 fixtureのloop実装証拠](decisions/2026-09-10-agent-guard-preflight-evidence.md): test-first実装、独立review後の修復、固定Codexで観測したwire形式と故障挙動の詳細。最終ソースの検証証拠は対応PRへ記録する。
 
@@ -135,6 +140,8 @@ Intent・Unitの進捗はstateで管理する。全作業の日誌は要求せ�
 
 | 種別 | 記録 | 状態 |
 | --- | --- | --- |
+| 不具合・方針 | [native子hookと親会話stateの分離](decisions/2026-09-10-native-child-hook-separation.md) | Issue #161の実機で子の通常作業を誤拒否。子通知の親state分離・担当/開始条件・管理変更拒否を実装、有限rendezvousを追加。fresh実機は未実施 |
+| 実装 | [native担当・作業場所管理の実装loop](decisions/2026-09-10-native-agent-assignment-implementation.md) | Issue #161、単独writer TDD・横断予約・native task対応・明示解放。実機結果と子hook修正は後続RAMを参照 |
 | 意思決定 | [Git共有stateと調整役AIによる起動を採用する](decisions/2026-09-08-four-stage-runtime-approved.md) | Accepted。提示した4ステージ実装計画の残る2点を確定し実装へ進む |
 | 意思決定 | [4ステージ方式の実装着手と不要製品コードの削除を依頼された](decisions/2026-09-08-four-stage-implementation-request.md) | 実装・不要製品コード削除の直接依頼。進捗共有とAI起動責任を確認中 |
 | 計画 | [4ステージ方式への実装計画](../design/four-stage-workflow-implementation-plan.md) | 対象・保存/CLI案・削除境界・受入/検証を具体化。2点への回答後に契約を確定 |

@@ -132,6 +132,9 @@ func (s Store) changeReassignment(id string, expect uint64, request *UnitRequest
 	if err != nil {
 		return State{}, err
 	}
+	if request != nil && s.completedUnitRetry(st, expect, *request) {
+		return st, nil
+	}
 	if st.Revision != expect || expect == ^uint64(0) {
 		return State{}, invalid("revision conflict")
 	}

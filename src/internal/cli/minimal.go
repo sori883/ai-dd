@@ -29,7 +29,7 @@ func isMinimal(args []string) bool {
 		return false
 	}
 	switch args[0] {
-	case "install", "unit", "memory", "session", "__minimal-hook":
+	case "assignment", "install", "unit", "memory", "session", "__minimal-hook":
 		return true
 	case "intent":
 		if len(args) < 2 {
@@ -97,6 +97,23 @@ func ParseMinimal(args []string) (r MinimalRequest, err error) {
 	required := ""
 	min, max := 0, 0
 	switch r.Command + "/" + r.Action {
+	case "assignment/init", "assignment/reset":
+		allowed = "--project-dir --file"
+		required = "--file"
+	case "assignment/list":
+		allowed = "--project-dir"
+	case "assignment/show", "assignment/check":
+		allowed = "--project-dir"
+		min, max = 1, 1
+	case "assignment/reserve":
+		allowed += " --session --expect --file"
+		required = "--session --expect --file"
+		min, max = 1, 1
+	case "assignment/release":
+		allowed = "--project-dir --session --expect --file"
+		required = "--session --expect --file"
+		min, max = 1, 1
+
 	case "install/codex":
 		allowed = "--project-dir --relocate --from-project-dir --from-binary"
 		required = "--project-dir"

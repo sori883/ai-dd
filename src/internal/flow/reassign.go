@@ -1,9 +1,7 @@
 package flow
 
 import (
-	"crypto/rand"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -129,6 +127,13 @@ func (s Store) reassign(st *State, unit *Unit, expect uint64, r UnitRequest) err
 			return invalid("invalid current Unit assignment")
 		}
 	}
+	reservation, err := s.reassignReservation(*st, expect, r)
+	if err != nil {
+		return err
+	}
+	if reservation.Status == "released" {
+		return invalid("released reassignment cannot resume")
+	}
 	if current.ReassignmentRevision == expect {
 		requested := r
 		requested.RunID = current.RunID
@@ -138,9 +143,7 @@ func (s Store) reassign(st *State, unit *Unit, expect uint64, r UnitRequest) err
 		unit.Status = "running"
 		return nil
 	}
-	random := make([]byte, 16)
-	rand.Read(random)
-	r.RunID = fmt.Sprintf("%x", random)
+	r.RunID = reservation.RunID
 	raw, err = json.Marshal(unitReassignment{UnitRequest: r, ReassignmentRevision: expect})
 	if err != nil {
 		return err
@@ -155,6 +158,9 @@ func (s Store) reassign(st *State, unit *Unit, expect uint64, r UnitRequest) err
 // guardReassignment runs under the same Intent lock before any mutation or
 // runtime side effect, preserving the revision needed to recover a partial save.
 func (s Store) guardReassignment(st State, request *UnitRequest) error {
+	if err := s.guardUnitReservation(st, request); err != nil {
+		return err
+	}
 	if err := s.verifyHistoryHead(st); err != nil {
 		return err
 	}

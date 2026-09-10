@@ -14,6 +14,11 @@ import (
 func reassignFixture(t *testing.T) (Store, State, UnitRequest) {
 	t.Helper()
 	s, st, worker := unitFixture(t)
+	var claimErr error
+	st, claimErr = assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: st.CurrentStepID, Action: "claim", Unit: "a", Session: "old-worker", Root: worker})
+	if claimErr != nil {
+		t.Fatal(claimErr)
+	}
 	st.Config.Units[0].Status = "needs_confirmation"
 	st.Config.Units[1].Status = "needs_confirmation"
 	var err error
@@ -32,12 +37,12 @@ func TestFlowUnitReassignStoppedAndIdentity(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			bad := r
 			tc.change(&bad)
-			if _, err := s.Unit(st.ID, st.Revision, bad); err == nil {
+			if _, err := assignmentUnit(t, s, st.ID, st.Revision, bad); err == nil {
 				t.Fatal("accepted invalid reassign")
 			}
 		})
 	}
-	next, err := s.Unit(st.ID, st.Revision, r)
+	next, err := assignmentUnit(t, s, st.ID, st.Revision, r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +56,7 @@ func TestFlowUnitReassignStoppedAndIdentity(t *testing.T) {
 	old := r
 	old.Action = "result"
 	old.RunID = "previous-run"
-	if _, err := s.Unit(st.ID, next.Revision, old); err == nil {
+	if _, err := assignmentUnit(t, s, st.ID, next.Revision, old); err == nil {
 		t.Fatal("old run accepted")
 	}
 	// A later explicit pause/resume must allow a fresh reassignment after a successful one.
@@ -64,7 +69,7 @@ func TestFlowUnitReassignStoppedAndIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.Session = "later-worker"
-	next, err = s.Unit(st.ID, next.Revision, r)
+	next, err = assignmentUnit(t, s, st.ID, next.Revision, r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +85,7 @@ func TestFlowUnitReassignStateFailureRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.write = func(string, string, []byte) error { return errors.New("state save failure") }
-	if _, err := s.Unit(st.ID, st.Revision, r); err == nil {
+	if _, err := assignmentUnit(t, s, st.ID, st.Revision, r); err == nil {
 		t.Fatal("state failure hidden")
 	}
 	a, err := s.assignment(st.ID, "a")
@@ -93,17 +98,17 @@ func TestFlowUnitReassignStateFailureRetry(t *testing.T) {
 	}
 	bad := r
 	bad.Session = "different"
-	if _, err := s.Unit(st.ID, st.Revision, bad); err == nil {
+	if _, err := assignmentUnit(t, s, st.ID, st.Revision, bad); err == nil {
 		t.Fatal("overwrote incomplete reassignment")
 	}
 	result := r
 	result.Action = "result"
 	result.RunID = a.RunID
-	if _, err := s.Unit(st.ID, st.Revision, result); err == nil {
+	if _, err := assignmentUnit(t, s, st.ID, st.Revision, result); err == nil {
 		t.Fatal("result accepted before state save")
 	}
 	s.write = nil
-	next, err := s.Unit(st.ID, st.Revision, r)
+	next, err := assignmentUnit(t, s, st.ID, st.Revision, r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +125,7 @@ func TestFlowUnitReassignMissingRuntimeScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Unit(st.ID, st.Revision, r); err == nil {
+	if _, err := assignmentUnit(t, s, st.ID, st.Revision, r); err == nil {
 		t.Fatal("missing runtime bypassed overlapping scope")
 	}
 }
@@ -140,7 +145,7 @@ func TestFlowUnitReassignOtherAssignments(t *testing.T) {
 				os.MkdirAll(filepath.Dir(p), 0700)
 				os.WriteFile(p, []byte(tc.raw), 0600)
 			}
-			if _, err := s.Unit(st.ID, st.Revision, r); err == nil {
+			if _, err := assignmentUnit(t, s, st.ID, st.Revision, r); err == nil {
 				t.Fatal("accepted invalid other assignment")
 			}
 		})
@@ -149,11 +154,14 @@ func TestFlowUnitReassignOtherAssignments(t *testing.T) {
 func TestFlowUnitReassignRuntimeFailure(t *testing.T) {
 	s, st, r := reassignFixture(t)
 	p := filepath.Join(s.Root, s.assignmentPath(st.ID, "a"))
+	if err := os.Remove(p); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(p, 0700); err != nil {
 		t.Fatal(err)
 	}
 	before, _ := os.ReadFile(filepath.Join(s.Root, s.path(st.ID)))
-	if _, err := s.Unit(st.ID, st.Revision, r); err == nil {
+	if _, err := assignmentUnit(t, s, st.ID, st.Revision, r); err == nil {
 		t.Fatal("runtime failure hidden")
 	}
 	after, _ := os.ReadFile(filepath.Join(s.Root, s.path(st.ID)))
@@ -178,7 +186,7 @@ func TestFlowUnitReassignScopeAndDependency(t *testing.T) {
 				flowGit(t, r.Root, "commit", "-qm", "outside")
 				r.Commit = flowGit(t, r.Root, "rev-parse", "HEAD")
 			}
-			if _, err := s.Unit(st.ID, st.Revision, r); err == nil {
+			if _, err := assignmentUnit(t, s, st.ID, st.Revision, r); err == nil {
 				t.Fatal("accepted invalid handoff")
 			}
 		})
@@ -194,7 +202,7 @@ func TestFlowUnitReassignOwnCorruptAssignment(t *testing.T) {
 	if err := os.WriteFile(p, []byte(`{}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Unit(st.ID, st.Revision, r); err == nil {
+	if _, err := assignmentUnit(t, s, st.ID, st.Revision, r); err == nil {
 		t.Fatal("overwrote corrupt target assignment")
 	}
 }
@@ -207,7 +215,11 @@ func TestFlowUnitReassignReplacesOldRunWithoutOldAccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := UnitRequest{StepID: "s04", Action: "claim", Unit: "a", Session: "stopped", Root: "/missing/old/worker", RunID: "old-run"}
+	old, err := s.assignment(st.ID, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	old.Root = "/missing/old/worker"
 	raw, _ := json.Marshal(old)
 	p := filepath.Join(s.Root, s.assignmentPath(st.ID, "a"))
 	if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
@@ -216,7 +228,7 @@ func TestFlowUnitReassignReplacesOldRunWithoutOldAccess(t *testing.T) {
 	if err := os.WriteFile(p, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
-	next, err := s.Unit(st.ID, st.Revision, r)
+	next, err := assignmentUnit(t, s, st.ID, st.Revision, r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +242,7 @@ func TestFlowUnitReassignPendingBlocksStateUpdates(t *testing.T) {
 		t.Run(operation, func(t *testing.T) {
 			s, st, r := reassignFixture(t)
 			s.write = func(string, string, []byte) error { return errors.New("state save failure") }
-			if _, err := s.Unit(st.ID, st.Revision, r); err == nil {
+			if _, err := assignmentUnit(t, s, st.ID, st.Revision, r); err == nil {
 				t.Fatal("expected save failure")
 			}
 			original, err := s.assignment(st.ID, "a")
@@ -249,11 +261,11 @@ func TestFlowUnitReassignPendingBlocksStateUpdates(t *testing.T) {
 				other.Unit = "b"
 				other.Session = "b"
 				other.Root = worker
-				_, err = s.Unit(st.ID, st.Revision, other)
+				_, err = assignmentUnit(t, s, st.ID, st.Revision, other)
 			case "pause":
 				_, err = transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "pause", Reason: "unrelated update"})
 			}
-			if err == nil || !strings.Contains(err.Error(), "incomplete reassignment") {
+			if err == nil || !strings.Contains(err.Error(), "incomplete") {
 				t.Fatalf("pending request did not block %s: %v", operation, err)
 			}
 			if !bytes.Equal(before, mustReassignBytes(t, s.Root, s.path(st.ID))) {
@@ -262,7 +274,7 @@ func TestFlowUnitReassignPendingBlocksStateUpdates(t *testing.T) {
 			if _, err := os.Stat(filepath.Join(s.Root, s.assignmentPath(st.ID, "b"))); !os.IsNotExist(err) {
 				t.Fatalf("other runtime side effect: %v", err)
 			}
-			next, err := s.Unit(st.ID, st.Revision, r)
+			next, err := assignmentUnit(t, s, st.ID, st.Revision, r)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -279,7 +291,7 @@ func TestFlowUnitReassignPendingBlocksStateUpdates(t *testing.T) {
 				t.Fatal(err)
 			}
 			r.Session = "later"
-			if _, err := s.Unit(st.ID, next.Revision, r); err != nil {
+			if _, err := assignmentUnit(t, s, st.ID, next.Revision, r); err != nil {
 				t.Fatal(err)
 			}
 			later, _ := s.assignment(st.ID, "a")
@@ -322,7 +334,7 @@ func TestFlowUnitReassignLiteralPaths(t *testing.T) {
 						flowGit(t, r.Root, "commit", "-qm", "literal path")
 						r.Commit = flowGit(t, r.Root, "rev-parse", "HEAD")
 					}
-					next, err := s.Unit(st.ID, st.Revision, r)
+					next, err := assignmentUnit(t, s, st.ID, st.Revision, r)
 					if err != nil {
 						t.Fatalf("literal path rejected: %v", err)
 					}
@@ -335,7 +347,7 @@ func TestFlowUnitReassignLiteralPaths(t *testing.T) {
 						t.Fatal(err)
 					}
 					result := UnitRequest{StepID: "s04", Action: "result", Unit: "a", Root: r.Root, Session: r.Session, RunID: assignment.RunID, Commit: flowGit(t, r.Root, "rev-parse", "HEAD")}
-					if _, err := s.Unit(st.ID, next.Revision, result); err != nil {
+					if _, err := assignmentUnit(t, s, st.ID, next.Revision, result); err != nil {
 						t.Fatalf("literal result rejected: %v", err)
 					}
 				})
@@ -352,7 +364,7 @@ func TestFlowUnitResultLiteralPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err = s.Unit(st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "claim", Unit: "a", Session: "a", Root: worker})
+	st, err = assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "claim", Unit: "a", Session: "a", Root: worker})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +378,7 @@ func TestFlowUnitResultLiteralPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Unit(st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "result", Unit: "a", Root: worker, Session: "a", RunID: assignment.RunID, Commit: flowGit(t, worker, "rev-parse", "HEAD")}); err != nil {
+	if _, err := assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "result", Unit: "a", Root: worker, Session: "a", RunID: assignment.RunID, Commit: flowGit(t, worker, "rev-parse", "HEAD")}); err != nil {
 		t.Fatal(err)
 	}
 }

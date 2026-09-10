@@ -1,6 +1,8 @@
 ---
 stage_id: architecture-analysis
 agents:
+  - role: execution_planning
+    agent: aidlc-stage-planner
   - role: research
     agent: aidlc-researcher
   - role: independent_review

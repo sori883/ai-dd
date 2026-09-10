@@ -240,3 +240,40 @@ Entry・文書宣言・実測JSON・Unit要求には実際のstep_idを用い、
 は試験用の2承認待ちを準備し、実hookの作業拒否、同じ回答の出典、別承認CLIの成功、finishと確定履歴を照合します。
 
 プロジェクトの共通ルールはknowledge/rules/rule.mdに記載します。初期状態は「追加ルールはありません」で、製品が言語や設計制約を決めません。AI-DLCの進行・会話承認・記録先はaidlcスキル、操作案内はaidlc-cli、正確な引数・JSONはhelpにあります。工程手順はstage、担当責務はagent定義から取得します。新配布にはWORKFLOW.mdを含めません。既設Ruleや旧配置は自動移行・削除せず、新版は新配布・新Intentで利用します。
+
+## native担当と作業場所の予約
+
+メインAIが標準の`spawn_agent`で担当を起動します。CLIは起動しません。現在の担当一覧は`intent procedure`で確認します。
+workerには、管理root全体で共通の`assignment`予約を先に作ります。別Space・別Intent・別会話でも同じ実worktreeを二重に予約できません。
+登録rootと実childの実行rootが一致することや、OS上の全process停止までを保証する仕組みではありません。
+
+人間が既知の作業と残存処理を整理したことを確認してから、`assignment init --file INIT.json`を実行します。
+`INIT.json`は`request_id`、`human_confirmed:true`、回答と理由を記す`reason`です。通常操作は欠落したregistryを自動作成しません。
+Unitなしでは、開始Sensorと承認を満たしたIntentに`assignment reserve ID --space SPACE --session MAIN --expect REV --file RESERVE.json`を使います。
+JSONの`registry_epoch/request_id/step_id/agent/root/session`は`assignment reserve --help`の例に従います。
+Unitありは`unit claim`のJSONへ`registry_epoch/request_id/coordinator_session`を追加します。
+rootは既存の別Git top-levelを指定します。Unitのbase/依存検査は従来どおり、UnitなしはIntentの`config.code_revision`を含む履歴を要求します。
+同じ`.git`やremote URLの一致は要求せず、共有履歴を持つcloneを使用できます。
+
+`assignment list/show`の`task_name`と`agent`をnative spawnへ渡します。`fork_turns`が提供される場合は`none`にし、Ruleと必要な資料を渡します。
+追加依頼前に`assignment check ASSIGNMENT`を実行し、応答確認済みの相対`task_name`を使います。
+Post欠落時は同名を再利用せず、予約を不明として保持します。Stop、interrupt、結果提出、時間経過は解放の根拠になりません。
+メインAIが追加依頼終了・既知コマンド/background終了・成果と残件回収を確認して、`assignment release --help`のJSONと現在entry revisionで解放します。
+不明なら保持し、人間へ確認します。session引数や確認回答は申告であり、本人認証ではありません。
+
+保存や応答を失った場合は、同じepoch/request_id・内容で照会・再試行します。Unit保存途中は元の要求以外の更新を拒否します。
+registryは`aidlc/.runtime/assignments/registry.json`に置き、Gitで共有しません。元ファイルを復元できる場合は復元を優先します。
+復元不能な場合だけ人間の確認を記録し、`assignment reset --help`に従って元epoch/hashまたは欠落・破損診断を指定します。
+resetは新epochを発行し、読める旧記録を保管します。古い要求は拒否されます。reset自体はworkerを停止しません。
+
+既設へ導入するときは、既知の子と処理の終了を確認し、現在binary/hooks/skills/定義とruntimeを保管します。
+別の一時配置へfresh installして資材を比較し、対応する製品資材だけを明示的に置換してください。利用者のRule・Knowledgeは置換しません。
+新しいhooksの絶対pathと通常のCodex trustを確認し、許可/拒否の対照を取ります。実際の利用先への適用はリポジトリ開発とは別作業です。
+旧matcherのrelocateは参照を移すだけで担当保護を追加しません。未知編集は自動上書きしません。
+定義hashが変わるため、旧Intentは旧定義と対応版で扱うか、旧作業と成果を確認して新Intentへ新規claimします。旧Unitへ予約を後付けしません。
+ロールバックも停止確認後にbinary/hooks/skills/定義を対応する組で戻し、registry・進捗・Knowledgeを削除して空き扱いにしないでください。
+
+固定実機の観測fixtureは`AIDLC_ASSIGNMENT_LIVE=1 go test -tags=integration -count=1 ./src/cmd/aidlc -run '^TestAssignmentLive$' -timeout 30m`です。
+既存Codex CLI 0.153.4、macOS arm64、gpt-6-astra/xhighを使い、専用temp rootだけを変更します。認証ファイルは読み取り・コピーしません。
+一時fixtureのhook trust bypassを利用者配置へ適用しないでください。出力された`aidlc-assignment-live-*`にはcase別のhook生入力/出力、model transcript、process印、manifestを残します。
+モデルexit 0だけでは成功としません。許可/拒否、実並列、追加依頼、明示解放、Post欠落・保存失敗をrawで確認し、未実行は未確定として報告します。

@@ -420,7 +420,7 @@ func TestExecutionPlanEvidenceUnitOperation(t *testing.T) {
 	if err := s.persist(st); err != nil {
 		t.Fatal(err)
 	}
-	_, err := s.Unit(st.ID, st.Revision, UnitRequest{StepID: "s02", Action: "claim", Unit: "u"})
+	_, err := assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s02", Action: "claim", Unit: "u"})
 	if err == nil || !strings.Contains(err.Error(), "execution mismatch") {
 		t.Fatalf("Unit operation did not bind execution: %v", err)
 	}
