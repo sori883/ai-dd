@@ -184,3 +184,5 @@ Unit部分保存の保護は共通guardReassignmentに接続し、Save/Begin/Reo
 bootstrapの4KiB制限で文書規約を省略せず、配布aidlc-cliの詳細へ明示参照して従来の意味を保持する。
 
 固定実機で子のhookが親session_idと子turn_idを持つことを確認したため、[子hookの分離計画](../ram/decisions/2026-09-10-native-child-hook-separation.md)を同じ承認済みwork unitで実行する。親の会話stateを子へ誤適用せず、現在担当の照合・workerの承認/開始条件・子の管理操作禁止を維持する。子の通常作業は既存の担当指示とsandboxに従い、実rootの証明や全書込みの制限には拡張しない。
+
+子分離のloopはTestChildHookNotifications/Eligibility/CommandBoundaryの順で実装し、親の保存bytes不変と管理変更拒否を確認する。実機allow-parallelは90秒以内のpeer待機＋15秒作業の専用helperを使い、2子が自身で記録したWorkStartedAt/EndedAtを比較する。readyだけや親による印作成を実並列の証拠にしない。

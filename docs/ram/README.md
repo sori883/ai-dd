@@ -140,7 +140,7 @@ Intent・Unitの進捗はstateで管理する。全作業の日誌は要求せ�
 
 | 種別 | 記録 | 状態 |
 | --- | --- | --- |
-| 不具合・方針 | [native子hookと親会話stateの分離](decisions/2026-09-10-native-child-hook-separation.md) | Issue #161の実機で子の通常作業を誤拒否。既存の担当・承認・管理操作保護を維持して修正する |
+| 不具合・方針 | [native子hookと親会話stateの分離](decisions/2026-09-10-native-child-hook-separation.md) | Issue #161の実機で子の通常作業を誤拒否。子通知の親state分離・担当/開始条件・管理変更拒否を実装、有限rendezvousを追加。fresh実機は未実施 |
 | 実装 | [native担当・作業場所管理の実装loop](decisions/2026-09-10-native-agent-assignment-implementation.md) | Issue #161、単独writer TDD・横断予約・native task対応・明示解放。実機結果と子hook修正は後続RAMを参照 |
 | 意思決定 | [Git共有stateと調整役AIによる起動を採用する](decisions/2026-09-08-four-stage-runtime-approved.md) | Accepted。提示した4ステージ実装計画の残る2点を確定し実装へ進む |
 | 意思決定 | [4ステージ方式の実装着手と不要製品コードの削除を依頼された](decisions/2026-09-08-four-stage-implementation-request.md) | 実装・不要製品コード削除の直接依頼。進捗共有とAI起動責任を確認中 |

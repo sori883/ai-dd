@@ -14,6 +14,9 @@ import (
 
 // Hook returns Codex control JSON and never interprets model transcripts.
 func (s Service) Hook(input HookInput) (map[string]any, error) {
+	if input.AgentID != "" || input.AgentType != "" {
+		return s.childHook(input)
+	}
 	out := map[string]any{}
 	if input.Event == "PreToolUse" && input.Tool == "Bash" && input.ID != "" && input.Turn != "" {
 		if _, err := sessionPath(input.Session); err == nil {
