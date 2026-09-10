@@ -277,3 +277,7 @@ resetは新epochを発行し、読める旧記録を保管します。古い要�
 既存Codex CLI 0.153.4、macOS arm64、gpt-6-astra/xhighを使い、専用temp rootだけを変更します。認証ファイルは読み取り・コピーしません。
 一時fixtureのhook trust bypassを利用者配置へ適用しないでください。出力された`aidlc-assignment-live-*`にはcase別のhook生入力/出力、model transcript、process印、manifestを残します。
 モデルexit 0だけでは成功としません。許可/拒否、実並列、追加依頼、明示解放、Post欠落・保存失敗をrawで確認し、未実行は未確定として報告します。
+
+## 配布候補と既設更新
+
+6targetのarchive・manifest・SHA256SUMS生成、native展開/導入確認、利用者dataを保全する比較・手動切替・復旧は[配布手順](distribution.md)を参照してください。開発用`src/cmd/aidlc-dist`はlocal/CI候補を生成し、tag/Release/uploadを行いません。既存relocateは参照補正であり、自動updaterではありません。
