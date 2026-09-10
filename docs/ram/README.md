@@ -1,5 +1,10 @@
 # 開発プロジェクトRAM
 
+現行の使い方は[利用者ガイド](../../src/docs/user-guide.md)、内部構成は[アーキテクチャ](../architecture.md)、
+配布・更新は[配布手順](../distribution.md)を参照してください。以下の記録は判断時点の履歴で、後続決定が優先します。
+
+- [現行製品の入口と利用者向け説明を揃える](decisions/2026-09-11-current-user-guide.md): Issue #167。実案件PR #164と配布PR #166の完了を受け、README・利用者ガイド・構成説明を現行6種類の工程と5担当へ整理。試験用AI承認と通常運用、実hookと配布検証の範囲を区別。
+
 - [配布の仕上げを最小構成で進める](decisions/2026-09-11-distribution-packaging-scope.md): PR #164のmain反映・Issue #163完了。固定本家2.6.123のCodex配置と未提供upgradeを追加確認し、配布archive・照合値・3OS導入検査・手順による更新復旧を具体化。自動updater案は未採用。正式公開は別gate。TDDの4項目のRED/GREENと、archive照合・各OSでの実行を確認するfinal検証の入口を記録。 native fixtureのbinary参照の別名問題を修正しRED/GREENを記録。
 
 - [委任した試験用回答と通常hookの実測](decisions/2026-09-11-pilot-delegated-hook-evidence.md): Issue #163。承認前canaryと禁止担当の起動前拒否、AI回答による再開、共有構成分析のSensor/reviewを実測。同じIntentが6段階を完了（revision45）。3項目TDD・独立コードreview、統合5command・Knowledge保存/検索・独立review、29件の承認/完了履歴を実測。AI試験用回答と人間回答、既知の運用課題を区別。
@@ -147,12 +152,13 @@ AI-DLCが利用プロジェクト内で管理する`aidlc/spaces/<space>/knowled
 
 ## 索引
 
-現在のフローは **目的整理＋深掘り → 実装計画 → TDD → 統合検証**。
-各ステージ間にSensorとレビューを設け、必要な検査とレビューに合格してからstateを次へ進める。
-**Knowledgeは現行で何を・どう実現しているか、ADRはアーキテクチャ設計のなぜ**を記録する。
-整理・深掘りの成果もこの分担で反映し、ADRはSpaceの `knowledge/ADR/` 配下にOKF文書として置く。
-Intent・Unitの進捗はstateで管理する。全作業の日誌は要求せず、差戻し理由だけは`aidlc/spaces/<space>/knowledge/log/<intent_id>-work-log.md`へOKF文書として保存する。
-過去の記録にある旧称KDRと実装識別子は履歴として保持し、名称とstateの最新方針は先頭の記録を参照する。
+現在は **Space等の初期化 → 目的整理と深掘り** が必須です。
+現状の構成分析・実装計画・TDD・統合検証は、Intentごとの実行計画で採否・順序を承認します。
+各実行回は開始・終了Sensor、独立レビュー、会話による成果承認を確認して完了します。
+**Knowledgeは現行の何を・どう実現しているか、ADRはアーキテクチャ設計のなぜ**を記録します。
+現行仕様はSpaceの`knowledge/codekb/`、ADRは小文字の`knowledge/adr/`へOKF文書として置きます。
+Intent・Unitの進捗はstateと状態変更履歴で管理し、差戻し理由は`knowledge/log/<intent_id>-work-log.md`へ保存します。
+以下に残る旧4段階・旧称KDR・大文字ADRは履歴です。現在の契約は先頭の記録と現行ガイドを参照してください。
 
 | 種別 | 記録 | 状態 |
 | --- | --- | --- |

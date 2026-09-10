@@ -1,5 +1,9 @@
 # 配布E2Eテスト
 
+> この文書の以下の手順は旧方式の検証履歴です。現在のCLIにそのまま適用しないでください。
+> 現行の検証は[開発手順](development.md)と[配布・導入の検証](distribution.md#検証の範囲)、
+> 日常の操作は[利用者ガイド](../src/docs/user-guide.md)を参照してください。
+
 ## OKF検索のfresh non-live journey
 
 `TestKnowledgeSearchFreshNonLiveJourney`はrepository外へbinaryとreceiverを配置し、active Spaceの
