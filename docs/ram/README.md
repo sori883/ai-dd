@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [通常hookで初期化を完了し、製品担当で目的整理を進める](decisions/2026-09-11-latest-pilot-discovery-progress.md): Issue #163。実回答の中継で初期化完了。製品4担当をnative起動し、要件・計画を保存、Sensorと独立reviewがpass。revision13で要件と実行計画の承認待ち。承認対象を保持するため開発記録を別checkoutへ保存する。
+
 - [実案件環境のhook読込と独立Gitコピーへの補正](decisions/2026-09-11-pilot-hook-discovery.md): 固定Codexのlinked worktreeでproject hooksが列挙されない実測。専用環境のpath・file・stateを保持する環境補正を行い、通常trustを維持する。
 
 - [最新実案件の初期化成果と通常hook・担当管理開始を承認](decisions/2026-09-11-pilot-initialization-approved.md): ユーザーの「OKです。」を記録。対象配置は不変。実回答の中継・通常trust・初回assignment initを進め、後続成果の承認は別に行う。
