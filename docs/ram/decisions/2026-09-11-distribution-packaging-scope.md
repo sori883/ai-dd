@@ -77,3 +77,19 @@ env未指定skipは検証成功ではない。native手順はenv不要の
 元bytes復元を検査するfixtureであり、未知版upgrade互換の証明ではない。
 loopではintegration/E2E/6build/全project/race/vet未実行。3OS CIはfinalへ残す。
 Windowsの実Codex hook実行は未確認。
+
+## native fixtureのbinary参照修正
+
+work_unit_id `distribution-native-path-repair`。固定HEAD `de0f2e6` の親finalでは
+TestDistributionJourneyがrelocateのunknown product commandで失敗した。
+ログは `/var/folders/9w/921pjkys39q28sk4xsc0hs000000gn/T/ai-dd-distribution-final-087dtus1/distribution-journey-stdout.txt`。
+製品の `src/cmd/aidlc/minimal.go` は実行binaryをEvalSymlinksして配置する一方、fixtureは
+`/var/...` の未正規化pathを返し、`/private/var/...` が埋め込まれたhookと一致しなかった。
+relocateの旧参照は文字列契約で、実在不要のため製品側で正規化する修正は行わない。
+
+fixtureのbinary返却処理を小helperへ抽出し、symlink経由の参照が実pathになる回帰を先行。
+`go test -tags=integration -count=1 ./src/cmd/aidlc-dist -run '^TestDistributionBinaryPath$'`
+は旧返却処理でexit 1、EvalSymlinks適用後exit 0。証拠は既述TDD rootの
+`binary-path-red` / `binary-path-green`。製品code・拒否条件は変更していない。
+gofmt/diff checkを実施。full Journey/全体/race/vet/crossbuildはloopでは再実行せず、
+修正後の親finalで確認する。以前のfinal成功項目はこの差分の成功証拠には流用しない。

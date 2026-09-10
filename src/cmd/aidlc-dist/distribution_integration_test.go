@@ -192,7 +192,39 @@ func candidateBinary(t *testing.T, source, base, version, commit string) string 
 	if got := distributionOK(t, base, binary, "--help"); !bytes.Contains(got, []byte("Usage:")) {
 		t.Fatal("help missing")
 	}
-	return binary
+	return fixtureBinaryPath(t, binary)
+}
+
+func fixtureBinaryPath(t *testing.T, binary string) string {
+	t.Helper()
+	actual, err := filepath.EvalSymlinks(binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return actual
+}
+
+func TestDistributionBinaryPath(t *testing.T) {
+	root := t.TempDir()
+	realDir := filepath.Join(root, "real")
+	if err := os.Mkdir(realDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	binary := filepath.Join(realDir, "aidlc")
+	if err := os.WriteFile(binary, []byte("fixture"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(root, "alias")
+	if err := os.Symlink(realDir, alias); err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.EvalSymlinks(binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fixtureBinaryPath(t, filepath.Join(alias, "aidlc")); got != want {
+		t.Fatalf("binary reference = %q, want installed physical path %q", got, want)
+	}
 }
 func writeFixture(t *testing.T, root, name string, raw []byte) {
 	t.Helper()
