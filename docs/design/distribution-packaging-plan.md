@@ -152,3 +152,12 @@ git diff --check、既存workspace/okf integration、TestFlowJourney、TestAssig
 続く3番目でREADME全体と日常利用の案内を更新する。
 正式公開の版、公開範囲、ライセンス、実hookのOSごとの確認範囲は具体的な成果物を提示した段階で確認し、
 未公開の候補を一般配布済みと説明しない。
+
+## 実装で具体化した詳細
+
+manifestのbinary名はarchive内の `aidlc` / `aidlc.exe`。元binaryとarchiveのSHA256・sizeを
+それぞれ記録する。時刻等は固定し、ZIPは有効なDOS epochの1980-01-01 UTCを使う。
+全archive照合の入口は `AIDLC_DIST_DIR=<候補dir> go test -tags=integration -count=1 -v ./src/cmd/aidlc-dist -run '^TestDistributionArchives$'`。
+未指定skipは成功証拠ではなく、指定時は6件のpayloadとmanifest/SHA256SUMSを検査する。
+native fixtureは同一sourceの2つのversion表示・pathによる操作検証であり、未知版間の
+互換性や実Codex hook実行の保証にはしない。loop実測は対応RAMへ追記した。

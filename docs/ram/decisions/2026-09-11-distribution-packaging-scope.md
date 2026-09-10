@@ -42,3 +42,38 @@ Windows側の実hook経路は未確認。既知のlinked-worktree hook探索問�
 
 元checkoutの未commit資料、完了pilotのstate/Knowledge/runtimeは変更せず、専用worktreeで単独writerが実装する。
 利用先のRule、Knowledge、Intent/state/history、registry/runtimeを削除・初期化して更新成功へ見せかけない。
+
+## 実装loopの証拠（2026-09-11）
+
+Issue #165、work_unit_id `distribution-packaging`、開始HEAD
+`167846947f1290d5eeab10056e6735206b25d22f`。単独writerで梱包command、CI、手順を追加。
+標準ライブラリのみを使用し、製品CLIと依存関係は変更していない。
+
+各commandは `go test -count=1 ./src/cmd/aidlc-dist -run '<pattern>'`、
+cwdは `/Users/const/sori883/ai-dd-distribution`。testを先行して追加した。
+
+| pattern | RED | GREEN | 観測 |
+| --- | --- | --- | --- |
+| `^TestArchiveLayout$` | exit 1 | exit 0 | 6archive欠落から、形式・内容・Unix modeを確認 |
+| `^TestArchiveReproducibility$` | exit 1 | exit 0 | manifest欠落から、8成果物の再現性・hash・size・順序を確認 |
+| `^TestArchiveRejectsInvalidInput$` | exit 1 | exit 0 | 不正入力の受理から、出力前拒否・保存失敗を確認 |
+| `^TestDistCommand$` | exit 1 | exit 0 | 空scaffold応答から、help・対象選択・exit区別を確認 |
+
+既存出力dir拒否はslice 3時点でALREADY_GREEN。人工REDは作っていない。
+ZIPのゼロ時刻が1979年として読まれる追加回帰もexit 1を確認後、
+1980-01-01 UTC固定に修正してexit 0。末尾4targetedおよび
+`go test -count=1 ./src/cmd/aidlc-dist` はすべてexit 0。gofmtとdiff checkも完了。
+
+証拠root: `/var/folders/9w/921pjkys39q28sk4xsc0hs000000gn/T/ai-dd-dist-tdd-r5lp3hy0`。
+`01-layout-*`、`02-repro-*`、`03-invalid-*`、`04-command-*`、
+`01-layout-timestamp-*`、`boundary-*` にcommand/cwd/time/exit/stdout/stderr、
+test・productionのSHA256とmodule外snapshotを保存した。
+
+finalの6target実build後の入口:
+`AIDLC_DIST_DIR=<候補dir> go test -tags=integration -count=1 -v ./src/cmd/aidlc-dist -run '^TestDistributionArchives$'`。
+env未指定skipは検証成功ではない。native手順はenv不要の
+`go test -tags=integration -count=1 -v ./src/cmd/aidlc-dist -run '^TestDistributionJourney$'`。
+同じsourceから版表示・pathの異なる2binaryを作り、手動切替・参照補正・独自hook/data保全・
+元bytes復元を検査するfixtureであり、未知版upgrade互換の証明ではない。
+loopではintegration/E2E/6build/全project/race/vet未実行。3OS CIはfinalへ残す。
+Windowsの実Codex hook実行は未確認。
