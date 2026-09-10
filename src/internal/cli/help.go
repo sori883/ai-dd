@@ -108,8 +108,11 @@ func Help(args []string) (string, bool) {
 	if key == "intent/procedure" {
 		text += "現在step_id・計画revision・現在段階・definition_hash・procedureのpath/frontmatter/本文全文・解決inputs・具体outputs・診断・次回ID・reopen候補をJSONで返す読取り専用操作。IDは32桁小文字16進数、SPACEはSpace名。段階変更や再開後に取り直す。任意path/stageは指定不可。配布Ruleは固定path rules/rule.mdとmetadata type Ruleで特定する。titleは利用者が変更でき、title/description/本文の検証は維持する。他のRuleや入口を削除しない。定義変更時は元版を復元するか新Intentを作る。\n"
 	}
-	if key == "intent/check" || key == "intent/begin" {
+	if key == "intent/begin" {
 		text += "checkは読取り専用。--boundary start|end（省略end）。beginは開始入力版を保存し同段階の再試行では差し替えない。一般作業/Unit claim前にbeginが必要。文書不足はintent procedureの必須型/節に従いmemory CLIで修復する。\n"
+	}
+	if key == "intent/check" {
+		text += checkHelp()
 	}
 	if key == "intent/configure" {
 		text += "新規stateはschema_version=5。旧schemaは保持して明示エラー。material_sources/test_resultsはrepository相対pathの文字列配列、no_materials_reasonは文字列。material_sourcesは明示UTF-8ファイル/ディレクトリ。空ならdiscovery終了までにno_materials_reasonが必要。変更時はdiscoveryのbeginを無効化し、後段ではdiscoveryへのreopenが必要。entry/acceptedはCLI所有でconfigure不可。出力文書がある場合は当該step_idでoutputs登録する。document_inputs/document_outputsはintent documents専用でconfigure不可。test_resultsはstrict JSONのstep_id、stage(tdd|integration)、runs配列。現在存在する結果だけを指定し、次段階の結果は作成後に追記する。TDDはUnitごとのcommandとResultCommitの成功、integrationは全Unit統合後の現在HEADで計画command全ての成功を要求する。各runはcommand、実成果commit、必須整数exit_code、非空出力ファイルoutput_path。intent procedureの本文節と作成例に従う。\n"
@@ -117,6 +120,114 @@ func Help(args []string) (string, bool) {
 		text += "\n型: objective/plan/code_revision/direct_commitは文字列。scope/acceptance/unknowns/testsは文字列配列。adrはobjectでrequiredは真偽値、reasonは文字列。artifacts/unitsはobject配列。artifactのpath/kind/stageは文字列。Unitのstep_id/id/bolt/base_commit/status/result_commit/integrated_commitは文字列、depends_on/scope/testsは文字列配列。\n例中の<CURRENT_STEP>を現在step_idへ、<CURRENT_HEAD>を対象Gitの現在HEAD（40桁commit）へ置換する。Knowledgeのpath/本文、scope、受入条件、テストcommandは実projectに合わせて用意・置換する。例のコピーだけではSensor合格や検証済みを意味しない。\nUnitなし（直接実装）:\n```json\n{\n  \"no_materials_reason\": \"新規fixture。既存資材があればmaterial_sourcesを指定する\",\n  \"objective\": \"加算を提供する\",\n  \"scope\": [\n    \"add.go\"\n  ],\n  \"acceptance\": [\n    \"Add(2,3)は5を返す\"\n  ],\n  \"unknowns\": [],\n  \"plan\": \"失敗するテストを書き、最小実装と検証を行う\",\n  \"code_revision\": \"<CURRENT_HEAD>\",\n  \"tests\": [\n    \"go test -run TestAdd\"\n  ],\n  \"direct_commit\": \"\",\n  \"adr\": {\n    \"required\": false,\n    \"reason\": \"既存方式に沿うため追加判断なし\"\n  },\n  \"artifacts\": [\n    {\n      \"path\": \"aidlc/spaces/default/knowledge/codekb/current.md\",\n      \"kind\": \"Knowledge\",\n      \"stage\": \"discovery\"\n    }\n  ],\n  \"units\": []\n}\n```\nUnitあり（新規Unitの初期値）:\n```json\n{\n  \"no_materials_reason\": \"新規fixture。既存資材があればmaterial_sourcesを指定する\",\n  \"objective\": \"加算を提供する\",\n  \"scope\": [\n    \"add.go\"\n  ],\n  \"acceptance\": [\n    \"Add(2,3)は5を返す\"\n  ],\n  \"unknowns\": [],\n  \"plan\": \"失敗するテストを書き、最小実装と検証を行う\",\n  \"code_revision\": \"<CURRENT_HEAD>\",\n  \"tests\": [\n    \"go test -run TestAdd\"\n  ],\n  \"direct_commit\": \"\",\n  \"adr\": {\n    \"required\": false,\n    \"reason\": \"既存方式に沿うため追加判断なし\"\n  },\n  \"artifacts\": [\n    {\n      \"path\": \"aidlc/spaces/default/knowledge/codekb/current.md\",\n      \"kind\": \"Knowledge\",\n      \"stage\": \"discovery\"\n    }\n  ],\n  \"units\": [\n    {\n      \"step_id\": \"<CURRENT_STEP>\",\n      \"id\": \"addition\",\n      \"bolt\": \"bolt-1\",\n      \"base_commit\": \"<CURRENT_HEAD>\",\n      \"depends_on\": [],\n      \"scope\": [\n        \"add.go\"\n      ],\n      \"tests\": [\n        \"go test -run TestAdd\"\n      ],\n      \"status\": \"pending\",\n      \"result_commit\": \"\",\n      \"integrated_commit\": \"\"\n    }\n  ]\n}\n```\n新規Unitはpending、result_commit/integrated_commitは空文字列。Unitのidは英数字から始まる英数字・_・-の1〜80文字。既存configの更新はintent showを読み、既存fieldとUnit進捗を保持する。実行中Unitを例のpendingや空commitへ戻してはならない。direct_commitは直接実装の成果commitを検証後に指定する。\n"
 	}
 	return text, true
+}
+
+func checkHelp() string {
+	return `
+Intentは一つの案件、Sensorは段階の開始・終了条件を調べる検査。
+
+検査と完了:
+  checkは読取り専用で、記録済みの証拠を検査する。テストcommand自体は実行しない。
+  --boundary start|end（省略end）。passだけでは段階は完了しない。
+  開始Sensor → begin → 終了Sensor → 独立レビュー → 成果承認 → finish の順に進める。
+  beginは開始入力版を保存し、同段階の再試行では差し替えない。一般作業やUnit claim前に必要。
+  成果承認は、成果と独立レビューの提示後に受けた人間の実回答を使う。
+  plan-approvalは実行計画、approvalは現在回の成果の承認。別の要求として扱い、過去の回答を流用しない。
+
+入出力の確認:
+  aidlc intent procedure ID --space SPACE
+  JSONで現在step_id・段階・定義hash・手順全文、入力条件・実path・hash・診断、出力の保存先・metadataを確認する。
+  段階変更や再開後は取り直す。procedureはSensor内部の全必須H2一覧を返す操作ではない。
+  文書不足は以下の文書条件と現在のprocedureを照合し、memory CLIで本文・metadataを保存して修復する。
+  intent documentsによる入出力の宣言と、memory CLIによる本文保存は別の操作。
+
+段階ごとの開始・終了条件
+
+全段階:
+  開始: 固定workflow、Rule、宣言入力と資材を確認する。
+  終了: beginで保存した開始入力との整合と現在の入力、現在のstep_idに結び付けた宣言出力を確認する。
+
+initialization:
+  開始: Rule、固定workflow、配置2skill（aidlc・aidlc-cli）、hooks設定の有効なJSONを確認する。
+  終了: 開始入力との整合と宣言出力を確認する。
+
+discovery:
+  開始: Rule、共有分析文書があれば現在版を任意入力として確認する。
+  終了: 目的・範囲・受入条件、阻害事項なし、現在HEAD、資材または資材なし理由、ADR要否、Requirementsを確認する。
+
+architecture-analysis:
+  開始: 受入済みRequirements、共有分析文書の任意入力を確認する。
+  終了: CurrentAnalysisとArchitectureを各1件、本文と構成図を確認する。
+
+planning:
+  開始: 受入済みRequirements、共有分析文書の任意入力を確認する。
+  終了: ImplementationPlan、実装手順・検証方法、必要なUnit計画を確認する。
+
+tdd:
+  開始: 受入済みRequirements、先行planningがある場合は受入済みImplementationPlanを確認する。
+  終了: 直接実装のdirect_commit、またはUnitのResultCommitと統合、現在回の必要commandの成功記録を確認する。
+
+integration:
+  開始: 受入済みRequirements、先行planningがあれば受入済みImplementationPlan、先行tddがあれば受入済み証拠を確認する。
+  終了: 現在HEADに対応する必要commandの成功記録と宣言文書を確認する。
+
+initialization以外の終了:
+  目的・範囲・受入条件、阻害事項なし、現在HEAD、資材または資材なし理由、ADR要否も共通に確認する。
+  設計判断の記録が必要なら、採用するadr文書を入力または出力へ宣言する。
+  検証方法やUnit詳細はplanning以降の該当段階で登録する。
+
+実測証拠:
+  tddとintegrationの結果JSONは現在回のstep_id・stage・runsを持つ。
+  各runには実測のcommand・commit・整数exit_code・非空の出力ファイルを指すoutput_pathを記録する。
+  必要commandの成功（exit_code=0）を対応するcommitで確認する。結果は実行後にtest_resultsへ登録する。
+  コード・テストコード・commit・実測証拠は文書outputsへ登録しない。
+  Sensorは成功記録を確認し、独立レビューはRED/GREENの意味と記録の真正性を確認する。
+
+文書の共通条件:
+  metadataは本文とは別に文書を識別・検索する情報。typeは文書の用途を識別し、段階で要求する型と一致させる。
+  全文書に正しいtype、非空のtitle・description・本文が必要。日時はmemory CLIが生成する。
+  以下の保存先は当該Spaceのknowledge rootからの相対path。
+  必須見出しは正確なH2（## 見出し）で記載し、各節の本文も非空にする。
+
+Rule:
+  rules/rule.md。固定の必須H2はない。共通のmetadata・本文条件は必要。
+
+Requirements:
+  design/<intent_id>/requirements.md。現在intent_idが必要。
+  必須H2: ## 目的、## 範囲、## 要件、## 受入条件、## 未確定事項。
+
+CurrentAnalysis:
+  codekb/current-analysis.md。
+  必須H2: ## 現状、## 構成・動作、## 根拠、## 未確認事項。
+
+Architecture:
+  codekb/architecture.md。
+  必須H2: ## 構成図、## 構成要素、## データフロー。
+  構成図節には非空のMermaidコードブロックが必要。
+
+ImplementationPlan:
+  design/<intent_id>/implementation-plan.md。現在intent_idが必要。
+  必須H2: ## 変更箇所、## 実装手順、## 検証方法。
+
+Knowledge:
+  現行仕様・利用方法をcodekb/配下へ宣言する。
+  必須H2: ## 機能、## 利用手順、## 制約。
+
+adr:
+  設計判断が必要な場合にadr/配下へ宣言する。固定の必須H2はない。
+  共通のmetadata・本文条件に加え、新規出力には現在intent_idが必要。
+
+文書の版と省略:
+  後続で使うRequirementsと先行planningのImplementationPlanは、受入済みpathと内容hashを照合する。
+  planning省略時は、その受入済みImplementationPlanを一律要求しない。
+  CurrentAnalysis・Architectureは共有現在版の任意入力。ただしarchitecture-analysis終了では各1件が必要。
+  共有文書のintent_idや日時を形式だけのために更新しない。
+
+文書outputs:
+  initialization・tdd・integrationには一律の既定文書出力はない。必要な文書だけを現在回へ宣言する。
+  必要な文書がなければ空にできるが、段階の他の条件や実測証拠は引き続き必要。
+
+`
 }
 
 func memoryWriteHelp(action string) string {
