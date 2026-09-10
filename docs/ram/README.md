@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [実案件、配布・更新、利用文書を順に進める](decisions/2026-09-10-sequential-completion-request.md): ①から順に進める直接依頼。[最新構成の実案件計画](../design/latest-workflow-pilot-plan.md)でcheck help改善と6段階の実利用確認を具体化。各成果承認・通常のhook信頼確認は別に維持する。
+
 - [担当・作業場所管理の具体計画と通常解放・復旧条件を承認](decisions/2026-09-10-native-agent-assignment-implementation-approved.md): 具体計画全体の直接実装承認。通常はメインAIの確認で解放し、初回管理開始・復元不能な記録の作り直しは人間確認。単独TDD実装・review・final・PR/checks/mergeへ進む。
 - [A案の作業割当管理とメインAIによる起動を採用する](decisions/2026-09-10-managed-worker-assignment-approved.md): A案を承認。メインAIの標準ツールで起動し、CLIは管理root内の作業場所の二重割当を防ぐ。[具体計画](../design/native-agent-assignment-plan.md)を作成し、通常解放の確認者・管理記録復旧時の人間確認（Q1/Q2）を確認待ち。
 - [エージェントの起動はメインAIの標準ツールで行う](decisions/2026-09-10-native-agent-launch-required.md): CLIからエージェントを起動しない指定を記録。CLIによる作業登録と区別する。記録時点ではA/B未選択で、採用は上記の後続記録へ。
