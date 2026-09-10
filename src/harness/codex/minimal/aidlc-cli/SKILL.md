@@ -22,6 +22,9 @@ description: AI-DLC CLIの操作目的からコマンドとhelpを選ぶ。Inten
 
 ## 文書と実測
 
+Knowledgeは現行what/how、ADRは判断のwhy・代替案・影響、進捗はstate。毎操作の日誌や一律ADRは作らない。必要なADRを作り、不要なら理由をreviewする。
+outputsは期待する文書だけで、なければなし。プログラム・テストコード・commitを文書outputsへ列挙せず、検証証拠は別に説明する。共有文書のID/日時を形式だけのために更新しない。
+
 procedureのmetadata条件と解決path/版を読み、documentsでinputs/outputs両一覧を置換する。新文書は未存在でも宣言できるが、実測test_resultsは実行後に存在する結果だけを指定する。accepted入力は前回合格のpath/hashを保持し、変更にはreopenが必要。共有currentと同回outputは更新できる。各宣言・Unit・実測へ現在step_idを使う。
 本文だけをsessionのdraftへ書き、memory CLIでmetadataを生成する。Concept IDは拡張子なし。Knowledgeはcodekb/NAME、ADRはadr/NAMEでtype adr。要件はdesign/ID/requirements、実装計画はdesign/ID/implementation-plan、共有解析はcodekb/current-analysis、構成図はcodekb/architecture。新規ADRのIntent IDを保持する。update前にshowのcontent/hashを確認する。
 TDD/integrationは現在回のcommit・command・exit_code・output_pathをconfigureへ記録する。TDDはdirect_commitまたはUnitのResultCommit、integrationは現在HEADを検証する。Sensorは形式・版・command成功を確認し、真正性とRED/GREENの意味はreviewerが確認する。

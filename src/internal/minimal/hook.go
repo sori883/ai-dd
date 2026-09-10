@@ -73,6 +73,9 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 			if input.Tool == "apply_patch" && s.protectedPatch(input.Input.Command) {
 				return nil, invalid("use Intent CLI updates; do not patch canonical state or session state")
 			}
+			if err := s.assignmentCommand(input, state); err != nil {
+				return nil, err
+			}
 			if s.exception(input, state) {
 				return nil, nil
 			}
@@ -154,6 +157,47 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 	}
 	return out, nil
 }
+
+// assignmentCommand rejects mismatched managed commands before general Bash gates.
+func (s Service) assignmentCommand(input HookInput, state *Session) error {
+	if input.Tool != "Bash" {
+		return nil
+	}
+	argv, ok := shellWords(input.Input.Command)
+	if !ok || len(argv) < 2 || !sameBinary(argv[0], s.Binary) {
+		return nil
+	}
+	r, err := cli.ParseMinimal(argv[1:])
+	if err != nil {
+		return nil
+	}
+	unit := r.Command == "unit" && (r.Action == "claim" || r.Action == "reassign")
+	if r.Command != "assignment" && !unit {
+		return nil
+	}
+	if r.ProjectDir != "" && filepath.Clean(r.ProjectDir) != filepath.Clean(s.Root) {
+		return invalid("assignment command management root mismatch")
+	}
+	if r.Command == "assignment" && (r.Action == "reserve" || r.Action == "release") && r.Session != input.Session {
+		return invalid("assignment command session mismatch")
+	}
+	if unit || r.Command == "assignment" && r.Action == "reserve" {
+		if state.Space == "" || state.Intent == "" || r.Space != state.Space || r.Target != state.Intent {
+			return invalid("assignment command selected Space or Intent mismatch")
+		}
+	}
+	if unit {
+		var req flow.UnitRequest
+		if err := s.decodeDraft(r.File, &req); err != nil {
+			return err
+		}
+		if req.CoordinatorSession != input.Session {
+			return invalid("Unit coordinator session mismatch")
+		}
+	}
+	return nil
+}
+
 func (s Service) exception(input HookInput, state *Session) bool {
 	if input.Tool == "apply_patch" {
 		files := 0

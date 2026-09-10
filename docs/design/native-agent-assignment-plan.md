@@ -178,3 +178,7 @@ Unit部分保存の保護は共通guardReassignmentに接続し、Save/Begin/Reo
 
 割当変更の旧予約解放と新予約取得は同じregistry lockと1回の原子保存で行う。
 競合または保存失敗で旧予約だけが解放される状態を残さず、保存済みの同一要求は同じ新予約へ復旧する。
+
+独立reviewの契約確認として、認識済み割当CLIは実hook session・選択Space/Intent・管理rootの
+不一致を明示拒否し、Unit claim/reassignのdraftも厳密に読む。一般Bash許可へfallthroughさせない。
+bootstrapの4KiB制限で文書規約を省略せず、配布aidlc-cliの詳細へ明示参照して従来の意味を保持する。

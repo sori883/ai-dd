@@ -97,3 +97,27 @@ Help内で引数なしも同じ公開helpへ統一してexit 0とした。これ
 affected 6 packageの単一commandも最終exit 0（assignment 8.259s、flow 66.257s、
 minimal 7.229s、cli 0.989s、install 1.430s、workflow 1.387s）。変更Goへgofmtを適用し、
 `git diff --check`はexit 0。integration/live/full-project/race/vet/crossbuildは未実行のまま親へ渡す。
+
+## 独立review修正（開始63ab194）
+
+同じ承認済みwork unitで次の2件を修正した。CLIの管理root・会話・選択Intent契約と
+従来の文書規約を保持する修正であり、OS本人認証や任意shell wrapper解析は追加していない。
+
+| finding | exact targeted command | RED → GREEN |
+| --- | --- | --- |
+| 管理CLIの不一致が一般Bashへfallthrough | `go test -count=1 ./src/internal/minimal -run '^TestAssignmentContract'` | exit 1: active Intent/Rule読了/CheckWork成功でも他会話のreleaseが実Executeで成功し、reserve/Unit不一致もExecuteへ到達。管理CLIの明示検査をexception前へ置きexit 0 |
+| bootstrap短縮で文書規約が消失 | `go test -count=1 ./src/internal/install -run '^TestAssignmentContract'` | exit 1: 配布bootstrapに文書記録規約への明示参照なし。aidlc-cliへ従来規約を復元しbootstrapから参照してexit 0。配布文面と4KiB上限を確認 |
+
+assignment reserve/releaseは実hook sessionと引数を照合する。reserveとUnit claim/reassignは
+選択Space/Intentを照合し、Unitのcoordinator_sessionは既存のunknown field・重複key・末尾JSONを
+拒否するdecoderで読む。明示project-dir不一致もdenyとして終了し一般作業へ戻さない。
+正しいownerのreleaseはHook→Executeで成功する。既存TestRelocationHookの対照は、以前存在しなかった
+request.jsonへ実sessionを用意して厳密入力契約へ追従した。このfixture追従は人工REDに数えない。
+
+ADRの代替案/影響、毎操作日誌・一律ADR不要、不要ADRの理由review、outputsは文書だけで無し可、
+コード/commitと検証証拠の区別、共有文書ID/日時の形式目的更新禁止を配布aidlc-cliに保持した。
+bootstrap原稿は3968 bytesで、配布後のサイズも回帰で確認する。
+
+影響確認 `go test -count=1 ./src/internal/minimal ./src/internal/install` はexit 0。
+両targetedの末尾再確認もexit 0。gofmt・git diff --checkを実施。integration/live/full-project/race/vetは未実行。
+63ab194の検証は修正後codeのfinal証拠として使わず、親の独立再review/fresh finalへ渡す。

@@ -140,7 +140,7 @@ Intent・Unitの進捗はstateで管理する。全作業の日誌は要求せ�
 
 | 種別 | 記録 | 状態 |
 | --- | --- | --- |
-| 実装 | [native担当・作業場所管理の実装loop](decisions/2026-09-10-native-agent-assignment-implementation.md) | Issue #161、単独writer TDD・横断予約・native task対応・明示解放、実機未実施 |
+| 実装 | [native担当・作業場所管理の実装loop](decisions/2026-09-10-native-agent-assignment-implementation.md) | Issue #161、単独writer TDD・横断予約・native task対応・明示解放、review後の会話照合と文書規約復元、実機未実施 |
 | 意思決定 | [Git共有stateと調整役AIによる起動を採用する](decisions/2026-09-08-four-stage-runtime-approved.md) | Accepted。提示した4ステージ実装計画の残る2点を確定し実装へ進む |
 | 意思決定 | [4ステージ方式の実装着手と不要製品コードの削除を依頼された](decisions/2026-09-08-four-stage-implementation-request.md) | 実装・不要製品コード削除の直接依頼。進捗共有とAI起動責任を確認中 |
 | 計画 | [4ステージ方式への実装計画](../design/four-stage-workflow-implementation-plan.md) | 対象・保存/CLI案・削除境界・受入/検証を具体化。2点への回答後に契約を確定 |

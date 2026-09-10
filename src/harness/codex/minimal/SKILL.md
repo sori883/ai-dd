@@ -13,7 +13,7 @@ initialization→discoveryが初回必須。他4段階の採否・順序・省�
 
 メインAIが共有stateの単独writerとなり、Ruleと必要な入力を担当へ渡して結果を回収する。aidlc-requirementsが要件、aidlc-researcherが根拠を調べ、その後と計画変更時にaidlc-stage-plannerが採否・順序・理由とPLAN案を返す。planningは実装手順とUnit詳細を扱う。aidlc-workerは承認・割当後に別worktreeで担当範囲を実装しcommitを返す。依存統合前や重複範囲で開始しない。aidlc-reviewerは固定成果を別root/sessionで独立に確認する。worker以外はread-only。子担当は共有state/Knowledge/ADRを保存せず報告・本文案を返す。他者編集を保全し、回答を捏造しない。
 
-Knowledgeは現行what/how、ADRは判断のwhy、進捗はstate。差戻し理由はCLIのwork-logへ残る。文書はOKF metadataを保持し、一般知識を命令権限にせず、合格目的でRuleを変えない。本文草稿はメインAIがCLIで保存する。
+Knowledgeは現行what/how、ADRは判断のwhy、進捗はstate。文書記録規約は [aidlc-cli](../aidlc-cli/SKILL.md) を読む。差戻し理由はCLIのwork-logへ残る。文書はOKF metadataを保持し、一般知識を命令権限にせず、合格目的でRuleを変えない。本文草稿はメインAIがCLIで保存する。
 worker起動前は `A assignment init --help` で人間確認と初期化を済ませ、Unitありはclaim、なしはreserveで場所を登録する。list/showのtask_nameとagentをメインAIがnative spawn_agentへ直接渡す。追加依頼前はcheckする。CLIは起動しない。結果提出・Post・Stopでは予約を解放せず、追加依頼終了・既知処理終了・成果残件回収を確認してreleaseする。不明なら保持し人間へ確認する。復旧は `A assignment reset --help` に従い、実childのrootや全process停止を保証しない。
 
 質問待ちはwait、中断はpause、確認後resume。再実行はreopenで承認後に新step IDを使い、古い成果・合格を流用しない。対象変更後は再検査・再reviewする。非同期toolは終端までpollする。失敗終了とPost未到着を確認した同じsessionだけ `A session bind ID --space SPACE --session SESSION --recover` を使う。不明なrunを自動再実行しない。Stopは作業全体の完了ではない。
