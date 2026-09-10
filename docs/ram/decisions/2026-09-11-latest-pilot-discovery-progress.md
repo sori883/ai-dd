@@ -93,4 +93,9 @@ revision13、s02 discoveryは成果承認待ち。計画と成果の二つの承
 
 生証拠は専用rootの `aidlc/evidence/latest-pilot/20-*`（bind）、`21-*`（tool終端）、
 `22-*`（実回答・承認・finish）、`23-*`（製品担当とdiscovery）へ保存。
+親も実transcriptの4件のnative spawn要求・応答とdispatch記録を照合した（`24-*`）。
+親による最後の公開CLI終了Sensorも同じtargetでpass、state bytes不変を確認した（`25-*`）。
+承認待ちstateの控えは `26-awaiting-approval-state.json`、SHA256は
+`b3c35327b25488275f488fcf50ad5629c8b73229afd321e8082fb144e97669ba`。
+通常Codexの各実行はexit0で終端を確認し、最後のsession Tool枠は空だった。
 新規製品コードのTDDや全体final検証の成功を、この記録で主張しない。
