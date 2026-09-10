@@ -28,6 +28,21 @@ AI-DLCは、Goの単一実行ファイル、6種類のステージ、5種類の�
 - CLIバイナリと実測ログは専用worktreeのGit対象外 `aidlc/evidence/latest-pilot/` に保存する。
 - 永続する判断と実測結果の要約だけを本開発の `docs/ram/` に記録する。
 
+### 固定Codexのhook読込に対する環境補正
+
+2026-09-11、linked worktreeではproject configが有効でも専用hooksが列挙されないことを実測した。
+通常Git repositoryの読取り専用比較では同じhook内容が5件とも列挙された。
+承認済みの隔離環境を維持するため、既存worktreeを退避し、同じ絶対pathへ独立Git cloneを作る。
+これは試験環境のGit管理方式だけの補正で、製品仕様やhookの保証範囲を変更しない。
+
+補正前に全file（`.git`を除く）の内容・mode・symlinkを記録し、Git HEAD、元remote、
+Intent state、assignment registryを保持する。退避先は `ai-dd-latest-pilot-linked-backup` とし、
+既存pathがあれば上書きせず停止する。cloneへ未追跡・ignored資材を含めて復元し、
+全fileの一致を確認してから通常 `/hooks` の信頼確認を再開する。
+不一致なら新cloneを別pathへ退避し、旧worktreeを元へ戻す。元checkoutへhookは追加しない。
+製品の承認要求targetが変わっていた場合、以前の回答を新targetへ適用しない。
+根拠と結果は [環境補正記録](../ram/decisions/2026-09-11-pilot-hook-discovery.md) に残す。
+
 ## 順序と人間承認
 
 1. **初期化**: 基準版をbuildし、fresh install、Space・Intent作成、Rule読込、procedure取得、
