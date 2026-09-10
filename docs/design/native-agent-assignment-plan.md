@@ -182,3 +182,5 @@ Unit部分保存の保護は共通guardReassignmentに接続し、Save/Begin/Reo
 独立reviewの契約確認として、認識済み割当CLIは実hook session・選択Space/Intent・管理rootの
 不一致を明示拒否し、Unit claim/reassignのdraftも厳密に読む。一般Bash許可へfallthroughさせない。
 bootstrapの4KiB制限で文書規約を省略せず、配布aidlc-cliの詳細へ明示参照して従来の意味を保持する。
+
+固定実機で子のhookが親session_idと子turn_idを持つことを確認したため、[子hookの分離計画](../ram/decisions/2026-09-10-native-child-hook-separation.md)を同じ承認済みwork unitで実行する。親の会話stateを子へ誤適用せず、現在担当の照合・workerの承認/開始条件・子の管理操作禁止を維持する。子の通常作業は既存の担当指示とsandboxに従い、実rootの証明や全書込みの制限には拡張しない。
