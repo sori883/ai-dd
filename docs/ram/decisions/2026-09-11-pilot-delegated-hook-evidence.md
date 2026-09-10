@@ -62,3 +62,46 @@ s03途中ではRule再読込要求に通常bindで対応した。また、同じ
 `28-discovery-approval-architecture.*`、`28-approval-observations.json`、`28-native-dispatch-evidence.json` に生証拠を保持する。
 後続段階は進行中。完走、Go実装、final成功をこの時点で主張しない。
 並列読取りのTool残存と子の途中通知拒否という既知の課題も、解決済みとは扱わない。
+
+
+## planning完了と実workerのTDD
+
+s04は通常resumeでrevision25へ戻り、メインAIがImplementationPlanを作成した。
+終了Sensorと別rootのnative reviewerはpass。外側AIが本文と実reviewを確認し、
+新しい通常入力「AIによる試験用承認です。提示済みs04 planning成果を承認します。」を送った。
+受信turnは `01a08c96-9d85-7721-b7ee-c081b991e646`。承認30、finish31、s05 begin32となった。
+実装手順の依頼先訂正は既存役割の範囲内で行い、製品の担当定義や計画順序は変更していない。
+
+メインAIがUnitなしのworker場所をreserveして、通常のnative spawn_agentでaidlc-workerを起動した。
+割当は `5a4f3488cf72a9ebbb44c59d425f6c35`、workerは別worktreeの所有2fileだけを変更した。
+Goの3項目は、段階と証拠、文書条件、完了手順とhelp形式の順に実行した。
+各項目で新testを追加して実行可能なassertion failureを確認し、その後helpを変更して成功した。
+compile failureや環境障害をREDへ数えていない。既存help形式等の成立はALREADY_GREENとして区別した。
+末尾の見出し比較補強はtestだけの変更で、再実行は成功。source hashと実native tool時系列も親が照合した。
+
+CLI package全体の検査は `Library/Caches/go-build` へのアクセス制限で開始できなかった。
+workerは3項目の証拠と差分を保持し、commit未作成で返した。既知非同期shellは全て終端回収済み、
+未回収backgroundなし。結果提出だけで予約を解放せず、親の残件確認までboundを維持した。
+
+外側親は所有2fileの全差分・test先行時系列・実RED出力を確認した。
+ソースを追加変更せず成果commit `21e755aa0ebe09699c5635a8403d5e7e1eb93e6a` を作成し、
+一意の一時GOCACHEを指定して同commitのtargetedとCLI package検査を実行した。両方exit0、前後source hash不変。
+これは環境内のキャッシュ場所変更であり、権限・hook trustの変更ではない。
+調整rootへfast-forwardし、review rootも同commitへ同期した。
+非aidlcの831fileのbytes/modeが一致することを確認して、通常会話から予約解放・実測登録・独立reviewへ進めた。
+この時点でTDD成果承認・integration・finalは未完了。
+
+## 子の実sessionと証拠の対応
+
+native spawn応答はtask pathを返し、実child UUIDは返していない。
+今回、同じ親sessionに属するローカルrolloutの先頭metadataだけを読み、
+`source.subagent.thread_spawn` のparent_thread_id・agent_path・agent_roleから実child UUIDを一意に対応付けた。
+workerは `01a08c9a-d23e-7ba0-be66-8e5d54721121`。native APIがUUIDを返したとは扱わない。
+metadataのcwdは親rootなので、その値をworkerの実作業場所の証拠には使わない。
+workerの実tool workdirとrecorderのcwd確認を別に照合した。
+保存するmetadataは識別項目と先頭行hashに限定し、base instructionsや内部推論は抽出しない。
+
+31の通常会話記録、`32-worker-tdd-tool-evidence.json`、`32-parent-boundary/`、
+`32-review-checkout-manifest.json` を専用rootの証拠配下に保持する。
+workerの各RED/GREENの実出力・sourceコピー・時刻・hashは `/tmp/ai-dd-check-help-hipulifz/` にある。
+一時証拠は消失し得るため、PR前に必要な実測証拠を専用rootへ保全する。
