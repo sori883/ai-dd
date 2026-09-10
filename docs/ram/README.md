@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [最新実案件の初期化成果と通常hook・担当管理開始を承認](decisions/2026-09-11-pilot-initialization-approved.md): ユーザーの「OKです。」を記録。対象配置は不変。実回答の中継・通常trust・初回assignment initを進め、後続成果の承認は別に行う。
+
 - [最新実案件の初期化を成果承認待ちまで進めた](decisions/2026-09-10-latest-workflow-pilot-progress.md): Issue #163。専用Space/Intentの開始・終了Sensorと実独立reviewがpass、初期化は人間承認待ち。通常trust・製品native担当・後続段階は未実測。
 
 - [実案件、配布・更新、利用文書を順に進める](decisions/2026-09-10-sequential-completion-request.md): ①から順に進める直接依頼。[最新構成の実案件計画](../design/latest-workflow-pilot-plan.md)でcheck help改善と6段階の実利用確認を具体化。各成果承認・通常のhook信頼確認は別に維持する。
