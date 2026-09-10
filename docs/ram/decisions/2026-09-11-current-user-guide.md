@@ -43,3 +43,7 @@ Windowsの実hook、既知のlinked-worktree探索やtool通知の課題も修�
 独立reviewで初心者の導線と現在の挙動への一致を確認し、read-only finalでリンク・掲載helpを検証する。
 配布整備の検証済みbinaryを使用し、前後で対象文書のbytesとGit状態が不変であることを確認する。
 最終結果、対象head、GitHub checksとmain反映は対応PRへ記録する。
+
+独立reviewで、初回配置がhelp案内だけでは実行手順として不足すると指摘された。
+実行ファイルと対象projectの絶対pathを指定する配置commandを追記した。
+finalでは掲載helpに加え、配布検証済みbinaryから空のGit projectへ実配置する。
