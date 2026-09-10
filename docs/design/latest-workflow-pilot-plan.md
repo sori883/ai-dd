@@ -1,5 +1,19 @@
 # 最新構成で実案件を完走する計画
 
+## 2026-09-11の承認役変更（以下の人間実回答条件を置換）
+
+ユーザーは今回のhelp改善パイロットに限り、外側AIが試験用の利用者・承認役を担当し、
+通常hookの検証も含めて進める案を「じゃあちょっとお願いしてもいいですか。」と直接承認した。
+以下で人間の実回答を毎回待つとした箇所は、今回に限り、外側AIが要求と成果を確認して生成する
+明示的な試験用回答へ置き換える。初期化までの人間回答履歴と製品の承認仕様は維持する。
+各段階の承認待ち、Sensor、独立reviewを通し、停止後の新しい通常UserPromptSubmitで回答する。
+回答には「AIによる試験用承認」と記し、現在request/target/受信session/turnへ結び付ける。
+架空の人間回答、直接state編集、hook trust迂回は引き続き使用しない。
+承認前の無害な専用canary操作と許可されない担当起動の拒否、正常担当起動、回答後の再開、
+操作後・停止時のruntimeを実測する。想定外の許可や通知欠落は成功と数えず証拠を保持する。
+変更file、TDD順、独立review、final、PR/merge、外部moduleなしの境界は以下の計画を維持する。
+委任範囲・証拠・復旧は [委任RAM](../ram/decisions/2026-09-11-pilot-ai-approval-delegated.md) に記す。
+
 ## 目的と現在地
 
 AI-DLCは、Goの単一実行ファイル、6種類のステージ、5種類の専門担当、OKF文書、
@@ -53,6 +67,8 @@ Intent state、assignment registryを保持する。退避先は `ai-dd-latest-p
 3. **現状の構成分析**: 現行help・Sensor・CLI・配布手順を解析し、Space共有の
    `codekb/current-analysis.md` と `codekb/architecture.md` を作る。
 4. **実装計画**: 変更fileとTDD順序を `design/<intent_id>/implementation-plan.md` に具体化する。
+   本文作成は製品のメインAIが担当する。aidlc-stage-plannerは実行段階の採否・順序を提案する専用役であり、
+   実装手順やUnit詳細の作成へ転用しない。別rootのaidlc-reviewerが固定した実装計画を確認する。
 5. **TDD**: 登録した別worktreeの1workerへ1作業単位を依頼し、test-firstでhelpを改善する。
 6. **統合検証**: 成果を統合したcommitで検証し、現行の使い方をKnowledgeへ保存する。
    終了Sensor、独立レビュー、ユーザーの成果承認、finishを経て同じIntentのcompletedを確認する。
