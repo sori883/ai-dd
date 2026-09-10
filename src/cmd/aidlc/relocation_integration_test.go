@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -141,6 +142,16 @@ func TestRelocationCommand(t *testing.T) {
 	runMinimalCLI(t, args[0], clone, []byte(`{"hook_event_name":"UserPromptSubmit","session_id":"new-coordinator","turn_id":"turn"}`), args[1:]...)
 	g.bind(st, "new-coordinator")
 	st = g.action(st, "resume", "--reason", "old workers stopped, clone inspected")
+	// Clone has no local registry. Never attach new reservations to its old Unit runs.
+	legacyWorker := filepath.Join(t.TempDir(), "legacy-worker")
+	g.git("worktree", "add", "--detach", legacyWorker, st.Config.Units[0].BaseCommit)
+	g.rejectCode(1, "assignment registry unavailable", "unit", "reassign", st.ID, "--space", "default", "--expect", strconv.FormatUint(st.Revision, 10), "--file", g.request(flow.UnitRequest{StepID: st.CurrentStepID, Unit: "a", Root: legacyWorker, Session: "new", PreviousRunStopped: true, Reason: "old stopped", Commit: st.Config.CodeRevision}))
+	st = g.tdd()
+	planned = st.Config
+	for i := range planned.Units {
+		planned.Units[i].Tests = []string{"go test -count=1 -run ^Test" + strings.ToUpper(planned.Units[i].ID) + "$"}
+	}
+	st = g.action(st, "configure", "--file", g.request(planned))
 	var runs []map[string]any
 	for i, id := range []string{"a", "b"} {
 		worker := filepath.Join(t.TempDir(), "new-"+id)
@@ -149,7 +160,7 @@ func TestRelocationCommand(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		st = g.unit(st, "reassign", flow.UnitRequest{Unit: id, Session: "new-" + id, Root: worker, Commit: st.Config.Units[i].BaseCommit, Reason: "confirmed old process stopped", PreviousRunStopped: true})
+		st = g.unit(st, "claim", flow.UnitRequest{Unit: id, Session: "new-" + id, Root: worker})
 		raw := operationsRead(t, filepath.Join(clone, "aidlc/.runtime/flow/units/default", st.ID, id+".json"))
 		var assignment flow.UnitRequest
 		if err := json.Unmarshal(raw, &assignment); err != nil {

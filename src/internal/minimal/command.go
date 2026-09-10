@@ -31,6 +31,9 @@ func (s Service) readDraft(file string) ([]byte, error) {
 
 // Execute runs one validated public operation; partial saves return output together with an error.
 func (s Service) Execute(r cli.MinimalRequest) ([]byte, error) {
+	if r.Command == "assignment" {
+		return s.executeAssignment(r)
+	}
 	if r.Command == "session" && r.Action == "bind" {
 		return s.bindFlow(r.Session, r.Space, r.Target, r.Recover)
 	}

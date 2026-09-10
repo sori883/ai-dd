@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/sori883/ai-dd/src/internal/assignment"
 	"github.com/sori883/ai-dd/src/internal/cli"
 	"github.com/sori883/ai-dd/src/internal/flow"
 	"github.com/sori883/ai-dd/src/internal/okfmemory"
@@ -25,6 +26,16 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 		}
 	}
 	_, err := s.withSession(input.Session, func(state *Session) ([]byte, error) {
+		if nativeAction(input.Tool) != "" && input.Event == "PostToolUse" {
+			if nativeAction(input.Tool) == "spawn" {
+				_, err := (assignment.Store{Root: s.Root}).PostSpawn(input.Session, input.ID, input.Response)
+				return nil, err
+			}
+			return nil, nil
+		}
+		if nativeAction(input.Tool) != "" && input.Event == "PreToolUse" {
+			return nil, s.agentPre(input, *state)
+		}
 		switch input.Event {
 		case "SessionStart":
 			state.RuleTurn = ""
@@ -176,6 +187,13 @@ func (s Service) exception(input HookInput, state *Session) bool {
 		return false
 	}
 	switch r.Command + "/" + r.Action {
+	case "assignment/init", "assignment/reset", "assignment/list", "assignment/show", "assignment/check":
+		return state.Tool == ""
+	case "assignment/release":
+		return state.Tool == "" && r.Session == input.Session
+	case "assignment/reserve":
+		return state.Tool == "" && r.Session == input.Session && r.Space == state.Space && r.Target == state.Intent
+
 	case "intent/plan", "intent/documents":
 		return r.File == "" || (state.Tool == "" && r.Space == state.Space && r.Target == state.Intent)
 	case "memory/rules", "memory/search", "memory/show", "memory/check", "intent/list", "intent/show", "intent/procedure", "intent/history", "intent/check", "session/inspect":

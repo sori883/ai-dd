@@ -71,7 +71,7 @@ rootとしてCLIへ登録した場所に実childが必ず入る保証はない�
 
 schema 1にはepoch、revision、調整root、worker割当、担当task対応、再試行のための最小記録を置く。worker割当はID、request_id、要求hash、親session、割当session、Space/Intent/step/定義hash、正規化root、任意Unit/run_id、entry revision、状態、対応taskを持つ。状態は `reserved / dispatch_pending / bound / uncertain / released` とし、`bound`は起動応答の対応が得られた意味だけを持つ。AIが稼働中・停止済みという判定ではない。
 
-rootは実在する絶対path・symlink解決・Git worktreeのtop-levelと同じrepositoryへの所属を確認する。同じ実体の別名は同一場所として拒否し、調整root自身はworker場所にしない。別rootは双方を登録できる。OS上のroot差替えや別PC/別管理元までの排他へ広げない。
+rootは実在する絶対path・symlink解決・Git worktreeのtop-levelを確認する。repository所属は共有履歴で確認し、Unitありは既存base/HEAD/依存検査、Unitなしはflow.State.Config.CodeRevisionが登録rootのHEADの祖先であることを検査する。既存clone移転を維持するため、共通git-dirやremote URLの一致を新たに必須にしない。同じ実体の別名は同一場所として拒否し、調整root自身はworker場所にしない。別rootは双方を登録できる。OS上のroot差替えや別PC/別管理元までの排他へ広げない。
 
 lock順序は必要なものだけ `session → flow-SPACE → assignments`。既存filestore.Lockを使い、検査と予約保存を同じ横断lock内で行う。他Spaceのflow lockは取得しない。assignment lockからflowへ呼び戻さない。単一ファイルの置換保存を使用し、保存が完了する前に成功を返さない。
 
@@ -168,3 +168,13 @@ stageの担当追加でdefinition hashが変わる。既存Intentを自動で新
 **Q2・採用済み:** 初回の管理開始と、復元できない管理情報の作り直しは、人間が既知の作業を整理したと確認してから行う。復元できる記録は復元し、再初期化では新epochを発行して旧要求を拒否する。メインAIだけの確認で再初期化する代案は採用しない。
 
 A案そのものの承認は取り直さない。作業場所を再利用する責任と復旧条件の2点も具体計画とともに承認され、回答をRAMと本計画へ反映した。親がIssue作成、単独Go TDD実装、独立review、final、PR/checks/mergeを管理する。
+
+## 実装で具体化した確認
+
+Unit部分保存の保護は共通guardReassignmentに接続し、Save/Begin/Reopen等でも元要求による復旧のrevisionを保持する。旧runtimeだけのresult/confirmも管理予約を要求し、新旧運用の混在を作らない。
+初期化JSONの確認はhuman_confirmedとreasonで記録する。復元不能resetのdiagnosisはmissing/corrupt/unrecoverableを区別し、読取可能な元記録にはepoch/hash、破損記録にはhashを要求する。新epoch発行前に読める元bytesをarchiveする。
+新規受付ではJSON escape後の確認理由も含め未解放予約ごと16384byte、未応答taskごと1024byteを保存余裕として見積もる。受理済みPostと解放ではその余裕を使う。容量不足をTTLや自動削除で解決しない。
+実装loopの証拠は[実装記録](../ram/decisions/2026-09-10-native-agent-assignment-implementation.md)へ集約する。
+
+割当変更の旧予約解放と新予約取得は同じregistry lockと1回の原子保存で行う。
+競合または保存失敗で旧予約だけが解放される状態を残さず、保存済みの同一要求は同じ新予約へ復旧する。

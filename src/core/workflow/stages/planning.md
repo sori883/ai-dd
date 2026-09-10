@@ -1,6 +1,8 @@
 ---
 stage_id: planning
 agents:
+  - role: execution_planning
+    agent: aidlc-stage-planner
   - role: independent_review
     agent: aidlc-reviewer
 inputs:
