@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [パイロットの利用者役と承認回答を外側AIへ委任する](decisions/2026-09-11-pilot-ai-approval-delegated.md): Issue #163限定の直接委任。通常Codexの実hookを通す試験用回答で段階承認を進め、各回の人間回答とは区別する。承認前拒否・担当拒否・回答後再開と記録を実測する。
+
 - [通常hookで初期化を完了し、製品担当で目的整理を進める](decisions/2026-09-11-latest-pilot-discovery-progress.md): Issue #163。実回答の中継で初期化完了。製品4担当をnative起動し、要件・計画を保存、Sensorと独立reviewがpass。revision13で要件と実行計画の承認待ち。承認対象を保持するため開発記録を別checkoutへ保存する。
 
 - [実案件環境のhook読込と独立Gitコピーへの補正](decisions/2026-09-11-pilot-hook-discovery.md): 固定Codexのlinked worktreeでproject hooksが列挙されない実測。専用環境のpath・file・stateを保持する環境補正を行い、通常trustを維持する。
