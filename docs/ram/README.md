@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [配布の仕上げを最小構成で進める](decisions/2026-09-11-distribution-packaging-scope.md): PR #164のmain反映・Issue #163完了。固定本家2.6.123のCodex配置と未提供upgradeを追加確認し、配布archive・照合値・3OS導入検査・手順による更新復旧を具体化。自動updater案は未採用。正式公開は別gate。
+
 - [委任した試験用回答と通常hookの実測](decisions/2026-09-11-pilot-delegated-hook-evidence.md): Issue #163。承認前canaryと禁止担当の起動前拒否、AI回答による再開、共有構成分析のSensor/reviewを実測。同じIntentが6段階を完了（revision45）。3項目TDD・独立コードreview、統合5command・Knowledge保存/検索・独立review、29件の承認/完了履歴を実測。AI試験用回答と人間回答、既知の運用課題を区別。
 
 - [パイロットの利用者役と承認回答を外側AIへ委任する](decisions/2026-09-11-pilot-ai-approval-delegated.md): Issue #163限定の直接委任。通常Codexの実hookを通す試験用回答で段階承認を進め、各回の人間回答とは区別する。承認前拒否・担当拒否・回答後再開と記録を実測する。
