@@ -1,5 +1,19 @@
 # 開発プロジェクトRAM
 
+- [委任した試験用回答と通常hookの実測](decisions/2026-09-11-pilot-delegated-hook-evidence.md): Issue #163。承認前canaryと禁止担当の起動前拒否、AI回答による再開、共有構成分析のSensor/reviewを実測。同じIntentが6段階を完了（revision45）。3項目TDD・独立コードreview、統合5command・Knowledge保存/検索・独立review、29件の承認/完了履歴を実測。AI試験用回答と人間回答、既知の運用課題を区別。
+
+- [パイロットの利用者役と承認回答を外側AIへ委任する](decisions/2026-09-11-pilot-ai-approval-delegated.md): Issue #163限定の直接委任。通常Codexの実hookを通す試験用回答で段階承認を進め、各回の人間回答とは区別する。承認前拒否・担当拒否・回答後再開と記録を実測する。
+
+- [通常hookで初期化を完了し、製品担当で目的整理を進める](decisions/2026-09-11-latest-pilot-discovery-progress.md): Issue #163。実回答の中継で初期化完了。製品4担当をnative起動し、要件・計画を保存、Sensorと独立reviewがpass。revision13で要件と実行計画の承認待ち。承認対象を保持するため開発記録を別checkoutへ保存する。
+
+- [実案件環境のhook読込と独立Gitコピーへの補正](decisions/2026-09-11-pilot-hook-discovery.md): 固定Codexのlinked worktreeでproject hooksが列挙されない実測。専用環境のpath・file・stateを保持する環境補正を行い、通常trustを維持する。
+
+- [最新実案件の初期化成果と通常hook・担当管理開始を承認](decisions/2026-09-11-pilot-initialization-approved.md): ユーザーの「OKです。」を記録。対象配置は不変。実回答の中継・通常trust・初回assignment initを進め、後続成果の承認は別に行う。
+
+- [最新実案件の初期化を成果承認待ちまで進めた](decisions/2026-09-10-latest-workflow-pilot-progress.md): Issue #163。専用Space/Intentの開始・終了Sensorと実独立reviewがpass、初期化は人間承認待ち。通常trust・製品native担当・後続段階は未実測。
+
+- [実案件、配布・更新、利用文書を順に進める](decisions/2026-09-10-sequential-completion-request.md): ①から順に進める直接依頼。[最新構成の実案件計画](../design/latest-workflow-pilot-plan.md)でcheck help改善と6段階の実利用確認を具体化。各成果承認・通常のhook信頼確認は別に維持する。
+
 - [担当・作業場所管理の具体計画と通常解放・復旧条件を承認](decisions/2026-09-10-native-agent-assignment-implementation-approved.md): 具体計画全体の直接実装承認。通常はメインAIの確認で解放し、初回管理開始・復元不能な記録の作り直しは人間確認。単独TDD実装・review・final・PR/checks/mergeへ進む。
 - [A案の作業割当管理とメインAIによる起動を採用する](decisions/2026-09-10-managed-worker-assignment-approved.md): A案を承認。メインAIの標準ツールで起動し、CLIは管理root内の作業場所の二重割当を防ぐ。[具体計画](../design/native-agent-assignment-plan.md)を作成し、通常解放の確認者・管理記録復旧時の人間確認（Q1/Q2）を確認待ち。
 - [エージェントの起動はメインAIの標準ツールで行う](decisions/2026-09-10-native-agent-launch-required.md): CLIからエージェントを起動しない指定を記録。CLIによる作業登録と区別する。記録時点ではA/B未選択で、採用は上記の後続記録へ。
