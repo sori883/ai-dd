@@ -29,4 +29,18 @@ hook専用の探索先がprimary checkoutへ向く問題を報告している。
 
 ## 実施結果
 
-補正を開始する前の計画記録。ファイル照合、通常trust、実hookの結果を後続で追記する。
+旧worktreeを `ai-dd-latest-pilot-linked-backup` へ退避し、同じpathの独立cloneへ切り替えた。
+HEAD `aeef3c9` と `.git` を除く1,339fileの内容・mode・symlinkが一致した。
+同じCodexの通常UIで新規5hookが表示され、事前確認した専用pathとcommandを照合後にtrustした。
+元checkoutのhooksやユーザー資料は変更していない。これによりworktree固有の探索問題の確度が高まった。
+
+実session `01a08be5-f6fa-7490-9aca-4729726cd117` がSessionStart contextを受け、
+Intent bindとRule読込みに成功。state revision4と同じ承認request/targetを保持した。
+bind前のpwd拒否も実測した。approvalとfinishはまだ行っていない。
+
+一方、読取りcommandの並列実行時にsession lock競合が発生した。読取りcatの実tool ID
+`exec-533e006c-a711-4526-a3de-437af25571e3` は実transcriptでcompleted/exit0だが、
+Session.Toolに残った。Postの不達と処理失敗は今回のログだけでは区別できない。
+bootstrapのCodex自体もexit0を確認した。根拠付きの同session復旧と以後の直列呼出しで進め、
+並列時の追跡問題を解決済みとは扱わない。help改善とは別の製品改善候補として残す。
+生ログ・1339file照合・UI信頼操作・終端の抜粋は専用rootの `aidlc/evidence/latest-pilot/18-*`〜`21-*` に保存した。
