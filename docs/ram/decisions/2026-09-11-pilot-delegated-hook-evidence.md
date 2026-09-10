@@ -1,6 +1,6 @@
 # 委任した試験用回答と通常hookの実測
 
-日付: 2026-09-11。Issue #163。進行中。
+日付: 2026-09-11。Issue #163。実案件はrevision45で完走。開発側の最終検証とPRの結果は別gateとして管理する。
 許可は [今回限定の承認役委任](2026-09-11-pilot-ai-approval-delegated.md)。
 製品仕様は変えず、信頼済みのCodex 0.153.4で同じpilot会話を再開した。
 
@@ -105,3 +105,84 @@ workerの実tool workdirとrecorderのcwd確認を別に照合した。
 `32-review-checkout-manifest.json` を専用rootの証拠配下に保持する。
 workerの各RED/GREENの実出力・sourceコピー・時刻・hashは `/tmp/ai-dd-check-help-hipulifz/` にある。
 一時証拠は消失し得るため、PR前に必要な実測証拠を専用rootへ保全する。
+
+
+## TDDの独立レビューと統合検証への遷移
+
+native `/root/tdd_code_review` はcommit21e755aの所有2fileと、実RED/GREENの各snapshot、
+元rolloutの13tool要求、親の成果commit上の再検査を照合し、pass・指摘なしとした。
+workerの非同期shell7件は終端応答まで確認した。公開releaseはentry_revision4でreleasedとなった。
+831fileのbytes/modeとHEADはreview開始・終了とも指定manifestに一致した。
+この実reviewを開発側の独立コードレビューとしても採用する。
+Issue本文の再取得はreviewer環境のAPI接続失敗で未確認だったため、親が取得した実本文JSONを
+後続integrationのreviewへ渡す。その他の承認済み計画・RAM・受入文書・実承認は照合済みである。
+
+s05はrevision35でrequest `7dc1c612a1d9c17031d63bd1c635663f`、target
+`ad1d0a2622bfe2b8ae9b133904f541b8f4384f32c974e0c3fb0c3262fe599956` の成果承認待ちとなった。
+親が実最終報告と成果を確認し、新しい通常入力で「AIによる試験用承認です。提示済みs05 tdd成果を承認します。」
+を返した。approvalはrevision36、finishは37、s06 integrationはbegin38で開始した。
+
+統合HEADも21e755a。targeted、CLI package、新binaryのbuild、2形式のnative check helpを実測し、
+全5commandがexit0だった。helpのstdoutは一致しstderrは空、必須2段階・選択4段階と文書条件も確認した。
+buildにはGoのstat cache書込み警告があり、そのまま実stderrへ保存した。権限やtrustは変更していない。
+信頼済みhook用binaryを上書きせず、新helpは別名aidlc-check-helpで実行した。
+Knowledgeはmemory CLIで保存し、intent_id指定検索とshowで取得した。現時点ではintegrationの
+独立review・成果承認・finishと、開発側final・PR/mergeは進行中である。
+
+
+## 最終到達点：同じIntentが6段階を完了
+
+s06の独立reviewもpass・指摘なし。実測記録scriptと元rolloutの終端、5commandの出力、
+Knowledge、Issue実本文を照合した。Issue受入1〜3の説明条件は充足し、全体完走の条件は
+新しいs06成果承認とfinish後に判定するとの境界も維持した。
+最初の統合終了Sensorは `direct implementation result must match HEAD` を返した。
+実測済み現在HEADを公開configureへ登録し直してpassとなり、Sensorを迂回しなかった。
+
+外側AIは新しい通常入力で「AIによる試験用承認です。提示済みs06 integration成果を承認します。」を返した。
+受信turnは `01a08ccf-2eb2-7fa2-8b58-f002255e277d`。
+承認待ちの複合Python読取りはhookが拒否したため、通常readコマンドと公開CLIへ切り替えた。
+approvalはrevision44、finishは45。同じIntent `915a62dd6391fbab3e08a5707309d687` がcompletedになった。
+
+| 実行回 | 段階 | 成果承認revision | finish revision | 回答元 |
+| --- | --- | --- | --- | --- |
+| s01 | initialization | 5 | 6 | 人間の既存実回答を通常入力へ中継 |
+| s02 | discovery | 15 | 16 | 明示委任されたAI試験用回答 |
+| s03 | architecture-analysis | 21 | 22 | 明示委任されたAI試験用回答 |
+| s04 | planning | 30 | 31 | 明示委任されたAI試験用回答 |
+| s05 | tdd | 36 | 37 | 明示委任されたAI試験用回答 |
+| s06 | integration | 44 | 45 | 明示委任されたAI試験用回答 |
+
+親が29件の状態変更履歴をたどり、各fileのhashとprevious連鎖を確認した。
+6回それぞれに1件のapproved記録があり、review passのtarget、承認target、finishで受入れたtargetが一致する。
+すべて同じIntentと計画revision1に結び付く。全操作auditを追加したものではなく、既存の状態変更履歴の検証である。
+最終Knowledgeのhashは `94d85d55d3430e5e84c969cdcd6c3c9e8798ffeb9ec00f985a5e057d49244381`。
+
+このパイロットで製品5担当のnative起動、禁止担当の起動前拒否、承認待ちの一般操作拒否、
+新しい通常入力後の承認・再開、実workerのTDD、記録・検索・完了を確認した。
+初期化の外側CLIや開発用独立reviewまで製品native担当の実行だったとは扱わない。
+初期化後の成果回答はAI試験用であり、人間本人が各成果をreviewした証拠ではない。
+固定Codex 0.153.4の通常trustを維持した観測で、hook対象外経路やOS全processの封じ込めを保証しない。
+
+未解消の観測は、linked worktreeでのhook discovery、並列read/失敗patch後のTool残存、
+子からの途中通知拒否である。今回のhelp変更に混ぜず、後続運用の入力として保持する。
+環境補正・公開復旧・明示した担当訂正を使って完走したことを、無補正で完走した結果と混同しない。
+Go cache権限障害は一時cacheで検査を完了し、build時のstat cache警告も原文保存した。
+
+実証拠は専用rootのaidlc/evidence/latest-pilot/に保存する。`32-native-code-review-report.md`、
+`33-native-integration-review-report.md`、`34-completion-history-check.json`がレビューと完走照合をまとめる。
+元の一時worker証拠73fileは`worker-tdd-evidence/`へ同hashで保全した。
+利用プロジェクトのstate・Knowledge・生ログ・配置したhook/agentは製品PRへ含めない。
+開発側finalとGitHub checksは、records統合後の固定版について別途実行し、確定結果をPRへ記載する。
+
+
+## 外側親の最終照合と証拠保全
+
+通常Codexの最終実行はexit0で終端を確認した。公開show/history/session inspect/assignment listも
+親が読取り専用で実行し、各exit0、Session.Tool空、旧worker予約releasedを確認した。
+受入済み文書と実測証拠14件は保存されたhashと現物が一致した。
+registryの11dispatchを元rolloutの実spawn_agent要求・返却task pathへ対応付け、5製品担当の起動を確認した。
+履歴とstate、Space、registryを34-completed-snapshot/へ保全し、対応表は34-native-role-check.jsonへ保存した。
+
+実案件の完了対象はコードcommit21e755aである。その後に開発用RAMと計画を統合するため、
+開発PRのHEADは変わるが、Goの成果2fileは同じbytesを維持する。
+実案件が後から更新された開発文書や新HEADに対して実行されたとは扱わず、完了時点のsnapshotを根拠にする。

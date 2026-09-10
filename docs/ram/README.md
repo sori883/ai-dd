@@ -1,6 +1,6 @@
 # 開発プロジェクトRAM
 
-- [委任した試験用回答と通常hookの実測](decisions/2026-09-11-pilot-delegated-hook-evidence.md): Issue #163。承認前canaryと禁止担当の起動前拒否、AI回答による再開、共有構成分析のSensor/reviewを実測。planning完了、実workerの3項目TDDと親の末尾検査が成功。キャッシュ権限障害は一時キャッシュで解決し、独立コードreviewへ進行。全体完走は継続中。
+- [委任した試験用回答と通常hookの実測](decisions/2026-09-11-pilot-delegated-hook-evidence.md): Issue #163。承認前canaryと禁止担当の起動前拒否、AI回答による再開、共有構成分析のSensor/reviewを実測。同じIntentが6段階を完了（revision45）。3項目TDD・独立コードreview、統合5command・Knowledge保存/検索・独立review、29件の承認/完了履歴を実測。AI試験用回答と人間回答、既知の運用課題を区別。
 
 - [パイロットの利用者役と承認回答を外側AIへ委任する](decisions/2026-09-11-pilot-ai-approval-delegated.md): Issue #163限定の直接委任。通常Codexの実hookを通す試験用回答で段階承認を進め、各回の人間回答とは区別する。承認前拒否・担当拒否・回答後再開と記録を実測する。
 
