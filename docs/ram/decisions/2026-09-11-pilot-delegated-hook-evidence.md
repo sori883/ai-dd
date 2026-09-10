@@ -34,6 +34,16 @@ canaryの要求はcustom_tool_call内のexecで、native spawnはfunction_call�
 
 ## 証拠と現在の限界
 
+s03の試験用回答はrevision21、finishは22。受信turnは `01a08c83-2a84-7972-bdda-43bb01d371ae`。
+s04はrevision23でbeginしたが、外側handoffがステージ選択専用aidlc-stage-plannerへ実装手順を依頼し、
+実task `/root/implementation_plan` は担当範囲外として返却した。revision24で通常waitへ移り、Tool空で終了。
+担当定義は既存どおりステージ採否・順序専用であり、planning全作業の専任という意味ではない。
+外側の依頼先選択を訂正し、メインAIがImplementationPlan本文を作り独立reviewへ渡す回答を新turnで送った。
+既存のメインAIの共有writer責務とplanning手順から決まる実施詳細であり、製品の役割や実行計画を変更しない。
+この質問待ちを人間へ再度転送せず、今回の試験用利用者役が回答した。
+実装用worktree `ai-dd-latest-pilot-worker` / branch `codex/latest-check-help-worker` はHEAD1ae3578で作成済み。
+作成時cleanを確認し、workerの予約・起動・編集はTDD開始後に行う。
+
 s03ではnative researcherとreviewerを起動し、実要求・応答とregistryの2dispatchを親も照合した。
 CurrentAnalysis（hash `34410f7e7a427b8f8e716450e91649c7fac7eae0140d1f1d8a1f292e86b6e353`）と
 Architecture（hash `6748baecef1a652397435f0f2107eefcbf88560328a07771233ff5689a97b25a`）をmemory CLIで保存。

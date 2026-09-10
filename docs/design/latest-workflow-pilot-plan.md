@@ -67,6 +67,8 @@ Intent state、assignment registryを保持する。退避先は `ai-dd-latest-p
 3. **現状の構成分析**: 現行help・Sensor・CLI・配布手順を解析し、Space共有の
    `codekb/current-analysis.md` と `codekb/architecture.md` を作る。
 4. **実装計画**: 変更fileとTDD順序を `design/<intent_id>/implementation-plan.md` に具体化する。
+   本文作成は製品のメインAIが担当する。aidlc-stage-plannerは実行段階の採否・順序を提案する専用役であり、
+   実装手順やUnit詳細の作成へ転用しない。別rootのaidlc-reviewerが固定した実装計画を確認する。
 5. **TDD**: 登録した別worktreeの1workerへ1作業単位を依頼し、test-firstでhelpを改善する。
 6. **統合検証**: 成果を統合したcommitで検証し、現行の使い方をKnowledgeへ保存する。
    終了Sensor、独立レビュー、ユーザーの成果承認、finishを経て同じIntentのcompletedを確認する。

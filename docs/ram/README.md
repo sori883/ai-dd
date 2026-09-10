@@ -1,6 +1,6 @@
 # 開発プロジェクトRAM
 
-- [委任した試験用回答と通常hookの実測](decisions/2026-09-11-pilot-delegated-hook-evidence.md): Issue #163。承認前canaryと禁止担当の起動前拒否を実測。AIと明示した新しい通常入力で計画・成果を別承認し、s03へ進行。全体完走は継続中。
+- [委任した試験用回答と通常hookの実測](decisions/2026-09-11-pilot-delegated-hook-evidence.md): Issue #163。承認前canaryと禁止担当の起動前拒否、AI回答による再開、共有構成分析のSensor/reviewを実測。s03完了後、planning本文の依頼先をメインAIへ訂正して継続。全体完走は継続中。
 
 - [パイロットの利用者役と承認回答を外側AIへ委任する](decisions/2026-09-11-pilot-ai-approval-delegated.md): Issue #163限定の直接委任。通常Codexの実hookを通す試験用回答で段階承認を進め、各回の人間回答とは区別する。承認前拒否・担当拒否・回答後再開と記録を実測する。
 
