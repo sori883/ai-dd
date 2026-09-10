@@ -1,55 +1,46 @@
-# ai-dd
+# AI-DLC
 
-AI-DLCを単一バイナリで実行するためのGo製CLIです。現在は、今後のワークフロー実装を支えるCLI基盤として、help、version、終了コード、ビルド情報の契約を提供します。
+AIと目的を整理し、必要な工程を選び、検査・レビュー・承認を経て開発を進めるGo製CLIです。
+一つの目的をIntentとして管理し、進捗はstate、現行仕様はKnowledge、設計判断の理由はADRへ保存します。
 
-## 必要環境
+## 使い始める
 
-- Go 1.26以上
+利用する実行ファイルは`aidlc`一つです。Codex用のSkill・専門担当・hookと工程定義を内包しています。
+CodexとGitを使うプロジェクトへ配置し、AIへ実現したい目的を伝えます。
+Go 1.26以降が必要なのは、ソースからbuildする場合です。
 
-実行時の追加ランタイムは不要です。Goの外部moduleにも依存していません。
+1. [配布・導入・更新手順](docs/distribution.md)で実行ファイルと利用先を用意する。
+2. [利用者ガイド](src/docs/user-guide.md)に沿ってCodexから初回の作業を依頼する。
+3. AIが提示する実行計画と、各工程の成果を確認して承認する。
 
-## ビルド
+現在は配布候補の生成・検証を整備した段階で、正式な公開版は未確定です。
+手元でbuildする場合は[開発手順](docs/development.md)を参照してください。
+実際のCodex hook動作を確認した環境とOS別の配布検証は、[検証範囲](docs/distribution.md#検証の範囲)に記載しています。
+
+## 開発の流れ
+
+最初の「Space等の初期化 → 目的整理と深掘り」は必須です。
+「現状の構成分析・実装計画・TDD・統合検証」は、目的整理で採否と順序を決め、ユーザーが承認します。
+各実行回ではプログラムによるSensor、別担当のレビュー、会話による成果承認を確認して進みます。
+
+メインAIが必要な専門担当を標準のサブエージェント機能で起動します。
+分割できる実装は別worktreeで並列化し、共有の進捗とKnowledgeはメインAIが保存します。
+CLIは担当の割当を管理し、エージェント自体は起動しません。
+
+## 操作を調べる
 
 ```sh
-mkdir -p bin
-go build -o bin/aidlc ./src/cmd/aidlc
+aidlc --help
+aidlc --version
+aidlc intent procedure --help
+aidlc memory search --help
 ```
 
-versionとcommitはlink時に設定できます。
+型・引数・JSONの詳細は利用中のCLIのhelp、現在の工程の担当・入力・出力は`intent procedure`で確認できます。
 
-```sh
-go build \
-  -ldflags "-X github.com/sori883/ai-dd/src/internal/buildinfo.Version=v0.1.0 -X github.com/sori883/ai-dd/src/internal/buildinfo.Commit=abcdef0" \
-  -o bin/aidlc \
-  ./src/cmd/aidlc
-```
+## 開発者向け資料
 
-ビルド情報を指定しない場合は、versionが`dev`、commitが`unknown`になります。再現可能性を保つため、build timestampは埋め込みません。
-
-## 使い方
-
-```text
-$ ./bin/aidlc --help
-AI-DLC command-line interface
-
-Usage:
-  aidlc <command>
-
-Commands:
-  help       Show help
-  version    Show version information
-
-Flags:
-  --help     Show help
-  --version  Show version information
-```
-
-`help`と`--help`はhelpをstdoutへ出力し、`version`と`--version`はversion情報をstdoutへ出力します。stdoutへの書き込みに失敗した場合はstderrへ診断を試み、終了コード1を返します。不正な引数は診断とusageをstderrへ出力し、終了コード2を返します。
-
-## 開発
-
-ローカル検証手順は[docs/development.md](docs/development.md)、配布先での確認は[docs/e2e-testing.md](docs/e2e-testing.md)、package境界と手動DIは[docs/architecture.md](docs/architecture.md)を参照してください。
-
-AI-DLC v2参照実装の分析資料は[docs/aidlc-analysis/README.md](docs/aidlc-analysis/README.md)にあります。
-
-開発上の意思決定、制約、調査結果は[docs/ram/README.md](docs/ram/README.md)から参照できます。
+- [開発・検証手順](docs/development.md)
+- [現行アーキテクチャ](docs/architecture.md)
+- [開発プロジェクトの判断記録](docs/ram/README.md)
+- [固定版の本家AI-DLC分析](docs/aidlc-analysis/README.md)

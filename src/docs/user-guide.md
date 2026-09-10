@@ -1,0 +1,156 @@
+# AI-DLC 利用者ガイド
+
+AI-DLCは、AIと目的を整理し、必要な工程を選び、検査・レビュー・承認を経て開発を進める道具です。
+利用者は目的と判断を伝え、メインAIがCLIを使って進捗と文書を保存します。
+実行ファイルは`aidlc`一つで、工程定義、Codex用のSkill・専門担当・hookを内包します。
+
+## 最初に使うとき
+
+1. [配布・導入手順](../../docs/distribution.md)で利用環境に合う実行ファイルを用意します。
+   現在は配布候補の生成・検証までを整備しており、正式な公開版は未確定です。
+   リポジトリから自分でbuildする場合は[開発手順](../../docs/development.md)を使います。
+2. 利用するGitプロジェクトへ配置します。次はmacOS/Linuxの例です。2つのパスを、用意した実行ファイルと
+   対象プロジェクトの実際の絶対パスへ置き換えて実行します。
+
+   ```sh
+   "/absolute/path/to/aidlc" install codex --project-dir "/absolute/path/to/project"
+   ```
+
+   詳しい引数は`aidlc install codex --help`で確認できます。WindowsのPowerShellでは、引用した実行ファイルの
+   パスの前に`&`を置き、実際の`aidlc.exe`とプロジェクトのパスを指定します。
+   既設環境の更新には配布手順の比較・更新・復旧を使います。fresh installは既存ファイルを上書きしません。
+3. Codexで対象プロジェクトを開き、生成されたhookの実行ファイル・対象パスを確認して、通常の信頼確認を行います。
+   ファイルが生成されたことだけでは、hookの動作確認は終わっていません。
+4. `aidlc` Skillを使うことと、実現したい目的をAIへ伝えます。例えば「検索画面で名前の部分一致を
+   使えるようにしたい。既存動作を調べ、必要な工程を提案してください」と依頼します。
+5. AIが初期化の確認と目的整理を進めます。実装を始める前に、実行計画と承認対象を確認して返答します。
+
+Spaceは作業と共有知識をまとめる領域です。指定しなければ`default`を使います。
+Intentは「検索画面を改善する」など一つの目的を持つ作業単位で、固定IDを持ちます。
+試作・実装・修正・再開では同じIntentを使い、別の目的は別Intentにします。
+名前だけで選ばず、AIがCLIの一覧でIDを確認し、現在の会話へ結び付けます。
+
+`aidlc/.runtime`の担当管理を初めて使うときは、既知の作業を整理したことを人間が確認します。
+その後の通常の担当解放は、メインAIが既知の処理の終了と成果の回収を確認して行います。
+
+## どの工程を通るか
+
+最初の「Space等の初期化 → 目的整理と深掘り」は必須です。それ以降は目的に合わせて選びます。
+例えば調査だけのIntentに、コード実装のTDDを一律に要求しません。
+
+| ステージ | 行うこと | 主な文書 |
+| --- | --- | --- |
+| `initialization`：Space等の初期化 | 選択Space、共通Rule、配置と工程定義を確認 | 固定の出力文書なし |
+| `discovery`：目的整理と深掘り | 目的・範囲・受入条件・未確定事項を整理し、工程案を作る | `design/INTENT_ID/requirements.md` |
+| `architecture-analysis`：現状の構成分析 | 既存資材を調べ、現行の構成・動作・根拠を整理 | `codekb/current-analysis.md`、`codekb/architecture.md` |
+| `planning`：実装計画 | 実装手順、担当範囲、依存、検証方法を具体化 | `design/INTENT_ID/implementation-plan.md` |
+| `tdd`：TDD | 失敗するテストを確認し、実装で成功させ、整理する | 必要な文書を宣言。固定の出力文書なし |
+| `integration`：統合検証 | 組み合わせた成果を現在のコード版で検証 | 必要な現行仕様の文書を宣言 |
+
+表の文書パスは各Spaceの`knowledge/`からの相対パスです。構成分析の2文書はSpace共有です。
+文書outputsにはコードや全テストファイルを列挙せず、文書が不要ならなしにできます。
+テスト結果やコード版の確認は、それとは別に必要です。
+
+目的整理で、要件・調査結果を受けたステージ計画担当が、実行する段階・順序・省略理由を提案します。
+メインAIが説明し、ユーザーが承認するとIntentの実行計画になります。
+途中で工程を追加・省略・並べ替える場合も、変更案への承認を待ちます。
+「TDDの後に実装計画を見直し、TDDをもう一度実行する」という反復も、別の実行回として記録します。
+
+## 検査・レビュー・承認
+
+各実行回は、開始Sensor → 開始 → 作業 → 終了Sensor → 独立レビュー → 成果承認 → 完了、の順で進みます。
+
+- **Sensor**はプログラムの検査です。必要な文書・metadata・対象Intent・受理された版や内容hash、
+  実測結果などを段階に応じて確認します。他Intentの文書が存在するだけで、新しい成果の検査を通すものではありません。
+- **独立レビュー**は別のAI担当による内容確認です。要件を満たすか、説明に根拠があるか、
+  テスト結果が実際の検証を表すかを確認します。
+- **人間の承認**では、メインAIが対象を提示して回答を待ちます。実際の会話の回答をCLIへ記録します。
+
+実行計画への承認と、各回の成果への承認は別です。両方が提示済みの場合は一つの返答で承認できますが、
+過去の「よいです」を後から作った承認対象へ流用しません。対象が変われば検査・レビューもやり直します。
+hookは通常のAI操作で承認待ちや担当制限を飛ばすことを防ぎます。OS権限による全書込み禁止や、
+承認者の本人認証を行う仕組みではありません。
+
+## AIの担当
+
+ユーザーと対話するメインAIが進行を管理し、現在の段階で許可された担当を標準のサブエージェント機能で起動します。
+CLIは状態・文書・割当の管理を行い、エージェント自体は起動しません。
+
+| 担当 | 役割 |
+| --- | --- |
+| `aidlc-requirements` | 目的・要件・受入条件を整理 |
+| `aidlc-researcher` | 既存資材や公式資料を調査し、根拠と未確認事項を報告 |
+| `aidlc-stage-planner` | 工程の採否・順序・省略理由と変更案を提案 |
+| `aidlc-worker` | 割り当てられた実装とテストを行い、commitを返す |
+| `aidlc-reviewer` | 固定した成果を別の場所・会話で独立レビュー |
+
+worker以外の専門担当は読取り専用で、文書の本文案や報告をメインAIへ返します。
+共有の進捗、Knowledge、ADRを保存する担当はメインAI一人です。
+ステージ計画担当は「どの工程を通るか」を扱い、「実装計画」段階の作業全体を代行する担当ではありません。
+
+実装を独立したUnitに分けられる場合は、担当範囲と依存を定め、別worktreeへworkerを割り当てて並列化できます。
+Boltはその作業のまとまりです。同じ管理root内では、Space・Intent・会話をまたぐ作業場所の二重割当を防ぎます。
+これは実プロセスをOSで監視・停止する保証ではありません。結果提出やStop通知だけでは予約を解放しません。
+
+## どこに記録されるか
+
+```text
+aidlc/
+├── workflow/                       工程一覧と各工程の手順
+├── .runtime/                       ローカルの会話・担当予約（Git共有しない）
+└── spaces/SPACE/
+    ├── intents/INTENT_ID/
+    │   ├── state.json              現在の進捗・実行計画
+    │   └── history/                状態変更の履歴
+    └── knowledge/
+        ├── codekb/
+        │   ├── current-analysis.md 共有の現状解析
+        │   ├── architecture.md     共有の構成図
+        │   └── 機能名.md           現行仕様・利用手順
+        ├── design/INTENT_ID/
+        │   ├── requirements.md
+        │   └── implementation-plan.md
+        ├── adr/判断名.md           設計判断の理由
+        ├── rules/rule.md           プロジェクト共通ルール
+        └── log/INTENT_ID-work-log.md 差戻し理由
+```
+
+Knowledgeには「現在、何をどう行うか」、ADRにはアーキテクチャの判断について「なぜそうしたか」を残します。
+ADRは必要な判断ごとに作り、`intent_id`でIntentへ対応付けます。操作ごとの日誌や、Intentごとの一律ADRは要求しません。
+進捗はstateと状態変更履歴に保存し、工程を戻す理由はwork-logに記録します。
+`rule.md`は利用プロジェクトの共通ルールです。AI-DLC自体の操作手順は、配置された`aidlc`と`aidlc-cli`のSkillにあります。
+このリポジトリの`docs/ram/`は製品開発側の意思決定記録で、利用プロジェクトのKnowledgeとは別です。
+
+文書はOKFのmetadataを持つMarkdownです。AIが本文を用意し、`memory create`／`memory update`で保存します。
+frontmatterはCLIが引数から揃え、日時も自動設定します。ADRのtypeは小文字の`adr`です。
+検索対象は選択SpaceのKnowledge配下です。title・description・tagsを検索語で探し、
+`--intent-id`で関連するIntentに絞れます。本文は`memory show`で読みます。
+共有文書の日付やIntent IDは、Sensorを通すためだけに書き換えません。
+
+## 現在地の確認と再開
+
+次のhelpは状態を書き換えずに読めます。実際の操作では、表示されたID・Space・revisionを使います。
+`aidlc`がPATHにない場合は、導入した実行ファイルの絶対パスへ置き換えます。
+
+| 知りたいこと | help |
+| --- | --- |
+| Spaceを作る・確認する | `aidlc space --help` |
+| Intentを探す | `aidlc intent list --help` |
+| 今の進捗を見る | `aidlc intent show --help` |
+| 現在回の手順・入力・出力・許可担当を読む | `aidlc intent procedure --help` |
+| 状態変更の履歴を見る | `aidlc intent history --help` |
+| 文書を作る・更新する | `aidlc memory create --help`、`aidlc memory update --help` |
+| 文書を探す・読む | `aidlc memory search --help`、`aidlc memory show --help` |
+| 中断・再開・工程の再実行 | `aidlc intent pause --help`、`aidlc intent resume --help`、`aidlc intent reopen --help` |
+| 担当の割当と解放 | `aidlc assignment --help` |
+
+質問が必要なら質問待ちにし、中断ならpause、確認できたら同じIntentをresumeします。
+メインAIは会話をIntentへ結び直してRule全文を読み、現在回のprocedureを取り直します。
+エラー時は成功を推測せず、保存途中か、処理がまだ動いているかを確認します。
+予約・state・履歴を削除して先へ進めず、利用中のCLI helpと表示された診断に従って復旧します。
+
+## 動作確認の範囲
+
+通常hookを使った実案件の完走はmacOS/Codex CLI 0.153.4で確認しています。
+その試験では明示的に委任されたAIの試験用承認を使用しました。通常利用の自動承認機能ではありません。
+OS別の配布検証と、実際のCodex hook実行の範囲は[配布文書](../../docs/distribution.md#検証の範囲)を参照してください。
