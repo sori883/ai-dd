@@ -1,5 +1,13 @@
 # 開発プロジェクトRAM
 
+- [固定Codexの終了通知・親宛先・worktree探索の契約](decisions/2026-09-11-fixed-codex-hook-reliability-contract.md): Issue #169。固定0.153.4のsourceでBash終端Postと失敗patchのPostなしを区別。既存Canonicalから親宛を導出する案を確定。linked worktreeは主checkoutのhookを読む実装と確認し、③は調査結果を記録。
+
+- [Hook修正前の証拠fixture](decisions/2026-09-11-hook-reliability-preflight-evidence.md): Issue #169のG0。実製品wrapper・保存前後の採取・終端ID照合と未修正／不完全の分類をtargeted testで確認。prepare候補をGit外へ生成。通常trustと実機検証は未完了。
+
+- [終了記録と子の途中報告の修正を承認、worktree探索は調査](decisions/2026-09-11-hook-reliability-repair-approved.md): ①②の原因確認・実装・検証を直接承認。③は調査のみ。既存境界内の修正は進め、新しい保存・権限契約や環境変更が必要なら具体案を確認する。
+
+- [実案件で残ったhookの3課題を修正計画にする](decisions/2026-09-11-hook-reliability-repair-planning.md): 計画依頼。終了済みTool残存・子の途中報告拒否・linked worktreeの探索を整理し、G0の原因切り分けを先行する具体計画を作成。製品修正と追加実験は未承認。
+
 現行の使い方は[利用者ガイド](../../src/docs/user-guide.md)、内部構成は[アーキテクチャ](../architecture.md)、
 配布・更新は[配布手順](../distribution.md)を参照してください。以下の記録は判断時点の履歴で、後続決定が優先します。
 
