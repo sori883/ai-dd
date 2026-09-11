@@ -19,7 +19,7 @@ func TestRegistry(t *testing.T) {
 		if err != nil {
 			t.Fatalf("explicit init: %v", err)
 		}
-		if r.SchemaVersion != 1 || r.Epoch == "" || r.Revision != 1 {
+		if r.SchemaVersion != 2 || r.Epoch == "" || r.Revision != 1 {
 			t.Fatalf("invalid initialized registry: %+v", r)
 		}
 		alias := filepath.Join(t.TempDir(), "alias")

@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [Git不要化finalのfixture・help修復](decisions/2026-09-11-git-independent-final-fixture-repair.md): Issue #171。schema期待・不正入力生成を修正し、集合SHAのhelp回帰とKnowledge例を復元。targeted成功、全体finalは再実行待ち。
+
 - [Git不要化の独立レビュー指摘を修復](decisions/2026-09-11-git-independent-review-repair.md): Issue #171。現在stepのUnit結果・出力をTargetと受入証拠へ含め、旧承認の失効を確認。README・開発手順を通常rootと集合SHAへ整合。
 
 - [Git不要化と集合SHAの実装証拠](decisions/2026-09-11-git-independent-implementation-evidence.md): Issue #171。9項目TDDと親の末尾確認、同rootのUnit・review、新schemaとhelpの修復を記録。独立review・read-only final・実Codex・PR checksは後続gate。
