@@ -45,7 +45,7 @@ jobs:
       - name: Test OKF filesystem integration
         run: go test -tags=integration -count=1 ./src/internal/okf
       - name: Test fresh four-stage distribution journey
-        run: go test -tags=integration -count=1 ./src/cmd/aidlc -run '^TestFlowJourney$'
+        run: go test -tags=integration -count=1 ./src/cmd/aidlc -run '^Test(FlowJourney|GitIndependentJourney)$'
 
       - name: Check module metadata
         run: go mod tidy -diff

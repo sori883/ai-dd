@@ -7,7 +7,7 @@ import (
 
 func TestLowercaseADRDeclaredAdoption(t *testing.T) {
 	s, st := boundaryFixture(t)
-	st.Config = Config{Objective: "Work", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", CodeRevision: flowGit(t, s.Root, "rev-parse", "HEAD"), ADR: ADR{Required: true}}
+	st.Config = Config{Objective: "Work", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", VerificationPaths: []string{"."}, ADR: ADR{Required: true}}
 	var err error
 	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {

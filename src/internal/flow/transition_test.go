@@ -62,7 +62,6 @@ func TestFlowTransitionGatesAndStages(t *testing.T) {
 		t.Fatal(err)
 	}
 	st.Config.Artifacts = append(st.Config.Artifacts, Artifact{Path: file, Kind: "test", Stage: "tdd"})
-	st.Config.DirectCommit = st.Config.CodeRevision
 	prepareBoundaryResults(t, s, &st)
 	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
@@ -76,7 +75,6 @@ func TestFlowTransitionGatesAndStages(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			st.Config.DirectCommit = st.Config.CodeRevision
 			prepareBoundaryResults(t, s, &st)
 			st, err = saveExecutionFixture(t, s, st, st.Revision)
 			if err != nil {

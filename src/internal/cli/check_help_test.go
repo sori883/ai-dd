@@ -27,7 +27,7 @@ func TestCheckHelpStageBoundaries(t *testing.T) {
 		{
 			name:  "discovery",
 			start: []string{"Rule", "共有分析", "現在版", "任意"},
-			end:   []string{"Requirements", "目的", "範囲", "受入条件", "阻害事項", "現在HEAD", "資材", "資材なし理由", "ADR要否"},
+			end:   []string{"Requirements", "目的", "範囲", "受入条件", "阻害事項", "現在の集合SHA", "資材", "資材なし理由", "ADR要否"},
 		},
 		{
 			name:  "architecture-analysis",
@@ -42,12 +42,12 @@ func TestCheckHelpStageBoundaries(t *testing.T) {
 		{
 			name:  "tdd",
 			start: []string{"受入済みRequirements", "先行planning", "受入済みImplementationPlan"},
-			end:   []string{"direct_commit", "Unit", "ResultCommit", "統合", "現在回", "成功記録"},
+			end:   []string{"直接実装の全体検証", "Unit", "内容照合", "反映", "現在回", "成功記録"},
 		},
 		{
 			name:  "integration",
 			start: []string{"受入済みRequirements", "先行planning", "ImplementationPlan", "先行tdd", "受入済み証拠"},
-			end:   []string{"現在HEAD", "成功記録", "宣言文書"},
+			end:   []string{"現在の集合SHA", "成功記録", "宣言文書"},
 		},
 	}
 	for _, tc := range cases {
@@ -75,7 +75,7 @@ func TestCheckHelpEvidenceContract(t *testing.T) {
 	t.Run("終了時の共通条件", func(t *testing.T) {
 		common := checkHelpSection(t, text, "initialization以外の終了:")
 		requireCheckHelpText(t, common,
-			"目的", "範囲", "受入条件", "阻害事項", "現在HEAD", "資材", "資材なし理由", "ADR要否",
+			"目的", "範囲", "受入条件", "阻害事項", "現在の集合SHA", "資材", "資材なし理由", "ADR要否",
 			"必要", "adr", "宣言",
 		)
 	})
@@ -83,7 +83,7 @@ func TestCheckHelpEvidenceContract(t *testing.T) {
 		evidence := checkHelpSection(t, text, "実測証拠:")
 		requireCheckHelpText(t, evidence,
 			"tdd", "integration", "現在回", "step_id", "stage", "runs",
-			"command", "commit", "整数exit_code", "output_path", "非空", "実測",
+			"unit_id", "command", "verification_sha256", "整数exit_code", "output_path", "非空", "実測",
 			"必要command", "成功", "コード", "テストコード", "commit", "文書outputsへ登録しない",
 			"Sensor", "独立レビュー", "RED/GREEN", "意味", "真正性",
 		)

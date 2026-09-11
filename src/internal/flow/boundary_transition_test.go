@@ -57,7 +57,7 @@ func TestBoundaryTransitionFailure(t *testing.T) {
 func TestBoundaryTransitionAcceptAndImmutable(t *testing.T) {
 	s, st := boundaryFixture(t)
 	req := boundaryDoc(t, s, st, "Requirements")
-	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: flowGit(t, s.Root, "rev-parse", "HEAD")}
+	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, VerificationPaths: []string{"."}}
 	var err error
 	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
@@ -118,11 +118,11 @@ func TestSelectedDocumentsIntegrationDoesNotFreezeMaterials(t *testing.T) {
 	boundaryDoc(t, s, st, "CurrentAnalysis")
 	boundaryDoc(t, s, st, "Architecture")
 	boundaryFile(t, s, "inputs/source", "before")
-	head := flowGit(t, s.Root, "rev-parse", "HEAD")
+	_ = flowGit(t, s.Root, "rev-parse", "HEAD")
 	fixtureExecutionStage(t, s, &st, "tdd")
 	st.Entry = &StageEntry{StepID: "s04", Stage: "tdd"}
 	st.Accepted = map[string]StageAcceptance{"s02": {StepID: "s02", Stage: "discovery", ReviewTarget: strings.Repeat("a", 64), Outputs: []FileVersion{boundaryVersion(t, s, req)}}, "s03": {StepID: "s03", Stage: "planning", ReviewTarget: strings.Repeat("b", 64), Outputs: []FileVersion{boundaryVersion(t, s, plan)}}}
-	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, MaterialSources: []string{"inputs"}, ADR: ADR{Reason: "none"}, CodeRevision: head, DirectCommit: head, Plan: "Implement", Tests: []string{"go test"}}
+	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, MaterialSources: []string{"inputs"}, ADR: ADR{Reason: "none"}, VerificationPaths: []string{"."}, Plan: "Implement", Tests: []string{"go test"}}
 	prepareBoundaryResults(t, s, &st)
 	if err := s.persist(st); err != nil {
 		t.Fatal(err)

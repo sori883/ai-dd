@@ -15,7 +15,7 @@ func TestBoundaryStoreSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.SchemaVersion != 5 {
+	if st.SchemaVersion != 6 {
 		t.Fatalf("schema=%d want 4", st.SchemaVersion)
 	}
 	st.Config.NoMaterialsReason = "new project"

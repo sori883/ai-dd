@@ -1,13 +1,10 @@
 package flow
 
 import (
-	"crypto/sha256"
 	"encoding/json"
-	"fmt"
 	"github.com/sori883/ai-dd/src/internal/filestore"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -36,7 +33,7 @@ func (s Store) Review(id string, expect uint64, request ReviewRequest) (State, e
 		if err != nil {
 			return err
 		}
-		if !filepath.IsAbs(root) || root == project || strings.TrimSpace(request.Session) == "" {
+		if !filepath.IsAbs(root) || strings.TrimSpace(request.Session) == "" {
 			return invalid("independent reviewer root and session required")
 		}
 		info, err := os.Stat(root)
@@ -46,17 +43,17 @@ func (s Store) Review(id string, expect uint64, request ReviewRequest) (State, e
 		if !info.IsDir() {
 			return invalid("reviewer root is not directory")
 		}
-		if st.Stage != "initialization" {
-			expectedCode, err := reviewCode(s.Root)
+		if root != project && len(st.Config.VerificationPaths) > 0 {
+			expectedCode, err := ComputeVerification(s.Root, st.Config.VerificationPaths)
 			if err != nil {
 				return err
 			}
-			actualCode, err := reviewCode(root)
+			actualCode, err := ComputeVerification(root, st.Config.VerificationPaths)
 			if err != nil {
 				return err
 			}
-			if expectedCode != actualCode {
-				return invalid("reviewer checkout code version or bytes differ")
+			if expectedCode.SHA256 != actualCode.SHA256 {
+				return invalid("reviewer verification content differs")
 			}
 
 		}
@@ -149,45 +146,4 @@ func (s Store) changeReassignment(id string, expect uint64, request *UnitRequest
 		return State{}, err
 	}
 	return st, nil
-}
-
-// reviewCode identifies code bytes independently of shared Space documents.
-func reviewCode(root string) (string, error) {
-	head, err := git(root, "rev-parse", "HEAD")
-	if err != nil {
-		return "", err
-	}
-	top, err := git(root, "rev-parse", "--show-toplevel")
-	if err != nil {
-		return "", err
-	}
-	canonical, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return "", err
-	}
-	if top != canonical {
-		return "", invalid("review root must be a Git worktree root")
-	}
-	files, err := git(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
-	if err != nil {
-		return "", err
-	}
-	names := strings.Split(files, "\x00")
-	sort.Strings(names)
-	h := sha256.New()
-	h.Write([]byte(head))
-	for _, name := range names {
-		if name == "" || strings.HasPrefix(name, "aidlc/") {
-			continue
-		}
-		raw, err := filestore.ReadFile(root, name)
-		if err != nil {
-			return "", err
-		}
-		h.Write([]byte(name))
-		h.Write([]byte{0})
-		h.Write(raw)
-		h.Write([]byte{0})
-	}
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }

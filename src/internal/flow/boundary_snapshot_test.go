@@ -2,10 +2,9 @@ package flow
 
 import (
 	"fmt"
+	"github.com/sori883/ai-dd/src/internal/filestore"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -39,8 +38,8 @@ func TestBoundaryTransitionUsesOneSensorSnapshot(t *testing.T) {
 			s, st := boundaryFixture(t)
 			fixtureExecutionStage(t, s, &st, "tdd")
 			prepareBoundaryStage(t, s, &st)
-			head := flowGit(t, s.Root, "rev-parse", "HEAD")
-			st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: head, DirectCommit: head, Plan: "Implement", Tests: []string{"go test"}}
+			_ = flowGit(t, s.Root, "rev-parse", "HEAD")
+			st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, VerificationPaths: []string{"."}, Plan: "Implement", Tests: []string{"go test"}}
 			prepareBoundaryResults(t, s, &st)
 			if err := s.persist(st); err != nil {
 				t.Fatal(err)
@@ -55,23 +54,35 @@ func TestBoundaryTransitionUsesOneSensorSnapshot(t *testing.T) {
 			}
 			output := "aidlc/evidence/tdd.txt"
 			want := boundaryVersion(t, s, output)
-			realGit, err := exec.LookPath("git")
+			revision, hash := evidencePlan(st)
+			approval, err := newApproval(st, st.Review.Target, revision, hash)
 			if err != nil {
 				t.Fatal(err)
 			}
-			bin := t.TempDir()
-			count := filepath.Join(bin, "count")
-			quote := func(v string) string { return "'" + strings.ReplaceAll(v, "'", "'\"'\"'") + "'" }
-			mutation := "printf changed > " + quote(filepath.Join(s.Root, output))
-			if remove {
-				mutation = "rm " + quote(filepath.Join(s.Root, output))
-			}
-			script := "#!/bin/sh\ncase \"$*\" in *cat-file*) n=0; [ ! -f " + quote(count) + " ] || n=$(cat " + quote(count) + "); n=$((n+1)); echo $n > " + quote(count) + "; if [ $n -eq 2 ]; then " + mutation + "; fi;; esac\nexec " + quote(realGit) + " \"$@\"\n"
-			if err = os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0700); err != nil {
+			approval.Status = "approved"
+			approval.Session = "fixture"
+			approval.Turn = "fixture"
+			approval.Quote = "fixture"
+			approval.PromptHash = st.DefinitionHash
+			st.Approval = approval
+			if err := s.persist(st); err != nil {
 				t.Fatal(err)
 			}
-			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-			next, err := transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "advance"})
+			writes := 0
+			s.write = func(root, name string, raw []byte) error {
+				writes++
+				if writes == 1 && remove {
+					if err := os.Remove(filepath.Join(root, output)); err != nil {
+						return err
+					}
+				} else if writes == 1 {
+					if err := os.WriteFile(filepath.Join(root, output), []byte("changed after snapshot"), 0600); err != nil {
+						return err
+					}
+				}
+				return filestore.WriteFile(root, name, raw)
+			}
+			next, err := s.Finish(st.ID, st.Revision)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -84,9 +95,8 @@ func TestBoundaryTransitionUsesOneSensorSnapshot(t *testing.T) {
 			if !found {
 				t.Fatal("accepted outputs differ from the reviewed Sensor snapshot")
 			}
-			raw, err := os.ReadFile(count)
-			if err != nil || strings.TrimSpace(string(raw)) != "1" {
-				t.Fatalf("Sensor recollected after review comparison: %s %v", raw, err)
+			if writes == 0 {
+				t.Fatalf("state writes=%d", writes)
 			}
 		})
 	}
@@ -98,11 +108,11 @@ func TestBoundaryTransitionEvidenceRole(t *testing.T) {
 			s, st := boundaryFixture(t)
 			fixtureExecutionStage(t, s, &st, "tdd")
 			prepareBoundaryStage(t, s, &st)
-			head := flowGit(t, s.Root, "rev-parse", "HEAD")
-			st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: head, DirectCommit: head, Plan: "Implement", Tests: []string{"go test"}}
-			prefix := "aidlc/spaces/" + s.Space + "/knowledge/evidence/"
+			head := verificationTestSHA(t, s.Root, []string{"."})
+			st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, VerificationPaths: []string{"."}, Plan: "Implement", Tests: []string{"go test"}}
+			prefix := "aidlc/evidence/"
 			boundaryFile(t, s, prefix+"output.log", "PASS")
-			boundaryFile(t, s, prefix+"results.json", fmt.Sprintf(`{"step_id":"s04","stage":"tdd","runs":[{"command":"go test","commit":%q,"exit_code":0,"output_path":%q}]}`, head, prefix+"output.log"))
+			boundaryFile(t, s, prefix+"results.json", fmt.Sprintf(`{"step_id":"s04","stage":"tdd","verification_scope":"intent","verification_sha256":%q,"runs":[{"command":"go test","exit_code":0,"output_path":%q}]}`, head, prefix+"output.log"))
 			st.Config.TestResults = []string{prefix + "results.json"}
 			if err := s.persist(st); err != nil {
 				t.Fatal(err)

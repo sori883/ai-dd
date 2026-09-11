@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -99,7 +100,7 @@ func TestFlowConfigurePreservesActiveAssignment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st.Config.Units = []flow.Unit{{ID: "a", Status: "running", BaseCommit: "base", Scope: []string{"a.go"}}}
+	st.Config.Units = []flow.Unit{{ID: "a", Status: "running", Scope: []string{"a.go"}}}
 	st = writeExecutionFixture(t, store, st)
 	err = nil
 	if err != nil {
@@ -138,7 +139,7 @@ func TestFlowConfigureCannotForgeProgress(t *testing.T) {
 				if tc.name == "integrated reset" {
 					status = "integrated"
 				}
-				st.Config.Units = []flow.Unit{{ID: "a", Status: status, ResultCommit: "result", IntegratedCommit: "integration"}}
+				st.Config.Units = []flow.Unit{{ID: "a", Status: status, ResultSHA256: strings.Repeat("a", 64)}}
 				st = writeExecutionFixture(t, store, st)
 				err = nil
 				if err != nil {

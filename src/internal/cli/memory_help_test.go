@@ -52,13 +52,13 @@ func TestMemoryHelp(t *testing.T) {
 	}
 }
 
-func TestMemoryHelpUnitConfirmCommit(t *testing.T) {
+func TestMemoryHelpUnitConfirmVerification(t *testing.T) {
 	var out, errout bytes.Buffer
 	code := Run([]string{"unit", "confirm", "--help"}, &out, &errout, buildinfo.Info{}, Dependencies{})
 	if code != 0 || errout.Len() != 0 {
 		t.Fatalf("exit=%d stderr=%s", code, &errout)
 	}
-	for _, want := range []string{"confirmでunit/session/root/run_id/commit", "現在のworker HEAD", "40桁", "必須"} {
+	for _, want := range []string{"confirmはunit/session/root/run_id/verification_sha256", "登録run", "現在のroot内容", "64桁"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("confirm help lacks %q: %s", want, &out)
 		}

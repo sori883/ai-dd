@@ -13,7 +13,7 @@ import (
 )
 
 func schemaPlanState(s Store) State {
-	return State{SchemaVersion: 5, DefinitionHash: strings.Repeat("a", 64), ID: strings.Repeat("b", 32), Space: s.Space, Name: "Schema", Revision: 1, Stage: "initialization", Status: "active", CurrentStepID: "s01", ExecutionPlan: ExecutionPlan{NextID: 3, Bootstrap: []ExecutionStep{{ID: "s01", Stage: "initialization", Status: "pending"}, {ID: "s02", Stage: "discovery", Status: "pending"}}}}
+	return State{SchemaVersion: 6, DefinitionHash: strings.Repeat("a", 64), ID: strings.Repeat("b", 32), Space: s.Space, Name: "Schema", Revision: 1, Stage: "initialization", Status: "active", CurrentStepID: "s01", ExecutionPlan: ExecutionPlan{NextID: 3, Bootstrap: []ExecutionStep{{ID: "s01", Stage: "initialization", Status: "pending"}, {ID: "s02", Stage: "discovery", Status: "pending"}}}}
 }
 
 func TestExecutionPlanSchemaState(t *testing.T) {
@@ -28,7 +28,7 @@ func TestExecutionPlanSchemaState(t *testing.T) {
 	}
 	got, err := s.Read(st.ID)
 	if err != nil {
-		t.Fatalf("valid schema5 state rejected: %v", err)
+		t.Fatalf("valid schema6 state rejected: %v", err)
 	}
 	if got.CurrentStepID != "s01" || got.ExecutionPlan.Approved != nil {
 		t.Fatalf("bootstrap fabricated approval: %+v", got)
@@ -129,7 +129,7 @@ func TestExecutionPlanBootstrap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bootstrap create: %v", err)
 	}
-	if st.SchemaVersion != 5 || st.Stage != "initialization" || st.CurrentStepID != "s01" || st.ExecutionPlan.Approved != nil {
+	if st.SchemaVersion != 6 || st.Stage != "initialization" || st.CurrentStepID != "s01" || st.ExecutionPlan.Approved != nil {
 		t.Fatalf("wrong bootstrap: %+v", st)
 	}
 	if len(st.Accepted) != 0 || st.Entry != nil {
@@ -294,7 +294,7 @@ func TestExecutionPlanEvidenceBindings(t *testing.T) {
 			case "review":
 				candidate.Review = Gate{StepID: "s02", Status: "pass", Target: strings.Repeat("a", 64)}
 			case "unit":
-				candidate.Config.Units = []Unit{{StepID: "s02", ID: "u", Status: "integrated", ResultCommit: strings.Repeat("a", 40), IntegratedCommit: strings.Repeat("a", 40)}}
+				candidate.Config.Units = []Unit{{StepID: "s02", ID: "u", Status: "integrated", ResultSHA256: strings.Repeat("a", 40)}}
 			}
 			if err := s.persist(candidate); err == nil {
 				t.Fatal("other execution evidence accepted")
@@ -481,13 +481,13 @@ func TestExecutionPlanEvidenceResultRun(t *testing.T) {
 	s, st := executionAt(t, "tdd")
 	flowGit(t, s.Root, "init", "-q")
 	flowGit(t, s.Root, "commit", "--allow-empty", "-qm", "base")
-	head := flowGit(t, s.Root, "rev-parse", "HEAD")
-	st.Config.DirectCommit = strings.TrimSpace(head)
+	_ = flowGit(t, s.Root, "rev-parse", "HEAD")
+	st.Config.VerificationPaths = []string{"."}
 	st.Config.Tests = []string{"go test ./target"}
 	st.Config.TestResults = []string{"aidlc/evidence/result.json"}
 	boundaryFile(t, s, "aidlc/evidence/output.txt", "ok")
 	zero := 0
-	result := resultDocument{StepID: "s03", Stage: "tdd", Runs: []resultRun{{Command: "go test ./target", Commit: st.Config.DirectCommit, ExitCode: &zero, OutputPath: "aidlc/evidence/output.txt"}}}
+	result := resultDocument{StepID: "s03", Stage: "tdd", VerificationScope: "intent", VerificationSHA256: verificationTestSHA(t, s.Root, []string{"."}), Runs: []resultRun{{Command: "go test ./target", ExitCode: &zero, OutputPath: "aidlc/evidence/output.txt"}}}
 	for _, id := range []string{"s03", "s02", ""} {
 		result.StepID = id
 		raw, err := json.Marshal(result)

@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 )
@@ -34,6 +33,10 @@ func runMinimalCLI(t *testing.T, binary, root string, input []byte, args ...stri
 	defer cancel()
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Dir = root
+	productPath := os.Getenv("AIDLC_TEST_PRODUCT_PATH")
+	if productPath != "" {
+		cmd.Env = gitIndependentEnvironment(os.Environ(), productPath)
+	}
 	cmd.Stdin = bytes.NewReader(input)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -69,11 +72,10 @@ func TestFlowJourney(t *testing.T)      { runBoundaryJourney(t) }
 func TestBoundaryJourney(t *testing.T)  { runBoundaryJourney(t) }
 func TestProcedureJourney(t *testing.T) { runBoundaryJourney(t) }
 func runBoundaryJourney(t *testing.T) {
+	runGitIndependentBoundaryJourney(t, buildMinimalBinary(t), t.TempDir(), false)
+}
+func runGitIndependentBoundaryJourney(t *testing.T, binary, root string, units bool) {
 	t.Helper()
-	binary := buildMinimalBinary(t)
-	root := t.TempDir()
-	runMinimalProcess(t, root, "git", "init", "-q")
-	runMinimalProcess(t, root, "git", "-c", "user.name=Flow", "-c", "user.email=flow@example.invalid", "commit", "--allow-empty", "-qm", "base")
 	runMinimalCLI(t, binary, root, nil, "install", "codex", "--project-dir", root)
 	var st flow.State
 	read := func(raw []byte) {
@@ -110,23 +112,10 @@ func runBoundaryJourney(t *testing.T) {
 	}
 	knowledge := "aidlc/spaces/default/knowledge/codekb/current.md"
 	writeMinimalFixture(t, filepath.Join(root, knowledge), "---\ntype: Design\ntitle: Addition\ndescription: Adds two integers\n---\nAdd returns the sum.\n")
-	head := string(bytes.TrimSpace(runMinimalProcess(t, root, "git", "rev-parse", "HEAD")))
-	config := flow.Config{NoMaterialsReason: "fresh project", Objective: "Addition", Scope: []string{"add.go"}, Acceptance: []string{"Add(2,3)=5"}, CodeRevision: head, ADR: flow.ADR{Reason: "No architectural decision"}, Artifacts: []flow.Artifact{{Path: knowledge, Kind: "Knowledge", Stage: "discovery"}}}
+	config := flow.Config{NoMaterialsReason: "fresh project", Objective: "Addition", Scope: []string{"add.go"}, Acceptance: []string{"Add(2,3)=5"}, VerificationPaths: []string{"add.go", "add_test.go", "go.mod"}, ADR: flow.ADR{Reason: "No architectural decision"}, Artifacts: []flow.Artifact{{Path: knowledge, Kind: "Knowledge", Stage: "discovery"}}}
 	review := func(status string) {
 		t.Helper()
-		reviewRoot := filepath.Join(t.TempDir(), "review")
-		runMinimalProcess(t, root, "git", "worktree", "add", "--detach", reviewRoot, "HEAD")
-		files := runMinimalProcess(t, root, "git", "ls-files", "-z", "--cached", "--others", "--exclude-standard")
-		for _, name := range strings.Split(string(files), "\x00") {
-			if name == "" || strings.HasPrefix(name, "aidlc/") {
-				continue
-			}
-			raw, err := os.ReadFile(filepath.Join(root, name))
-			if err != nil {
-				t.Fatal(err)
-			}
-			writeMinimalFixture(t, filepath.Join(reviewRoot, name), string(raw))
-		}
+		reviewRoot := root
 		call("review", "--file", writeRequest("review.json", flow.ReviewRequest{Action: "assign", CoordinatorSession: "c", Session: "r", Root: reviewRoot}))
 		var gate flow.Gate
 		if err := json.Unmarshal(runMinimalCLI(t, binary, root, nil, "intent", "check", st.ID, "--space", "default"), &gate); err != nil {
@@ -145,6 +134,9 @@ func runBoundaryJourney(t *testing.T) {
 	review("fail")
 	cmd := exec.Command(binary, "intent", "advance", st.ID, "--space", "default", "--expect", strconv.FormatUint(st.Revision, 10))
 	cmd.Dir = root
+	if productPath := os.Getenv("AIDLC_TEST_PRODUCT_PATH"); productPath != "" {
+		cmd.Env = gitIndependentEnvironment(os.Environ(), productPath)
+	}
 	if err := cmd.Run(); err == nil {
 		t.Fatal("failed review advanced")
 	}
@@ -153,7 +145,7 @@ func runBoundaryJourney(t *testing.T) {
 	boundaryFixtureDocument(t, root, st.ID, "ImplementationPlan")
 	call("begin")
 	config.Plan = "Implement Add using a failing example then verification"
-	config.Tests = []string{"go test -run ^TestAdd$"}
+	config.Tests = []string{"go test -count=1 -run ^TestAdd$"}
 	call("configure", "--file", writeRequest("config.json", config))
 	review("pass")
 	st = f.finish(st)
@@ -196,14 +188,14 @@ func runBoundaryJourney(t *testing.T) {
 	}
 	writeMinimalFixture(t, filepath.Join(root, "add.go"), "package add\nfunc Add(a,b int)int{return a+b}\n")
 	green := runMinimalProcess(t, root, "go", "test", "-count=1", "-run", "^TestAdd$")
-	writeMinimalFixture(t, filepath.Join(root, "results.txt"), string(green))
-	runMinimalProcess(t, root, "git", "add", "go.mod", "add.go", "add_test.go", "results.txt")
-	runMinimalProcess(t, root, "git", "-c", "user.name=Flow", "-c", "user.email=flow@example.invalid", "commit", "-qm", "verified addition")
-	head = string(bytes.TrimSpace(runMinimalProcess(t, root, "git", "rev-parse", "HEAD")))
-	config.CodeRevision = head
-	config.DirectCommit = head
-	config.Artifacts = append(config.Artifacts, flow.Artifact{Path: "results.txt", Kind: "test", Stage: "tdd"})
-	config.TestResults = []string{boundaryFixtureResults(t, root, st.CurrentStepID, "tdd", head, config.Tests, green)}
+	writeMinimalFixture(t, filepath.Join(root, "aidlc/evidence/results.txt"), string(green))
+	config.Artifacts = append(config.Artifacts, flow.Artifact{Path: "aidlc/evidence/results.txt", Kind: "test", Stage: "tdd"})
+	if units {
+		config = runGitIndependentUnits(t, binary, root, &st, config)
+		green = runMinimalProcess(t, root, "go", "test", "-count=1", "-run", "^TestAdd$")
+	}
+	call("configure", "--file", writeRequest("config.json", config))
+	config.TestResults = append(config.TestResults, boundaryFixtureResults(t, root, st.CurrentStepID, "tdd", "", config.Tests, green))
 	call("configure", "--file", writeRequest("config.json", config))
 	review("pass")
 	st = f.finish(st)
@@ -223,8 +215,10 @@ func runBoundaryJourney(t *testing.T) {
 	}
 	title, description := document.String("title"), document.String("description")
 	call("documents", "--file", writeRequest("documents.json", flow.IntentDocuments{Inputs: []flow.DocumentDeclaration{}, Outputs: []flow.DocumentDeclaration{{StepID: st.CurrentStepID, Stage: "integration", Path: name, Metadata: okfmemory.DocumentMatch{Type: "Knowledge", Title: &title, Description: &description}}}}))
+	config.Units = nil
+	call("configure", "--file", writeRequest("config.json", config))
 	integrationOutput := runMinimalProcess(t, root, "go", "test", "-count=1", "-run", "^TestAdd$")
-	config.TestResults = append(config.TestResults, boundaryFixtureResults(t, root, st.CurrentStepID, "integration", head, config.Tests, integrationOutput))
+	config.TestResults = append(config.TestResults, boundaryFixtureResults(t, root, st.CurrentStepID, "integration", "", config.Tests, integrationOutput))
 	call("configure", "--file", writeRequest("config.json", config))
 	runMinimalCLI(t, binary, root, nil, "session", "bind", st.ID, "--space", "default", "--session", "second")
 	review("pass")

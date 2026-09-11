@@ -1,5 +1,29 @@
 # 開発プロジェクトRAM
 
+- [Gitなし一周fixtureの公開出力処理を修復](decisions/2026-09-11-git-independent-journey-fixture-repair.md): Issue #171。assignment list配列処理とUnit欠落検出、実行commandとの一致、Unit結果の保持を修正。小helperとtagged compile確認、一周は親finalで再実行。
+
+- [Git不要化finalのfixture・help修復](decisions/2026-09-11-git-independent-final-fixture-repair.md): Issue #171。schema期待・不正入力生成を修正し、集合SHAのhelp回帰とKnowledge例を復元。targeted成功、全体finalは再実行待ち。
+
+- [Git不要化の独立レビュー指摘を修復](decisions/2026-09-11-git-independent-review-repair.md): Issue #171。現在stepのUnit結果・出力をTargetと受入証拠へ含め、旧承認の失効を確認。README・開発手順を通常rootと集合SHAへ整合。
+
+- [Git不要化と集合SHAの実装証拠](decisions/2026-09-11-git-independent-implementation-evidence.md): Issue #171。9項目TDDと親の末尾確認、同rootのUnit・review、新schemaとhelpの修復を記録。独立review・read-only final・実Codex・PR checksは後続gate。
+
+- [Gitなし配置で固定Codexの親子とhook入口を確認](decisions/2026-09-11-git-independent-g0-codex.md): Issue #171のG0成立。通常trustを使用し、native子起動・bound・報告・完了を確認。現行CLIのGit要求と子help拒否は成功扱いせず区別。
+
+- [Git不要・集合SHA・順次作業の具体計画を実装承認](decisions/2026-09-11-git-independent-implementation-approved.md): 説明後の直接実装依頼。Issue #171で、非Git CodexのG0、単独writerの9項目TDD、独立review、final、PR/checks/mergeを進める。旧記録の互換・移行は不要。
+
+- [Git不要化では旧記録の後方互換を要求しない](decisions/2026-09-11-git-independent-no-backward-compatibility.md): 旧state・Unit・結果・担当記録の互換読込み、移行、新旧二重運用と互換テストを不要とするユーザー指定。既存ファイルの削除指示ではない。計画から旧配置切替の開発範囲を外し、内容照合・順次作業・新保存形式の説明を継続する。
+
+- [Git依存をなくし、検証対象のまとまりからSHAを算出する](decisions/2026-09-11-git-independent-content-sha-approved.md): ユーザーがGit不要化と集合SHA方式を指定。基本はIntentの検証範囲に一つ、必要時だけUnitの範囲にもSHAを持たせる。ファイル列挙はCLIが行い、個別SHAの手動管理はしない。複数Gitのコミット管理案を置換。[具体計画](../design/git-independent-workflow-plan.md)にCLI・保存・Unitと検証を整理。製品実装・実機確認は未実施。
+
+- [共通projectとGitの管理単位を分ける](decisions/2026-09-11-flexible-project-git-layouts.md): ユーザー回答により、全体Git・アプリ別Git・project/src直置きの三つを対応対象に確定。AI-DLC管理元とコードのGitを区別し、worktree不要の順次実装へ計画を組み直す。Git配置の再選択は不要。コード反映は未実施。
+
+- [共通project配下の複数アプリとブランチの順次処理](decisions/2026-09-11-single-project-sequential-branches-request.md): ユーザーが配置を訂正。project/.codex、project/aidlc、project/各アプリを同じ親フォルダへ置き、worktreeを必須にせず1ブランチずつ処理する。担当別clone案は未採用。Git管理単位の確認は上の後続記録で解決。
+
+- [worktree対応の保留と通常cloneの構成を検討](decisions/2026-09-11-worktree-deferral-layout-options.md): 複雑ならworktreeを一旦使わない案と配置の説明を依頼。推奨は③を保留し、通常cloneを管理元にする構成。現行worker/reviewerは別rootが必要で、フォルダ一つへの変更とは区別。採用・既存機能削除は未決定。
+
+- [worktreeのhook対応を実装する依頼](decisions/2026-09-11-worktree-hook-implementation-request.md): ③の対応を直接依頼。PR #170のmain反映・Issue #169完了を確認。[具体計画](../design/shared-worktree-hooks-plan.md)へ単一管理元の共有入口、保存先検査、配布・実機検証を整理。管理元を一つに固定する利用条件を確認してから実装する。
+
 - [worktreeのhook対応を次にどう進めるか](decisions/2026-09-11-worktree-hook-followup-options.md): 暫定は独立clone、恒久案はhook入口と調整rootの分離。固定Codexのcwdは個別toolのworkdirではないため、cwdだけの自動振分けは採用しない。③の製品・環境変更は未承認。
 
 - [子報告の専用試験環境の初期化を承認](decisions/2026-09-11-hook-reliability-probe-initialization-approved.md): Issue #169／PR #170。対象rootの初回assignment initへ明示承認。子報告の実機確認を再開する。③は対応案の説明依頼であり、環境・製品変更は未承認。

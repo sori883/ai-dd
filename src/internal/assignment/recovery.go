@@ -72,7 +72,7 @@ func (s Store) Reset(req ResetRequest) (Registry, error) {
 			return Registry{}, err
 		}
 	}
-	next := Registry{SchemaVersion: 1, Epoch: epoch, Revision: 1, Root: root, Initialization: InitRequest{RequestID: req.RequestID, HumanConfirmed: true, Reason: req.Reason}, Reset: &req}
+	next := Registry{SchemaVersion: 2, Epoch: epoch, Revision: 1, Root: root, Initialization: InitRequest{RequestID: req.RequestID, HumanConfirmed: true, Reason: req.Reason}, Reset: &req}
 	if err := s.persist(next); err != nil {
 		return Registry{}, err
 	}

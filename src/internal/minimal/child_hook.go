@@ -63,7 +63,7 @@ func (s Service) childPre(in HookInput) error {
 				return invalid("unclassified product command must be returned to coordinator")
 			}
 			switch r.Command + "/" + r.Action {
-			case "assignment/list", "assignment/show", "assignment/check", "memory/rules", "memory/search", "memory/show", "memory/check", "intent/list", "intent/show", "intent/procedure", "intent/history", "intent/check", "session/inspect":
+			case "assignment/list", "assignment/show", "assignment/check", "memory/rules", "memory/search", "memory/show", "memory/check", "intent/list", "intent/hash", "intent/show", "intent/procedure", "intent/history", "intent/check", "session/inspect":
 				return nil
 			case "intent/plan", "intent/documents":
 				if r.File == "" {

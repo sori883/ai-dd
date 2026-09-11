@@ -144,8 +144,8 @@ func TestRelocationCommand(t *testing.T) {
 	st = g.action(st, "resume", "--reason", "old workers stopped, clone inspected")
 	// Clone has no local registry. Never attach new reservations to its old Unit runs.
 	legacyWorker := filepath.Join(t.TempDir(), "legacy-worker")
-	g.git("worktree", "add", "--detach", legacyWorker, st.Config.Units[0].BaseCommit)
-	g.rejectCode(1, "assignment registry unavailable", "unit", "reassign", st.ID, "--space", "default", "--expect", strconv.FormatUint(st.Revision, 10), "--file", g.request(flow.UnitRequest{StepID: st.CurrentStepID, Unit: "a", Root: legacyWorker, Session: "new", PreviousRunStopped: true, Reason: "old stopped", Commit: st.Config.CodeRevision}))
+	g.git("worktree", "add", "--detach", legacyWorker, "HEAD")
+	g.rejectCode(1, "assignment registry unavailable", "unit", "reassign", st.ID, "--space", "default", "--expect", strconv.FormatUint(st.Revision, 10), "--file", g.request(flow.UnitRequest{StepID: st.CurrentStepID, Unit: "a", Root: legacyWorker, Session: "new", PreviousRunStopped: true, Reason: "old stopped", VerificationSHA256: g.git("rev-parse", "HEAD")}))
 	st = g.tdd()
 	planned = st.Config
 	for i := range planned.Units {
@@ -155,7 +155,7 @@ func TestRelocationCommand(t *testing.T) {
 	var runs []map[string]any
 	for i, id := range []string{"a", "b"} {
 		worker := filepath.Join(t.TempDir(), "new-"+id)
-		g.git("worktree", "add", "--detach", worker, st.Config.Units[i].BaseCommit)
+		g.git("worktree", "add", "--detach", worker, "HEAD")
 		worker, err = filepath.EvalSymlinks(worker)
 		if err != nil {
 			t.Fatal(err)
@@ -172,25 +172,31 @@ func TestRelocationCommand(t *testing.T) {
 		commit := w.commit("verified " + id)
 		outputPath := "aidlc/evidence/relocated-" + id + ".log"
 		writeMinimalFixture(t, filepath.Join(clone, outputPath), string(output))
-		runs = append(runs, map[string]any{"command": st.Config.Units[i].Tests[0], "commit": commit, "exit_code": 0, "output_path": outputPath})
-		st = g.unit(st, "result", flow.UnitRequest{Unit: id, Session: "new-" + id, Root: worker, RunID: assignment.RunID, Commit: commit})
+		runs = append(runs, map[string]any{"unit_id": id, "command": st.Config.Units[i].Tests[0], "exit_code": 0, "output_path": outputPath})
+		st = g.unit(st, "result", flow.UnitRequest{Unit: id, Session: "new-" + id, Root: worker, RunID: assignment.RunID, VerificationSHA256: commit})
 		g.git("-c", "user.name=Relocation", "-c", "user.email=relocation@example.invalid", "merge", "--no-edit", commit)
-		st = g.unit(st, "integrate", flow.UnitRequest{Unit: id, Commit: g.git("rev-parse", "HEAD")})
+		st = g.unit(st, "integrate", flow.UnitRequest{Unit: id, VerificationSHA256: g.git("rev-parse", "HEAD")})
 	}
 	output := runMinimalProcess(t, clone, "go", "test", "-count=1")
-	// Record a test artifact and refresh code revision before independent fixture review.
-	writeMinimalFixture(t, filepath.Join(clone, "results.txt"), string(output))
-	head := g.commit("integration evidence")
+	// Record the latest whole-project regression output before independent fixture review.
+	writeMinimalFixture(t, filepath.Join(clone, "aidlc/evidence/relocated-all.log"), string(output))
+	g.commit("integration evidence")
 	c := st.Config
-	c.CodeRevision = head
+	for _, run := range runs {
+		run["output_path"] = "aidlc/evidence/relocated-all.log"
+	}
 	resultPath := "aidlc/evidence/relocated-tdd.json"
-	resultJSON, err := json.Marshal(map[string]any{"step_id": st.CurrentStepID, "stage": "tdd", "runs": runs})
+	digest, err := flow.ComputeVerification(clone, c.VerificationPaths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resultJSON, err := json.Marshal(map[string]any{"step_id": st.CurrentStepID, "stage": "tdd", "verification_scope": "intent", "verification_sha256": digest.SHA256, "runs": runs})
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeMinimalFixture(t, filepath.Join(clone, resultPath), string(resultJSON))
 	c.TestResults = []string{resultPath}
-	c.Artifacts = append(c.Artifacts, flow.Artifact{Path: "results.txt", Kind: "test", Stage: "tdd"})
+	c.Artifacts = append(c.Artifacts, flow.Artifact{Path: "aidlc/evidence/relocated-all.log", Kind: "test", Stage: "tdd"})
 	st = g.action(st, "configure", "--file", g.request(c))
 	st = g.review(st)
 	if st.Review.Status != "pass" || st.Config.Units[0].Status != "integrated" || st.Config.Units[1].Status != "integrated" {

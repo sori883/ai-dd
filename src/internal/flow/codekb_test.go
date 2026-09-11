@@ -14,8 +14,8 @@ func TestCodeKBIntegrationFeature(t *testing.T) {
 			fixtureExecutionStage(t, s, &st, "integration")
 			prepareBoundaryStage(t, s, &st)
 			st.Accepted["s04"] = StageAcceptance{StepID: "s04", Stage: "tdd", ReviewTarget: strings.Repeat("c", 64)}
-			head := flowGit(t, s.Root, "rev-parse", "HEAD")
-			st.Config = Config{Objective: "Work", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: head, DirectCommit: head, Plan: "implement", Tests: []string{"go test"}}
+			_ = flowGit(t, s.Root, "rev-parse", "HEAD")
+			st.Config = Config{Objective: "Work", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, VerificationPaths: []string{"."}, Plan: "implement", Tests: []string{"go test"}}
 			prepareBoundaryResults(t, s, &st)
 			boundaryDoc(t, s, st, "CurrentAnalysis")
 			boundaryDoc(t, s, st, "Architecture")

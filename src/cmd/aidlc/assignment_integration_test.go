@@ -63,7 +63,7 @@ func TestAssignmentJourney(t *testing.T) {
 	if err := json.Unmarshal(operationsRead(t, f.root+"/aidlc/.runtime/flow/units/default/"+st.ID+"/a.json"), &runtime); err != nil {
 		t.Fatal(err)
 	}
-	runtime.Commit = st.Config.Units[0].BaseCommit
+	runtime.VerificationSHA256 = "HEAD"
 	st = f.unit(st, "result", runtime)
 	request := flow.AssignmentRequest{RegistryEpoch: v.RegistryEpoch, RequestID: "competing", StepID: st.CurrentStepID, Agent: "aidlc-worker", Root: worker, Session: "worker-b"}
 	conflict := f.run("assignment", "reserve", st.ID, "--space", "default", "--session", "coordinator", "--expect", strconv.FormatUint(st.Revision, 10), "--file", f.request(request))

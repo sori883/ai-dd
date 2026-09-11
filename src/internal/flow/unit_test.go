@@ -14,13 +14,17 @@ func unitFixture(t *testing.T) (Store, State, string) {
 	s, st := sensorFixture(t)
 	fixtureExecutionStage(t, s, &st, "tdd")
 	prepareBoundaryStage(t, s, &st)
-	st.Config.Units = []Unit{{ID: "a", Bolt: "one", Scope: []string{"a.txt"}, Tests: []string{"verify a"}, BaseCommit: st.Config.CodeRevision, Status: "pending"}, {ID: "b", Bolt: "one", Scope: []string{"b.txt"}, Tests: []string{"verify b"}, BaseCommit: st.Config.CodeRevision, Status: "pending"}, {ID: "c", Bolt: "two", DependsOn: []string{"a", "b"}, Scope: []string{"c.txt"}, Tests: []string{"verify c"}, BaseCommit: st.Config.CodeRevision, Status: "pending"}}
+	st.Config.TestResults = []string{"aidlc/evidence/unit.json"}
+	st.Config.Units = []Unit{{ID: "a", Bolt: "one", Scope: []string{"a.txt"}, Tests: []string{"verify a"}, Status: "pending"}, {ID: "b", Bolt: "one", Scope: []string{"b.txt"}, Tests: []string{"verify b"}, Status: "pending"}, {ID: "c", Bolt: "two", DependsOn: []string{"a", "b"}, Scope: []string{"c.txt"}, Tests: []string{"verify c"}, Status: "pending"}}
+	for i := range st.Config.Units {
+		st.Config.Units[i].VerificationPaths = append([]string{}, st.Config.Units[i].Scope...)
+	}
 	st, err := saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
 	worker := filepath.Join(t.TempDir(), "worker")
-	flowGit(t, s.Root, "worktree", "add", "--detach", worker, st.Config.CodeRevision)
+	flowGit(t, s.Root, "worktree", "add", "--detach", worker, flowGit(t, s.Root, "rev-parse", "HEAD"))
 	return s, st, worker
 }
 func TestFlowUnitClaimDependencyAndOverlap(t *testing.T) {
@@ -57,7 +61,7 @@ func TestFlowUnitResultIntegrationAndResume(t *testing.T) {
 	flowGit(t, worker, "add", "a.txt")
 	flowGit(t, worker, "commit", "-qm", "unit a")
 	commit := flowGit(t, worker, "rev-parse", "HEAD")
-	request := UnitRequest{StepID: "s04", Action: "result", Unit: "a", Session: "worker-a", Root: worker, RunID: assignment.RunID, Commit: commit}
+	request := UnitRequest{StepID: "s04", Action: "result", Unit: "a", Session: "worker-a", Root: worker, RunID: assignment.RunID}
 	bad := request
 	bad.RunID = "wrong"
 	if _, err := assignmentUnit(t, s, st.ID, st.Revision, bad); err == nil {
@@ -84,11 +88,11 @@ func TestFlowUnitResultIntegrationAndResume(t *testing.T) {
 	if err != nil || st.Config.Units[0].Status != "reported" {
 		t.Fatalf("result %+v %v", st, err)
 	}
-	if _, err := assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "integrate", Unit: "a", Commit: st.Config.CodeRevision}); err == nil {
+	if _, err := assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "integrate", Unit: "a"}); err == nil {
 		t.Fatal("unintegrated result accepted")
 	}
 	flowGit(t, s.Root, "merge", "--ff-only", commit)
-	st, err = assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "integrate", Unit: "a", Commit: commit})
+	st, err = assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "integrate", Unit: "a"})
 	if err != nil || st.Config.Units[0].Status != "integrated" {
 		t.Fatalf("integration %+v %v", st, err)
 	}
@@ -96,7 +100,7 @@ func TestFlowUnitResultIntegrationAndResume(t *testing.T) {
 func TestFlowUnitTwoParallelThenDependent(t *testing.T) {
 	s, st, one := unitFixture(t)
 	two := filepath.Join(t.TempDir(), "worker-b")
-	flowGit(t, s.Root, "worktree", "add", "--detach", two, st.Config.CodeRevision)
+	flowGit(t, s.Root, "worktree", "add", "--detach", two, flowGit(t, s.Root, "rev-parse", "HEAD"))
 	var err error
 	for _, r := range []UnitRequest{{StepID: "s04", Action: "claim", Unit: "a", Session: "a", Root: one}, {StepID: "s04", Action: "claim", Unit: "b", Session: "b", Root: two}} {
 		st, err = assignmentUnit(t, s, st.ID, st.Revision, r)
@@ -119,13 +123,12 @@ func TestFlowUnitTwoParallelThenDependent(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		st, err = assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "result", Unit: unit, Session: unit, Root: root, RunID: a.RunID, Commit: commit})
+		st, err = assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "result", Unit: unit, Session: unit, Root: root, RunID: a.RunID})
 		if err != nil {
 			t.Fatal(err)
 		}
 		flowGit(t, s.Root, "merge", "--no-edit", commit)
-		head := flowGit(t, s.Root, "rev-parse", "HEAD")
-		st, err = assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "integrate", Unit: unit, Commit: head})
+		st, err = assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "integrate", Unit: unit})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -133,7 +136,6 @@ func TestFlowUnitTwoParallelThenDependent(t *testing.T) {
 	three := filepath.Join(t.TempDir(), "worker-c")
 	head := flowGit(t, s.Root, "rev-parse", "HEAD")
 	flowGit(t, s.Root, "worktree", "add", "--detach", three, head)
-	st.Config.Units[2].BaseCommit = head
 	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
@@ -143,28 +145,7 @@ func TestFlowUnitTwoParallelThenDependent(t *testing.T) {
 		t.Fatalf("dependent start %+v %v", st, err)
 	}
 }
-func TestFlowUnitRejectsPreIntegrationBase(t *testing.T) {
-	s, st, worker := unitFixture(t)
-	old := st.Config.CodeRevision
-	os.WriteFile(filepath.Join(s.Root, "a.txt"), []byte("integrated"), 0600)
-	flowGit(t, s.Root, "add", "a.txt")
-	flowGit(t, s.Root, "commit", "-qm", "dependency")
-	head := flowGit(t, s.Root, "rev-parse", "HEAD")
-	st.Config.Units[0].Status = "integrated"
-	st.Config.Units[0].ResultCommit = head
-	st.Config.Units[0].IntegratedCommit = head
-	st.Config.Units[1].Status = "integrated"
-	st.Config.Units[1].ResultCommit = head
-	st.Config.Units[1].IntegratedCommit = head
-	st.Config.Units[2].BaseCommit = old
-	st, err := saveExecutionFixture(t, s, st, st.Revision)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "claim", Unit: "c", Session: "worker-c", Root: worker}); err == nil {
-		t.Fatal("worker base excludes integrated dependencies")
-	}
-}
+func TestFlowUnitDependencyContent(t *testing.T) { TestUnitWithoutGit(t) }
 
 func assignmentUnit(t *testing.T, s Store, id string, expect uint64, r UnitRequest) (State, error) {
 	t.Helper()
@@ -186,6 +167,13 @@ func assignmentUnit(t *testing.T, s Store, id string, expect uint64, r UnitReque
 		if r.RequestID == "" {
 			r.RequestID = fmt.Sprintf("%s-%s-%d", r.Action, r.Unit, expect)
 		}
+	}
+	if (r.Action == "result" || r.Action == "confirm") && r.VerificationSHA256 == "" {
+		st, err := s.Read(id)
+		if err != nil {
+			return State{}, err
+		}
+		r = prepareUnitResultFixture(t, s, st, r)
 	}
 	return s.Unit(id, expect, r)
 }

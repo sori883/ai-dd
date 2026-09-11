@@ -11,7 +11,7 @@ func TestFlowReviewIdentityTarget(t *testing.T) {
 	s, st := sensorFixture(t)
 	reviewRoot := flowReviewRoot(t, s.Root)
 	assign := ReviewRequest{Action: "assign", CoordinatorSession: "coordinator", Session: "reviewer", Root: reviewRoot}
-	for _, bad := range []ReviewRequest{{Action: "assign", CoordinatorSession: "same", Session: "same", Root: reviewRoot}, {Action: "assign", CoordinatorSession: "coordinator", Session: "reviewer", Root: s.Root}} {
+	for _, bad := range []ReviewRequest{{Action: "assign", CoordinatorSession: "same", Session: "same", Root: reviewRoot}} {
 		if _, err := s.Review(st.ID, st.Revision, bad); err == nil {
 			t.Fatal("nonindependent review accepted")
 		}
@@ -66,6 +66,7 @@ func TestFlowReviewFailRecorded(t *testing.T) {
 }
 func TestFlowReviewRejectsWrongCheckout(t *testing.T) {
 	s, st := sensorFixture(t)
+	boundaryFile(t, s, "code", "content absent from other root")
 	r := ReviewRequest{Action: "assign", CoordinatorSession: "c", Session: "r", Root: t.TempDir()}
 	if _, err := s.Review(st.ID, st.Revision, r); err == nil {
 		t.Fatal("empty directory accepted as reviewer checkout")

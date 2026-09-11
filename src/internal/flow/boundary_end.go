@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -164,117 +163,40 @@ func (c *boundaryCollector) material(name string) {
 }
 
 type resultRun struct {
+	UnitID     string `json:"unit_id,omitempty"`
 	Command    string `json:"command"`
-	Commit     string `json:"commit"`
 	ExitCode   *int   `json:"exit_code"`
 	OutputPath string `json:"output_path"`
 }
 type resultDocument struct {
-	StepID string      `json:"step_id"`
-	Stage  string      `json:"stage"`
-	Runs   []resultRun `json:"runs"`
+	VerificationScope  string      `json:"verification_scope"`
+	VerificationSHA256 string      `json:"verification_sha256"`
+	UnitID             string      `json:"unit_id,omitempty"`
+	RunID              string      `json:"run_id,omitempty"`
+	StepID             string      `json:"step_id"`
+	Stage              string      `json:"stage"`
+	Runs               []resultRun `json:"runs"`
 }
 
 func (c *boundaryCollector) results(st State) {
-	type requirement struct{ command, commit string }
-	head, headErr := git(c.store.Root, "rev-parse", "HEAD")
-	c.require(headErr == nil, "current result HEAD required")
-	successes := map[requirement]bool{}
-	required := map[requirement]bool{}
-	expected := map[string]bool{}
+	c.require(len(st.Config.VerificationPaths) > 0, "verification_paths required")
+	digest, err := ComputeVerification(c.store.Root, st.Config.VerificationPaths)
+	if err != nil {
+		c.require(false, err.Error())
+		return
+	}
+	required := map[resultRequirement]bool{}
 	if len(st.Config.Units) == 0 {
 		for _, command := range st.Config.Tests {
-			expected[command] = true
-			commit := st.Config.DirectCommit
-			if st.Stage == "integration" {
-				commit = head
-			}
-			required[requirement{command, commit}] = true
+			required[resultRequirement{command: command}] = true
 		}
 	}
 	for _, u := range st.Config.Units {
 		for _, command := range u.Tests {
-			expected[command] = true
-			commit := u.ResultCommit
-			if st.Stage == "integration" {
-				commit = head
-			}
-			required[requirement{command, commit}] = true
+			required[resultRequirement{unit: u.ID, command: command}] = true
 		}
 	}
-	for _, name := range st.Config.TestResults {
-		if c.contents == nil {
-			c.contents = map[string][]byte{}
-		}
-		record := boundaryCollector{store: c.store, contents: c.contents}
-		raw, ok := record.file(name)
-		if !ok {
-			c.failures = append(c.failures, record.failures...)
-			continue
-		}
-		d := json.NewDecoder(bytes.NewReader(raw))
-		d.DisallowUnknownFields()
-		var result resultDocument
-		if !utf8.Valid(raw) || uniqueJSON(json.NewDecoder(bytes.NewReader(raw))) != nil || d.Decode(&result) != nil || d.Decode(new(any)) != io.EOF || (result.Stage != "tdd" && result.Stage != "integration") {
-			c.require(false, "invalid test results JSON: "+name)
-			continue
-		}
-		if executionStage(st, result.StepID) != result.Stage {
-			c.require(false, "test result execution mismatch: "+name)
-			continue
-		}
-		if result.StepID != st.CurrentStepID {
-			for _, run := range result.Runs {
-				_, err := git(c.store.Root, "cat-file", "-e", run.Commit+"^{commit}")
-				output, ok := record.file(run.OutputPath)
-				c.require(strings.TrimSpace(run.Command) != "" && run.ExitCode != nil && len(run.Commit) == 40 && err == nil && ok && len(bytes.TrimSpace(output)) > 0, "invalid other-stage test run: "+name)
-			}
-			continue
-		}
-		c.files = append(c.files, record.files...)
-		for _, version := range record.files {
-			c.recordProof(version)
-		}
-		for _, run := range result.Runs {
-			valid := strings.TrimSpace(run.Command) != "" && run.ExitCode != nil && len(run.Commit) == 40
-			_, err := git(c.store.Root, "cat-file", "-e", run.Commit+"^{commit}")
-			valid = valid && err == nil
-			matches := false
-			if result.Stage == "integration" {
-				matches = headErr == nil && run.Commit == head
-			} else if len(st.Config.Units) == 0 {
-				matches = run.Commit == st.Config.DirectCommit
-			} else {
-				for _, unit := range st.Config.Units {
-					if slices.Contains(unit.Tests, run.Command) && run.Commit == unit.ResultCommit {
-						matches = true
-					}
-				}
-			}
-			if !expected[run.Command] {
-				head, err := git(c.store.Root, "rev-parse", "HEAD")
-				matches = err == nil && run.Commit == head
-			}
-			output, ok := c.file(run.OutputPath)
-			if ok {
-				for _, version := range c.files {
-					if version.Path == run.OutputPath {
-						c.recordProof(version)
-						break
-					}
-				}
-			}
-			valid = valid && matches && ok && len(bytes.TrimSpace(output)) > 0
-			c.require(valid, "invalid test run or result commit: "+name)
-			if valid && *run.ExitCode == 0 {
-				successes[requirement{run.Command, run.Commit}] = true
-			}
-		}
-	}
-	c.require(len(expected) > 0, "planned test commands required")
-	for r := range required {
-		c.require(successes[r], "successful planned test required: "+r.command+" at "+r.commit)
-	}
+	c.verificationResults(st, digest.SHA256, "", "", required)
 }
 
 func (c *boundaryCollector) recordProof(version FileVersion) {
@@ -284,4 +206,74 @@ func (c *boundaryCollector) recordProof(version FileVersion) {
 		}
 	}
 	c.proof = append(c.proof, version)
+}
+
+type resultRequirement struct{ unit, command string }
+
+func (c *boundaryCollector) verificationResults(st State, sha, unit, runID string, required map[resultRequirement]bool) {
+	successes := map[resultRequirement]bool{}
+	c.require(len(required) > 0, "planned test commands required")
+	for _, name := range st.Config.TestResults {
+		if !resultEvidencePath(name) {
+			c.require(false, "test results must use aidlc evidence files")
+			continue
+		}
+		record := boundaryCollector{store: c.store, contents: c.contents}
+		raw, ok := record.file(name)
+		if !ok {
+			c.failures = append(c.failures, record.failures...)
+			continue
+		}
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.DisallowUnknownFields()
+		var result resultDocument
+		if !utf8.Valid(raw) || uniqueJSON(json.NewDecoder(bytes.NewReader(raw))) != nil || decoder.Decode(&result) != nil || decoder.Decode(new(any)) != io.EOF || !validHash(result.VerificationSHA256) || (result.VerificationScope != "intent" && result.VerificationScope != "unit") || len(result.Runs) == 0 || (result.Stage != "tdd" && result.Stage != "integration") {
+			c.require(false, "invalid test results JSON: "+name)
+			continue
+		}
+		if result.VerificationScope == "unit" && (result.UnitID == "" || result.RunID == "") {
+			c.require(false, "Unit result identity required")
+			continue
+		}
+		if result.VerificationScope == "intent" && (result.UnitID != "" || result.RunID != "") {
+			c.require(false, "Intent result cannot use Unit run identity")
+			continue
+		}
+		current := result.StepID == st.CurrentStepID && result.Stage == st.Stage
+		relevant := current && ((unit == "" && result.VerificationScope == "intent") || (unit != "" && result.VerificationScope == "unit" && result.UnitID == unit))
+		if !current && executionStage(st, result.StepID) != result.Stage {
+			c.require(false, "test result execution mismatch")
+			continue
+		}
+		for _, run := range result.Runs {
+			valid := strings.TrimSpace(run.Command) != "" && run.ExitCode != nil && resultEvidencePath(run.OutputPath)
+			if result.VerificationScope == "unit" {
+				valid = valid && run.UnitID == result.UnitID
+			}
+			output, ok := record.file(run.OutputPath)
+			valid = valid && ok && len(bytes.TrimSpace(output)) > 0
+			c.require(valid, "invalid test run: "+name)
+			if !relevant {
+				continue
+			}
+			match := result.VerificationSHA256 == sha && (unit == "" || result.RunID == runID)
+			requirement := resultRequirement{unit: run.UnitID, command: run.Command}
+			c.require(match && required[requirement], "test result SHA, Unit/run or planned command mismatch: "+name)
+			if valid && match && required[requirement] && *run.ExitCode == 0 {
+				successes[requirement] = true
+			}
+		}
+		if current {
+			c.files = append(c.files, record.files...)
+			for _, version := range record.files {
+				c.recordProof(version)
+			}
+		}
+	}
+	for requirement := range required {
+		c.require(successes[requirement], "successful planned test required: "+requirement.unit+" "+requirement.command)
+	}
+}
+func resultEvidencePath(name string) bool {
+	return strings.HasPrefix(name, "aidlc/") && safeEvidencePath(name) && !strings.HasPrefix(name, "aidlc/spaces/") && !strings.HasPrefix(name, "aidlc/workflow/")
 }

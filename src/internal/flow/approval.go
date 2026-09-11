@@ -72,7 +72,6 @@ func (s Store) DecidePlan(id string, expect uint64, r ApprovalDecision) (State, 
 			st.Entry = nil
 			st.Config.Units = nil
 			st.Config.TestResults = nil
-			st.Config.DirectCommit = ""
 			st.Approval = nil
 			st.Review = Gate{}
 			st.Sensor = Gate{}
@@ -296,7 +295,6 @@ func (s Store) Finish(id string, expect uint64) (State, error) {
 		}
 		st.Config.Units = nil
 		st.Config.TestResults = nil
-		st.Config.DirectCommit = ""
 		st.Entry = nil
 		st.Sensor = Gate{}
 		st.Review = Gate{}

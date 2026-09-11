@@ -13,6 +13,7 @@ import (
 
 // MinimalRequest is the strict public request shared with hook command recognition.
 type MinimalRequest struct {
+	Unit, Root                                                               string
 	Step                                                                     string
 	Relocate                                                                 bool
 	FromProjectDir, FromBinary                                               string
@@ -36,7 +37,7 @@ func isMinimal(args []string) bool {
 			return true
 		}
 		switch args[1] {
-		case "plan", "plan-approval", "approval", "finish", "history", "create", "list", "show", "documents", "procedure", "check", "begin", "switch", "configure", "review", "advance", "pause", "resume", "reopen", "wait", "cancel":
+		case "hash", "plan", "plan-approval", "approval", "finish", "history", "create", "list", "show", "documents", "procedure", "check", "begin", "switch", "configure", "review", "advance", "pause", "resume", "reopen", "wait", "cancel":
 			return true
 		}
 		return false
@@ -116,7 +117,9 @@ func ParseMinimal(args []string) (r MinimalRequest, err error) {
 
 	case "install/codex":
 		allowed = "--project-dir --relocate --from-project-dir --from-binary"
-		required = "--project-dir"
+	case "intent/hash":
+		min, max = 1, 1
+		allowed += " --unit --root"
 	case "intent/create":
 		min, max = 1, 1
 	case "intent/list":
@@ -219,6 +222,10 @@ func ParseMinimal(args []string) (r MinimalRequest, err error) {
 	}
 	if len(positional) == 1 {
 		r.Target = positional[0]
+	}
+	r.Unit, r.Root = values["--unit"], values["--root"]
+	if r.Root != "" && r.Unit == "" {
+		return fail("--root requires --unit")
 	}
 	r.Space = values["--space"]
 	r.ProjectDir = values["--project-dir"]

@@ -4,7 +4,7 @@ import "strings"
 
 var publicActions = map[string]string{
 	"assignment": "init list show reserve check release reset",
-	"install":    "codex", "space": "create list switch", "intent": "create list switch show procedure documents configure check begin review plan plan-approval approval finish history advance pause resume reopen wait cancel", "unit": "claim result integrate confirm reassign", "memory": "create update show search rules check", "session": "bind inspect",
+	"install":    "codex", "space": "create list switch", "intent": "create list switch show hash procedure documents configure check begin review plan plan-approval approval finish history advance pause resume reopen wait cancel", "unit": "claim result integrate confirm reassign", "memory": "create update show search rules check", "session": "bind inspect",
 }
 
 // Help recognizes only complete public help requests, without execution arguments.
@@ -46,9 +46,10 @@ func Help(args []string) (string, bool) {
 		return memoryWriteHelp(target[1]), true
 	}
 	usage := map[string]string{
-		"install/codex": "--project-dir ROOT",
+		"install/codex": "[--project-dir ROOT]",
 		"space/create":  "NAME [--project-dir ROOT]", "space/list": "[--json] [--project-dir ROOT]", "space/switch": "NAME [--project-dir ROOT]",
 		"intent/create": "NAME --space SPACE", "intent/list": "--space SPACE", "intent/switch": "NAME|--id ID --space SPACE --session SESSION",
+		"intent/hash":          "ID --space SPACE [--unit UNIT --root ROOT]",
 		"intent/plan":          "ID --space SPACE [--expect REVISION --file PLAN.json]",
 		"intent/plan-approval": "ID --space SPACE --expect REVISION --file DECISION.json",
 		"intent/approval":      "ID --space SPACE --expect REVISION --file DECISION.json",
@@ -69,7 +70,7 @@ func Help(args []string) (string, bool) {
 		text += "Intentのstage: initialization → discoveryが必須。その後はarchitecture-analysis / planning / tdd / integrationの採否と順序を計画する。status: active / waiting / paused / completed / cancelled。状態は専用操作で変更する。\n--expect は現在stateの正のrevision。競合時はshowで再読込する。finishはSensor・独立review・人間の成果承認が必要。advanceはfinishへの案内付きエラー。resumeは待機/中断から、reopenは指定実行回の再実行計画を提示する。\n"
 	case "unit":
 		text += "claim/reassignはregistry_epoch、request_id、coordinator_sessionを必須指定する。assignment initで管理を開始し、assignment list/showでtask_nameを取得してメインAIがnative spawnする。reported後も明示releaseまで保持する。\n"
-		text += "Unitのstatus: pending / running / needs_confirmation / reported / integrated。全要求は現在step_idを指定する。JSONはclaimでunit/session/root、resultでunit/session/root/run_id/commit、integrateでunit/commit、confirmでunit/session/root/run_id/commitを指定する。resultとconfirmのcommitは現在のworker HEADと一致する40桁のcommitが必須。claimで割当、resultで成果commit、integrateで統合commit、confirmで既存runを確認する。statusを入力して進捗を偽装しない。\n"
+		text += "Unitのstatus: pending / running / needs_confirmation / reported / integrated。現在step_idを指定する。claimはunit/session/root、resultとconfirmはunit/session/root/run_id/verification_sha256、integrateはunitを指定する。confirmは登録runの現在のroot内容を64桁のverification_sha256で確認する。resultは登録runの現在SHAとunit結果JSONを照合し、integrateは管理rootの内容がresult_sha256と同じと確認する。reportedは有効な同runで明示再提出できる。後続変更だけで過去integratedを取り消さず、最新全体SHAで最終検証する。\n"
 	case "memory":
 		text += "Concept IDは拡張子なし（例 codekb/authentication、adr/authentication、rules/project）。showは原文contentと現在hashを返す。searchはqueryのAND検索、intent-idは32桁の小文字16進数で完全一致。rulesは必須Rule全文、checkはSpaceのOKF検査。\n"
 	case "session":
@@ -79,14 +80,14 @@ func Help(args []string) (string, bool) {
 		text += "移転: aidlc install codex --relocate --project-dir NEW_ROOT --from-project-dir OLD_ROOT --from-binary OLD_BINARY\n新binaryは実行中のaidlc。旧pathは絶対参照文字列で存在不要。移転先AI開始前に端末から実行する。既知のaidlc/aidlc-cli両skillと製品hooksの3ファイルを事前検査し参照だけを更新する。独自hookや旧WORKFLOW、Knowledgeを保持し、旧版のupgradeを兼ねない。部分失敗はPathsが更新済み、Pendingが未処理。全件再検査する同じ引数の再試行で復旧する。未知編集は自動上書きしない。新ROOT/.codex/hooks.jsonの絶対pathを確認し、Codexのhook trustを利用者が確認する。trust/認証設定は変更しない。\n"
 	}
 	if key == "unit/claim" {
-		text += `REQUEST.json例: {"registry_epoch":"initのepoch","request_id":"一意の要求ID","coordinator_session":"メイン会話ID","step_id":"現在step_id","unit":"a","session":"worker-a","root":"/project-worktrees/a"}
+		text += `REQUEST.json例: {"registry_epoch":"initのepoch","request_id":"一意の要求ID","coordinator_session":"メイン会話ID","step_id":"現在step_id","unit":"a","session":"worker-a","root":"/project"}
 `
 	}
 	if key == "unit/reassign" {
-		text += "active/tddのneeds_confirmationだけ再割当できる。旧worker終了を確認し、previous_run_stoppedをtrueにする。runningなら先にpause/resumeする。成功まで新workerを開始しない。\nREQUEST.json例: {\"registry_epoch\":\"initのepoch\",\"request_id\":\"一意の要求ID\",\"coordinator_session\":\"メイン会話ID\",\"step_id\":\"現在step_id\",\"unit\":\"a\",\"session\":\"new-worker\",\"root\":\"/new/worker\",\"commit\":\"<40桁の現在HEAD>\",\"reason\":\"旧処理終了と成果を確認\",\"previous_run_stopped\":true}\nunit/session/root/commit/reasonは文字列、停止確認は真偽値。run_idは指定せず新規発行する。HEAD・base履歴・依存統合・scope・他担当との衝突を検査する。state保存途中は当該Intentのconfigureや他Unit操作を拒否してrevisionを保持する。同じexpectとJSONで再試行し、異なる残存要求は現在割当を確認する。既にrunningならshowとassignmentで成功済みを確認する。新runで再テスト後result/integrateし、reviewは新root/sessionへassignして現在targetを受け直す。\n"
+		text += "active/tddのneeds_confirmationだけ再割当できる。旧worker終了を確認し、previous_run_stoppedをtrueにする。REQUEST.jsonはregistry_epoch/request_id/coordinator_session/step_id/unit/session/root/reasonとprevious_run_stoppedを指定し、run_idを指定しない。依存、scope、担当競合を検査する。保存失敗は同じexpect/JSONで再試行し、成功まで新workerを開始しない。\n"
 	}
 	if key == "intent/review" {
-		text += "REVIEW.json: actionはassign / accept。assignはcoordinator_session、別session、別rootを指定。acceptは同じsession/root/targetと、実報告のstatus pass / fail、summaryを指定する。古いtargetや未割当結果は拒否する。\n"
+		text += "REVIEW.json: actionはassign / accept。assignはcoordinator_session、別session、rootを指定。同じrootを使える。別rootではIntentの検証対象集合SHAの一致を確認する。acceptは同じsession/root/targetと、実報告のstatus pass / fail、summaryを指定する。古いtargetや未割当結果は拒否する。\n"
 	}
 	if strings.HasPrefix(key, "intent/") {
 		text += "実行回step_idはCLIが採番する。計画承認と各実行の成果承認を分け、finishはSensor・独立review・成果承認を確認する。\n"
@@ -115,9 +116,10 @@ func Help(args []string) (string, bool) {
 		text += checkHelp()
 	}
 	if key == "intent/configure" {
-		text += "新規stateはschema_version=5。旧schemaは保持して明示エラー。material_sources/test_resultsはrepository相対pathの文字列配列、no_materials_reasonは文字列。material_sourcesは明示UTF-8ファイル/ディレクトリ。空ならdiscovery終了までにno_materials_reasonが必要。変更時はdiscoveryのbeginを無効化し、後段ではdiscoveryへのreopenが必要。entry/acceptedはCLI所有でconfigure不可。出力文書がある場合は当該step_idでoutputs登録する。document_inputs/document_outputsはintent documents専用でconfigure不可。test_resultsはstrict JSONのstep_id、stage(tdd|integration)、runs配列。現在存在する結果だけを指定し、次段階の結果は作成後に追記する。TDDはUnitごとのcommandとResultCommitの成功、integrationは全Unit統合後の現在HEADで計画command全ての成功を要求する。各runはcommand、実成果commit、必須整数exit_code、非空出力ファイルoutput_path。intent procedureの本文節と作成例に従う。\n"
-		text += "CONFIG.jsonはconfig全体。objective、scope配列、acceptance配列、unknowns配列、plan、code_revision、tests配列、direct_commit、adr、artifacts配列、units配列。adrはrequired/reason。artifact kindはKnowledge / ADR / test、stageは6種のカタログID。既存fieldとUnit進捗を保持する。\n"
-		text += "\n型: objective/plan/code_revision/direct_commitは文字列。scope/acceptance/unknowns/testsは文字列配列。adrはobjectでrequiredは真偽値、reasonは文字列。artifacts/unitsはobject配列。artifactのpath/kind/stageは文字列。Unitのstep_id/id/bolt/base_commit/status/result_commit/integrated_commitは文字列、depends_on/scope/testsは文字列配列。\n例中の<CURRENT_STEP>を現在step_idへ、<CURRENT_HEAD>を対象Gitの現在HEAD（40桁commit）へ置換する。Knowledgeのpath/本文、scope、受入条件、テストcommandは実projectに合わせて用意・置換する。例のコピーだけではSensor合格や検証済みを意味しない。\nUnitなし（直接実装）:\n```json\n{\n  \"no_materials_reason\": \"新規fixture。既存資材があればmaterial_sourcesを指定する\",\n  \"objective\": \"加算を提供する\",\n  \"scope\": [\n    \"add.go\"\n  ],\n  \"acceptance\": [\n    \"Add(2,3)は5を返す\"\n  ],\n  \"unknowns\": [],\n  \"plan\": \"失敗するテストを書き、最小実装と検証を行う\",\n  \"code_revision\": \"<CURRENT_HEAD>\",\n  \"tests\": [\n    \"go test -run TestAdd\"\n  ],\n  \"direct_commit\": \"\",\n  \"adr\": {\n    \"required\": false,\n    \"reason\": \"既存方式に沿うため追加判断なし\"\n  },\n  \"artifacts\": [\n    {\n      \"path\": \"aidlc/spaces/default/knowledge/codekb/current.md\",\n      \"kind\": \"Knowledge\",\n      \"stage\": \"discovery\"\n    }\n  ],\n  \"units\": []\n}\n```\nUnitあり（新規Unitの初期値）:\n```json\n{\n  \"no_materials_reason\": \"新規fixture。既存資材があればmaterial_sourcesを指定する\",\n  \"objective\": \"加算を提供する\",\n  \"scope\": [\n    \"add.go\"\n  ],\n  \"acceptance\": [\n    \"Add(2,3)は5を返す\"\n  ],\n  \"unknowns\": [],\n  \"plan\": \"失敗するテストを書き、最小実装と検証を行う\",\n  \"code_revision\": \"<CURRENT_HEAD>\",\n  \"tests\": [\n    \"go test -run TestAdd\"\n  ],\n  \"direct_commit\": \"\",\n  \"adr\": {\n    \"required\": false,\n    \"reason\": \"既存方式に沿うため追加判断なし\"\n  },\n  \"artifacts\": [\n    {\n      \"path\": \"aidlc/spaces/default/knowledge/codekb/current.md\",\n      \"kind\": \"Knowledge\",\n      \"stage\": \"discovery\"\n    }\n  ],\n  \"units\": [\n    {\n      \"step_id\": \"<CURRENT_STEP>\",\n      \"id\": \"addition\",\n      \"bolt\": \"bolt-1\",\n      \"base_commit\": \"<CURRENT_HEAD>\",\n      \"depends_on\": [],\n      \"scope\": [\n        \"add.go\"\n      ],\n      \"tests\": [\n        \"go test -run TestAdd\"\n      ],\n      \"status\": \"pending\",\n      \"result_commit\": \"\",\n      \"integrated_commit\": \"\"\n    }\n  ]\n}\n```\n新規Unitはpending、result_commit/integrated_commitは空文字列。Unitのidは英数字から始まる英数字・_・-の1〜80文字。既存configの更新はintent showを読み、既存fieldとUnit進捗を保持する。実行中Unitを例のpendingや空commitへ戻してはならない。direct_commitは直接実装の成果commitを検証後に指定する。\n"
+		text += "新規stateはschema_version=6、担当registryはschema_version=2。CONFIG.jsonはconfig全体を指定する。objective/plan/no_materials_reasonは文字列、scope/verification_paths/acceptance/unknowns/tests/material_sources/test_resultsは文字列配列。scopeは編集の担当範囲、verification_pathsは検証に影響するソース・テスト・設定・共通部品のproject相対パス集合。TDD/integrationは非空のverification_pathsが必須。Unitの実効範囲はIntentの範囲へ含める。Unitはstep_id/id/bolt/status/result_sha256、depends_on/scope/tests、任意verification_pathsを持つ。新Unitはpendingでresult_sha256を空にし、既存進捗はUnit操作だけで変更する。adrはrequired/reason、artifactsはpath/kind/stage。既存Knowledgeのartifacts例: {\"path\":\"aidlc/spaces/default/knowledge/codekb/current.md\",\"kind\":\"Knowledge\",\"stage\":\"discovery\"}。このpathには現在仕様を説明する文書を保存する。文書宣言はintent documents専用。資材を使わないdiscoveryにはno_materials_reasonを記す。\n結果はaidlc/evidence等の通常ファイルへ保存する。結果JSONはstep_id、stage、verification_scope(intent|unit)、verification_sha256、runs。runはunit_id（直接実装では省略）、command、整数exit_code、非空出力のoutput_path。unit結果にはトップレベルのunit_id/run_idも必要で、各runのUnitと一致させる。現在全体SHAで各unit_id+commandの成功が終了条件。hash→テスト→hashが一致した結果だけを登録する。\nadr.requiredは真偽値。result_sha256は64桁のSHAで初期値は空。<CURRENT_STEP>は現在のstep_idで置換する。\nUnitなし\n```json\n{\"objective\":\"加算を提供する\",\"scope\":[\"src\"],\"verification_paths\":[\"src\",\"go.mod\",\"go.sum\"],\"acceptance\":[\"加算が正しい\"],\"unknowns\":[],\"plan\":\"テスト先行で確認する\",\"tests\":[\"go test ./src/...\"],\"no_materials_reason\":\"新規開発\",\"adr\":{\"required\":false,\"reason\":\"既存方式\"},\"artifacts\":[],\"units\":[]}\n```\nUnitあり\n```json\n{\"objective\":\"加算を提供する\",\"scope\":[\"src\"],\"verification_paths\":[\"src\",\"go.mod\",\"go.sum\"],\"acceptance\":[\"加算が正しい\"],\"unknowns\":[],\"plan\":\"テスト先行で確認する\",\"tests\":[\"go test ./src/...\"],\"no_materials_reason\":\"新規開発\",\"adr\":{\"required\":false,\"reason\":\"既存方式\"},\"artifacts\":[],\"units\":[{\"id\":\"add\",\"step_id\":\"<CURRENT_STEP>\",\"bolt\":\"one\",\"depends_on\":[],\"scope\":[\"src\"],\"verification_paths\":[\"src\",\"go.mod\",\"go.sum\"],\"tests\":[\"go test ./src/...\"],\"status\":\"pending\",\"result_sha256\":\"\"}]}\n```\n"
+	}
+	if key == "intent/hash" {
+		text += "verification_sha256とversion、intent_id、step_id、任意unit_id、verification_paths、files、bytes、missing_pathsを返す読取り専用操作。--rootは登録済みUnit rootだけを使える。root直下aidlcと全深さ.gitを除外し、symlink/特殊file/範囲外参照を拒否。上限10,000ファイル・256 MiB、二回の読込一致を確認する。mtimeや絶対rootはSHAを変えない。承認待ち中も読取りできる。\n"
 	}
 	return text, true
 }
@@ -153,7 +155,7 @@ initialization:
 
 discovery:
   開始: Rule、共有分析文書があれば現在版を任意入力として確認する。
-  終了: 目的・範囲・受入条件、阻害事項なし、現在HEAD、資材または資材なし理由、ADR要否、Requirementsを確認する。
+  終了: 目的・範囲・受入条件、阻害事項なし、現在の集合SHA、資材または資材なし理由、ADR要否、Requirementsを確認する。
 
 architecture-analysis:
   開始: 受入済みRequirements、共有分析文書の任意入力を確認する。
@@ -165,21 +167,21 @@ planning:
 
 tdd:
   開始: 受入済みRequirements、先行planningがある場合は受入済みImplementationPlanを確認する。
-  終了: 直接実装のdirect_commit、またはUnitのResultCommitと統合、現在回の必要commandの成功記録を確認する。
+  終了: 直接実装の全体検証、またはUnitの内容照合と反映、現在回の必要commandの成功記録を確認する。
 
 integration:
   開始: 受入済みRequirements、先行planningがあれば受入済みImplementationPlan、先行tddがあれば受入済み証拠を確認する。
-  終了: 現在HEADに対応する必要commandの成功記録と宣言文書を確認する。
+  終了: 現在の集合SHAに対応する必要commandの成功記録と宣言文書を確認する。
 
 initialization以外の終了:
-  目的・範囲・受入条件、阻害事項なし、現在HEAD、資材または資材なし理由、ADR要否も共通に確認する。
+  目的・範囲・受入条件、阻害事項なし、現在の集合SHA、資材または資材なし理由、ADR要否も共通に確認する。
   設計判断の記録が必要なら、採用するadr文書を入力または出力へ宣言する。
   検証方法やUnit詳細はplanning以降の該当段階で登録する。
 
 実測証拠:
   tddとintegrationの結果JSONは現在回のstep_id・stage・runsを持つ。
-  各runには実測のcommand・commit・整数exit_code・非空の出力ファイルを指すoutput_pathを記録する。
-  必要commandの成功（exit_code=0）を対応するcommitで確認する。結果は実行後にtest_resultsへ登録する。
+  各runには実測のunit_id・command・整数exit_code・非空の出力ファイルを指すoutput_pathを記録する。
+  必要commandの成功（exit_code=0）を対応するverification_sha256で確認する。結果は実行後にtest_resultsへ登録する。
   コード・テストコード・commit・実測証拠は文書outputsへ登録しない。
   Sensorは成功記録を確認し、独立レビューはRED/GREENの意味と記録の真正性を確認する。
 
@@ -273,7 +275,7 @@ func assignmentHelp(action string) string {
 	return "使い方: aidlc assignment " + action + " " + usage[action] + ` [--project-dir ROOT]
 管理CLIはagentを起動しない。メインAIが予約のtask_nameとagentをnative spawn_agentへ渡す。worker以外は現在procedureのread-only担当。実child rootや全process停止の証明ではない。
 init: {"request_id":"一意の要求ID","human_confirmed":true,"reason":"人間が既知の作業停止・成果回収を確認した回答と理由"}。初回も人間確認が必要。既存registryは上書きしない。
-reserve: {"registry_epoch":"initのepoch","request_id":"一意のID","step_id":"現在step","agent":"aidlc-worker","root":"/existing-worktree","session":"worker-a"}。--expectは現在Intent revision。別の既存Git top-levelを使い、現在CodeRevisionを含む履歴が必要。同じ管理rootの全Space/Intent/sessionで占有を検査する。
+reserve: {"registry_epoch":"initのepoch","request_id":"一意のID","step_id":"現在step","agent":"aidlc-worker","root":"/project","session":"worker-a"}。--expectは現在Intent revision。通常ディレクトリを使い、管理rootと同じ場所を許可する。同一・親子rootのworkerは順次実行する。同じ管理rootの全Space/Intent/sessionで占有を検査する。
 show/listでassignment_id、entry_revision、task_name、状態を確認する。checkは現在step・担当・Unit・開始条件の再検査。追加依頼は応答確認済みの相対task_nameを使う。Post欠落時は不明として保持し同名再spawnをしない。
 release: {"registry_epoch":"epoch","request_id":"一意の解放ID","previous_run_stopped":true,"no_more_requests":true,"reason":"既知処理終了と成果・残件回収を確認"}。--sessionは予約したメイン会話、--expectはentry_revision。追加依頼終了、既知コマンド/background終了、成果回収をメインAIが確認する。不明なら保持して人間へ確認する。Post/Stop/TTLやunit resultでは解放しない。
 同じepoch/request_idと同一内容でretryする。解放後の古いreserve要求はreleasedを返し再占有しない。保存や応答の喪失時はshowして同一要求を再試行する。

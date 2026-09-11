@@ -53,7 +53,7 @@ func TestUnitAssignment(t *testing.T) {
 		t.Fatalf("run changed: %+v %v", runtime, err)
 	}
 	runtime.Action = "result"
-	runtime.Commit = st.Config.CodeRevision
+	runtime = prepareUnitResultFixture(t, s, st, runtime)
 	reported, err := s.Unit(st.ID, next.Revision, runtime)
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +111,7 @@ func TestUnitAssignmentReassign(t *testing.T) {
 	req.Session = "new-worker"
 	req.PreviousRunStopped = true
 	req.Reason = "old worker and known commands stopped, results collected"
-	req.Commit = st.Config.CodeRevision
+	req.VerificationSHA256 = flowGit(t, s.Root, "rev-parse", "HEAD")
 	next, err := s.Unit(st.ID, st.Revision, req)
 	if err != nil {
 		t.Fatal(err)
@@ -135,7 +135,7 @@ func TestUnitAssignmentLegacyReassign(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := UnitRequest{StepID: st.CurrentStepID, Action: "reassign", Unit: "a", Session: "new", Root: worker, PreviousRunStopped: true, Reason: "old stopped", Commit: st.Config.CodeRevision}
+	req := UnitRequest{StepID: st.CurrentStepID, Action: "reassign", Unit: "a", Session: "new", Root: worker, PreviousRunStopped: true, Reason: "old stopped"}
 	if _, err := s.Unit(st.ID, st.Revision, req); err == nil {
 		t.Fatal("legacy unit reservation backfill accepted")
 	}
@@ -220,7 +220,7 @@ func TestUnitAssignmentLegacyResult(t *testing.T) {
 		t.Fatal(err)
 	}
 	legacy.Action = "result"
-	legacy.Commit = st.Config.CodeRevision
+	legacy.VerificationSHA256 = flowGit(t, s.Root, "rev-parse", "HEAD")
 	if _, err := s.Unit(st.ID, st.Revision, legacy); err == nil {
 		t.Fatal("legacy worker result bypassed managed registry")
 	}
@@ -246,7 +246,7 @@ func TestUnitAssignmentReassignAdmissionFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	other := filepath.Join(t.TempDir(), "other")
-	flowGit(t, s.Root, "worktree", "add", "--detach", other, st.Config.CodeRevision)
+	flowGit(t, s.Root, "worktree", "add", "--detach", other, flowGit(t, s.Root, "rev-parse", "HEAD"))
 	if _, err := s.ReserveAssignment(st.ID, st.Revision, "another-main", AssignmentRequest{RegistryEpoch: reg.Epoch, RequestID: "other", StepID: st.CurrentStepID, Agent: "aidlc-worker", Root: other, Session: "other"}); err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestUnitAssignmentReassignAdmissionFailure(t *testing.T) {
 	req.RequestID = "reassign"
 	req.Root = other
 	req.Session = "new"
-	req.Commit = st.Config.CodeRevision
+	req.VerificationSHA256 = flowGit(t, s.Root, "rev-parse", "HEAD")
 	req.PreviousRunStopped = true
 	req.Reason = "old stopped and collected"
 	if _, err := s.Unit(st.ID, st.Revision, req); err == nil {

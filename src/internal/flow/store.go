@@ -28,28 +28,26 @@ type ADR struct {
 	Reason   string `json:"reason"`
 }
 type Unit struct {
-	StepID           string   `json:"step_id"`
-	ID               string   `json:"id"`
-	Bolt             string   `json:"bolt"`
-	BaseCommit       string   `json:"base_commit"`
-	Status           string   `json:"status"`
-	ResultCommit     string   `json:"result_commit"`
-	IntegratedCommit string   `json:"integrated_commit"`
-	DependsOn        []string `json:"depends_on"`
-	Scope            []string `json:"scope"`
-	Tests            []string `json:"tests"`
+	VerificationPaths []string `json:"verification_paths,omitempty"`
+	ResultSHA256      string   `json:"result_sha256"`
+	StepID            string   `json:"step_id"`
+	ID                string   `json:"id"`
+	Bolt              string   `json:"bolt"`
+	Status            string   `json:"status"`
+	DependsOn         []string `json:"depends_on"`
+	Scope             []string `json:"scope"`
+	Tests             []string `json:"tests"`
 }
 type Config struct {
+	VerificationPaths []string              `json:"verification_paths"`
 	DocumentInputs    []DocumentDeclaration `json:"document_inputs"`
 	DocumentOutputs   []DocumentDeclaration `json:"document_outputs"`
 	MaterialSources   []string              `json:"material_sources"`
 	NoMaterialsReason string                `json:"no_materials_reason"`
 	TestResults       []string              `json:"test_results"`
 	Tests             []string              `json:"tests"`
-	DirectCommit      string                `json:"direct_commit"`
 	Objective         string                `json:"objective"`
 	Plan              string                `json:"plan"`
-	CodeRevision      string                `json:"code_revision"`
 	Scope             []string              `json:"scope"`
 	Acceptance        []string              `json:"acceptance"`
 	Unknowns          []string              `json:"unknowns"`
@@ -117,7 +115,7 @@ func (s Store) path(id string) string {
 	return "aidlc/spaces/" + s.Space + "/intents/" + id + "/state.json"
 }
 func (s Store) validate(st State) error {
-	if st.SchemaVersion != 5 || !validID(st.ID) || st.Space != s.Space || st.Revision == 0 || strings.TrimSpace(st.Name) == "" || !utf8.ValidString(st.Name) {
+	if st.SchemaVersion != 6 || !validID(st.ID) || st.Space != s.Space || st.Revision == 0 || strings.TrimSpace(st.Name) == "" || !utf8.ValidString(st.Name) {
 		return invalid("invalid state identity or schema")
 	}
 	if st.HistoryHead != "" && (!validHash(st.HistoryHead) || st.HistoryRevision == 0 || st.HistoryRevision > st.Revision) || st.HistoryHead == "" && st.HistoryRevision != 0 {
@@ -160,6 +158,9 @@ func (s Store) validate(st State) error {
 	}
 	if !supportedStage(st.Stage) {
 		return invalid("invalid stage")
+	}
+	if err := validateVerificationConfig(st.Config); err != nil {
+		return err
 	}
 	if err := validateVersions(st); err != nil {
 		return err
@@ -206,7 +207,7 @@ func (s Store) Create(name string) (State, error) {
 	}
 	id := make([]byte, 16)
 	rand.Read(id)
-	st := State{SchemaVersion: 5, DefinitionHash: d.Hash, ID: fmt.Sprintf("%x", id), Space: s.Space, Name: name, Revision: 1, Stage: "initialization", Status: "active", CurrentStepID: "s01",
+	st := State{SchemaVersion: 6, DefinitionHash: d.Hash, ID: fmt.Sprintf("%x", id), Space: s.Space, Name: name, Revision: 1, Stage: "initialization", Status: "active", CurrentStepID: "s01",
 		ExecutionPlan: ExecutionPlan{NextID: 3, Bootstrap: []ExecutionStep{{ID: "s01", Stage: "initialization", Status: "pending"}, {ID: "s02", Stage: "discovery", Status: "pending"}}}}
 	if _, err := os.Lstat(filepath.Join(s.Root, s.path(st.ID))); !os.IsNotExist(err) {
 		return State{}, fmt.Errorf("identity already exists: %w", fs.ErrExist)

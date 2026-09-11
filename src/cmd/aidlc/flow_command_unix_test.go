@@ -56,11 +56,11 @@ func TestFlowCommandFailureOutput(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	head, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
+	_, err = exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	st.Config = flow.Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, CodeRevision: strings.TrimSpace(string(head)), ADR: flow.ADR{Reason: "none"}}
+	st.Config = flow.Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, VerificationPaths: []string{"."}, ADR: flow.ADR{Reason: "none"}}
 	st, err = store.Save(st, st.Revision)
 	if err != nil {
 		t.Fatal(err)

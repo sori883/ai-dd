@@ -93,7 +93,7 @@ func TestConfigureHelpExamples(t *testing.T) {
 			writeMinimalFixture(t, file, strings.ReplaceAll(config, "<CURRENT_STEP>", st.CurrentStepID))
 			call("configure", "--file", file)
 			check()
-			if st.Config.CodeRevision != head || len(st.Config.Units) != tc.index {
+			if f.git("rev-parse", "HEAD") != head || len(st.Config.Units) != tc.index {
 				t.Fatal("configuration not preserved")
 			}
 			t.Logf("configure exit=0 planning Sensor=pass example=%s HEAD=%s revision=%d", tc.name, head, st.Revision)

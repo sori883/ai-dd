@@ -18,7 +18,7 @@ Sensor、review、会話承認、Unitを管理します。正本は`aidlc/spaces
 同じIntent directoryの`history/`へ状態変更を保存し、全操作の監査記録とは区別します。
 同じstageを再実行する場合も新しいstep IDを使い、過去の成功をそのまま適用しません。
 
-Git共有するstateはメインAI一人が更新します。期待する`revision`が一致しなければ保存せず、
+共有するstateはメインAI一人が更新します。期待する`revision`が一致しなければ保存せず、
 同じdirectoryの一時fileから置換します。未知field、重複JSON key、不正identity、破損dataを診断します。
 保存途中は同一要求で再試行し、state確定まで成功扱いしません。
 
@@ -29,7 +29,7 @@ Sensorは文書の存在・metadata・対象Intent・受理版・hash、コー�
 内容の妥当性、根拠、テストの意味は独立reviewで確認します。文書outputsとコード・テスト結果の証拠は別です。
 選択しなかった段階の成果を一律には要求しません。
 
-Sensorの対象hashには段階、計画、成果物本文、実コード版、Unit成果commitを含めます。
+Sensorの対象hashには現在step、実行計画・定義、意味のある設定、成果物本文、検証対象一式のSHA、結果JSONと出力を含めます。
 stateのrevisionやreview記録だけの更新では対象hashを変えません。対象fileが変われば古いpassは使えません。
 計画承認と成果承認は別のrequestです。提示した対象に対する実際の後続会話の回答を記録します。
 独立reviewと会話出典は運用上の確認で、同一OS権限に対する完全な著者・本人認証ではありません。
@@ -42,8 +42,8 @@ worker以外はread-onlyで本文案や報告を返し、共有Knowledgeの保�
 製品の行動規約は[aidlc Skill](../src/harness/codex/minimal/SKILL.md)、操作の選択は
 [aidlc-cli Skill](../src/harness/codex/minimal/aidlc-cli/SKILL.md)、正確な引数・型はCLI helpにあります。
 
-Unitは担当範囲、検証、依存、Bolt（作業のまとまり）を持ち、workerは別worktreeへ割り当てます。
-依存統合前や担当範囲の重複を拒否し、結果は現在のrun/session/rootと実commitに照合します。
+Unitは担当範囲、検証、依存、Bolt（作業のまとまり）を持ち、workerは通常ディレクトリへ割り当てます。同じrootでの順次作業を許可し、同一・親子rootの重複予約を拒否します。
+依存統合前や担当範囲の重複を拒否し、結果は現在のrun/session/rootと実効検証集合のSHAに照合します。反映時は管理元の同じ集合の内容一致を確認します。
 Unitなしのworkerも作業場所を登録します。同一管理rootの全Space・Intent・sessionをまたぐ予約競合を検査します。
 別の管理rootまで横断して実workerの稼働を監視する機能ではありません。
 
@@ -81,3 +81,7 @@ installがfresh projectへ配置し、実行時は配置済みの定義・Rule�
 [担当・作業場所管理](design/native-agent-assignment-plan.md)を参照してください。
 [旧4段階契約](design/four-stage-workflow-contract.md)は後続決定で更新された履歴です。
 除去した旧経路は[除去記録](design/four-stage-removed-product.md)に残し、旧利用dataを自動移行・削除しません。
+
+検証集合はIntentの `verification_paths` と任意のUnit範囲で宣言し、Unit範囲はIntent範囲へ含めます。`scope` は編集担当の宣言です。集合の正規化したパス・種類・内容を二回読み、SHAの一致を確認します。Git呼出しは行いません。同じ相対配置と内容の別rootは同じSHAになります。
+
+flow schema 6、assignment schema 2のみを新規保存します。旧commit fieldの互換読込みや移行は行いません。Knowledgeと結果は管理ディレクトリ内で別にhash化し、集合SHAとの循環を避けます。独立reviewerは別会話で同じrootを使え、別rootでは全体SHAを照合します。現在全体SHAの結果が終了条件であり、古いUnit成果だけでfinishできません。

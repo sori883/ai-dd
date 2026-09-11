@@ -243,7 +243,7 @@ func (s Service) exception(input HookInput, state *Session) bool {
 
 	case "intent/plan", "intent/documents":
 		return r.File == "" || (state.Tool == "" && r.Space == state.Space && r.Target == state.Intent)
-	case "memory/rules", "memory/search", "memory/show", "memory/check", "intent/list", "intent/show", "intent/procedure", "intent/history", "intent/check", "session/inspect":
+	case "memory/rules", "memory/search", "memory/show", "memory/check", "intent/list", "intent/hash", "intent/show", "intent/procedure", "intent/history", "intent/check", "session/inspect":
 		return true
 	case "intent/create":
 		return state.Tool == ""

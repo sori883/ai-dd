@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/sori883/ai-dd/src/internal/flow"
 	"path/filepath"
 	"testing"
 )
@@ -28,11 +29,32 @@ func boundaryFixtureResults(t *testing.T, root, step, stage, head string, comman
 	t.Helper()
 	log := "aidlc/evidence/" + stage + ".txt"
 	writeMinimalFixture(t, filepath.Join(root, log), string(output))
+	states, err := (flow.Store{Root: root, Space: "default"}).List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config flow.Config
+	for _, st := range states {
+		if st.CurrentStepID == step {
+			config = st.Config
+			break
+		}
+	}
+	digest, err := flow.ComputeVerification(root, config.VerificationPaths)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var runs []map[string]any
 	for _, command := range commands {
-		runs = append(runs, map[string]any{"command": command, "commit": head, "exit_code": 0, "output_path": log})
+		if len(config.Units) == 0 {
+			runs = append(runs, map[string]any{"command": command, "exit_code": 0, "output_path": log})
+		} else {
+			for _, unit := range config.Units {
+				runs = append(runs, map[string]any{"unit_id": unit.ID, "command": command, "exit_code": 0, "output_path": log})
+			}
+		}
 	}
-	raw, err := json.Marshal(map[string]any{"step_id": step, "stage": stage, "runs": runs})
+	raw, err := json.Marshal(map[string]any{"step_id": step, "stage": stage, "verification_scope": "intent", "verification_sha256": digest.SHA256, "runs": runs})
 	if err != nil {
 		t.Fatal(err)
 	}

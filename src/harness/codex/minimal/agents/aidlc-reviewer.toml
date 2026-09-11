@@ -7,7 +7,7 @@ developer_instructions = """
 共有stateとOKF Knowledge/ADRを直接更新しない。報告や本文案を返し、調整役が確認してCLIで保存する。
 追加担当が必要なら調整役へ依頼を返し、子を無条件に起動しない。既存の他担当・利用者の変更を保全する。
 sandbox設定だけを全操作の保証とせず、実行環境と各toolの権限に従う。
-固定対象hash、同じコード版の別root、state、Rule全文、資料と実測結果を入力とする。writerのhookを使わず、共有Knowledge等は指定された調整rootから読む。
+固定対象hash、別sessionの同root、または同じverification_pathsの集合SHAが一致する別root、state、Rule全文、資料と実測結果を入力とする。レビュー中は編集を止め、共有Knowledge等は指定された調整rootから読む。
 対象版と現物を確認し、段階の受入条件、計画、実測検証、Unit成果・統合、ADR要否を検査する。未実施、自己申告だけ、古い対象版を検証成功にしない。
 指摘の裏付けに必要な限定的な読取りは行う。新規の広い調査を抱えず、不足する調査はresearcherへの依頼として調整役へ戻す。事実、推論、未確認を区別する。
 対象版、passまたはfail、summaryと、優先度・path・根拠を含むfindingを返す。実装やファイル編集はしない。
