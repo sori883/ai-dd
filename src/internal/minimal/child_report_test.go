@@ -180,10 +180,13 @@ func TestChildReportBoundary(t *testing.T) {
 			}
 		})
 	}
-	for _, mode := range []string{"bound_after_wait", "timeout", "binding_changed", "stage_changed", "reset"} {
+	for _, mode := range []string{"bound_after_wait", "bound_other_role", "bound_other_target", "timeout", "binding_changed", "stage_changed", "reset"} {
 		t.Run(mode, func(t *testing.T) {
 			s, st := agentFixture(t)
 			reg := assignment.Store{Root: s.Root}
+			if mode == "bound_other_role" || mode == "bound_other_target" {
+				bindReportChild(t, s, st, "plan", "aidlc-stage-planner", "/root")
+			}
 			_, err := reg.PreSpawn(assignment.DispatchRequest{Session: "session", Turn: "turn", ToolID: "review", TaskName: "review", Agent: "aidlc-reviewer", Space: "default", IntentID: st.ID, StepID: st.CurrentStepID, DefinitionHash: st.DefinitionHash})
 			if err != nil {
 				t.Fatal(err)
@@ -192,6 +195,9 @@ func TestChildReportBoundary(t *testing.T) {
 			waited := time.Duration(0)
 			s.hookClock = &hookClock{now: func() time.Time { return now }, wait: func(d time.Duration) {
 				waited += d
+				if mode == "bound_other_target" {
+					t.Fatal("waited despite different known parent target")
+				}
 				now = now.Add(d)
 				for _, key := range []string{"session-session", "assignments"} {
 					release, err := filestore.Lock(s.Root, key)
@@ -206,7 +212,7 @@ func TestChildReportBoundary(t *testing.T) {
 					return
 				}
 				switch mode {
-				case "bound_after_wait":
+				case "bound_after_wait", "bound_other_role":
 					if _, err := reg.PostSpawn("session", "review", []byte(`{"task_name":"/root/review"}`)); err != nil {
 						t.Fatal(err)
 					}
@@ -229,8 +235,12 @@ func TestChildReportBoundary(t *testing.T) {
 			}}
 			in := childInput(t, "PreToolUse", "aidlc-reviewer", "send_message", "")
 			in.Input.Target = "/root"
+			if mode == "bound_other_target" {
+				in.Input.Target = "/root/other"
+			}
 			out, err := s.Hook(in)
-			if err != nil || deny(out) != (mode != "bound_after_wait") || waited == 0 {
+			wantDenied := mode != "bound_after_wait" && mode != "bound_other_role"
+			if err != nil || deny(out) != wantDenied || (mode != "bound_other_target" && waited == 0) {
 				t.Fatalf("pending report %s: %+v %v waited=%v", mode, out, err, waited)
 			}
 			if mode == "timeout" && waited != 2*time.Second {

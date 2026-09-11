@@ -22,6 +22,7 @@ import (
 type Service struct {
 	Root, Binary string
 	hookClock    *hookClock
+	writeSession func(string, string, []byte) error
 }
 
 // Private clock declaration permits deterministic hook wait tests.
@@ -110,7 +111,11 @@ func (s Service) save(session string, state Session) error {
 	for _, field := range []struct{ key, value string }{{"space", state.Space}, {"intent", state.Intent}, {"turn", state.Turn}, {"tool", state.Tool}, {"rule_turn", state.RuleTurn}, {"rule_hash", state.RuleHash}} {
 		fmt.Fprintf(&out, "%s=%s\n", field.key, url.QueryEscape(field.value))
 	}
-	return okfmemory.WriteFile(s.Root, name, []byte(out.String()))
+	write := s.writeSession
+	if write == nil {
+		write = okfmemory.WriteFile
+	}
+	return write(s.Root, name, []byte(out.String()))
 }
 func (s Service) store(space string) bundleStore {
 	return bundleStore{Root: s.Root, Space: space, Bundle: filepath.Join(s.Root, "aidlc/spaces", space, "knowledge")}

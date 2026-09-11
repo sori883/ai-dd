@@ -66,3 +66,21 @@ work unit `hook-reliability-core-guidance-fix`。親の確認で、実際のPre�
 終了の成功・失敗を問わずメインAIが実終端を確認し、同contextで明示recoverする案内へ修正した。未終端はpoll、終了不明なら復旧や再実行をしない。新testはGREEN（exit 0）、既存 `go test -count=1 ./src/internal/minimal -run '^TestFlowHookSelectionRulesAndRecovery$'` もexit 0。応答によるsession変更はない。gofmt・diffcheckを確認し、既存20fileの差分は保持した。開始／終了HEADは `0019a809a1af0bee777cd8c47d2f487dd51b1700` のままである。
 
 親はcoreの全差分を読み、Protocol/Evidence、integrationのCollectedEvidence、minimalのC1・C2・C3・C4・C5群、installのRecoveryGuidanceを各一回再確認し、全てexit 0だった。案内補修後は変更された案内と既存recoverの2testだけを再確認し、exit 0だった。全体検査や実機成功をこの限定確認で代用しない。次は固定commitの独立review、その後にread-only finalを行う。
+
+## 独立reviewの4findingを修正
+
+work unit `hook-reliability-review-fixes`、開始・終了HEAD `389a3287e1a215d2fea29f13c20c5feb992402de`。独立reviewの4点を一つのloopで修正した。
+
+1. 別roleがboundでも送信roleに適格pendingがあり、一意の親とtargetが一致すれば待機を続ける。`TestChildReportBoundary/bound_other_role` で即時拒否のRED（exit 1）を確認し、条件修正後GREEN（exit 0）。別targetは待機なしで拒否し、uncertain・曖昧・release・resetの既存回帰も成功した。
+2. 非競合errorのUnix固有文字列を除き、`continue:false` と待機なしを検査した。ALREADY_GREEN（exit 0）。
+3. callbackだけの疑似失敗を、実 `Service.Hook(PostToolUse)` → 保存失敗 → 元session全bytes不変 → 同じPostの再送成功へ置換した。Serviceごとのprivate保存seamは既定で既存保存関数を呼び、global・公開schemaは変更しない。保持仕様はALREADY_GREEN（exit 0）。testability用seamの未接続を人工REDに数えていない。
+4. 歴史RAM `2026-09-11-hook-reliability-repair-planning.md` の本文を維持し、EOFの余分な空行だけを除去した。
+
+境界再確認は次のcommandで全対象exit 0。
+
+```sh
+go test -count=1 ./src/internal/minimal -run '^(TestChildReportBoundary|TestChildReportToParent|TestHookSessionContention|TestHookTerminalPersistence|TestHookRecoveryGuidance|TestFlowHookSelectionRulesAndRecovery)$'
+git diff --check cf5631b6a26f7f307c70f7e8df3547594a4c1da6
+```
+
+変更Goへgofmtを適用した。全package・race・vet・cross-build・E2E・live・commit・Issue／PR操作は実施していない。実機候補は修正後の確定版で別pathへ更新する。

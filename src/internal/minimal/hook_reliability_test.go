@@ -1,6 +1,7 @@
 package minimal
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -110,7 +111,7 @@ func TestHookSessionContention(t *testing.T) {
 		s := Service{Root: filepath.Join(t.TempDir(), "missing")}
 		s.hookClock = &hookClock{now: time.Now, wait: func(time.Duration) { t.Fatal("retried non-contention error") }}
 		out, err := s.Hook(HookInput{Event: "PostToolUse", Session: "session", ID: "tool"})
-		if err != nil || out["continue"] != false || !strings.Contains(out["stopReason"].(string), "no such file") {
+		if err != nil || out["continue"] != false {
 			t.Fatalf("non-contention error lost: %+v %v", out, err)
 		}
 	})
@@ -154,27 +155,43 @@ func TestHookTerminalPersistence(t *testing.T) {
 			}
 		})
 	}
-	t.Run("callback_failure_and_retry", func(t *testing.T) {
+	t.Run("hook_save_failure_and_retry", func(t *testing.T) {
 		s := Service{Root: t.TempDir()}
-		if err := s.save("session", Session{Tool: "tool"}); err != nil {
+		if err := s.save("session", Session{Space: "default", Intent: "intent", Turn: "turn", Tool: "tool", RuleTurn: "turn", RuleHash: "hash"}); err != nil {
+			t.Fatal(err)
+		}
+		name := filepath.Join(s.Root, "aidlc/.runtime/flow/sessions/session.txt")
+		before, err := os.ReadFile(name)
+		if err != nil {
 			t.Fatal(err)
 		}
 		cause := errors.New("injected save failure")
-		_, err := s.withHookSession("session", func(state *Session) ([]byte, error) { state.Tool = ""; return nil, cause })
-		if !errors.Is(err, cause) {
-			t.Fatal("save error lost", err)
+		calls := 0
+		s.writeSession = func(root, path string, data []byte) error {
+			calls++
+			if root != s.Root || path != "aidlc/.runtime/flow/sessions/session.txt" || !bytes.Contains(data, []byte("\ntool=\n")) {
+				t.Fatal("unexpected session save request", root, path, string(data))
+			}
+			return cause
 		}
-		state, err := s.Inspect("session")
-		if err != nil || state.Tool != "tool" {
-			t.Fatalf("failed callback persisted: %+v %v", state, err)
+		input := HookInput{Event: "PostToolUse", Session: "session", Tool: "Bash", ID: "tool"}
+		out, err := s.Hook(input)
+		if err != nil || out["continue"] != false || !strings.Contains(out["stopReason"].(string), cause.Error()) || calls != 1 {
+			t.Fatal("actual Hook save failure not diagnosed", out, err, calls)
 		}
-		out, err := s.Hook(HookInput{Event: "PostToolUse", Session: "session", Tool: "Bash", ID: "tool"})
+		after, err := os.ReadFile(name)
+		if err != nil || !bytes.Equal(after, before) {
+			t.Fatal("failed Hook changed saved session bytes", string(after), err)
+		}
+		s.writeSession = nil
+		out, err = s.Hook(input)
 		if err != nil || len(out) != 0 {
 			t.Fatal("retry failed", out, err)
 		}
-		state, err = s.Inspect("session")
-		if err != nil || state.Tool != "" {
-			t.Fatal("retry did not clear", state, err)
+		after, err = os.ReadFile(name)
+		want := bytes.ReplaceAll(before, []byte("\ntool=tool\n"), []byte("\ntool=\n"))
+		if err != nil || !bytes.Equal(after, want) {
+			t.Fatal("same Post retry changed unexpected bytes", string(after), err)
 		}
 	})
 	t.Run("release_failure", func(t *testing.T) {

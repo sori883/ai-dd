@@ -113,7 +113,7 @@ func (s Service) childReport(in HookInput, parent Session, st flow.State, store 
 		if sameRole && parentPath != "" && in.Input.Target == parentPath {
 			return nil
 		}
-		if parentPath != "" || !pending {
+		if !pending || parentPath != "" && in.Input.Target != parentPath {
 			return invalid("child report requires the exact registered parent task path")
 		}
 		remaining := deadline.Sub(clock.now())
