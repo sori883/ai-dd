@@ -91,6 +91,18 @@ coreの最初にG0判定を固定仕様へ補正します。Bash非ゼロの終�
 
 追加TDDは `TestHookReliabilityProbeEvidence`（failed終端・不正なstatus/exit対応・試験対象の選別）、`TestChildReportBoundary`（階層親、複数role、曖昧な親、不正Canonical、別context、releasedのみ、pendingからbound、待機中の工程変更・release/reset）にまとめます。test-only観測の補正と①②の製品変更を次の一つのcore work unitへ渡し、同じ単独writerが順序付きで処理します。
 
+### 暗号化された途中報告の実機判定
+
+初期化承認後の実機で、子の親宛send_messageは許可され、兄弟宛は拒否された。親rolloutには最終回答より前の `MESSAGE` があり、送信hookの `tool_input.message` と受信の `encrypted_content` が完全一致した。固定Codexはこの暗号文をそのまま転送する。平文nonce専用の既存判定は、この形式を引き続き不合格・未対応として扱う。
+
+検証fixtureに別の `opaque-delivery` 判定を追加する。これは送信データが同じ親へ到達したことの確認であり、本文やnonceの平文、復号、本人認証の証明ではない。製品の許可条件・保存形式を変更しないため、①②の検証補修として直接承認範囲内で進める。復号や内部推論の読取りを行わず、Git/RAMへ暗号文を複製しない。
+
+親がnative spawn応答と登録から確認した親/子の正式task名・agent IDを入力にする。送信Pre/Postのsession・turn・tool ID・agent ID/type・親target・本文の対応、hook成功、親sessionの保存前後不変を検査する。受信は `agent_message` のauthor/recipient、`MESSAGE` のheader、2要素のcontent形式と暗号文のdecode後文字列を厳密照合し、同じ子の最終回答より前に一つだけ存在することを要求する。hashだけで一致を判断せず、欠落・複数候補・送信拒否/失敗・誤宛先・順序不明は成功にしない。
+
+追加の単独writer所有範囲は `src/cmd/aidlc/hook_reliability_probe_test.go`、`hook_reliability_probe_integration_test.go`、必要なら同packageの新しい `_test.go`、本計画と検証RAM・索引。loopでは正しい暗号化受信、宛先/本文/header/ID不一致、送信失敗・記録欠落、最終回答だけ・順序/件数不正、session変更、既存平文判定の維持を順にTDDする。read-onlyな実測判定entryは明示envから既存の観測fileを読み、暗号文そのものを出力せず判定とhashだけ返す。実機を再起動する入口にはしない。独立review後、差分の安定した版でfinalを実施する。
+
+根拠: 固定 [multi_agents_v2.rs](https://github.com/openai/codex/blob/rust-v0.153.4/codex-rs/core/src/tools/handlers/multi_agents_v2.rs#L58-L75)、[protocol.rsの生成](https://github.com/openai/codex/blob/rust-v0.153.4/codex-rs/protocol/src/protocol.rs#L842-L858) と[親向け変換](https://github.com/openai/codex/blob/rust-v0.153.4/codex-rs/protocol/src/protocol.rs#L881-L912)。
+
 ### ③ 読込み問題の調査結果を記録する
 
 固定Codexのsourceで主checkoutのhookを参照する実装を確認し、[調査RAM](../ram/decisions/2026-09-11-fixed-codex-hook-reliability-contract.md)へ根拠と制約を記録しました。今回の③は調査のみの直接承認です。Go installerの変更、Codex更新、主checkoutへの配置、worktree変換は実施しません。将来の変更は具体案と影響を提示して確認します。

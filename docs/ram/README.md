@@ -1,5 +1,9 @@
 # 開発プロジェクトRAM
 
+- [worktreeのhook対応を次にどう進めるか](decisions/2026-09-11-worktree-hook-followup-options.md): 暫定は独立clone、恒久案はhook入口と調整rootの分離。固定Codexのcwdは個別toolのworkdirではないため、cwdだけの自動振分けは採用しない。③の製品・環境変更は未承認。
+
+- [子報告の専用試験環境の初期化を承認](decisions/2026-09-11-hook-reliability-probe-initialization-approved.md): Issue #169／PR #170。対象rootの初回assignment initへ明示承認。子報告の実機確認を再開する。③は対応案の説明依頼であり、環境・製品変更は未承認。
+
 - [終了通知の保存と子の親宛報告の修正](decisions/2026-09-11-hook-reliability-core-evidence.md): Issue #169、C0-C5。hook限定の保存再試行、親canonical宛の途中報告、pending再読取りと保持境界をtargeted testで確認。固定wireとwrapper失敗経路、実Pre拒否／Stopの復旧案内を補修し、親の境界再検査も成功。独立reviewの別role先行bound、OS非依存診断、実Post保存失敗の回帰とEOF空行も修正。bootstrapの4KiB超過も実配置・SessionStart回帰で修正。担当説明の参照先を配布testへ反映。1643cccのBash・通常recover実機は成功、子報告実機は初期化回答待ち。全体finalは再実行が必要。
 
 - [固定Codexの終了通知・親宛先・worktree探索の契約](decisions/2026-09-11-fixed-codex-hook-reliability-contract.md): Issue #169。固定0.153.4のsourceでBash終端Postと失敗patchのPostなしを区別。既存Canonicalから親宛を導出する案を確定。linked worktreeは主checkoutのhookを読む実装と確認し、③は調査結果を記録。
