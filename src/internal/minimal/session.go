@@ -3,6 +3,7 @@ package minimal
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/url"
@@ -11,13 +12,23 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/sori883/ai-dd/src/internal/filestore"
 	"github.com/sori883/ai-dd/src/internal/okfmemory"
 )
 
 // Service locates one worktree and its fixed executable.
-type Service struct{ Root, Binary string }
+type Service struct {
+	Root, Binary string
+	hookClock    *hookClock
+}
+
+// Private clock declaration permits deterministic hook wait tests.
+type hookClock struct {
+	now  func() time.Time
+	wait func(time.Duration)
+}
 
 // Session is temporary conversation state; it is not the canonical work record.
 type Session struct {
@@ -118,6 +129,46 @@ func (s Service) withSession(session string, fn func(*Session) ([]byte, error)) 
 		return nil, err
 	}
 	return fn(&state)
+}
+
+func (s Service) hookTiming() hookClock {
+	if s.hookClock != nil {
+		return *s.hookClock
+	}
+	return hookClock{now: time.Now, wait: time.Sleep}
+}
+
+// Hook delivery has a bounded retry budget; interactive CLI locking stays
+// immediate. An existing lock is never removed or replaced by the waiter.
+func (s Service) withHookSession(session string, fn func(*Session) ([]byte, error)) (result []byte, resultErr error) {
+	if _, err := sessionPath(session); err != nil {
+		return nil, err
+	}
+	clock := s.hookTiming()
+	deadline := clock.now().Add(2 * time.Second)
+	for {
+		release, err := filestore.Lock(s.Root, "session-"+session)
+		if err == nil {
+			defer func() {
+				if err := release(); err != nil {
+					resultErr = errors.Join(resultErr, fmt.Errorf("release hook session lock: %w", err))
+				}
+			}()
+			state, err := s.Inspect(session)
+			if err != nil {
+				return nil, err
+			}
+			return fn(&state)
+		}
+		if !errors.Is(err, os.ErrExist) {
+			return nil, err
+		}
+		remaining := deadline.Sub(clock.now())
+		if remaining <= 0 {
+			return nil, fmt.Errorf("hook session lock retry deadline exceeded: %w", err)
+		}
+		clock.wait(min(20*time.Millisecond, remaining))
+	}
 }
 func (s Service) rules(space string) (string, string, error) {
 	store := s.store(space)

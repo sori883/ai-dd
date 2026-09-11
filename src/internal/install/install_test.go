@@ -78,6 +78,11 @@ func TestInstallRecoveryGuidanceAndContextLimit(t *testing.T) {
 	if len(skill) > 4096 || !strings.Contains(string(skill), "session bind ID --space SPACE --session SESSION --recover") {
 		t.Fatalf("missing bounded recovery syntax: %s", skill)
 	}
+	for _, condition := range []string{"成功・失敗を問わず終了", "同じSpace・Intent・session", "メインAI"} {
+		if !strings.Contains(string(skill), condition) {
+			t.Errorf("deployed recovery guidance missing %q", condition)
+		}
+	}
 	raw, err := os.ReadFile(filepath.Join(root, ".codex/hooks.json"))
 	if err != nil {
 		t.Fatal(err)

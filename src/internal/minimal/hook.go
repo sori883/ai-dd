@@ -28,7 +28,7 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 			}
 		}
 	}
-	_, err := s.withSession(input.Session, func(state *Session) ([]byte, error) {
+	_, err := s.withHookSession(input.Session, func(state *Session) ([]byte, error) {
 		if nativeAction(input.Tool) != "" && input.Event == "PostToolUse" {
 			if nativeAction(input.Tool) == "spawn" {
 				_, err := (assignment.Store{Root: s.Root}).PostSpawn(input.Session, input.ID, input.Response)
@@ -357,7 +357,7 @@ func (s Service) recoveryHint(session string, state *Session) string {
 		return "No running tool slot."
 	}
 	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
-	return "Poll a running Bash process to terminal. Only after an edit tool returned a failure and you confirmed it ended, run the same-session recovery as one command: " + quote(s.Binary) + " session bind " + quote(state.Intent) + " --space " + quote(state.Space) + " --session " + quote(session) + " --recover. Recovery clears only the failed tool slot. Retry and verify before advancing the Intent."
+	return "Poll a running Bash process to terminal. Only after the main AI confirms the tool ended, whether success or failure, recover within the same Space, Intent and session as one command: " + quote(s.Binary) + " session bind " + quote(state.Intent) + " --space " + quote(state.Space) + " --session " + quote(session) + " --recover. If termination is unknown, do not recover or rerun the operation. Recovery clears the retained tool slot and does not release worker assignments. Inspect the result before advancing the Intent."
 }
 
 // sameBinary preserves exact configured paths and resolves absolute aliases only.

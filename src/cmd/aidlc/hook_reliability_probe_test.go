@@ -186,6 +186,39 @@ func TestHookReliabilityProbeProtocol(t *testing.T) {
 			if tc.name != "invalid_wire" && (json.Unmarshal(got.Raw, &input) != nil || input.Session != "session" || input.Turn != "turn" || input.ID != "tool") {
 				t.Fatal("lost correlation IDs")
 			}
+			if err := os.MkdirAll(filepath.Join(root, ".codex"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			registration := fmt.Sprintf(`{"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":%q}]}]}}`, minimalProbeQuote(binary)+" __minimal-hook --project-dir "+minimalProbeQuote(root))
+			if err := os.WriteFile(filepath.Join(root, ".codex/hooks.json"), []byte(registration), 0600); err != nil {
+				t.Fatal(err)
+			}
+			assetDir := t.TempDir()
+			if err := reliabilityPrepare(root, binary, helper, assetDir); err != nil {
+				t.Fatal(err)
+			}
+			wrapper, err := os.ReadFile(filepath.Join(assetDir, "wrapper.sh"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			standalone := filepath.Join(t.TempDir(), "wrapper.sh")
+			if err := os.WriteFile(standalone, wrapper, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.RemoveAll(assetDir); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(name, before, 0600); err != nil {
+				t.Fatal(err)
+			}
+			failedCapture := exec.CommandContext(t.Context(), "sh", standalone)
+			failedCapture.Stdin = bytes.NewBufferString(tc.raw)
+			var fallbackOut, fallbackErr bytes.Buffer
+			failedCapture.Stdout, failedCapture.Stderr = &fallbackOut, &fallbackErr
+			_ = failedCapture.Run()
+			if failedCapture.ProcessState == nil || failedCapture.ProcessState.ExitCode() != wantExit || !bytes.Equal(fallbackOut.Bytes(), stdout.Bytes()) || !bytes.Equal(fallbackErr.Bytes(), stderr.Bytes()) {
+				t.Fatalf("evidence failure changed product output/exit: %q/%q", fallbackOut.Bytes(), fallbackErr.Bytes())
+			}
 		})
 	}
 }
@@ -213,8 +246,11 @@ func reliabilityEvaluate(records []reliabilityRecord, terminal []byte) reliabili
 		return unknown("missing terminal event")
 	}
 	e := event.Payload
-	if e.Type != "item_completed" || e.Item.Type != "CommandExecution" || e.Item.Status != "completed" || e.Item.Exit == nil || e.Completed <= 0 || e.Session == "" || e.Turn == "" || e.Item.ID == "" {
+	if e.Type != "item_completed" || e.Item.Type != "CommandExecution" || e.Item.Exit == nil || e.Completed <= 0 || e.Session == "" || e.Turn == "" || e.Item.ID == "" {
 		return unknown("unsupported or incomplete terminal evidence")
+	}
+	if (*e.Item.Exit == 0 && e.Item.Status != "completed") || (*e.Item.Exit != 0 && e.Item.Status != "failed") {
+		return unknown("terminal status and exit code disagree")
 	}
 	if len(records) < 2 {
 		return unknown("missing Pre or Post")
@@ -304,17 +340,45 @@ func reliabilitySessionTool(snapshot reliabilitySnapshot) (string, bool) {
 }
 
 func TestHookReliabilityProbeEvidence(t *testing.T) {
+	t.Run("child_request", func(t *testing.T) {
+		request, err := reliabilityChildRequest("/root/phase", "aidlc-reviewer")
+		if err != nil || !strings.Contains(request, "/root/phase") || !strings.Contains(request, "child-generated") || !strings.Contains(request, "/root/phase/unregistered_sibling") || !strings.Contains(request, "structured parent notification") {
+			t.Fatalf("missing bounded child observation request: %q %v", request, err)
+		}
+	})
+	t.Run("child_receipt", func(t *testing.T) {
+		raw := []byte(`{"type":"response_item","payload":{"type":"agent_message","author":"/root/report","recipient":"/root","content":[{"type":"input_text","text":"Message Type: MESSAGE\nTask name: /root\nSender: /root/report\nPayload:\nnonce"}]}}`)
+		if !reliabilityChildReceipt(raw, "/root", "/root/report", "nonce") {
+			t.Fatal("fixed structured intermediate receipt rejected")
+		}
+		for _, pair := range [][2]string{{"MESSAGE", "FINAL_ANSWER"}, {"/root/report", "/root/other"}, {"nonce", "different"}, {"input_text", "output_text"}} {
+			t.Run(pair[1], func(t *testing.T) {
+				if reliabilityChildReceipt(bytes.ReplaceAll(raw, []byte(pair[0]), []byte(pair[1])), "/root", "/root/report", "nonce") {
+					t.Fatalf("invalid receipt accepted: %v", pair)
+				}
+			})
+		}
+		t.Run("encrypted_second_element", func(t *testing.T) {
+			mixed := bytes.ReplaceAll(raw, []byte(`}]}}`), []byte(`},{"type":"input_text","encrypted_content":"opaque"}]}}`))
+			if !json.Valid(mixed) {
+				t.Fatal("invalid test receipt")
+			}
+			if reliabilityChildReceipt(mixed, "/root", "/root/report", "nonce") {
+				t.Fatal("mixed encrypted receipt accepted")
+			}
+		})
+	})
 	t.Run("prepare_preserves_registration", func(t *testing.T) {
 		root, evidence := t.TempDir(), t.TempDir()
 		if err := os.MkdirAll(filepath.Join(root, ".codex"), 0700); err != nil {
 			t.Fatal(err)
 		}
-		original := []byte(`{"hooks":{"PreToolUse":[{"matcher":"^Bash$","hooks":[{"type":"command","command":"product","timeout":10}]}]}}`)
-		if err := os.WriteFile(filepath.Join(root, ".codex/hooks.json"), original, 0600); err != nil {
-			t.Fatal(err)
-		}
 		binary, err := os.Executable()
 		if err != nil {
+			t.Fatal(err)
+		}
+		original := []byte(fmt.Sprintf(`{"hooks":{"PreToolUse":[{"matcher":"^Bash$","hooks":[{"type":"command","command":%q,"timeout":10},{"type":"command","command":"echo user-hook","timeout":4}]}]}}`, minimalProbeQuote(binary)+" __minimal-hook --project-dir "+minimalProbeQuote(root)))
+		if err := os.WriteFile(filepath.Join(root, ".codex/hooks.json"), original, 0600); err != nil {
 			t.Fatal(err)
 		}
 		if err := reliabilityPrepare(root, binary, binary, evidence); err != nil {
@@ -326,6 +390,9 @@ func TestHookReliabilityProbeEvidence(t *testing.T) {
 		}
 		if !bytes.Contains(candidate, []byte(`"matcher": "^Bash$"`)) || !bytes.Contains(candidate, []byte(`"timeout": 10`)) || !bytes.Contains(candidate, []byte("wrapper.sh")) {
 			t.Fatalf("registration not preserved: %s", candidate)
+		}
+		if !bytes.Contains(candidate, []byte("echo user-hook")) {
+			t.Fatal("prepare replaced a user-owned hook")
 		}
 		unchanged, err := os.ReadFile(filepath.Join(root, ".codex/hooks.json"))
 		if err != nil || !bytes.Equal(unchanged, original) {
@@ -372,6 +439,13 @@ func TestHookReliabilityProbeEvidence(t *testing.T) {
 		{"hook_exit", "complete", "unrepaired", func(r *[]reliabilityRecord, _ *[]byte) { (*r)[1].Exit = 1 }},
 		{"tool_failure", "complete", "pass", func(_ *[]reliabilityRecord, b *[]byte) {
 			*b = bytes.ReplaceAll(*b, []byte(`"exit_code":0`), []byte(`"exit_code":7`))
+			*b = bytes.ReplaceAll(*b, []byte(`"status":"completed"`), []byte(`"status":"failed"`))
+		}},
+		{"completed_nonzero", "incomplete", "unknown", func(_ *[]reliabilityRecord, b *[]byte) {
+			*b = bytes.ReplaceAll(*b, []byte(`"exit_code":0`), []byte(`"exit_code":7`))
+		}},
+		{"failed_zero", "incomplete", "unknown", func(_ *[]reliabilityRecord, b *[]byte) {
+			*b = bytes.ReplaceAll(*b, []byte(`"status":"completed"`), []byte(`"status":"failed"`))
 		}},
 		{"post_before_terminal", "incomplete", "unknown", func(r *[]reliabilityRecord, _ *[]byte) { (*r)[1].Started = time.UnixMilli(1500) }},
 		{"duplicate_idempotent", "complete", "pass", func(r *[]reliabilityRecord, _ *[]byte) {
@@ -412,6 +486,33 @@ func TestHookReliabilityProbeEvidence(t *testing.T) {
 	}
 }
 
+func reliabilityChildRequest(parent, role string) (string, error) {
+	if !regexp.MustCompile(`^/root(/[a-z][a-z0-9_]*)*$`).MatchString(parent) || len(parent) > 512 || role != "aidlc-reviewer" && role != "aidlc-stage-planner" {
+		return "", fmt.Errorf("explicit canonical parent and eligible read-only role required")
+	}
+	return fmt.Sprintf("After checking current-stage eligibility, use native spawn_agent to create exactly one %s child named hook_reliability_report. The known parent target is %s. Have the child generate its own random nonce through a read-only command; keep this child-generated nonce out of the initial parent request. Ask the child first to attempt one send_message to %s/unregistered_sibling as a denial control, then send an intermediate report with the same nonce to %s. A denied control is expected and must not trigger respawn or recovery. Keep the child alive long enough for the parent to receive the intermediate message. Preserve the structured parent notification and corresponding hook input and response. A final answer or claimed receipt alone is not evidence; report unavailable structured evidence explicitly. Never write shared state or approvals to perform the report.", role, parent, parent, parent), nil
+}
+
+func reliabilityChildReceipt(raw []byte, parent, child, nonce string) bool {
+	var row struct {
+		Type    string `json:"type"`
+		Payload struct {
+			Type      string `json:"type"`
+			Author    string `json:"author"`
+			Recipient string `json:"recipient"`
+			Content   []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"payload"`
+	}
+	if json.Unmarshal(raw, &row) != nil || row.Type != "response_item" || row.Payload.Type != "agent_message" || row.Payload.Author != child || row.Payload.Recipient != parent || nonce == "" || len(row.Payload.Content) != 1 {
+		return false
+	}
+	want := "Message Type: MESSAGE\nTask name: " + parent + "\nSender: " + child + "\nPayload:\n" + nonce
+	return row.Payload.Content[0].Type == "input_text" && row.Payload.Content[0].Text == want
+}
+
 func reliabilityPrepare(root, binary, helper, evidence string) error {
 	for _, name := range []string{root, binary, helper, evidence} {
 		if !filepath.IsAbs(name) {
@@ -425,27 +526,45 @@ func reliabilityPrepare(root, binary, helper, evidence string) error {
 	if err != nil {
 		return err
 	}
-	var config struct {
-		Hooks map[string][]struct {
-			Matcher string           `json:"matcher,omitempty"`
-			Hooks   []map[string]any `json:"hooks"`
-		} `json:"hooks"`
-	}
+	var config map[string]any
 	if err := json.Unmarshal(original, &config); err != nil {
 		return err
 	}
-	if len(config.Hooks) == 0 {
+	hooks, ok := config["hooks"].(map[string]any)
+	if !ok || len(hooks) == 0 {
 		return fmt.Errorf("no deployed hooks")
 	}
-	for _, groups := range config.Hooks {
-		for _, group := range groups {
-			for _, hook := range group.Hooks {
-				if hook["type"] != "command" {
-					return fmt.Errorf("unsupported deployed hook")
+	owned := 0
+	productCommand := minimalProbeQuote(binary) + " __minimal-hook --project-dir " + minimalProbeQuote(root)
+	for _, value := range hooks {
+		groups, ok := value.([]any)
+		if !ok {
+			return fmt.Errorf("unsupported hook registration")
+		}
+		for _, value := range groups {
+			group, ok := value.(map[string]any)
+			if !ok {
+				return fmt.Errorf("unsupported hook group")
+			}
+			handlers, ok := group["hooks"].([]any)
+			if !ok {
+				return fmt.Errorf("unsupported hook handlers")
+			}
+			for _, value := range handlers {
+				hook, ok := value.(map[string]any)
+				if !ok {
+					return fmt.Errorf("unsupported hook handler")
+				}
+				if hook["type"] != "command" || hook["command"] != productCommand {
+					continue
 				}
 				hook["command"] = minimalProbeQuote(filepath.Join(evidence, "wrapper.sh"))
+				owned++
 			}
 		}
+	}
+	if owned == 0 {
+		return fmt.Errorf("no exact product-owned hook command found")
 	}
 	candidate, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
@@ -459,8 +578,8 @@ func reliabilityPrepare(root, binary, helper, evidence string) error {
 	if err != nil {
 		return err
 	}
-	wrapper := "#!/bin/sh\nrecord=$(mktemp " + minimalProbeQuote(filepath.Join(evidence, "record-XXXXXXXX")) + ") || exit 125\nAIDLC_RELIABILITY_HELPER=1 exec " + minimalProbeQuote(helper) + " '-test.run=^TestHookReliabilityProbeHelper$' -- " + minimalProbeQuote(binary) + " " + minimalProbeQuote(root) + " \"$record\"\n"
-	manifest, err := json.MarshalIndent(map[string]any{"root": root, "binary": binary, "helper": helper, "product_sha256": reliabilityHash(product), "helper_sha256": reliabilityHash(worker), "original_hooks_sha256": reliabilityHash(original), "candidate_hooks_sha256": reliabilityHash(candidate), "model": "gpt-6-astra", "effort": "xhigh", "codex_version": "0.153.4", "case_seconds": 300, "total_seconds": 1500, "status": "prepared; normal hook trust and assignment confirmation required before run"}, "", "  ")
+	wrapper := "#!/bin/sh\nrecord=$(mktemp " + minimalProbeQuote(filepath.Join(evidence, "record-XXXXXXXX")) + " 2>/dev/null) || exec " + productCommand + "\nAIDLC_RELIABILITY_HELPER=1 exec " + minimalProbeQuote(helper) + " '-test.run=^TestHookReliabilityProbeHelper$' -- " + minimalProbeQuote(binary) + " " + minimalProbeQuote(root) + " \"$record\"\n"
+	manifest, err := json.MarshalIndent(map[string]any{"root": root, "binary": binary, "helper": helper, "product_sha256": reliabilityHash(product), "helper_sha256": reliabilityHash(worker), "original_hooks_sha256": reliabilityHash(original), "candidate_hooks_sha256": reliabilityHash(candidate), "model": "gpt-6-astra", "effort": "xhigh", "codex_version": "0.153.4", "case_seconds": 300, "total_seconds": 1500, "status": "prepared; normal hook trust and Intent preparation required before run"}, "", "  ")
 	if err != nil {
 		return err
 	}
