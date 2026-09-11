@@ -106,3 +106,41 @@ work unit `hook-reliability-stage-planner-location`、開始HEAD `1643cccc1c084e
 - 通常wrapperなしでもfailed patch後に終了確認してrecoverし、次のprintfが成功。`normal-observation-1643ccc/execution.json` はexit 0、69.86秒、Intent state hashは前後同一。
 
 上記assessment・normal-observationは同じ `/Users/const/sori883/ai-dd-validation/hook-reliability-169/` 配下。担当初期化はユーザー回答待ちで未実施、native子報告の実機も未実施で、①②全完了とは判定しない。③は調査済み。差分安定後の全体finalは親が再開する。極端に長いbinary pathのinstall前サイズ検査欠落はbaselineからの既存課題で、今回悪化しておらず別改善として扱う。
+
+## 暗号化された途中報告の到達判定
+
+work unit `hook-reliability-opaque-delivery`、開始HEAD `5b7dfd0e0e5ecec85ec2051186a53a663cff295a`。計画の「暗号化された途中報告の実機判定」に従い、test-onlyのopaque-delivery評価とread-only入口を追加した。平文nonce判定は変更していない。暗号文の平文内容・nonce・本人認証を証明するものではなく、確認済みidentityを入力に、同じopaque messageの送信と親への到達を照合する。実機暗号文・内部推論は読み取りもGit保存もしていない。
+
+`go test -count=1 ./src/cmd/aidlc -run '^TestHookReliabilityOpaqueEvidence$'` を各sliceで使用した。正常到達、sender/recipient/header/body・形式不一致、Pre/Postの失敗・拒否・欠落・ID不一致、受信重複/逆順/最終回答欠落、session変更/読取り不明の順に、runnable assertionのRED（exit 1）からGREEN（exit 0）へ進めた。異なる本文を持つ同じ子の二つ目のMESSAGEも曖昧として拒否する追加RED→GREENを確認した。欠落receipt・FINALだけ等は先行sliceで既に拒否されておりALREADY_GREEN。既存 `TestHookReliabilityProbeEvidence` と識別入力不足はALREADY_GREENだった。
+
+送信Pre/Postはevent、send_message名、session/turn/tool ID、agent ID/type、target、decode後messageを照合し、hook exit/error/JSON/拒否と全session snapshotのbytes不変を検査する。受信はauthor/recipient、正確なMESSAGE header、input_text＋encrypted_contentの2要素、暗号文のdecode後文字列完全一致を要求する。同じ子の候補MESSAGEが一つだけあり、同じ子のFINAL_ANSWERより前という順序を確認する。hashは成功出力用であり、一致判定の代用ではない。
+
+canonicalは親がnative応答とregistryから確認する。agent IDの出所は子hookのagent_idと子rolloutのsession IDであり、PostSpawn応答がagent IDを返すという意味ではない。この確認は呼出し側の前提で、評価関数が製品の本人認証を追加するものではない。
+
+新入口 `TestHookReliabilityProbeOpaqueReceipt` は次の明示envを使う（全て `AIDLC_HOOK_RELIABILITY_` prefix）。`RECEIPT_FILE`、`PARENT_TASK`、`CHILD_TASK` を再利用し、`PRE_RECORD`、`POST_RECORD`、`CHILD_AGENT_ID` を追加した。成功時はopaque-deliveryとsha256のみを表示し、失敗時にraw内容を出力しない。spawn、trust、準備、製品変更は呼び出さない。
+
+```sh
+go test -count=1 ./src/cmd/aidlc -run '^(TestHookReliabilityOpaqueEvidence|TestHookReliabilityProbeEvidence)$'
+go test -tags=integration -count=1 ./src/cmd/aidlc -run '^TestHookReliabilityProbeOpaqueReceiptSynthetic$'
+# 親が検証済み入力をenvへ設定した後のread-only実測判定
+go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestHookReliabilityProbeOpaqueReceipt$'
+```
+
+上の最初の2commandはsynthetic fixtureだけで成功。3番目の実測判定は実装担当から未実施。gofmt・diffcheckを確認し、全package・race・vet・final・実機・commit・Issue／PR操作はしていない。親から観測原本は `child-observation-1643ccc` へbytes保持で移され、archive-manifest.jsonにhashを保存したと連絡を受けた。既存実機結果を新しいheadの結果として付け替えていない。
+
+
+## 親による初期化・子報告の実機確認
+
+上記の「初期化回答待ち」「子報告未実施」は、この追記より前の履歴である。[ユーザーの明示承認](2026-09-11-hook-reliability-probe-initialization-approved.md)を受け、専用 `probe-project` で公開CLIの `assignment init` を実施した。初回epochは `ce550579f8aebfbf2d93cda0f26316d5`。既存の元checkout、旧pilot、既知でないworkerの記録には操作していない。
+
+固定Codex 0.153.4、macOS arm64、gpt-6-astra/xhighで、native `aidlc-stage-planner` 一体による途中報告を確認した。製品binaryはcommit `1643cccc1c084ed1b2790cd42f3e04c72fe2447d`、SHA-256 `959ad09c1f9c0b3e9ca9b4274bc57d948f3c6578b64f405ebd9f8a7cd630a26f`。以後の変更は文書とtestのみであり、実測対象の製品・配布assetsを変更していない。
+
+観測wrapper付きの原本は外部試験環境の `child-observation-1643ccc/` に保存した。Pre/Postの正式親宛 `send_message` は両方成功し、子処理前後の親session全bytesは一致した。登録していない兄弟宛はPreで拒否された。親の構造化MESSAGEへ送信と同一のopaque文字列が届き、その後に同じ子のFINAL_ANSWERがある。独立した子rolloutのsession metadata、子hookのagent_id、native spawnのcanonical応答、registryを照合した。27個のSpaceファイルは試験前後で全て同じhashだった。
+
+親は `TestHookReliabilityProbeOpaqueReceipt` に既存のPre/Post原本、親rollout、確認済みcanonicalとagent IDを渡し、read-only判定のexit 0を確認した。到達データのSHA-256は `cc9bd252c24540775311b5a20f062b32529afe1d08de9bd57d948bea2d17ca9e`。平文nonceの既存判定は変更せず、元の収集専用helperのexit 1も保持した。暗号化payloadの平文内容や本人認証を証明したという意味ではない。
+
+通常のwrapperなし配置へ戻して通常UIでhookを信頼し、別Intentでも再確認した。`normal-child-observation-1643ccc/execution.json` はexit 0、137.92秒。子 `/root/hook_reliability_report_normal` の兄弟宛送信は実際のPreToolUseに拒否され、正式親 `/root` 宛は成功した。親の暗号化MESSAGEと子の送信文字列が完全一致し、親の確認返答後に子の最終回答がある。MESSAGEのSHA-256は `84dc12a18db26c9be5b77ee960dcb7c219839e7dfb63aeb1f55a790a1387a779`。同directoryの `assessment.json` に構造化行hash、identity根拠、比較結果を保存した。通常配置ではwrapperのPre/Post記録を生成しておらず、nativeの送信結果・受信・拒否を根拠にした。Space全ファイルは不変、終了時の親Tool欄は空だった。
+
+観測原本・暗号文・内部推論を本リポジトリへ複製していない。根拠は固定Codex sourceの [multi_agents_v2.rs](https://github.com/openai/codex/blob/rust-v0.153.4/codex-rs/core/src/tools/handlers/multi_agents_v2.rs#L58-L75) と [protocol.rs](https://github.com/openai/codex/blob/rust-v0.153.4/codex-rs/protocol/src/protocol.rs#L842-L912) で、send_messageのopaque文字列がEncryptedContentへそのまま渡される確認に限る。
+
+親は新しいsyntheticの正常・不正到達test群と既存平文test、integrationのsynthetic入口を各一回再確認し、全てexit 0だった。次のgateはこのtest-only差分と実測判定の独立review、固定headのread-only final、現headのGitHub checksである。③の調査後の対応案は[別記録](2026-09-11-worktree-hook-followup-options.md)で、製品変更の承認とは区別する。

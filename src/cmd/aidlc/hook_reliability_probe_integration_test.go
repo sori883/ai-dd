@@ -408,3 +408,75 @@ func TestHookReliabilityProbeCollectedEvidence(t *testing.T) {
 		t.Fatalf("final-only collection=%+v, error=%v", got, err)
 	}
 }
+
+// TestHookReliabilityProbeOpaqueReceipt only reads existing observations. Verified
+// identities are supplied by the caller; this does not authenticate a child or
+// establish the plaintext of an encrypted message.
+func TestHookReliabilityProbeOpaqueReceipt(t *testing.T) {
+	const prefix = "AIDLC_HOOK_RELIABILITY_"
+	name := os.Getenv(prefix + "RECEIPT_FILE")
+	if name == "" {
+		t.Skip("explicit opaque receipt assessment not requested")
+	}
+	parent, child, agent := os.Getenv(prefix+"PARENT_TASK"), os.Getenv(prefix+"CHILD_TASK"), os.Getenv(prefix+"CHILD_AGENT_ID")
+	if parent == "" || child == "" || agent == "" {
+		t.Fatal("verified parent, child and agent identity required")
+	}
+	var records [2]reliabilityRecord
+	for i, key := range []string{"PRE_RECORD", "POST_RECORD"} {
+		path := os.Getenv(prefix + key)
+		if path == "" {
+			t.Fatal("explicit Pre/Post record paths required")
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal("cannot read hook observation")
+		}
+		if json.Unmarshal(raw, &records[i]) != nil {
+			t.Fatal("invalid hook observation JSON")
+		}
+	}
+	file, err := os.Open(name)
+	if err != nil {
+		t.Fatal("cannot read parent receipt")
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 4096), 8<<20)
+	var rows [][]byte
+	for scanner.Scan() {
+		rows = append(rows, append([]byte(nil), scanner.Bytes()...))
+	}
+	if scanner.Err() != nil {
+		t.Fatal("incomplete parent receipt stream")
+	}
+	hash, ok := reliabilityOpaqueDelivery(records[0], records[1], rows, parent, child, agent)
+	if !ok {
+		t.Fatal("opaque-delivery unconfirmed")
+	}
+	t.Logf("opaque-delivery sha256=%s", hash)
+}
+
+func TestHookReliabilityProbeOpaqueReceiptSynthetic(t *testing.T) {
+	pre, post, rows := opaqueFixture(t)
+	root := t.TempDir()
+	for key, record := range map[string]reliabilityRecord{"PRE_RECORD": pre, "POST_RECORD": post} {
+		raw, err := json.Marshal(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		name := filepath.Join(root, key)
+		if err := os.WriteFile(name, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("AIDLC_HOOK_RELIABILITY_"+key, name)
+	}
+	name := filepath.Join(root, "receipt.jsonl")
+	if err := os.WriteFile(name, bytes.Join(rows, []byte("\n")), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range map[string]string{"RECEIPT_FILE": name, "PARENT_TASK": "/root", "CHILD_TASK": "/root/report", "CHILD_AGENT_ID": "agent"} {
+		t.Setenv("AIDLC_HOOK_RELIABILITY_"+key, value)
+	}
+	TestHookReliabilityProbeOpaqueReceipt(t)
+}
