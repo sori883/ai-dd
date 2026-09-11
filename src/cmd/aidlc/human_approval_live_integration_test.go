@@ -93,8 +93,8 @@ func TestHumanApprovalLive(t *testing.T) {
 	st = f.action(st, "begin")
 	st = f.review(st)
 	st = f.finish(st)
-	head := f.commit("fixture assets")
-	config := flow.Config{NoMaterialsReason: "new fixture", Objective: "Approve reviewed discovery", Scope: []string{"src"}, Acceptance: []string{"human approval recorded"}, CodeRevision: head, ADR: flow.ADR{Reason: "none"}}
+	f.commit("fixture assets")
+	config := flow.Config{NoMaterialsReason: "new fixture", Objective: "Approve reviewed discovery", Scope: []string{"src"}, Acceptance: []string{"human approval recorded"}, VerificationPaths: []string{"."}, ADR: flow.ADR{Reason: "none"}}
 	st = f.action(st, "configure", "--file", f.request(config))
 	boundaryFixtureDocument(t, root, st.ID, "Requirements")
 	st = f.action(st, "begin")

@@ -8,17 +8,16 @@ import (
 func resultPairFixture(t *testing.T) (Store, State, string, string) {
 	t.Helper()
 	s, st := boundaryFixture(t)
-	a := flowGit(t, s.Root, "rev-parse", "HEAD")
-	flowGit(t, s.Root, "commit", "--allow-empty", "-qm", "second")
-	b := flowGit(t, s.Root, "rev-parse", "HEAD")
+	a, b := "a", "b"
 	fixtureExecutionStage(t, s, &st, "tdd")
-	st.Config.Units = []Unit{{ID: "a", Tests: []string{"go test"}, ResultCommit: a, IntegratedCommit: a}, {ID: "b", Tests: []string{"go test"}, ResultCommit: b, IntegratedCommit: b}}
+	st.Config.VerificationPaths = []string{"."}
+	st.Config.Units = []Unit{{ID: "a", Tests: []string{"go test"}}, {ID: "b", Tests: []string{"go test"}}}
 	st.Config.TestResults = []string{"aidlc/evidence/tdd.json"}
 	return s, st, a, b
 }
 func writeResultRuns(t *testing.T, s Store, name, stage string, runs ...resultRun) {
 	t.Helper()
-	raw, err := json.Marshal(resultDocument{StepID: fixtureStepID(stage), Stage: stage, Runs: runs})
+	raw, err := json.Marshal(resultDocument{StepID: fixtureStepID(stage), Stage: stage, VerificationScope: "intent", VerificationSHA256: verificationTestSHA(t, s.Root, []string{"."}), Runs: runs})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +27,7 @@ func successfulRun(t *testing.T, s Store, command, commit, output string) result
 	t.Helper()
 	boundaryFile(t, s, output, "actual fixture output")
 	zero := 0
-	return resultRun{Command: command, Commit: commit, ExitCode: &zero, OutputPath: output}
+	return resultRun{UnitID: commit, Command: command, ExitCode: &zero, OutputPath: output}
 }
 func TestEndSensorSharedCommandRequiresEachUnitResult(t *testing.T) {
 	s, st, a, b := resultPairFixture(t)
@@ -47,27 +46,26 @@ func TestEndSensorSharedCommandRequiresEachUnitResult(t *testing.T) {
 		t.Fatalf("both Unit results: %v", c.failures)
 	}
 }
-func TestEndSensorIntegrationRequiresFinalHEAD(t *testing.T) {
+func TestEndSensorIntegrationRequiresCurrentSHA(t *testing.T) {
 	s, st, a, b := resultPairFixture(t)
 	fixtureExecutionStage(t, s, &st, "integration")
-	st.Config.Units[0].Tests = []string{"test a"}
-	st.Config.Units[1].Tests = []string{"test b"}
-	one := successfulRun(t, s, "test a", a, "aidlc/evidence/a.txt")
-	two := successfulRun(t, s, "test b", b, "aidlc/evidence/b.txt")
+	one := successfulRun(t, s, "go test", a, "aidlc/evidence/a.txt")
+	two := successfulRun(t, s, "go test", b, "aidlc/evidence/b.txt")
 	writeResultRuns(t, s, st.Config.TestResults[0], "integration", one, two)
+	boundaryFile(t, s, "code", "new content")
 	c := boundaryCollector{store: s}
 	c.results(st)
 	if len(c.failures) == 0 {
-		t.Fatal("pre-final integration result accepted")
+		t.Fatal("stale SHA accepted")
 	}
-	one.Commit = b
 	writeResultRuns(t, s, st.Config.TestResults[0], "integration", one, two)
 	c = boundaryCollector{store: s}
 	c.results(st)
-	if len(c.failures) != 0 {
-		t.Fatalf("final HEAD tests: %v", c.failures)
+	if len(c.failures) > 0 {
+		t.Fatal(c.failures)
 	}
 }
+
 func TestEndSensorOtherStageDoesNotEnterAcceptedOutputs(t *testing.T) {
 	s, st, a, b := resultPairFixture(t)
 	one := successfulRun(t, s, "go test", a, "aidlc/evidence/a.txt")

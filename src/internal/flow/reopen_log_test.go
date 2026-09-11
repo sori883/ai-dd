@@ -17,7 +17,7 @@ func TestDefinitionBindingDrift(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.SchemaVersion != 5 {
+	if st.SchemaVersion != 6 {
 		t.Errorf("schema=%d want 4", st.SchemaVersion)
 	}
 	p := filepath.Join(s.Root, "aidlc/workflow/stages/tdd.md")

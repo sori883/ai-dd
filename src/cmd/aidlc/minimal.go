@@ -1,36 +1,22 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
-	"time"
 
 	"github.com/sori883/ai-dd/src/internal/cli"
 	"github.com/sori883/ai-dd/src/internal/minimal"
 )
 
 func minimalCommand(request cli.MinimalRequest) ([]byte, error) {
-	root := request.ProjectDir
-	if root == "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		output, err := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel").Output()
-		if err != nil {
-			return nil, fmt.Errorf("resolve Git worktree root: %w", err)
-		}
-		root = strings.TrimSpace(string(output))
-	}
-	root, err := filepath.Abs(root)
+	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
 	}
-	root, err = filepath.EvalSymlinks(root)
+	root, err := resolveProjectRoot(request.ProjectDir, cwd, request.Command == "install")
 	if err != nil {
 		return nil, err
 	}

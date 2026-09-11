@@ -142,6 +142,9 @@ flowはschema 6、assignmentはschema 2とする。これらは新形式の識�
 
 1 Issue / PR、1つのwork unit `git-independent-workflow` として、`go_tdd_implementer` 一人が以下の本体・テスト・製品手順を所有する。親はIssue・PR・承認と最終検証を管理し、実装中に同じ作業ツリーを編集しない。
 
+内部Go APIのtype・signature・fieldは上記のCLIと保存契約を実現する実装詳細として具体化する。runnable REDに必要な型・関数宣言と未実装error・ゼロ返値のみのcompile-only scaffoldを許可する。既存testの廃止済みGit祖先・別worktree前提は、内容一致・通常rootの回帰へ置換し、停止確認と保存復旧の保証を維持する。
+
+- CI: `.github/workflows/ci.yml` の既存journey stepへ `TestGitIndependentJourney` を追加し、新しい受入fixtureを継続検証する。既存checkは減らさない。
 - CLI: `src/cmd/aidlc/minimal.go`、新規 `project_root.go`、`src/internal/cli/minimal.go`、`help.go`。
 - 集合SHA: 新規 `src/internal/flow/verification.go` とそのテスト。OSのファイル操作、`crypto/sha256`、既存のroot境界検査を利用する。
 - state・Sensor・結果: `src/internal/flow/store.go`、`boundary.go`、`boundary_end.go`、`sensor.go`、`approval.go`、`src/internal/minimal/flow.go`。

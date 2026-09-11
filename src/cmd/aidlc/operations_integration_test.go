@@ -49,6 +49,9 @@ func (f operationsFixture) run(args ...string) operationsResult {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, f.binary, args...)
 	cmd.Dir = f.root
+	if productPath := os.Getenv("AIDLC_TEST_PRODUCT_PATH"); productPath != "" {
+		cmd.Env = gitIndependentEnvironment(os.Environ(), productPath)
+	}
 	var out, errout bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errout
@@ -193,7 +196,7 @@ func (f operationsFixture) worktree() string {
 }
 func (f operationsFixture) review(s flow.State) flow.State {
 	f.t.Helper()
-	root := f.worktree()
+	root := f.root
 	s = f.action(s, "review", "--file", f.request(flow.ReviewRequest{Action: "assign", CoordinatorSession: "coordinator", Session: "reviewer", Root: root}))
 	var gate flow.Gate
 	if err := json.Unmarshal(f.ok("intent", "check", s.ID, "--space", "default"), &gate); err != nil {
@@ -214,8 +217,8 @@ func (f operationsFixture) tdd() flow.State {
 	if _, err := os.Stat(filepath.Join(f.root, "aidlc/spaces/default/knowledge/adr/current.md")); os.IsNotExist(err) {
 		f.ok("memory", "create", "adr/current", "--space", "default", "--body-file", "body.md", "--actor", "process:test", "--type", "adr", "--title", "Decision", "--description", "Rationale")
 	}
-	head := f.commit("shared assets")
-	c := flow.Config{NoMaterialsReason: "fixture has no prior materials", Objective: "Unit operation", Scope: []string{"a.go", "b.go"}, Acceptance: []string{"operations are isolated"}, CodeRevision: head, ADR: flow.ADR{Reason: "No additional decision"}, Artifacts: []flow.Artifact{{Path: "aidlc/spaces/default/knowledge/codekb/current.md", Kind: "Knowledge", Stage: "discovery"}}}
+	f.commit("shared assets")
+	c := flow.Config{NoMaterialsReason: "fixture has no prior materials", Objective: "Unit operation", Scope: []string{"a.go", "b.go"}, Acceptance: []string{"operations are isolated"}, VerificationPaths: []string{"."}, ADR: flow.ADR{Reason: "No additional decision"}, Artifacts: []flow.Artifact{{Path: "aidlc/spaces/default/knowledge/codekb/current.md", Kind: "Knowledge", Stage: "discovery"}}}
 	s = f.action(s, "configure", "--file", f.request(c))
 	boundaryFixtureDocument(f.t, f.root, s.ID, "Requirements")
 	s = f.action(s, "begin")
@@ -225,7 +228,8 @@ func (f operationsFixture) tdd() flow.State {
 	s = f.action(s, "begin")
 	c.Plan = "Separate workers"
 	c.Tests = []string{"go test"}
-	c.Units = []flow.Unit{{StepID: s.CurrentStepID, ID: "a", Bolt: "one", BaseCommit: head, Scope: []string{"a.go"}, Tests: []string{"go test"}}, {StepID: s.CurrentStepID, ID: "b", Bolt: "one", BaseCommit: head, Scope: []string{"b.go"}, Tests: []string{"go test"}}}
+	c.TestResults = []string{"aidlc/evidence/unit.json"}
+	c.Units = []flow.Unit{{StepID: s.CurrentStepID, ID: "a", Bolt: "one", Scope: []string{"a.go"}, VerificationPaths: []string{"a.go"}, Tests: []string{"go test"}}, {StepID: s.CurrentStepID, ID: "b", Bolt: "one", Scope: []string{"b.go"}, VerificationPaths: []string{"b.go"}, Tests: []string{"go test"}}}
 	s = f.action(s, "configure", "--file", f.request(c))
 	s = f.review(s)
 	s = f.finish(s)
@@ -252,6 +256,37 @@ func (f operationsFixture) unit(s flow.State, action string, r flow.UnitRequest)
 		r.RegistryEpoch = reg.Epoch
 		r.CoordinatorSession = "coordinator"
 		r.RequestID = fmt.Sprintf("%s-%s-%d", action, r.Unit, s.Revision)
+	}
+
+	if action == "result" || action == "confirm" {
+		for _, unit := range s.Config.Units {
+			if unit.ID != r.Unit {
+				continue
+			}
+			paths := unit.VerificationPaths
+			if len(paths) == 0 {
+				paths = s.Config.VerificationPaths
+			}
+			digest, err := flow.ComputeVerification(r.Root, paths)
+			if err != nil {
+				f.t.Fatal(err)
+			}
+			r.VerificationSHA256 = digest.SHA256
+			if action == "confirm" {
+				break
+			}
+			runs := []map[string]any{}
+			for i, command := range unit.Tests {
+				output := fmt.Sprintf("aidlc/evidence/unit-%s-%d.txt", unit.ID, i)
+				writeMinimalFixture(f.t, filepath.Join(r.Root, output), "synthetic lifecycle fixture command output\n")
+				runs = append(runs, map[string]any{"unit_id": unit.ID, "command": command, "exit_code": 0, "output_path": output})
+			}
+			raw, err := json.Marshal(map[string]any{"step_id": s.CurrentStepID, "stage": "tdd", "verification_scope": "unit", "verification_sha256": digest.SHA256, "unit_id": unit.ID, "run_id": r.RunID, "runs": runs})
+			if err != nil {
+				f.t.Fatal(err)
+			}
+			writeMinimalFixture(f.t, filepath.Join(r.Root, "aidlc/evidence/unit.json"), string(raw))
+		}
 	}
 
 	return operationsState(f.t, f.ok("unit", action, s.ID, "--space", "default", "--expect", strconv.FormatUint(s.Revision, 10), "--file", f.request(r)))
@@ -300,7 +335,7 @@ func TestOperationsGitHandoff(t *testing.T) {
 	g.bind(s, "new-session")
 	s = g.action(s, "resume", "--reason", "clone inspected")
 	before := g.bytes(s)
-	g.rejectCode(1, "aidlc/.runtime/flow/units", "unit", "confirm", s.ID, "--space", "default", "--expect", strconv.FormatUint(s.Revision, 10), "--file", g.request(flow.UnitRequest{StepID: s.CurrentStepID, Unit: "a", Session: "old-worker", Root: worker, RunID: "old", Commit: f.git("rev-parse", "HEAD")}))
+	g.rejectCode(1, "aidlc/.runtime/flow/units", "unit", "confirm", s.ID, "--space", "default", "--expect", strconv.FormatUint(s.Revision, 10), "--file", g.request(flow.UnitRequest{StepID: s.CurrentStepID, Unit: "a", Session: "old-worker", Root: worker, RunID: "old", VerificationSHA256: f.git("rev-parse", "HEAD")}))
 	if !bytes.Equal(before, g.bytes(s)) || s.Config.Units[0].Status != "needs_confirmation" {
 		t.Fatal("old assignment accepted")
 	}
@@ -366,7 +401,7 @@ func TestOperationsUnitConflicts(t *testing.T) {
 	a, b := f.worktree(), f.worktree()
 	// A third Unit depends on A, while a fourth deliberately overlaps A's scope.
 	c := s.Config
-	c.Units = append(c.Units, flow.Unit{StepID: s.CurrentStepID, ID: "dependent", Bolt: "two", BaseCommit: c.CodeRevision, DependsOn: []string{"a"}, Scope: []string{"c.go"}, Tests: []string{"go test"}}, flow.Unit{StepID: s.CurrentStepID, ID: "overlap", Bolt: "one", BaseCommit: c.CodeRevision, Scope: []string{"a.go"}, Tests: []string{"go test"}})
+	c.Units = append(c.Units, flow.Unit{StepID: s.CurrentStepID, ID: "dependent", Bolt: "two", DependsOn: []string{"a"}, Scope: []string{"c.go"}, Tests: []string{"go test"}}, flow.Unit{StepID: s.CurrentStepID, ID: "overlap", Bolt: "one", Scope: []string{"a.go"}, Tests: []string{"go test"}})
 	s = f.action(s, "configure", "--file", f.request(c))
 	s = f.unit(s, "claim", flow.UnitRequest{Unit: "a", Session: "worker-a", Root: a})
 	for _, tc := range []struct{ name, unit, message string }{{"duplicate", "a", "Unit already assigned"}, {"scope", "overlap", "concurrent Unit scopes overlap"}, {"dependency", "dependent", "dependency not integrated"}} {

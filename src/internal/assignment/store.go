@@ -69,7 +69,7 @@ func (s Store) Read() (Registry, error) {
 	if err := decode(raw, &r); err != nil {
 		return Registry{}, fmt.Errorf("assignment registry invalid: %w", err)
 	}
-	if r.SchemaVersion != 1 || len(r.Epoch) != 32 || r.Revision == 0 || r.Root != root {
+	if r.SchemaVersion != 2 || len(r.Epoch) != 32 || r.Revision == 0 || r.Root != root {
 		return Registry{}, errors.New("assignment registry version, identity or root mismatch")
 	}
 	if _, err := hex.DecodeString(r.Epoch); err != nil {
@@ -104,7 +104,7 @@ func (s Store) Init(req InitRequest) (Registry, error) {
 	if err != nil {
 		return Registry{}, err
 	}
-	r := Registry{SchemaVersion: 1, Epoch: epoch, Revision: 1, Root: root, Initialization: req}
+	r := Registry{SchemaVersion: 2, Epoch: epoch, Revision: 1, Root: root, Initialization: req}
 	if err := s.persist(r); err != nil {
 		return Registry{}, err
 	}
@@ -154,11 +154,15 @@ func validateRecords(r Registry) error {
 	ids, requests, roots := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, v := range r.Reservations {
 		validStatus := v.Status == "reserved" || v.Status == "dispatch_pending" || v.Status == "bound" || v.Status == "uncertain" || v.Status == "released"
-		if !validStatus || !hexID(v.ID, 32) || v.RegistryEpoch != r.Epoch || ids[v.ID] || requests[v.RequestID] || !validText(v.RequestID, 160) || !validText(v.CoordinatorSession, 160) || !validText(v.Session, 160) || !validText(v.Space, 160) || !hexID(v.IntentID, 32) || !hexID(v.DefinitionHash, 64) || !validText(v.StepID, 160) || !filepath.IsAbs(v.Root) || filepath.Clean(v.Root) != v.Root || v.Root == r.Root || v.EntryRevision == 0 || v.SourceRevision == 0 || v.Agent != "aidlc-worker" || v.TaskName != "aidlc_"+r.Epoch+"_"+v.ID {
+		if !validStatus || !hexID(v.ID, 32) || v.RegistryEpoch != r.Epoch || ids[v.ID] || requests[v.RequestID] || !validText(v.RequestID, 160) || !validText(v.CoordinatorSession, 160) || !validText(v.Session, 160) || !validText(v.Space, 160) || !hexID(v.IntentID, 32) || !hexID(v.DefinitionHash, 64) || !validText(v.StepID, 160) || !filepath.IsAbs(v.Root) || filepath.Clean(v.Root) != v.Root || v.EntryRevision == 0 || v.SourceRevision == 0 || v.Agent != "aidlc-worker" || v.TaskName != "aidlc_"+r.Epoch+"_"+v.ID {
 			return errors.New("assignment registry contains invalid reservation")
 		}
-		if v.Status != "released" && roots[v.Root] {
-			return errors.New("assignment registry contains duplicate occupied root")
+		if v.Status != "released" {
+			for other := range roots {
+				if overlapRoots(other, v.Root) {
+					return errors.New("assignment registry contains overlapping occupied roots")
+				}
+			}
 		}
 		if v.Unit != "" && v.RunID != v.ID {
 			return errors.New("assignment registry run identity mismatch")

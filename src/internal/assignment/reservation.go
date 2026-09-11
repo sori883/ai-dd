@@ -1,13 +1,11 @@
 package assignment
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
-	"os/exec"
+	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/sori883/ai-dd/src/internal/filestore"
 )
@@ -113,7 +111,7 @@ func (s Store) reserve(req ReserveRequest, previous *replacement) (Reservation, 
 		}
 	}
 	for _, v := range r.Reservations {
-		if v.Status != "released" && (v.Root == req.Root || (req.Unit != "" && v.Space == req.Space && v.IntentID == req.IntentID && v.Unit == req.Unit)) {
+		if v.Status != "released" && (overlapRoots(v.Root, req.Root) || (req.Unit != "" && v.Space == req.Space && v.IntentID == req.IntentID && v.Unit == req.Unit)) {
 			return Reservation{}, errors.New("worker root is already reserved")
 		}
 	}
@@ -216,19 +214,20 @@ func workerRoot(coordinator, root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if root == coordinator {
-		return "", errors.New("worker root must differ from coordinator")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "--show-toplevel")
-	out, err := cmd.Output()
+	info, err := os.Stat(root)
 	if err != nil {
-		return "", errors.New("worker root is not a git worktree")
+		return "", err
 	}
-	top, err := filepath.EvalSymlinks(strings.TrimSpace(string(out)))
-	if err != nil || top != root {
-		return "", errors.New("worker root must be git top-level")
+	if !info.IsDir() {
+		return "", errors.New("worker root must be a directory")
 	}
 	return root, nil
+}
+func overlapRoots(a, b string) bool {
+	relative, err := filepath.Rel(a, b)
+	if err == nil && (relative == "." || relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))) {
+		return true
+	}
+	relative, err = filepath.Rel(b, a)
+	return err == nil && (relative == "." || relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)))
 }

@@ -141,7 +141,7 @@ func TestAssignmentLive(t *testing.T) {
 			workers := []string{}
 			for _, name := range []string{"worker_a", "worker_b"} {
 				p := filepath.Join(dir, name)
-				f.git("worktree", "add", "--detach", p, st.Config.CodeRevision)
+				f.git("worktree", "add", "--detach", p, f.git("rev-parse", "HEAD"))
 				workers = append(workers, p)
 			}
 			requestPaths := []string{}

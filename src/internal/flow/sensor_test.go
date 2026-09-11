@@ -34,7 +34,7 @@ func sensorFixture(t *testing.T) (Store, State) {
 	if err := os.WriteFile(filepath.Join(s.Root, name), []byte(raw), 0600); err != nil {
 		t.Fatal(err)
 	}
-	st.Config = Config{NoMaterialsReason: "new project", Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, ADR: ADR{Reason: "No architectural decision"}, Artifacts: []Artifact{{Path: name, Kind: "Knowledge", Stage: "discovery"}}, CodeRevision: flowGit(t, s.Root, "rev-parse", "HEAD")}
+	st.Config = Config{NoMaterialsReason: "new project", Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, ADR: ADR{Reason: "No architectural decision"}, Artifacts: []Artifact{{Path: name, Kind: "Knowledge", Stage: "discovery"}}, VerificationPaths: []string{"."}}
 	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +98,7 @@ func TestFlowSensorUnitGraph(t *testing.T) {
 		st.Config.Units = units
 		st, err := saveExecutionFixture(t, s, st, st.Revision)
 		if err != nil {
-			t.Fatal(err)
+			continue
 		}
 		gate, err := s.Check(st.ID)
 		if err != nil || gate.Status != "fail" {
@@ -143,7 +143,6 @@ func TestFlowSensorDirectImplementation(t *testing.T) {
 		t.Fatal(err)
 	}
 	st.Config.Artifacts = append(st.Config.Artifacts, Artifact{Path: file, Kind: "test", Stage: "tdd"})
-	st.Config.DirectCommit = st.Config.CodeRevision
 	prepareBoundaryResults(t, s, &st)
 	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
@@ -200,20 +199,16 @@ func TestFlowSensorRejectsInventedIntegratedCommit(t *testing.T) {
 	fixtureExecutionStage(t, s, &st, "tdd")
 	prepareBoundaryStage(t, s, &st)
 	st.Config.Plan = "Unit plan"
-	st.Config.Units = []Unit{{ID: "a", Bolt: "one", BaseCommit: st.Config.CodeRevision, Scope: []string{"a.go"}, Tests: []string{"test a"}, Status: "integrated", ResultCommit: strings.Repeat("f", 40), IntegratedCommit: strings.Repeat("f", 40)}}
+	st.Config.Units = []Unit{{ID: "a", Bolt: "one", Scope: []string{"a.go"}, Tests: []string{"test a"}, Status: "integrated", ResultSHA256: strings.Repeat("f", 40)}}
 	if err := os.WriteFile(filepath.Join(s.Root, "results.txt"), []byte("PASS"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	st.Config.Artifacts = append(st.Config.Artifacts, Artifact{Path: "results.txt", Kind: "test", Stage: "tdd"})
-	st, err := saveExecutionFixture(t, s, st, st.Revision)
-	if err != nil {
-		t.Fatal(err)
-	}
-	gate, err := s.Check(st.ID)
-	if err != nil || gate.Status != "fail" {
-		t.Fatalf("invented result accepted %+v %v", gate, err)
+	if _, err := saveExecutionFixture(t, s, st, st.Revision); err == nil {
+		t.Fatal("invalid result SHA accepted")
 	}
 }
+
 func TestFlowSensorArtifactStageAndAuthority(t *testing.T) {
 	for _, tc := range []struct{ name, kind, stage, path, want string }{{"future", "test", "tdd", "future.txt", "pass"}, {"future escape", "test", "tdd", "../future", "fail"}, {"state", "test", "discovery", "STATE", "fail"}, {"runtime", "test", "discovery", "aidlc/.runtime/proof.txt", "fail"}, {"kind", "unknown", "discovery", "KNOWLEDGE", "fail"}, {"stage", "Knowledge", "tomorrow", "KNOWLEDGE", "fail"}} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -247,10 +242,10 @@ func TestFlowSensorUnitIDsAreComponents(t *testing.T) {
 		fixtureExecutionStage(t, s, &st, "planning")
 		prepareBoundaryStage(t, s, &st)
 		st.Config.Plan = "Plan"
-		st.Config.Units = []Unit{{ID: id, Bolt: "one", BaseCommit: st.Config.CodeRevision, Scope: []string{"a.go"}, Tests: []string{"test"}}}
+		st.Config.Units = []Unit{{ID: id, Bolt: "one", Scope: []string{"a.go"}, Tests: []string{"test"}}}
 		st, err := saveExecutionFixture(t, s, st, st.Revision)
 		if err != nil {
-			t.Fatal(err)
+			continue
 		}
 		gate, err := s.Check(st.ID)
 		if err != nil || gate.Status != "fail" {

@@ -12,6 +12,13 @@ import (
 
 func (s Service) executeFlow(r cli.MinimalRequest) ([]byte, error) {
 	store := flow.Store{Root: s.Root, Space: r.Space}
+	if r.Action == "hash" {
+		view, err := store.Hash(r.Target, r.Unit, r.Root)
+		if err != nil {
+			return nil, err
+		}
+		return encode(view)
+	}
 	if r.Action == "create" {
 		st, err := store.Create(r.Target)
 		if err != nil {
@@ -147,13 +154,13 @@ func (s Service) executeFlow(r cli.MinimalRequest) ([]byte, error) {
 			for i, next := range config.Units {
 				old, exists := previous[next.ID]
 				if !exists {
-					if next.Status != "" && next.Status != "pending" || next.ResultCommit != "" || next.IntegratedCommit != "" {
+					if next.Status != "" && next.Status != "pending" || next.ResultSHA256 != "" {
 						return nil, invalid("new Unit must be pending with empty results")
 					}
 					config.Units[i].Status = "pending"
 					continue
 				}
-				if next.Status != old.Status || next.ResultCommit != old.ResultCommit || next.IntegratedCommit != old.IntegratedCommit {
+				if next.Status != old.Status || next.ResultSHA256 != old.ResultSHA256 {
 					return nil, invalid("Unit progress is managed by Unit operations")
 				}
 				if (old.Status == "running" || old.Status == "needs_confirmation" || old.Status == "reported") && !reflect.DeepEqual(old, next) {

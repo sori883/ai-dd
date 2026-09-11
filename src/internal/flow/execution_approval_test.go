@@ -137,7 +137,7 @@ func discoveryApprovalFixtureOrder(t *testing.T, order []string) (Store, State) 
 	st.ExecutionPlan.Bootstrap[0].Status = "completed"
 	st.CurrentStepID = "s02"
 	st.Stage = "discovery"
-	st.Config = Config{Objective: "investigation", Scope: []string{"scope"}, Acceptance: []string{"criteria"}, CodeRevision: strings.TrimSpace(flowGit(t, s.Root, "rev-parse", "HEAD")), NoMaterialsReason: "no external material", ADR: ADR{Reason: "no design change"}}
+	st.Config = Config{Objective: "investigation", Scope: []string{"scope"}, Acceptance: []string{"criteria"}, VerificationPaths: []string{"."}, NoMaterialsReason: "no external material", ADR: ADR{Reason: "no design change"}}
 	boundaryDoc(t, s, st, "Requirements")
 	if err = s.persist(st); err != nil {
 		t.Fatal(err)
@@ -277,10 +277,9 @@ func TestExecutionPlanApprovalArbitraryOrder(t *testing.T) {
 			t.Fatalf("wrong selected order: %s", st.Stage)
 		}
 		st.Config.Tests = []string{"inspect existing code"}
-		st.Config.DirectCommit = st.Config.CodeRevision
 		st.Config.TestResults = []string{"aidlc/evidence/" + st.CurrentStepID + ".json"}
 		zero := 0
-		result := resultDocument{StepID: st.CurrentStepID, Stage: stage, Runs: []resultRun{{Command: st.Config.Tests[0], Commit: st.Config.CodeRevision, ExitCode: &zero, OutputPath: "aidlc/evidence/output.txt"}}}
+		result := resultDocument{StepID: st.CurrentStepID, Stage: stage, VerificationScope: "intent", VerificationSHA256: verificationTestSHA(t, s.Root, st.Config.VerificationPaths), Runs: []resultRun{{Command: st.Config.Tests[0], ExitCode: &zero, OutputPath: "aidlc/evidence/output.txt"}}}
 		raw, err := json.Marshal(result)
 		if err != nil {
 			t.Fatal(err)

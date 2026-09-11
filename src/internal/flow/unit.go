@@ -8,6 +8,7 @@ import (
 )
 
 type UnitRequest struct {
+	VerificationSHA256 string `json:"verification_sha256"`
 	RegistryEpoch      string `json:"registry_epoch"`
 	RequestID          string `json:"request_id"`
 	CoordinatorSession string `json:"coordinator_session"`
@@ -19,7 +20,6 @@ type UnitRequest struct {
 	Session            string `json:"session"`
 	Root               string `json:"root"`
 	RunID              string `json:"run_id"`
-	Commit             string `json:"commit"`
 }
 
 func (s Store) assignmentPath(id, unit string) string {
@@ -74,12 +74,10 @@ func (s Store) Unit(id string, expect uint64, r UnitRequest) (State, error) {
 			for _, dep := range unit.DependsOn {
 				for _, candidate := range st.Config.Units {
 					if candidate.ID == dep {
-						if candidate.Status != "integrated" || candidate.IntegratedCommit == "" {
+						if candidate.Status != "integrated" || !validHash(candidate.ResultSHA256) {
 							return invalid("dependency not integrated")
 						}
-						if _, err := git(s.Root, "merge-base", "--is-ancestor", candidate.IntegratedCommit, unit.BaseCommit); err != nil {
-							return invalid("worker base does not include dependency integration")
-						}
+
 					}
 				}
 			}
@@ -87,26 +85,8 @@ func (s Store) Unit(id string, expect uint64, r UnitRequest) (State, error) {
 			if err != nil {
 				return err
 			}
-			project, err := filepath.EvalSymlinks(s.Root)
-			if err != nil {
-				return err
-			}
-			if root == project || !filepath.IsAbs(root) || strings.TrimSpace(r.Session) == "" {
-				return invalid("separate worker root and session required")
-			}
-			top, err := git(root, "rev-parse", "--show-toplevel")
-			if err != nil {
-				return err
-			}
-			if top != root {
-				return invalid("worker root must be worktree root")
-			}
-			head, err := git(root, "rev-parse", "HEAD")
-			if err != nil {
-				return err
-			}
-			if head != unit.BaseCommit {
-				return invalid("worker must start at Unit base commit")
+			if !filepath.IsAbs(root) || strings.TrimSpace(r.Session) == "" {
+				return invalid("worker root and session required")
 			}
 			for _, other := range st.Config.Units {
 				if other.Status != "running" && other.Status != "needs_confirmation" {
@@ -149,7 +129,7 @@ func (s Store) Unit(id string, expect uint64, r UnitRequest) (State, error) {
 			if r.Action == "confirm" {
 				expected = "needs_confirmation"
 			}
-			if unit.Status != expected {
+			if unit.Status != expected && !(r.Action == "result" && unit.Status == "reported") {
 				return invalid("Unit state requires explicit confirmation or running assignment")
 			}
 			a, err := s.assignment(id, r.Unit)
@@ -166,60 +146,51 @@ func (s Store) Unit(id string, expect uint64, r UnitRequest) (State, error) {
 			if a.StepID != st.CurrentStepID || a.Session != r.Session || a.Root != root || a.RunID != r.RunID {
 				return invalid("Unit run identity mismatch")
 			}
-			head, err := git(root, "rev-parse", "HEAD")
+			paths := unitVerificationPaths(st.Config, *unit)
+			digest, err := ComputeVerification(root, paths)
 			if err != nil {
 				return err
 			}
-			if len(r.Commit) != 40 || head != r.Commit {
-				return invalid("worker commit must match HEAD")
-			}
-			if _, err := git(root, "merge-base", "--is-ancestor", unit.BaseCommit, r.Commit); err != nil {
-				return invalid("result does not descend from base")
+			if len(paths) == 0 || !validHash(r.VerificationSHA256) || r.VerificationSHA256 != digest.SHA256 {
+				return invalid("worker verification SHA must match current content")
 			}
 			if r.Action == "confirm" {
 				unit.Status = "running"
 				return nil
 			}
-			changed, err := gitRaw(root, "diff", "--name-only", "-z", unit.BaseCommit, r.Commit)
-			if err != nil {
-				return err
+			c := boundaryCollector{store: Store{Root: root, Space: s.Space}}
+			required := map[resultRequirement]bool{}
+			for _, command := range unit.Tests {
+				required[resultRequirement{unit: unit.ID, command: command}] = true
 			}
-			for _, name := range strings.Split(changed, "\x00") {
-				if name == "" {
-					continue
-				}
-				allowed := false
-				for _, scope := range unit.Scope {
-					if name == scope || strings.HasPrefix(name, scope+"/") {
-						allowed = true
-					}
-				}
-				if !allowed {
-					return invalid("result changed file outside Unit scope")
-				}
+			c.verificationResults(*st, digest.SHA256, unit.ID, r.RunID, required)
+			if len(c.failures) > 0 {
+				return invalid(strings.Join(c.failures, "; "))
 			}
 			unit.Status = "reported"
-			unit.ResultCommit = r.Commit
+			unit.ResultSHA256 = digest.SHA256
 		case "integrate":
 			if unit.Status != "reported" {
 				return invalid("Unit has no reported result")
 			}
-			head, err := git(s.Root, "rev-parse", "HEAD")
+			digest, err := ComputeVerification(s.Root, unitVerificationPaths(st.Config, *unit))
 			if err != nil {
 				return err
 			}
-			if len(r.Commit) != 40 || r.Commit != head {
-				return invalid("integration commit must match coordinator HEAD")
-			}
-			if _, err := git(s.Root, "merge-base", "--is-ancestor", unit.ResultCommit, r.Commit); err != nil {
-				return invalid("result commit is not integrated")
+			if !validHash(unit.ResultSHA256) || digest.SHA256 != unit.ResultSHA256 {
+				return invalid("submitted Unit content is not integrated")
 			}
 			unit.Status = "integrated"
-			unit.IntegratedCommit = r.Commit
-			st.Config.CodeRevision = r.Commit
 		default:
 			return invalid("unknown Unit action")
 		}
 		return nil
 	})
+}
+
+func unitVerificationPaths(config Config, unit Unit) []string {
+	if len(unit.VerificationPaths) > 0 {
+		return unit.VerificationPaths
+	}
+	return config.VerificationPaths
 }

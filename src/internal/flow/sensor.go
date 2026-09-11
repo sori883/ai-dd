@@ -1,40 +1,15 @@
 package flow
 
 import (
-	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"github.com/sori883/ai-dd/src/internal/filestore"
 	"github.com/sori883/ai-dd/src/internal/okfmemory"
 	"io/fs"
-	"os/exec"
 	"path"
 	"regexp"
-	"sort"
 	"strings"
-	"time"
 )
-
-func git(root string, args ...string) (string, error) {
-	raw, err := gitRaw(root, args...)
-	return strings.TrimSpace(raw), err
-}
-
-// gitRaw keeps NUL-delimited path bytes intact, including leading whitespace.
-func gitRaw(root string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	command := exec.CommandContext(ctx, "git", append([]string{"-C", root}, args...)...)
-	var diagnostic bytes.Buffer
-	command.Stderr = &diagnostic
-	raw, err := command.Output()
-	if err != nil {
-		return "", fmt.Errorf("git %s: %s: %w", args[0], strings.TrimSpace(diagnostic.String()), err)
-	}
-	return string(raw), nil
-}
 
 // Check evaluates current files without saving Sensor or review results.
 func (s Store) Check(id string) (Gate, error) {
@@ -56,6 +31,15 @@ func (s Store) checkStateSnapshot(st State) (Gate, *boundaryCollector, error) {
 		c := s.endDocuments(st)
 		gate := c.gate(st.CurrentStepID)
 		gate.StepID = st.CurrentStepID
+		raw, err := json.Marshal(st.Config)
+		if err != nil {
+			return Gate{}, nil, err
+		}
+		digest, err := ComputeVerification(s.Root, st.Config.VerificationPaths)
+		if err != nil {
+			return Gate{}, nil, err
+		}
+		gate.Target = fmt.Sprintf("%x", sha256.Sum256(append(append([]byte(gate.Target), raw...), []byte(digest.SHA256)...)))
 		return gate, c, nil
 	}
 	config := st.Config
@@ -87,30 +71,12 @@ func (s Store) checkStateSnapshot(st State) (Gate, *boundaryCollector, error) {
 	require(len(config.Scope) > 0, "scope required")
 	require(len(config.Acceptance) > 0, "acceptance required")
 	require(len(config.Unknowns) == 0, "blocking unknowns remain")
-	head, err := git(s.Root, "rev-parse", "HEAD")
-	if err != nil {
-		return Gate{}, nil, err
-	}
-	h.Write([]byte(head))
-	require(config.CodeRevision == head, "code_revision must match HEAD")
-	files, err := git(s.Root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
-	if err != nil {
-		return Gate{}, nil, err
-	}
-	names := strings.Split(files, "\x00")
-	sort.Strings(names)
-	for _, name := range names {
-		if name == "" || strings.HasPrefix(name, "aidlc/") {
-			continue
-		}
-		content, err := filestore.ReadFile(s.Root, name)
-		h.Write([]byte(name))
+	if len(config.VerificationPaths) > 0 {
+		digest, err := ComputeVerification(s.Root, config.VerificationPaths)
 		if err != nil {
-			h.Write([]byte(err.Error()))
-			require(false, "unreadable code: "+name)
-			continue
+			return Gate{}, nil, err
 		}
-		h.Write(content)
+		digestField(h, []byte(digest.SHA256))
 	}
 	c := &boundaryCollector{store: s}
 
@@ -183,21 +149,12 @@ func (s Store) checkStateSnapshot(st State) (Gate, *boundaryCollector, error) {
 		}
 	}
 	if st.Stage == "tdd" || st.Stage == "integration" {
-		if len(config.Units) == 0 {
-			require(config.DirectCommit == head, "direct implementation result must match HEAD")
-		}
+		require(len(config.VerificationPaths) > 0, "verification_paths required")
 		for _, unit := range st.Config.Units {
-			require(unit.Status == "integrated" && unit.IntegratedCommit != "", "Unit not integrated: "+unit.ID)
-			if len(unit.ResultCommit) != 40 || len(unit.IntegratedCommit) != 40 {
-				require(false, "invalid Unit result commit")
-				continue
-			}
-			_, resultErr := git(s.Root, "merge-base", "--is-ancestor", unit.ResultCommit, unit.IntegratedCommit)
-			require(resultErr == nil, "Unit result not present in integration commit")
-			_, integrationErr := git(s.Root, "merge-base", "--is-ancestor", unit.IntegratedCommit, head)
-			require(integrationErr == nil, "Unit integration not present in current HEAD")
+			require(unit.Status == "integrated" && validHash(unit.ResultSHA256), "Unit not integrated: "+unit.ID)
 		}
 	}
+
 	c = s.collectEndDocuments(st, c)
 	failures = append(failures, c.failures...)
 	extra, err := json.Marshal(append(append([]FileVersion(nil), c.files...), c.sources...))
@@ -220,7 +177,7 @@ func unitPlanProblems(units []Unit) []string {
 			problems = append(problems, "duplicate or empty Unit ID")
 		}
 		byID[unit.ID] = unit
-		if unit.Bolt == "" || len(unit.Scope) == 0 || len(unit.Tests) == 0 || len(unit.BaseCommit) != 40 {
+		if unit.Bolt == "" || len(unit.Scope) == 0 || len(unit.Tests) == 0 {
 			problems = append(problems, "incomplete Unit plan: "+unit.ID)
 		}
 		for _, scope := range unit.Scope {

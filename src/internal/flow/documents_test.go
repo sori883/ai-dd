@@ -20,7 +20,7 @@ func TestIntentDocumentsRegistration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.SchemaVersion != 5 {
+	if st.SchemaVersion != 6 {
 		t.Errorf("schema=%d want4", st.SchemaVersion)
 	}
 	docs := IntentDocuments{Inputs: []DocumentDeclaration{}, Outputs: []DocumentDeclaration{declaredDoc("integration", "knowledge/orders", "Knowledge"), declaredDoc("discovery", "adr/storage", "adr")}}

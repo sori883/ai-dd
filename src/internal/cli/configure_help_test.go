@@ -27,17 +27,17 @@ func TestConfigureHelp(t *testing.T) {
 		}
 		if i == 1 {
 			u := units[0].(map[string]any)
-			for _, key := range []string{"id", "bolt", "base_commit", "depends_on", "scope", "tests", "status", "result_commit", "integrated_commit"} {
+			for _, key := range []string{"id", "bolt", "depends_on", "scope", "tests", "status", "verification_paths", "result_sha256"} {
 				if _, ok := u[key]; !ok {
 					t.Errorf("missing %s", key)
 				}
 			}
-			if u["status"] != "pending" || u["result_commit"] != "" || u["integrated_commit"] != "" {
+			if u["status"] != "pending" || u["result_sha256"] != "" {
 				t.Fatal("wrong initial progress")
 			}
 		}
 	}
-	for _, want := range []string{"文字列", "真偽値", "文字列配列", "<CURRENT_HEAD>", "40桁", "置換", "既存", "進捗", "Unitなし", "Unitあり"} {
+	for _, want := range []string{"文字列", "真偽値", "文字列配列", "<CURRENT_STEP>", "64桁", "置換", "既存", "進捗", "Unitなし", "Unitあり"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("help lacks %s", want)
 		}

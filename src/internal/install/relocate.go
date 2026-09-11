@@ -49,13 +49,7 @@ func relocate(root, binary, fromRoot, fromBinary string, write func(string, stri
 		oldSkill := []byte(strings.ReplaceAll(string(template), "@@BINARY@@", shellQuote(fromBinary)))
 		newSkill := []byte(strings.ReplaceAll(string(template), "@@BINARY@@", shellQuote(binary)))
 		if !bytes.Equal(before[i], oldSkill) && !bytes.Equal(before[i], newSkill) {
-			legacy := legacyAssignmentSkills[source]
-			legacyOld := []byte(strings.ReplaceAll(legacy, "@@BINARY@@", shellQuote(fromBinary)))
-			legacyNew := []byte(strings.ReplaceAll(legacy, "@@BINARY@@", shellQuote(binary)))
-			if !bytes.Equal(before[i], legacyOld) && !bytes.Equal(before[i], legacyNew) {
-				return result, fmt.Errorf("%s: unknown asset bytes: %w", paths[i], fs.ErrInvalid)
-			}
-			newSkill = legacyNew
+			return result, fmt.Errorf("%s: unknown asset bytes: %w", paths[i], fs.ErrInvalid)
 		}
 		after[i] = newSkill
 	}

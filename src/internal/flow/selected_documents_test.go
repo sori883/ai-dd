@@ -78,7 +78,7 @@ func TestSelectedDocumentsSharedUpdate(t *testing.T) {
 }
 func TestSelectedDocumentsOutputPath(t *testing.T) {
 	s, st := boundaryFixture(t)
-	st.Config = Config{Objective: "Work", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", CodeRevision: flowGit(t, s.Root, "rev-parse", "HEAD"), ADR: ADR{Reason: "none"}}
+	st.Config = Config{Objective: "Work", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", VerificationPaths: []string{"."}, ADR: ADR{Reason: "none"}}
 	var err error
 	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
@@ -116,7 +116,7 @@ func TestSelectedDocumentsOutputPath(t *testing.T) {
 
 func TestSelectedDocumentsSharedPaths(t *testing.T) {
 	s, st := boundaryFixture(t)
-	st.Config = Config{Objective: "Work", Scope: []string{"src"}, Acceptance: []string{"works"}, MaterialSources: []string{"material.txt"}, CodeRevision: flowGit(t, s.Root, "rev-parse", "HEAD"), ADR: ADR{Reason: "none"}}
+	st.Config = Config{Objective: "Work", Scope: []string{"src"}, Acceptance: []string{"works"}, MaterialSources: []string{"material.txt"}, VerificationPaths: []string{"."}, ADR: ADR{Reason: "none"}}
 	if err := filestore.WriteFile(s.Root, "material.txt", []byte("source facts")); err != nil {
 		t.Fatal(err)
 	}
@@ -168,8 +168,8 @@ func TestSelectedDocumentsIntegrationFeature(t *testing.T) {
 	fixtureExecutionStage(t, s, &st, "integration")
 	prepareBoundaryStage(t, s, &st)
 	st.Accepted["s04"] = StageAcceptance{StepID: "s04", Stage: "tdd", ReviewTarget: strings.Repeat("c", 64)}
-	head := flowGit(t, s.Root, "rev-parse", "HEAD")
-	st.Config = Config{Objective: "Work", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: head, DirectCommit: head, Plan: "implement", Tests: []string{"go test"}}
+	_ = flowGit(t, s.Root, "rev-parse", "HEAD")
+	st.Config = Config{Objective: "Work", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, VerificationPaths: []string{"."}, Plan: "implement", Tests: []string{"go test"}}
 	prepareBoundaryResults(t, s, &st)
 	boundaryDoc(t, s, st, "CurrentAnalysis")
 	boundaryDoc(t, s, st, "Architecture")
@@ -225,7 +225,7 @@ func TestSelectedDocumentsRequiredTypes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st.Config = Config{Objective: "Work", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", CodeRevision: flowGit(t, s.Root, "rev-parse", "HEAD"), ADR: ADR{Reason: "none"}}
+	st.Config = Config{Objective: "Work", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", VerificationPaths: []string{"."}, ADR: ADR{Reason: "none"}}
 	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)

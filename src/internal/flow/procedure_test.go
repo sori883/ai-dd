@@ -75,8 +75,8 @@ func TestProcedureBoundaryAcceptedTDDOutput(t *testing.T) {
 	}
 	fixtureExecutionStage(t, s, &st, "tdd")
 	prepareBoundaryStage(t, s, &st)
-	head := flowGit(t, s.Root, "rev-parse", "HEAD")
-	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: head, DirectCommit: head, Plan: "Implement", Tests: []string{"go test"}}
+	_ = flowGit(t, s.Root, "rev-parse", "HEAD")
+	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, VerificationPaths: []string{"."}, Plan: "Implement", Tests: []string{"go test"}}
 	boundaryFile(t, s, doc, "---\ntype: Design\ntitle: Decision\ndescription: Decision\n---\nReviewed decision.\n")
 	boundaryDoc(t, s, st, "CurrentAnalysis")
 	prepareBoundaryResults(t, s, &st)

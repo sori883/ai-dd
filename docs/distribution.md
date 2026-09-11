@@ -1,4 +1,4 @@
-# 配布候補の生成と、既設配置の比較・更新・復旧
+# 配布候補の生成と、新規配置・通常移転
 
 AI-DLCの利用者が実行するファイルは`aidlc`一つです。工程定義、Codex用Skill・agent・hookはbinaryに内包されています。`aidlc-dist`は開発者がbuild済みbinaryを圧縮するためのcommandで、利用先へ追加導入する必要はありません。
 
@@ -63,13 +63,13 @@ AIDLC_DIST_DIR="$dist_output" go test -tags=integration -count=1 -v \
 
 利用するOS/CPUと一致するarchiveを選び、照合後に新しい空directoryへ展開します。Unixなら`tar -xzf ARCHIVE -C NEW_DIR`、Windows PowerShellなら`Expand-Archive -LiteralPath ARCHIVE -DestinationPath NEW_DIR`が使えます。実行前に対応targetと取得元を確認し、展開したbinaryの`version`と`--help`を確認してください。hash照合だけで取得元を信頼できるわけではありません。
 
-## 既設配置を更新する前に
+## 新形式の候補を配置する前に
 
-以下は利用者が確認して行う手順です。CLIが停止確認、backup、資材選択、切替、rollbackの全体を強制する自動updaterではありません。
+新方式はflow schema 6・assignment schema 2の新規配置と新規Intentで開始します。旧記録の互換読込み・変換・旧配置への切替や復元は提供しません。旧利用環境を自動削除せず、新旧の進行中stateを共有しない隔離環境で候補を確認します。以下の設定保全と移転は新方式内の手順です。
 
 1. 対象projectのメインAI、worker、既知の背景処理を停止・整理します。予約と保存途中の操作を確認してください。Stop通知や経過時間だけで予約を解放せず、状態が不明なら更新作業を止めます。
 2. 旧binaryを実path・version・hashとともに保管します。配置した製品file、独自hooks/config、全Space、Git管理外の`aidlc/.runtime`も別の場所へbackupし、実際に読めることと元bytesが一致することを確認します。Git commitだけではignored runtimeのbackupになりません。
-3. 新binaryは旧binaryと違うpathへ保存します。別の空Git projectを`git init`し、そこへ`NEW_BINARY install codex --project-dir STAGING_ROOT`を実行します。実利用先でfresh installを再実行して更新しようとしないでください。既存fileの上書きは拒否されます。
+3. 新binaryは旧binaryと違うpathへ保存します。別の空の通常フォルダを用意し、そこへ`NEW_BINARY install codex --project-dir STAGING_ROOT`を実行します。実利用先でfresh installを再実行して更新しようとしないでください。既存fileの上書きは拒否されます。
 4. 旧配置・旧版の既知資材・staging候補を比較します。由来不明の編集を製品の古いfileだと決めつけず、そのfileの扱いを確認するまで止めます。
 
 比較対象は次のように分けます。directory全体を無条件コピーしないでください。
@@ -97,17 +97,15 @@ NEW_BINARY install codex --relocate --project-dir REAL_ROOT \
 
 すべて実際の絶対pathへ置き換えます。この例は新binaryのままroot参照をstagingから実利用先へ補正します。別pathからの配置移転では、元配置に埋め込まれた旧root/binaryをfromへ渡します。元pathが今も存在する必要はありません。
 
-`--relocate`の対象はaidlc/aidlc-cli両Skillとhooks.jsonの3fileだけです。既知の現行/限定旧版のSkill bytes、既知の製品handler形状、元/新の参照が成立する場合にだけ補正し、独自hookのbytesを保持します。未知のSkill編集、製品command、matcher等があれば拒否します。エラーを回避するために利用者編集を無断で消さず、比較へ戻ってください。移転は版更新や定義移行ではありません。
+`--relocate`の対象はaidlc/aidlc-cli両Skillとhooks.jsonの3fileだけです。既知の現行Skill bytes、既知の製品handler形状、元/新の参照が成立する場合にだけ補正し、独自hookのbytesを保持します。未知のSkill編集、製品command、matcher等があれば拒否します。エラーを回避するために利用者編集を無断で消さず、比較へ戻ってください。移転は版更新や定義移行ではありません。
 
 部分失敗のPathsは更新済み、Pendingは未完了です。処理終了と原因を確認し、同じ引数で再検査できます。成功後も3fileの実pathと独自hookを確認します。通常のCodex hook trust確認、許可/拒否の対照を経てからAIを再開してください。trustや認証設定は自動変更しません。
 
 定義hashが変わった場合、既存Intentは元の定義に結び付いています。旧版で進めている仕事を整理し、新定義では新Intentを使ってください。元Intentの定義hashだけを書き換えて移行したことにはしません。
 
-## 失敗した場合の復旧
+## 候補の検証を中断する場合
 
-作業を止め、保管した旧binaryとそれに対応する製品Skill・agent・hooks・定義・templateを組で戻します。独自hookを含む元の製品file bytesと参照をbackupに照らして確認します。利用者の進捗、Knowledge、履歴、予約は新版で変更があった可能性があるため、古いseedや空のruntimeへ戻してはいけません。
-
-新版で作ったIntentを旧版で再開できるとは保証しません。元の版と定義が必要な仕事はそれに対応する配置で扱い、判断できない場合は実行を再開せず確認します。
+隔離した新規検証環境で処理を止め、候補binaryとそれに対応する配置を組で扱います。候補の比較では新旧の進行中stateを共有しません。実利用プロジェクトの進捗・Knowledge・履歴・予約を古いseedや空のruntimeへ置き換えないでください。利用者設定と元bytesのbackupは保全します。
 
 ## 検証の範囲
 

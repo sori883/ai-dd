@@ -29,62 +29,14 @@ func (s Store) reassign(st *State, unit *Unit, expect uint64, r UnitRequest) err
 	if err != nil {
 		return err
 	}
-	project, err := filepath.EvalSymlinks(s.Root)
-	if err != nil {
-		return err
-	}
-	if root == project {
-		return invalid("separate worker root required")
-	}
-	top, err := git(root, "rev-parse", "--show-toplevel")
-	if err != nil {
-		return err
-	}
-	if top != root {
-		return invalid("worker root must be worktree root")
-	}
-	head, err := git(root, "rev-parse", "HEAD")
-	if err != nil {
-		return err
-	}
-	if len(r.Commit) != 40 || r.Commit != head {
-		return invalid("worker commit must match HEAD")
-	}
-	if _, err := git(root, "merge-base", "--is-ancestor", unit.BaseCommit, head); err != nil {
-		return invalid("reassignment does not descend from base")
-	}
 	for _, dep := range unit.DependsOn {
 		for _, other := range st.Config.Units {
 			if other.ID == dep {
-				if other.Status != "integrated" || other.IntegratedCommit == "" {
+				if other.Status != "integrated" || !validHash(other.ResultSHA256) {
 					return invalid("dependency not integrated")
 				}
-				if _, err := git(root, "merge-base", "--is-ancestor", other.IntegratedCommit, head); err != nil {
-					return invalid("worker does not include dependency integration")
-				}
+
 			}
-		}
-	}
-	changed, err := gitRaw(root, "diff", "--name-only", "-z", unit.BaseCommit)
-	if err != nil {
-		return err
-	}
-	untracked, err := gitRaw(root, "ls-files", "-z", "--others", "--exclude-standard")
-	if err != nil {
-		return err
-	}
-	for _, name := range strings.Split(changed+untracked, "\x00") {
-		if name == "" {
-			continue
-		}
-		allowed := false
-		for _, scope := range unit.Scope {
-			if name == scope || strings.HasPrefix(name, scope+"/") {
-				allowed = true
-			}
-		}
-		if !allowed {
-			return invalid("reassignment changed file outside Unit scope")
 		}
 	}
 	for _, other := range st.Config.Units {

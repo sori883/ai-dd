@@ -112,7 +112,7 @@ func TestStartSensorAcceptedInputs(t *testing.T) {
 
 func TestEndSensorDocuments(t *testing.T) {
 	s, st := boundaryFixture(t)
-	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: flowGit(t, s.Root, "rev-parse", "HEAD")}
+	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, VerificationPaths: []string{"."}}
 	st.Entry = &StageEntry{StepID: "s02", Stage: "discovery"}
 	if err := s.persist(st); err != nil {
 		t.Fatal(err)
@@ -142,7 +142,7 @@ func TestEndSensorMaterials(t *testing.T) {
 	s, st := boundaryFixture(t)
 	boundaryDoc(t, s, st, "Requirements")
 	st.Entry = &StageEntry{StepID: "s02", Stage: "discovery"}
-	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, MaterialSources: []string{"inputs"}, ADR: ADR{Reason: "none"}, CodeRevision: flowGit(t, s.Root, "rev-parse", "HEAD")}
+	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, MaterialSources: []string{"inputs"}, ADR: ADR{Reason: "none"}, VerificationPaths: []string{"."}}
 	boundaryFile(t, s, "inputs/source.txt", "source")
 	if err := s.persist(st); err != nil {
 		t.Fatal(err)
@@ -173,16 +173,16 @@ func TestEndSensorResults(t *testing.T) {
 	s, st := boundaryFixture(t)
 	req := boundaryDoc(t, s, st, "Requirements")
 	plan := boundaryDoc(t, s, st, "ImplementationPlan")
-	head := flowGit(t, s.Root, "rev-parse", "HEAD")
+	head := verificationTestSHA(t, s.Root, []string{"."})
 	fixtureExecutionStage(t, s, &st, "tdd")
 	st.Entry = &StageEntry{StepID: "s04", Stage: "tdd"}
 	st.Accepted = map[string]StageAcceptance{"s02": {StepID: "s02", Stage: "discovery", ReviewTarget: strings.Repeat("a", 64), Outputs: []FileVersion{boundaryVersion(t, s, req)}}, "s03": {StepID: "s03", Stage: "planning", ReviewTarget: strings.Repeat("b", 64), Outputs: []FileVersion{boundaryVersion(t, s, plan)}}}
-	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: head, DirectCommit: head, Plan: "Implement", Tests: []string{"go test ./target"}, TestResults: []string{"aidlc/evidence/results.json"}}
+	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, VerificationPaths: []string{"."}, Plan: "Implement", Tests: []string{"go test ./target"}, TestResults: []string{"aidlc/evidence/results.json"}}
 	boundaryFile(t, s, "aidlc/evidence/output.txt", "ok target")
 	if err := s.persist(st); err != nil {
 		t.Fatal(err)
 	}
-	good := fmt.Sprintf(`{"step_id":"s04","stage":"tdd","runs":[{"command":"go test ./target","commit":%q,"exit_code":0,"output_path":"aidlc/evidence/output.txt"}]}`, head)
+	good := fmt.Sprintf(`{"step_id":"s04","stage":"tdd","verification_scope":"intent","verification_sha256":%q,"runs":[{"command":"go test ./target","exit_code":0,"output_path":"aidlc/evidence/output.txt"}]}`, head)
 	for _, raw := range []string{good, strings.Replace(good, `"exit_code":0,`, "", 1), strings.Replace(good, `"exit_code":0`, `"exit_code":1`, 1), strings.Replace(good, head, strings.Repeat("a", 40), 1), strings.Replace(good, "go test ./target", "echo no test", 1), strings.Replace(good, `"stage":"tdd"`, `"stage":"tdd","extra":1`, 1)} {
 		boundaryFile(t, s, "aidlc/evidence/results.json", raw)
 		g, err := s.Check(st.ID)
@@ -250,16 +250,15 @@ func prepareBoundaryStage(t *testing.T, s Store, st *State) {
 }
 func prepareBoundaryResults(t *testing.T, s Store, st *State) {
 	t.Helper()
-	head := st.Config.DirectCommit
 	name := "aidlc/evidence/" + st.Stage + ".json"
 	output := "aidlc/evidence/" + st.Stage + ".txt"
 	boundaryFile(t, s, output, "observed fixture output")
 	var runs []resultRun
 	zero := 0
 	for _, command := range st.Config.Tests {
-		runs = append(runs, resultRun{Command: command, Commit: head, ExitCode: &zero, OutputPath: output})
+		runs = append(runs, resultRun{Command: command, ExitCode: &zero, OutputPath: output})
 	}
-	raw, err := json.Marshal(resultDocument{StepID: st.CurrentStepID, Stage: st.Stage, Runs: runs})
+	raw, err := json.Marshal(resultDocument{StepID: st.CurrentStepID, Stage: st.Stage, VerificationScope: "intent", VerificationSHA256: verificationTestSHA(t, s.Root, st.Config.VerificationPaths), Runs: runs})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,8 +272,8 @@ func TestEndSensorIntegrationDocuments(t *testing.T) {
 	fixtureExecutionStage(t, s, &st, "integration")
 	prepareBoundaryStage(t, s, &st)
 	st.Accepted["s04"] = StageAcceptance{StepID: "s04", Stage: "tdd", ReviewTarget: strings.Repeat("c", 64)}
-	head := flowGit(t, s.Root, "rev-parse", "HEAD")
-	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, CodeRevision: head, DirectCommit: head, Plan: "Implement", Tests: []string{"go test"}}
+	_ = flowGit(t, s.Root, "rev-parse", "HEAD")
+	st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, VerificationPaths: []string{"."}, Plan: "Implement", Tests: []string{"go test"}}
 	prepareBoundaryResults(t, s, &st)
 	if err := s.persist(st); err != nil {
 		t.Fatal(err)
@@ -309,33 +308,8 @@ func TestEndSensorIntegrationDocuments(t *testing.T) {
 	}
 }
 
-func TestEndSensorUnitCommandCommitPair(t *testing.T) {
-	s, st := boundaryFixture(t)
-	a := flowGit(t, s.Root, "rev-parse", "HEAD")
-	flowGit(t, s.Root, "commit", "--allow-empty", "-qm", "second result")
-	b := flowGit(t, s.Root, "rev-parse", "HEAD")
-	fixtureExecutionStage(t, s, &st, "tdd")
-	st.Config.CodeRevision = b
-	st.Config.Tests = []string{"direct-only command"}
-	st.Config.Units = []Unit{{ID: "a", Tests: []string{"test a"}, ResultCommit: a, IntegratedCommit: b}, {ID: "b", Tests: []string{"test b"}, ResultCommit: b, IntegratedCommit: b}}
-	st.Config.TestResults = []string{"aidlc/evidence/results.json"}
-	boundaryFile(t, s, "aidlc/evidence/output", "ok")
-	raw := fmt.Sprintf(`{"step_id":"s04","stage":"tdd","runs":[{"command":"test a","commit":%q,"exit_code":0,"output_path":"aidlc/evidence/output"},{"command":"test b","commit":%q,"exit_code":0,"output_path":"aidlc/evidence/output"}]}`, a, a)
-	boundaryFile(t, s, st.Config.TestResults[0], raw)
-	c := boundaryCollector{store: s}
-	c.results(st)
-	if len(c.failures) == 0 {
-		t.Fatal("Unit b command accepted at Unit a result")
-	}
-	raw = strings.Replace(raw, `"command":"test b","commit":"`+a, `"command":"test b","commit":"`+b, 1)
-	raw = strings.TrimSuffix(raw, "]}") + fmt.Sprintf(`,{"command":"additional integration check","commit":%q,"exit_code":0,"output_path":"aidlc/evidence/output"}]}`, b)
-	boundaryFile(t, s, st.Config.TestResults[0], raw)
-	c = boundaryCollector{store: s}
-	c.results(st)
-	if len(c.failures) != 0 {
-		t.Fatalf("correct Unit pairs: %v", c.failures)
-	}
-}
+func TestEndSensorUnitCommandPair(t *testing.T) { TestVerificationResults(t) }
+
 func TestStartSensorMissingViaSymlinkIsNotAbsent(t *testing.T) {
 	s, st := boundaryFixture(t)
 	if err := os.Symlink(filepath.Join(s.Root, "missing"), filepath.Join(s.Root, "aidlc/spaces/default/knowledge/codekb")); err != nil {

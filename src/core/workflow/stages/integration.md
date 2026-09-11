@@ -33,7 +33,7 @@ sensors:
 
 # 統合検証
 
-既存または変更したコードの対象commitと実測結果を検証する。tddが選択されていなくても実行できる。必要な現行仕様のKnowledgeはoutputsへ宣言する。
+既存または変更したコードの検証対象一式のSHAと実測結果を検証する。tddが選択されていなくても実行できる。必要な現行仕様のKnowledgeはoutputsへ宣言する。
 
 ## 現在回の操作
 
@@ -46,4 +46,4 @@ sensors:
 文書・Unit・実測結果は現在のstep_idへ結び付ける。過去の同stage成功を使い回さない。
 共通のJSON型、会話出典、Knowledge保存、Unit、reopenと保存retryは `A intent ACTION --help` と配置済みaidlc-cliスキルを参照する。
 
-統合対象の現在HEADで必要commandを実行し、step_id/stage/runsを持つ結果JSONをtest_resultsへ登録する。各runのcommand/commit/exit_code/output_pathは実測値を使う。必要な現行仕様のKnowledgeをoutputsへ宣言する。
+verification_pathsへコード・設定・テスト・共通部品を指定する。intent hash→テスト→intent hashの一致を確認し、step_id/stage/verification_scope/verification_sha256/runsを持つ結果JSONをaidlc/evidenceへ保存してtest_resultsへ登録する。各runはunit_id/command/exit_code/output_path。Unit結果にはトップレベルunit_id/run_idも指定する。Unitのresult/integrateは内容を照合する。終了時は最新Intent全体SHAで全Unit+commandの成功を確認する。

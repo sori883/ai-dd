@@ -41,12 +41,6 @@ func (s Store) ReserveAssignment(id string, expect uint64, session string, req A
 	if _, err := s.AssignmentStage(st.ID, req.StepID, req.Agent); err != nil {
 		return assignment.Reservation{}, err
 	}
-	if len(st.Config.CodeRevision) != 40 {
-		return assignment.Reservation{}, invalid("code revision required")
-	}
-	if _, err := git(req.Root, "merge-base", "--is-ancestor", st.Config.CodeRevision, "HEAD"); err != nil {
-		return assignment.Reservation{}, invalid("worker must contain current code revision")
-	}
 	return (assignment.Store{Root: s.Root}).Reserve(assignment.ReserveRequest{RegistryEpoch: req.RegistryEpoch, RequestID: req.RequestID, CoordinatorSession: session, Session: req.Session, Space: s.Space, IntentID: id, StepID: req.StepID, DefinitionHash: st.DefinitionHash, Root: req.Root, Agent: req.Agent, SourceRevision: expect})
 }
 
