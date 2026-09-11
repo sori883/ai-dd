@@ -26,8 +26,15 @@ func TestStagePlannerDistribution(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if name == "aidlc" && !strings.Contains(string(raw), "aidlc-stage-planner") {
-			t.Errorf("%s omits planner", name)
+		if name == "aidlc" && !strings.Contains(string(raw), "[aidlc-cli](../aidlc-cli/SKILL.md)") {
+			t.Error("bootstrap omits link to role guidance")
+		}
+		if name == "aidlc-cli" {
+			for _, want := range []string{"aidlc-stage-planner", "採否・順序・理由とPLAN案を返す"} {
+				if !strings.Contains(string(raw), want) {
+					t.Errorf("role guidance missing %q", want)
+				}
+			}
 		}
 	}
 }

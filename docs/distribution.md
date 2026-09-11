@@ -111,6 +111,10 @@ NEW_BINARY install codex --relocate --project-dir REAL_ROOT \
 
 ## 検証の範囲
 
+Codex CLI 0.153.4の固定sourceでは、linked worktreeのhook探索先は主checkoutの `.codex` です。worktree自身への配置だけでhookが有効になるとは限りません。主checkoutへ製品hookを置くだけでも、command中の絶対project-dirが各worktreeへ切り替わる保証はありません。通常trust、列挙元path、実際の許可・拒否を対象rootで確認してください。今回の調査はこの条件の確認であり、環境変換やCodex更新は実施していません。
+
+Hookのsession保存競合には最大2秒の再試行がありますが、終了通知が届かなければ自動解除しません。Tool残存時は実処理の終了を確認し、同じSpace・Intent・sessionでメインAIが既存の `session bind ... --recover` を使います。配布検査だけでは、この復旧や子の途中報告が実Codexで成功した証拠にはなりません。
+
 Distribution CIはUbuntuで6targetをbuild・梱包・照合し、`ubuntu-latest`、`macos-latest`、`windows-latest`でnativeの梱包・展開・version/help・fresh install・既存file拒否・参照補正を検査します。実行したruntime.GOOS/GOARCHをlogへ出します。
 
 ```sh
