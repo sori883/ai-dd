@@ -144,3 +144,9 @@ go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestHookReliability
 観測原本・暗号文・内部推論を本リポジトリへ複製していない。根拠は固定Codex sourceの [multi_agents_v2.rs](https://github.com/openai/codex/blob/rust-v0.153.4/codex-rs/core/src/tools/handlers/multi_agents_v2.rs#L58-L75) と [protocol.rs](https://github.com/openai/codex/blob/rust-v0.153.4/codex-rs/protocol/src/protocol.rs#L842-L912) で、send_messageのopaque文字列がEncryptedContentへそのまま渡される確認に限る。
 
 親は新しいsyntheticの正常・不正到達test群と既存平文test、integrationのsynthetic入口を各一回再確認し、全てexit 0だった。次のgateはこのtest-only差分と実測判定の独立review、固定headのread-only final、現headのGitHub checksである。③の調査後の対応案は[別記録](2026-09-11-worktree-hook-followup-options.md)で、製品変更の承認とは区別する。
+
+## opaque到達判定のFINAL type gateを補修
+
+work unit `hook-reliability-opaque-final-type`、開始HEAD `5c33e62c6fd1cbaabf2ce52d99289575d4413047`。独立reviewで、FINALと候補件数を外側・payloadのtype確認より前に集計していた問題を確認した。正規MESSAGEに続く非response_item FINALと非agent_message FINALの2回帰を追加し、両方が誤って成功するRED（exit 1）を確認。type gateをdecode直後、候補とFINAL集計の前へ移しGREEN（exit 0）にした。
+
+commandは `go test -count=1 ./src/cmd/aidlc -run '^(TestHookReliabilityOpaqueEvidence|TestHookReliabilityProbeEvidence)$'`。既存の正常・欠落・重複・順序・snapshot・平文保持も成功。境界再実行、gofmt、diffcheckを確認した。製品/assets/外部fixtureを変更せず、全体・race・vet・live・commit・Issue／PR操作は未実施。実測のMESSAGEとFINALは独立reviewで両方正規typeと確認済みという親の報告を受けたが、このsynthetic修正を新たな実測として記録していない。

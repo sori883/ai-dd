@@ -76,14 +76,14 @@ func reliabilityOpaqueDelivery(pre, post reliabilityRecord, rows [][]byte, paren
 			return "", false
 		}
 		p := row.Payload
+		if row.Type != "response_item" || p.Type != "agent_message" {
+			continue
+		}
 		if p.Author == child && p.Recipient == parent && len(p.Content) > 0 && p.Content[0].Type == "input_text" && strings.HasPrefix(p.Content[0].Text, "Message Type: MESSAGE\n") {
 			candidates++
 		}
 		if p.Author == child && p.Recipient == parent && len(p.Content) > 0 && p.Content[0].Type == "input_text" && strings.HasPrefix(p.Content[0].Text, "Message Type: FINAL_ANSWER\nTask name: "+parent+"\nSender: "+child+"\nPayload:\n") {
 			final = true
-		}
-		if row.Type != "response_item" || p.Type != "agent_message" {
-			continue
 		}
 		if p.Author == child && p.Recipient == parent && len(p.Content) == 2 && p.Content[0].Type == "input_text" && p.Content[0].Text == "Message Type: MESSAGE\nTask name: "+parent+"\nSender: "+child+"\nPayload:\n" && p.Content[1].Type == "encrypted_content" && p.Content[1].Encrypted == input.Input.Message {
 			if final {
@@ -192,7 +192,7 @@ func testOpaqueHooks(t *testing.T) {
 }
 
 func testOpaqueOrder(t *testing.T) {
-	for _, name := range []string{"missing", "duplicate", "conflicting_message", "final_only", "reverse", "no_final"} {
+	for _, name := range []string{"missing", "duplicate", "conflicting_message", "final_only", "reverse", "no_final", "final_outer_type", "final_payload_type"} {
 		t.Run(name, func(t *testing.T) {
 			pre, post, rows := opaqueFixture(t)
 			switch name {
@@ -206,6 +206,10 @@ func testOpaqueOrder(t *testing.T) {
 				rows = rows[1:]
 			case "reverse":
 				rows[0], rows[1] = rows[1], rows[0]
+			case "final_outer_type":
+				rows[1] = bytes.ReplaceAll(rows[1], []byte(`"type":"response_item"`), []byte(`"type":"event_msg"`))
+			case "final_payload_type":
+				rows[1] = bytes.ReplaceAll(rows[1], []byte(`"type":"agent_message"`), []byte(`"type":"message"`))
 			case "no_final":
 				rows = rows[:1]
 			}
