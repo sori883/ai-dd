@@ -84,3 +84,11 @@ git diff --check cf5631b6a26f7f307c70f7e8df3547594a4c1da6
 ```
 
 変更Goへgofmtを適用した。全package・race・vet・cross-build・E2E・live・commit・Issue／PR操作は実施していない。実機候補は修正後の確定版で別pathへ更新する。
+
+## bootstrap上限超過の補修
+
+`hook-reliability-bootstrap-size`、開始HEAD `ca6893a02dc83de1a2895148b4fca0df17ca762d`。親finalの実機ではSessionStartが4KiB上限で停止しモデルtokensは0だった。原本は `/Users/const/sori883/ai-dd-validation/hook-reliability-169/final-ca6893a/results.json`。同binary pathでmainは4042bytes、変更版は4103bytesと親が比較した。
+
+新 `TestInstallBootstrapBinaryPathBudget` は実配置Skillのbyte数と実SessionStartのcontextを検査する。観測pathで4103bytes、513bytesの絶対pathで4534bytesとなり、両方の実拒否でRED（exit 1）を確認。初回のimport cycleはREDに数えず、外部test packageへ分離後に確認した。担当別詳細を既存aidlc-cliへ移し、bootstrapのRule読込み・承認・保存・worker管理・recover条件を維持した。4KiB上限やpath契約は変更しない。初回initは全担当、claim/reserveはworkerと分ける案内も追加回帰のRED後に修正した。
+
+境界command: `go test -count=1 ./src/internal/install -run '^(TestInstallRecoveryGuidanceAndContextLimit|TestInstallBootstrapBinaryPathBudget)$'`。GREEN、gofmt、diffcheckを確認。全体・race・vet・live・buildmatrix・commit・Issue／PR操作と既存実機証拠の上書きはしていない。再review・新finalは親へ返す。
