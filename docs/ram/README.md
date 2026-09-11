@@ -1,6 +1,6 @@
 # 開発プロジェクトRAM
 
-- [終了通知の保存と子の親宛報告の修正](decisions/2026-09-11-hook-reliability-core-evidence.md): Issue #169、C0-C5。hook限定の保存再試行、親canonical宛の途中報告、pending再読取りと保持境界をtargeted testで確認。固定wireとwrapper失敗経路、実Pre拒否／Stopの復旧案内を補修し、親の境界再検査も成功。独立reviewの別role先行bound、OS非依存診断、実Post保存失敗の回帰とEOF空行も修正。bootstrapの4KiB超過も実配置・SessionStart回帰で修正。実機の送受信・復旧確認は別gate。
+- [終了通知の保存と子の親宛報告の修正](decisions/2026-09-11-hook-reliability-core-evidence.md): Issue #169、C0-C5。hook限定の保存再試行、親canonical宛の途中報告、pending再読取りと保持境界をtargeted testで確認。固定wireとwrapper失敗経路、実Pre拒否／Stopの復旧案内を補修し、親の境界再検査も成功。独立reviewの別role先行bound、OS非依存診断、実Post保存失敗の回帰とEOF空行も修正。bootstrapの4KiB超過も実配置・SessionStart回帰で修正。担当説明の参照先を配布testへ反映。1643cccのBash・通常recover実機は成功、子報告実機は初期化回答待ち。全体finalは再実行が必要。
 
 - [固定Codexの終了通知・親宛先・worktree探索の契約](decisions/2026-09-11-fixed-codex-hook-reliability-contract.md): Issue #169。固定0.153.4のsourceでBash終端Postと失敗patchのPostなしを区別。既存Canonicalから親宛を導出する案を確定。linked worktreeは主checkoutのhookを読む実装と確認し、③は調査結果を記録。
 

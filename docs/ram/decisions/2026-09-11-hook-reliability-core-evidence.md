@@ -92,3 +92,17 @@ git diff --check cf5631b6a26f7f307c70f7e8df3547594a4c1da6
 新 `TestInstallBootstrapBinaryPathBudget` は実配置Skillのbyte数と実SessionStartのcontextを検査する。観測pathで4103bytes、513bytesの絶対pathで4534bytesとなり、両方の実拒否でRED（exit 1）を確認。初回のimport cycleはREDに数えず、外部test packageへ分離後に確認した。担当別詳細を既存aidlc-cliへ移し、bootstrapのRule読込み・承認・保存・worker管理・recover条件を維持した。4KiB上限やpath契約は変更しない。初回initは全担当、claim/reserveはworkerと分ける案内も追加回帰のRED後に修正した。
 
 境界command: `go test -count=1 ./src/internal/install -run '^(TestInstallRecoveryGuidanceAndContextLimit|TestInstallBootstrapBinaryPathBudget)$'`。GREEN、gofmt、diffcheckを確認。全体・race・vet・live・buildmatrix・commit・Issue／PR操作と既存実機証拠の上書きはしていない。再review・新finalは親へ返す。
+
+## 担当説明の参照先を配布testへ反映
+
+work unit `hook-reliability-stage-planner-location`、開始HEAD `1643cccc1c084ed1b2790cd42f3e04c72fe2447d`。`go test -count=1 ./src/internal/install -run '^TestStagePlannerDistribution$'` で旧説明位置へのassertによるRED（exit 1、`aidlc omits planner`）を確認した。bootstrapのaidlc-cliリンクと、その参照先のplanner役割説明を検査する契約へtestだけを修正し、agent配布・read-only・PLAN等の既存検査は維持した。製品source/assetsは変更していない。
+
+境界command `go test -count=1 ./src/internal/install -run '^(TestStagePlannerDistribution|TestInstallBootstrapBinaryPathBudget|TestInstallRecoveryGuidanceAndContextLimit)$'` はGREEN（exit 0）。gofmt・diffcheckを確認した。全package・race・vet・live・commit・Issue／PR操作は実装担当から実施していない。
+
+親から受領したfinal1643cccの結果は `/Users/const/sori883/ai-dd-validation/hook-reliability-169/final-1643ccc/results.json`。all/raceは上記の旧説明位置assertだけがfail、vet/tidy/format/diff/storage-integration/flow-journey/distribution-journeyはpassだった。次の実機証拠は1643ccc時点のものであり、後続headへ付け替えない。
+
+- Bashの正常／非zero／poll正常／poll非zeroの4caseは207.43秒で全pass。`basic-assessment-1643ccc.json`。
+- extraは収集専用の意図したexit 1。実failed patchの終端errorにPostはなく、Stop後もToolを保持。同時読取り2要求は一方がdenyされ、先行操作のPostでclear。`extra-assessment-1643ccc.json`。
+- 通常wrapperなしでもfailed patch後に終了確認してrecoverし、次のprintfが成功。`normal-observation-1643ccc/execution.json` はexit 0、69.86秒、Intent state hashは前後同一。
+
+上記assessment・normal-observationは同じ `/Users/const/sori883/ai-dd-validation/hook-reliability-169/` 配下。担当初期化はユーザー回答待ちで未実施、native子報告の実機も未実施で、①②全完了とは判定しない。③は調査済み。差分安定後の全体finalは親が再開する。極端に長いbinary pathのinstall前サイズ検査欠落はbaselineからの既存課題で、今回悪化しておらず別改善として扱う。
