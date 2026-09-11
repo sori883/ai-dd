@@ -33,3 +33,28 @@ func TestGitIndependentFixture(t *testing.T) {
 		t.Fatal("accepted invalid SHA")
 	}
 }
+
+func TestGitIndependentFixtureReservation(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw, unit string
+		wantError       bool
+	}{
+		{"found", `[{"assignment_id":"reservation-b","unit":"b"},{"assignment_id":"reservation-a","unit":"a","run_id":"run-a"}]`, "a", false},
+		{"missing", `[{"assignment_id":"reservation-b","unit":"b"}]`, "a", true},
+		{"empty", `[]`, "a", true},
+		{"invalid", `{`, "a", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := gitIndependentReservation([]byte(tc.raw), tc.unit)
+			if tc.wantError {
+				if err == nil {
+					t.Fatal("missing or invalid reservation accepted")
+				}
+				return
+			}
+			if err != nil || got.ID != "reservation-a" || got.RunID != "run-a" {
+				t.Fatalf("public assignment list selection: %+v %v", got, err)
+			}
+		})
+	}
+}

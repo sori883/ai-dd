@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/sori883/ai-dd/src/internal/assignment"
 	"regexp"
 	"strings"
 )
@@ -32,4 +33,17 @@ func gitIndependentResult(step, stage, sha string, units []string, command, outp
 		runs = append(runs, run)
 	}
 	return json.Marshal(map[string]any{"step_id": step, "stage": stage, "verification_scope": "intent", "verification_sha256": sha, "runs": runs})
+}
+
+func gitIndependentReservation(raw []byte, unit string) (assignment.Reservation, error) {
+	var records []assignment.Reservation
+	if err := json.Unmarshal(raw, &records); err != nil {
+		return assignment.Reservation{}, err
+	}
+	for _, record := range records {
+		if record.Unit == unit {
+			return record, nil
+		}
+	}
+	return assignment.Reservation{}, fmt.Errorf("assignment list has no reservation for Unit %q", unit)
 }

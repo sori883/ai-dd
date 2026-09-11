@@ -145,7 +145,7 @@ func runGitIndependentBoundaryJourney(t *testing.T, binary, root string, units b
 	boundaryFixtureDocument(t, root, st.ID, "ImplementationPlan")
 	call("begin")
 	config.Plan = "Implement Add using a failing example then verification"
-	config.Tests = []string{"go test -run ^TestAdd$"}
+	config.Tests = []string{"go test -count=1 -run ^TestAdd$"}
 	call("configure", "--file", writeRequest("config.json", config))
 	review("pass")
 	st = f.finish(st)
@@ -195,7 +195,7 @@ func runGitIndependentBoundaryJourney(t *testing.T, binary, root string, units b
 		green = runMinimalProcess(t, root, "go", "test", "-count=1", "-run", "^TestAdd$")
 	}
 	call("configure", "--file", writeRequest("config.json", config))
-	config.TestResults = []string{boundaryFixtureResults(t, root, st.CurrentStepID, "tdd", "", config.Tests, green)}
+	config.TestResults = append(config.TestResults, boundaryFixtureResults(t, root, st.CurrentStepID, "tdd", "", config.Tests, green))
 	call("configure", "--file", writeRequest("config.json", config))
 	review("pass")
 	st = f.finish(st)

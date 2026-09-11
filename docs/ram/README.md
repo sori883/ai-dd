@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [Gitなし一周fixtureの公開出力処理を修復](decisions/2026-09-11-git-independent-journey-fixture-repair.md): Issue #171。assignment list配列処理とUnit欠落検出、実行commandとの一致、Unit結果の保持を修正。小helperとtagged compile確認、一周は親finalで再実行。
+
 - [Git不要化finalのfixture・help修復](decisions/2026-09-11-git-independent-final-fixture-repair.md): Issue #171。schema期待・不正入力生成を修正し、集合SHAのhelp回帰とKnowledge例を復元。targeted成功、全体finalは再実行待ち。
 
 - [Git不要化の独立レビュー指摘を修復](decisions/2026-09-11-git-independent-review-repair.md): Issue #171。現在stepのUnit結果・出力をTargetと受入証拠へ含め、旧承認の失効を確認。README・開発手順を通常rootと集合SHAへ整合。

@@ -72,15 +72,9 @@ func runGitIndependentUnits(t *testing.T, binary, root string, st *flow.State, c
 	for _, unit := range []string{"a", "b"} {
 		claim := flow.UnitRequest{StepID: st.CurrentStepID, Unit: unit, Root: root, Session: "worker-" + unit, CoordinatorSession: "main", RegistryEpoch: registry.Epoch, RequestID: "claim-" + unit}
 		update("unit", "claim", claim)
-		var records assignment.Registry
-		if err := json.Unmarshal(runMinimalCLI(t, binary, root, nil, "assignment", "list"), &records); err != nil {
+		reservation, err := gitIndependentReservation(runMinimalCLI(t, binary, root, nil, "assignment", "list"), unit)
+		if err != nil {
 			t.Fatal(err)
-		}
-		var reservation assignment.Reservation
-		for _, v := range records.Reservations {
-			if v.Unit == unit {
-				reservation = v
-			}
 		}
 		if unit == "b" {
 			writeMinimalFixture(t, filepath.Join(root, "add.go"), "package add\n// Unit B adjusts shared implementation after A is integrated.\nfunc Add(a,b int)int{return b+a}\n")
