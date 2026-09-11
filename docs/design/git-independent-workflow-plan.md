@@ -151,7 +151,7 @@ flowはschema 6、assignmentはschema 2とする。これらは新形式の識�
 - Unit・割当・レビュー: `src/internal/flow/unit.go`、`reassign.go`、`assignment.go`、`review.go`、`src/internal/assignment/reservation.go`、`store.go` と関連テスト。
 - CLI接続とhook: `src/internal/minimal/child_hook.go`、`agent_hook.go`、`hook.go`、`session.go` の該当箇所。SHA取得は読み取りとして扱い、承認・担当制限を維持する。
 - 配布: `src/harness/codex/minimal/aidlc-cli/SKILL.md`、必要な進行Skill、`agents/aidlc-worker.toml`、`agents/aidlc-reviewer.toml`、`src/core/workflow/stages/planning.md`、`tdd.md`、`integration.md`、`src/internal/install/` の既知配置判定・テスト。
-- 説明と一周検証: `src/docs/user-guide.md`、`docs/distribution.md`、`docs/architecture.md`、新規 `src/cmd/aidlc/git_independent_journey_integration_test.go`、新形式へ更新する既存flow/assignment/配布journeyのfixture。
+- 説明と一周検証: `README.md`、`docs/development.md`、`src/docs/user-guide.md`、`docs/distribution.md`、`docs/architecture.md`、新規 `src/cmd/aidlc/git_independent_journey_integration_test.go`、新形式へ更新する既存flow/assignment/配布journeyのfixture。
 
 旧形式の対応だけのために古いassetsの文字列を増やさない。新方式の通常配置・移転で必要な既知assetsの照合と、無関係な利用者設定の保全は維持する。製品ビルド元のcommit情報や、本リポジトリのGitHub開発手順は利用時のGit依存と区別する。
 
@@ -210,3 +210,9 @@ go test -count=1 ./src/cmd/aidlc -run '^TestGitIndependentFixture'
 今回はユーザー指定により、通常ディレクトリ、既存のローカル担当予約、集合SHAの内容照合を採用する。Gitの配置に左右されず、同じ場所で順次作業できることが理由である。影響は、Git履歴の包含証明・Git差分によるscope検査を外し、集合の内容一致と最新全体検証へ置き換えることである。Git上のチーム全体の担当権や、別の管理元同士の全体排他を新たに保証しない。
 
 Git不要化、集合SHA方式、旧記録の後方互換不要と、新CLI・schema・Unit照合を含む本計画全体を直接承認済みである。Issue #171で、G0、単独writerのTDD、独立レビュー、final、PRのchecksを経て実装する。旧記録の互換性は再度の確認事項にしない。計画作成時点では製品コードとG0実機は未着手であり、その後の証拠はIssueとRAMに追記する。
+
+## 独立レビュー後の修復範囲
+
+Issue #171の承認契約内で `git-independent-review-repair` を実施する。現在stepのUnit-scope結果も結果JSON・出力hashをTargetと受入証拠へ含め、成功要件の充足だけを該当scopeへ限定する。過去のUnit SHAへ現在SHAの永続一致を要求しない。`TestResults` に列挙しただけの過去step証拠を現在stepの証拠へ混ぜず、accepted入力として参照する過去成果の既存検査は維持する。
+
+現行入口であるREADMEと開発手順のGit必須・別root必須・commit入力を新契約へ揃える。担当は `boundary_end.go` と対応回帰、README、開発手順、本計画、修復RAMと索引を所有する。P1のtargeted commandは `go test -count=1 ./src/internal/flow -run '^TestVerificationGatesUnitEvidence$'`、P2は文書差分の確認とする。

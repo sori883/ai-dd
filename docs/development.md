@@ -1,6 +1,7 @@
 # 開発と利用の手順
 
-Go 1.26以上とGitを使用します。外部Go moduleは承認済みYAML parserだけです。
+ソースからのbuildにはGo 1.26以上を使います。製品の利用にGitは不要です。
+本リポジトリの履歴管理や一部のtest host fixtureはGitを使います。外部Go moduleは承認済みYAML parserだけです。
 
 ```sh
 go build -o /tmp/aidlc ./src/cmd/aidlc
@@ -18,7 +19,8 @@ aidlc intent configure <id> --space default --expect <revision> --file config.js
 aidlc intent check <id> --space default
 ```
 
-初期化、目的整理、および選択した各段階の境界で別rootの独立read-only reviewを受けます。
+初期化、目的整理、および選択した各段階の境界で、調整役とは別sessionの独立read-only reviewを受けます。
+同じrootを使えます。別rootの場合はIntentの検証対象集合SHAが一致する必要があります。
 `intent review` のassignは担当session/rootを指定し、acceptはその担当の実報告と対象hashを受け取ります。
 修正で対象が変わったら再reviewします。実際の会話回答を `intent approval` へ記録し、`intent finish` が現在回を完了します。
 初期化→目的整理は必須です。構成分析・計画・TDD・統合検証の採否と順序は `intent plan` で提示し、
@@ -26,10 +28,24 @@ aidlc intent check <id> --space default
 待機は `intent wait --reason ... --resume-condition ...`、中断は `intent pause --reason ...`、
 再開は `intent resume --reason ...`。いずれもID、Space、期待revisionを指定します。
 
-分割時はUnitのscope/tests/依存/Bolt/base_commitを計画します。調整役AIがworkerを起動し、
-別worktreeへ割り当て、成果commitを統合します。`unit claim/result/integrate/confirm` のJSONと
-完全な操作文法は `aidlc unit claim --help` と [実行計画契約](design/intent-execution-plan-proposal.md) を参照してください。
-小さなIntentはUnit分割せず、直接実装の受入・検証・結果commitを定義できます。
+Intentの `verification_paths` に、検証へ影響するソース・テスト・設定・共通部品をproject相対パスで指定します。
+編集の担当範囲 `scope` とは区別し、TDDとintegrationでは非空の集合が必須です。
+分割時はUnitのscope/tests/依存/Boltを計画します。Unitの `verification_paths` は省略するとIntentの集合を使い、
+個別指定する場合もIntentの集合内に含めます。同じrootの順次作業を許可し、同一・親子rootの重複workerを拒否します。
+独立した別の通常フォルダを使う場合は並列化できます。
+
+`intent hash ID --space SPACE` でSHAを取得し、実テストの前後で一致を確認します。
+結果JSONは `aidlc/evidence/` 等へ保存し、現在step_id、stage、verification_scope、verification_sha256、runsを記録します。
+runsにはUnitがある場合のunit_id、command、exit_code、非空出力のoutput_pathが必要です。
+Unitの `result` はunit-scope結果のunit_id/run_idと担当session/root、その時点のSHAを確認します。
+`integrate` は管理元の同じ検証集合が提出SHAと一致することを確認する操作です。別rootの成果ファイルを反映する作業は担当側で行います。
+後続Unitによる変更で過去のintegrated状態を戻さず、現在の全体SHAで各Unitとコマンドのテストを行ってからレビューします。
+現在stepのUnit結果JSON・出力もレビュー対象なので、内容が変わると以前のレビュー・成果承認は利用できません。
+小さなIntentはUnitなしで同じ全体検証を行えます。
+完全なJSONと文法は `aidlc intent configure --help`、`aidlc intent hash --help`、`aidlc unit result --help` を参照してください。
+
+新方式は新規配置・新規Intentで開始します。flow schema 6・assignment schema 2を使い、旧記録の互換読込み・変換や併用は行いません。
+既存ファイルを自動削除するものではありません。
 
 Knowledgeは現行の仕様と手順、ADRは判断理由です。Concept IDは拡張子なしです。
 
@@ -60,13 +76,14 @@ go test -count=1 ./src/cmd/aidlc -run '^TestFlowCommand'
 以下は親のfinalで実行するfresh配布の一周です。非live fixtureと実AIの証拠を区別します。
 
 ```sh
-go test -tags=integration -count=1 ./src/cmd/aidlc -run '^TestFlowJourney$'
+go test -tags=integration -count=1 ./src/cmd/aidlc -run '^(TestFlowJourney|TestGitIndependentJourney)$'
 AIDLC_FLOW_LIVE=1 go test -tags=integration -v -count=1 -timeout=50m ./src/cmd/aidlc -run '^TestFlowJourneyLive$'
 ```
 
 liveはCodex CLI 0.153.4、gpt-6-astra/medium、workspace-write、approval=neverを使用します。
 HOME/CODEX_HOMEや認証を変更しません。fixtureのtrust mapをCLI引数で渡し、検査済みhookだけを実行します。
-固定sandboxのGit制約によりtest hostがfixtureのworktree作成・検証bytesのcommit・統合を行います。
+既存live fixtureでは固定sandboxの制約によりtest hostがworktree作成・検証bytesのcommit・統合を行います。
+これはtest hostの準備・転送方法であり、製品の利用条件ではありません。TestGitIndependentJourneyはGitなしの通常フォルダと製品PATHで検証します。
 AIによるGit操作成功とは報告しません。調整役AIは実CLIのstate・割当・review・approval・finishを担当し、
 workerは実編集と実test、reviewerは独立read-only会話で固定対象をレビューします。
 
@@ -90,7 +107,7 @@ go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestOperations'
 複数Intent、別session再開、Git clone引継ぎ、同revision並列更新、Unit割当競合、
 実filesystem保存障害と復旧、Git競合の明示解消を一時fixtureで検証します。
 実CLIのstdout/stderr/exit、保存stateのhash/revisionと文書bytesを比較します。Git操作はtest runnerが行い、
-実AIによる運用完走の証拠とは区別します。権限障害が効かない環境では成功やskipにせず失敗します。
+製品のGit必須条件や実AIによる運用完走の証拠とは区別します。権限障害が効かない環境では成功やskipにせず失敗します。
 
 Git cloneはstate・Knowledge・ADRを保持しますが、runtimeの会話・worker/reviewer割当は共有しません。
 新sessionでIntentを選択して再開しても、旧Unitのconfirmや旧reviewのacceptをそのまま引き継げません。
@@ -99,7 +116,7 @@ Git cloneはstate・Knowledge・ADRを保持しますが、runtimeの会話・wo
 Knowledgeの「Concept saved; bookkeeping failed」は本文保存済みの部分失敗です。返却hashとshowで確認し、
 索引障害を取り除いた後、明示した内容またはmetadata変更を現在hashで保存し補助索引を更新します。
 
-## 別cloneへの配置移転と担当の再割当
+## 別フォルダへの配置移転と担当の再割当
 
 日常運用検証で記録した旧path・runtime非共有の制約には、次の明示操作を追加しました。
 移転先AIの開始前に端末で実行します。旧pathは存在不要ですが配置済み参照と一致する絶対pathが必要です。
@@ -115,8 +132,8 @@ Pathsは更新済み、Pendingは未処理です。部分失敗は同じ引数�
 新ROOT/.codex/hooks.jsonの絶対pathを確認し、利用者がCodex hook trustを確認します。trust/認証は自動変更しません。
 
 reassignは旧処理の終了を確認してから使います。runningならpause/resumeを経てneeds_confirmationにし、
-新しい実在worktree/session、現在HEAD、reason、previous_run_stopped=trueを指定します。遠隔processは停止しません。
-新runで再テストしてresult/integrateし、レビューを新root/sessionと現在targetで受け直します。
+新しい実在root/session、reason、previous_run_stopped=trueを指定します。rootは通常フォルダで、管理元と同じ場所も使えます。遠隔processは停止しません。
+新runでSHAを計算して再テストし、result/integrateします。レビューは別sessionと現在targetで受け直し、同じrootを使えます。
 保存途中は同じexpect/JSONで再試行し、すでにrunningなら現在state/assignmentを確認します。
 
 ```sh
@@ -244,7 +261,7 @@ Entry・文書宣言・実測JSON・Unit要求には実際のstep_idを用い、
 ## native担当と作業場所の予約
 
 メインAIが標準の`spawn_agent`で担当を起動します。CLIは起動しません。現在の担当一覧は`intent procedure`で確認します。
-workerには、管理root全体で共通の`assignment`予約を先に作ります。別Space・別Intent・別会話でも同じ実worktreeを二重に予約できません。
+workerには、管理root全体で共通の`assignment`予約を先に作ります。別Space・別Intent・別会話でも同一・親子rootを二重に予約できません。rootのsymlink別名は正規化して扱います。
 登録rootと実childの実行rootが一致することや、OS上の全process停止までを保証する仕組みではありません。
 
 人間が既知の作業と残存処理を整理したことを確認してから、`assignment init --file INIT.json`を実行します。
@@ -252,8 +269,8 @@ workerには、管理root全体で共通の`assignment`予約を先に作りま�
 Unitなしでは、開始Sensorと承認を満たしたIntentに`assignment reserve ID --space SPACE --session MAIN --expect REV --file RESERVE.json`を使います。
 JSONの`registry_epoch/request_id/step_id/agent/root/session`は`assignment reserve --help`の例に従います。
 Unitありは`unit claim`のJSONへ`registry_epoch/request_id/coordinator_session`を追加します。
-rootは既存の別Git top-levelを指定します。Unitのbase/依存検査は従来どおり、UnitなしはIntentの`config.code_revision`を含む履歴を要求します。
-同じ`.git`やremote URLの一致は要求せず、共有履歴を持つcloneを使用できます。
+rootは既存の通常ディレクトリを指定し、管理元と同じ場所も使えます。Unitは依存Unitのintegrated状態を確認します。
+Git履歴やremote URLは割当条件に含みません。同じrootのworkerは停止確認と明示解放を経て順次割り当てます。
 
 `assignment list/show`の`task_name`と`agent`をnative spawnへ渡します。`fork_turns`が提供される場合は`none`にし、Ruleと必要な資料を渡します。
 追加依頼前に`assignment check ASSIGNMENT`を実行し、応答確認済みの相対`task_name`を使います。
@@ -266,8 +283,8 @@ registryは`aidlc/.runtime/assignments/registry.json`に置き、Gitで共有し
 復元不能な場合だけ人間の確認を記録し、`assignment reset --help`に従って元epoch/hashまたは欠落・破損診断を指定します。
 resetは新epochを発行し、読める旧記録を保管します。古い要求は拒否されます。reset自体はworkerを停止しません。
 
-既設へ導入するときは、既知の子と処理の終了を確認し、現在binary/hooks/skills/定義とruntimeを保管します。
-別の一時配置へfresh installして資材を比較し、対応する製品資材だけを明示的に置換してください。利用者のRule・Knowledgeは置換しません。
+候補は隔離した新規配置で確認し、新旧の進行中stateを共有しません。既存環境のbinary/hooks/skills/定義とruntimeを保管し、利用者のRule・Knowledgeを置換しません。
+現在形式の通常移転では、既知の子と処理の終了を確認してから上記relocate手順を使います。
 新しいhooksの絶対pathと通常のCodex trustを確認し、許可/拒否の対照を取ります。実際の利用先への適用はリポジトリ開発とは別作業です。
 旧matcherのrelocateは参照を移すだけで担当保護を追加しません。未知編集は自動上書きしません。
 定義hashが変わるため、旧Intentは旧定義と対応版で扱うか、旧作業と成果を確認して新Intentへ新規claimします。旧Unitへ予約を後付けしません。

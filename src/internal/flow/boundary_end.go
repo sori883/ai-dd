@@ -227,7 +227,7 @@ func (c *boundaryCollector) verificationResults(st State, sha, unit, runID strin
 		decoder := json.NewDecoder(bytes.NewReader(raw))
 		decoder.DisallowUnknownFields()
 		var result resultDocument
-		if !utf8.Valid(raw) || uniqueJSON(json.NewDecoder(bytes.NewReader(raw))) != nil || decoder.Decode(&result) != nil || decoder.Decode(new(any)) != io.EOF || !validHash(result.VerificationSHA256) || (result.VerificationScope != "intent" && result.VerificationScope != "unit") || len(result.Runs) == 0 {
+		if !utf8.Valid(raw) || uniqueJSON(json.NewDecoder(bytes.NewReader(raw))) != nil || decoder.Decode(&result) != nil || decoder.Decode(new(any)) != io.EOF || !validHash(result.VerificationSHA256) || (result.VerificationScope != "intent" && result.VerificationScope != "unit") || len(result.Runs) == 0 || (result.Stage != "tdd" && result.Stage != "integration") {
 			c.require(false, "invalid test results JSON: "+name)
 			continue
 		}
@@ -263,7 +263,7 @@ func (c *boundaryCollector) verificationResults(st State, sha, unit, runID strin
 				successes[requirement] = true
 			}
 		}
-		if relevant {
+		if current {
 			c.files = append(c.files, record.files...)
 			for _, version := range record.files {
 				c.recordProof(version)

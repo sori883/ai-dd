@@ -109,3 +109,22 @@ func TestVerificationResultsUnit(t *testing.T) {
 		})
 	}
 }
+
+func TestVerificationResultsStageValidity(t *testing.T) {
+	for _, stage := range []string{"initialization", "discovery", "planning"} {
+		t.Run(stage, func(t *testing.T) {
+			s, st, a, b := resultPairFixture(t)
+			one := successfulRun(t, s, "go test", a, "aidlc/evidence/a.txt")
+			two := successfulRun(t, s, "go test", b, "aidlc/evidence/b.txt")
+			writeResultRuns(t, s, st.Config.TestResults[0], "tdd", one, two)
+			other := "aidlc/evidence/other.json"
+			writeResultRuns(t, s, other, stage, one)
+			st.Config.TestResults = append(st.Config.TestResults, other)
+			c := boundaryCollector{store: s}
+			c.results(st)
+			if len(c.failures) == 0 {
+				t.Fatal("non-test stage result accepted")
+			}
+		})
+	}
+}
