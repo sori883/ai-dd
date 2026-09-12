@@ -110,21 +110,25 @@ func run(args []string, in io.Reader, out, errout io.Writer) int {
 		return 1
 	}
 
+	var previous []byte
+	if baseline != "" {
+		previous, err = readRegularFile(baseline)
+		if err != nil {
+			fmt.Fprintf(errout, "baseline %q の処理に失敗しました: %v\n", baseline, err)
+			return 1
+		}
+	}
 	report, err := naturaljapanese.Check(string(raw), files[0], genre)
 	if err != nil {
 		fmt.Fprintf(errout, "解析に失敗しました: %v\n", err)
 		return 1
 	}
 	if baseline != "" {
-		var previous []byte
-		previous, err = readRegularFile(baseline)
-		if err == nil {
-			report, err = naturaljapanese.Compare(report, previous)
+		report, err = naturaljapanese.Compare(report, previous)
+		if err != nil {
+			fmt.Fprintf(errout, "baseline %q の処理に失敗しました: %v\n", baseline, err)
+			return 1
 		}
-	}
-	if err != nil {
-		fmt.Fprintf(errout, "baseline %q の処理に失敗しました: %v\n", baseline, err)
-		return 1
 	}
 	if jsonOutput {
 		if err := json.NewEncoder(out).Encode(report); err != nil {

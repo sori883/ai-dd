@@ -28,9 +28,8 @@ func TestCommandFIFO(t *testing.T) {
 			if err := syscall.Mkfifo(path, 0600); err != nil {
 				t.Fatal(err)
 			}
-			// This bounds a blocked FIFO read, not command performance: baseline
-			// validation also starts a process and initializes the dictionary,
-			// which takes longer under the race detector and concurrent tests.
+			// Bound a blocked FIFO read while allowing process startup under
+			// the race detector. Both inputs must be rejected before analysis.
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCommandFIFO$")

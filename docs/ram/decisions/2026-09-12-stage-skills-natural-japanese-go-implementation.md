@@ -62,6 +62,12 @@ FILEとbaselineは開く前と開いた後に通常ファイルかを調べ、Un
 testだけを30秒の有限待機へ直し、writerのないFIFOが停止したままなら失敗する条件、exit 1、標準出力なしを維持した。
 製品処理は変更していない。対象testを確認し、再review後の新headでfinalをやり直す。
 
+その後、ローカルの全finalと限定Codex実測は成功したが、PR #180のGo 1.26.x raceでは同ケースが30秒を超えた。
+時間制限の変更だけでは不十分だったため、FILEの読込み・UTF-8確認後にbaselineを先に読み、通常ファイルかを
+検査してから形態素解析へ進むよう修正した。使えない比較ファイルを拒否するための辞書初期化が不要になる。
+比較結果・終了code・標準出力とエラーの意味は維持し、testの期限はさらに広げていない。
+この実CI失敗をREDの根拠として保全し、対象test・再review・新headのfinalとCIで確認する。
+
 独立コードreview、read-only final、固定Codex 0.153.4の実測、GitHub checksの結果は、
 Issue #179に紐づくPRと検証記録へ保存する。実Codex fixtureは既存の試験用trust helperを使い、
 通常利用者のhook trustや全OSの全経路を確認したとは扱わない。
