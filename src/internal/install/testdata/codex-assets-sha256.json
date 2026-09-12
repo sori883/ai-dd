@@ -1,0 +1,347 @@
+[
+  {
+    "path": ".agents/skills/aidlc-architecture/LICENSE",
+    "sha256": "e6a0144d74a677125e425b88d863d581ebc62a34fca09621070d2e089c9f041b",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-architecture/SKILL.md",
+    "sha256": "3eb90a1e9a535710261eb4ae7c159ab84ae2f1fd87704d6c71043027c1f555cb",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-architecture/references/source.md",
+    "sha256": "d3f9bd39f4aa4936b91367404f6cb2ce943d2d5537cee0504adef18489c700c4",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-cli/SKILL.md",
+    "sha256": "b14e4e28f6569c9a342dc7ff7828a02305837950b9e27ba382614e489e9a2649",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-code-review/LICENSE",
+    "sha256": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-code-review/SKILL.md",
+    "sha256": "344098465270750dc7973d8e41af05b1bc0b295eb21eb7ccb0d32a0bc0e58238",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-code-review/references/review.md",
+    "sha256": "816b893bc774b1705ea5252745b76ff630c6cfc40e8a6d76e83f55798bb3b9c7",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-code-review/references/source.md",
+    "sha256": "cc7e0e0aadaba23b0de5ff136e7121537bde2bda6caa2bd886512d83b6821438",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-domain-modeling/LICENSE",
+    "sha256": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-domain-modeling/SKILL.md",
+    "sha256": "e3778352bd2bb981012a9a75ab07e4882b5c916a8eb865ce88e03ae9bdc0679c",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-domain-modeling/references/source.md",
+    "sha256": "979ca23a5774ad34008d41e300453dca943be8905d03eaf2eb70c07749b55c9f",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-grill-with-docs/LICENSE",
+    "sha256": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-grill-with-docs/SKILL.md",
+    "sha256": "fe9c35c4513a3825b5ac2421bc0807a83d087a39ea2a3fef2e006d48a0acfb98",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-grill-with-docs/references/source.md",
+    "sha256": "f2380bf71d527ee06ddcc62cd91d255f6a7b040d97cf3dc6c2a04778a1425d90",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-grilling/LICENSE",
+    "sha256": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-grilling/SKILL.md",
+    "sha256": "60d027504942aa91e320100af6150c17fb251afedfb312b09e91253e71f31235",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-grilling/references/source.md",
+    "sha256": "aa39383295a2bacdef8a4a350aaf3bf1e99860c50de6340c75d098f3d130b7b0",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-okf/SKILL.md",
+    "sha256": "5ba2889f0d8d20d700b5c1401c76e4f5fb13d345dd84bf5711c57eb1fda21b8a",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-planning/LICENSE",
+    "sha256": "81ac64b19ea7ae7f9a8d197705df58f48ffca02c74fca13e565dedf4f7595b46",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-planning/SKILL.md",
+    "sha256": "04df66fa375d7dcff250ac41e849f7b3023b76848dd2a1405c2bbcee883f8f78",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-planning/references/handoff.md",
+    "sha256": "fe543bd8d4101eba3203f08f9459995aee750c107184e5a0ee7c4b4d2ec929f7",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-planning/references/source.md",
+    "sha256": "dd0a4354d10e56d79e29f013ed0ddb301c54de140d925db04b7ef2bda9413250",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-research/LICENSE",
+    "sha256": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-research/SKILL.md",
+    "sha256": "21abc78c234b5acde0330399711ac04444025ca5357bfb2dd992108a20824226",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-research/references/source.md",
+    "sha256": "c844526d5881d6a31977e0a31831f7876c3ab2d02ccee099d6ebb8a18bae88ff",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-systematic-debugging/LICENSE",
+    "sha256": "a37e0e9697144819e1d965176ac4ae5bc3fa02d11e7812036bbcadf6dafe2400",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-systematic-debugging/SKILL.md",
+    "sha256": "e8e495dd77069daab44aeff082710be0aa75e7bcfb14e64e0697f07968d566d1",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-systematic-debugging/references/source.md",
+    "sha256": "7769d534981197492ebaab106df1dcd1150d0d53a31c12a4cf84b8e300a1c567",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-tdd/LICENSE",
+    "sha256": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-tdd/SKILL.md",
+    "sha256": "ff7d4c5006206257989ca4ab6415ce4e4805e9c112b23f20a0debca7f896cf08",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-tdd/references/source.md",
+    "sha256": "c5522b237190c262f852ffda9aaf86fdd57aa7ca5bce9c0d12ffd3a972ff596e",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-tdd/references/testing.md",
+    "sha256": "4d0ad265bab2abf0c069c226a072450e50d021bac7f91dde28b903f3172de1db",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-to-spec/LICENSE",
+    "sha256": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-to-spec/SKILL.md",
+    "sha256": "fec57b6bb400b67b8dd56d61637a623062b298f2444a4e40634258974f7cae30",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-to-spec/references/source.md",
+    "sha256": "a622ed298f706747e1bb0e990200d2222b7c7c02acfcbf9f0bcfef886270881b",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-verification-before-completion/LICENSE",
+    "sha256": "a37e0e9697144819e1d965176ac4ae5bc3fa02d11e7812036bbcadf6dafe2400",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-verification-before-completion/SKILL.md",
+    "sha256": "627432e651ca6e1835534d1a31a60d3d5985b332271b213bdb4432c68de907ae",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc-verification-before-completion/references/source.md",
+    "sha256": "46df312ccef2ea8c084a42892e332f51b5747e5485cd17f0f49aa18fcd6c3dc6",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/aidlc/SKILL.md",
+    "sha256": "d37cc096b219e8889fca4baa9dd818dbda22118d996e16e83e85253dc12e7701",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/natural-japanese-go/LICENSE",
+    "sha256": "fb3dd814f7b2807de2a812446c61643cf235e731bbf8cf908c0a5962d8917121",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/natural-japanese-go/SKILL.md",
+    "sha256": "b1ad89292724a0ff3a3cf8ff47c28d534c0091a64d4cc1a6d02317c1ea988840",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/natural-japanese-go/licenses/UniDic-NOTICE.txt",
+    "sha256": "33a66246d5d783e96127d5647a76b43f4ce22e0ece682bca1a4d735249e4f837",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/natural-japanese-go/licenses/kagome-dict.txt",
+    "sha256": "ccfac66a4f6d014978e36d7a62cf8d2546b11226db9492a2edaacc7aba204a8f",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/natural-japanese-go/licenses/kagome.txt",
+    "sha256": "6a004a9f1c6e57225e074a978c26694ff1eb082dedd01f7d617cbd7b08903b38",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/natural-japanese-go/licenses/natural-japanese.txt",
+    "sha256": "fb3dd814f7b2807de2a812446c61643cf235e731bbf8cf908c0a5962d8917121",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/natural-japanese-go/licenses/uni.txt",
+    "sha256": "6a004a9f1c6e57225e074a978c26694ff1eb082dedd01f7d617cbd7b08903b38",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/natural-japanese-go/references/cli.md",
+    "sha256": "380e087d96902936fb3fa1ce7c5a56c93686168339be2c679f0028705da2dd5d",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/natural-japanese-go/references/source.md",
+    "sha256": "dd0d8c8f568da81c0acec5a9d9c8ac4005553be5a5fa6f309280a13aa638ef48",
+    "mode": 420
+  },
+  {
+    "path": ".agents/skills/natural-japanese-go/references/writing.md",
+    "sha256": "bb1b24370b4c117c397b9e18ee050b3bbd81dbca1bf534b57d03653877b10095",
+    "mode": 420
+  },
+  {
+    "path": ".codex/agents/aidlc-requirements.toml",
+    "sha256": "75bc1d271e771f00414695004a8b752ecc03fbf10c6c36fcafb81fcba9c4b14e",
+    "mode": 420
+  },
+  {
+    "path": ".codex/agents/aidlc-researcher.toml",
+    "sha256": "53df12eaf57ed800e679facaf6e1bfab7a3af4033310071041aa607077164e42",
+    "mode": 420
+  },
+  {
+    "path": ".codex/agents/aidlc-reviewer.toml",
+    "sha256": "f09d57b842bba1abaf1f9cc4dcc91e230a4c90ccecdd3fa83d33aab3e22a70b8",
+    "mode": 420
+  },
+  {
+    "path": ".codex/agents/aidlc-stage-planner.toml",
+    "sha256": "0947b2f119a1841665b14449160bb0d432f8e96d1bc8c3d4930cc2a40de4cc0c",
+    "mode": 420
+  },
+  {
+    "path": ".codex/agents/aidlc-worker.toml",
+    "sha256": "659dd5d81f5b1b6a25a8f3ed397d77d330a2b46acc2cd464ec8779500b9771cd",
+    "mode": 420
+  },
+  {
+    "path": ".codex/hooks.json",
+    "sha256": "da31304700c91120062742b3ae93270f22681cab066d79fc8686f529552488f2",
+    "mode": 420
+  },
+  {
+    "path": "aidlc/spaces/default/knowledge/adr/index.md",
+    "sha256": "57cf7eb43a8e5addcb2ccd1ea036128a3cf3c03a276810f4ade0d49d4f9b6925",
+    "mode": 420
+  },
+  {
+    "path": "aidlc/spaces/default/knowledge/codekb/index.md",
+    "sha256": "eb9ab63dc04b9099f6a3723bf8216dcf110d9b207c3d9d96c13f915caabf61db",
+    "mode": 420
+  },
+  {
+    "path": "aidlc/spaces/default/knowledge/design/index.md",
+    "sha256": "eb9ab63dc04b9099f6a3723bf8216dcf110d9b207c3d9d96c13f915caabf61db",
+    "mode": 420
+  },
+  {
+    "path": "aidlc/spaces/default/knowledge/index.md",
+    "sha256": "0b9345813b14f5a0a65d63ab47929a8e5e1041166221b6eb200d0e8dec272c72",
+    "mode": 420
+  },
+  {
+    "path": "aidlc/spaces/default/knowledge/rules/entry.md",
+    "sha256": "c087051500207624c811cba3490fe1f660ab51049669953bdb0717808ac3af08",
+    "mode": 420
+  },
+  {
+    "path": "aidlc/spaces/default/knowledge/rules/rule.md",
+    "sha256": "19426899ca50179799fa9716e282025ae399354857d11a81f1885bbbb410a725",
+    "mode": 420
+  },
+  {
+    "path": "aidlc/templates/adr.md",
+    "sha256": "996d74febf54a083878918d2ffe31e66d6304a8c38c841523e022dd74df6d707",
+    "mode": 420
+  },
+  {
+    "path": "aidlc/workflow/stage-graph.json",
+    "sha256": "dbc9b36e9db7fa06b314a135e1b0c0e4b89b136d8e7e4bad99bd4fec67289825",
+    "mode": 420
+  },
+  {
+    "path": "aidlc/workflow/stages/architecture-analysis.md",
+    "sha256": "2fb41f0f1f68b968e2a253f4f46fb81f144333d81d26aa80e15b6653bfab76ec",
+    "mode": 420
+  },
+  {
+    "path": "aidlc/workflow/stages/discovery.md",
+    "sha256": "88f2f475502da38570246c3a8a64084997ad68834e3f6d82b85c91ef6dd2e2b7",
+    "mode": 420
+  },
+  {
+    "path": "aidlc/workflow/stages/initialization.md",
+    "sha256": "739a094062a4e3b6c2ad18d666e4a692e0dde7bc70fa24f5d4f6ccbdc2304117",
+    "mode": 420
+  },
+  {
+    "path": "aidlc/workflow/stages/integration.md",
+    "sha256": "0280fd52f54acb453e9724395f23adc845df4e1a860e6d8e7cdbd0caaabd6e67",
+    "mode": 420
+  },
+  {
+    "path": "aidlc/workflow/stages/planning.md",
+    "sha256": "6c88e1bad5efde8fd31e394b68c8ca8848795cd2ff1de456f0b539852a74cc60",
+    "mode": 420
+  },
+  {
+    "path": "aidlc/workflow/stages/tdd.md",
+    "sha256": "d4cbd057cb21e795eb6846dbe4be102c0120d48e283e02a7a1804bec9a19b6a6",
+    "mode": 420
+  }
+]
