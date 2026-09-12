@@ -120,13 +120,14 @@ aidlc/
 Knowledgeには「現在、何をどう行うか」、ADRにはアーキテクチャの判断について「なぜそうしたか」を残します。
 ADRは必要な判断ごとに作り、`intent_id`でIntentへ対応付けます。操作ごとの日誌や、Intentごとの一律ADRは要求しません。
 進捗はstateと状態変更履歴に保存し、工程を戻す理由はwork-logに記録します。
-`rule.md`は利用プロジェクトの共通ルールです。AI-DLC自体の操作手順は、配置された`aidlc`と`aidlc-cli`のSkillにあります。
+`rule.md`は利用プロジェクトの共通ルールです。AI-DLC自体の操作手順は、配置された`aidlc`が進行と承認、`aidlc-cli`が操作選択と文書宣言、`aidlc-okf`が知識の検索・保存を案内します。
 このリポジトリの`docs/ram/`は製品開発側の意思決定記録で、利用プロジェクトのKnowledgeとは別です。
 
 文書はOKFのmetadataを持つMarkdownです。AIが本文を用意し、`memory create`／`memory update`で保存します。
 frontmatterはCLIが引数から揃え、日時も自動設定します。ADRのtypeは小文字の`adr`です。
 検索対象は選択SpaceのKnowledge配下です。title・description・tagsを検索語で探し、
-`--intent-id`で関連するIntentに絞れます。本文は`memory show`で読みます。
+`--intent-id`で関連するIntentに完全一致で絞れます。共有知識を探すときはこの条件を外します。本文は`memory show`で読みます。
+保存前に既存知識を検索し、現行Knowledgeを更新します。新しい設計判断は現在Intentの新規ADRへ残し、過去の判断理由を消しません。
 共有文書の日付やIntent IDは、Sensorを通すためだけに書き換えません。
 
 ## 現在地の確認と再開

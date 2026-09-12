@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [AI-DLCに合わせたOKF専用skillを追加](decisions/2026-09-12-aidlc-okf-skill-approved.md): Issue #177の直接作成依頼。aidlc-okfへ知識の検索・保存手順を分離し、配布・移転・既存gate内の読込みへ接続。単独writerのTDDと親の末尾確認は成功、独立review/finalは後続gate。[具体計画](../design/aidlc-okf-skill-plan.md)。
+
 - [workerの通常フォルダ・順次実装を明記](decisions/2026-09-12-worker-root-guidance-repair.md): 指定された元checkoutの旧worktree前提を補正し、現行配布原稿にも既存方針を明記する直接依頼。descriptionと他の未commit変更を保全する。
 
 - [製品のminimal名称を取り除く](decisions/2026-09-12-product-naming-cleanup-approved.md): 原稿のcore/Codex直下配置、内部app package、`__hook`への改名を直接承認。配置と保存形式を保ち、旧hook別名は追加しない。[具体計画](../design/product-naming-cleanup-plan.md)。

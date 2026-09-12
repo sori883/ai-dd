@@ -52,7 +52,7 @@ func TestRelocateReferences(t *testing.T) {
 	old, _ := json.Marshal(shellQuote(oldBinary) + " __hook --project-dir " + shellQuote(oldRoot))
 	new, _ := json.Marshal(shellQuote("/new/aidlc") + " __hook --project-dir " + shellQuote(root))
 	want := bytes.ReplaceAll(raw, old, new)
-	if !bytes.Equal(got, want) || len(result.Paths) != 3 {
+	if !bytes.Equal(got, want) || len(result.Paths) != 4 {
 		t.Fatalf("references not relocated: paths=%v\n%s", result.Paths, got)
 	}
 	skill, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/SKILL.md"))
@@ -120,7 +120,7 @@ func TestRelocatePartialAndConcurrentRetry(t *testing.T) {
 				}
 				return nil
 			})
-			if err == nil || len(result.Paths) != 2 || len(result.Pending) != 1 || result.Pending[0] != ".codex/hooks.json" {
+			if err == nil || len(result.Paths) != 3 || len(result.Pending) != 1 || result.Pending[0] != ".codex/hooks.json" {
 				t.Fatalf("partial result %+v %v", result, err)
 			}
 			if conflict && !strings.Contains(err.Error(), "concurrent asset change") {
@@ -183,5 +183,47 @@ func TestRelocateSameReferencesAndLock(t *testing.T) {
 	after, _ := os.ReadFile(filepath.Join(root, ".codex/hooks.json"))
 	if !bytes.Equal(before, after) {
 		t.Fatal("changed locked asset")
+	}
+}
+
+func TestOKFSkillRelocate(t *testing.T) {
+	t.Parallel()
+	for _, state := range []string{"known", "edited", "missing"} {
+		t.Run(state, func(t *testing.T) {
+			root, oldRoot, oldBinary := relocateFixture(t)
+			path := filepath.Join(root, ".agents/skills/aidlc-okf/SKILL.md")
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch state {
+			case "edited":
+				if err := os.WriteFile(path, append(before, []byte("user edit")...), 0644); err != nil {
+					t.Fatal(err)
+				}
+			case "missing":
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			}
+			result, err := Relocate(root, "/new/aidlc", oldRoot, oldBinary)
+			if state != "known" {
+				if err == nil || len(result.Paths) != 0 {
+					t.Fatalf("invalid skill accepted: %+v %v", result, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			after, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := bytes.ReplaceAll(before, []byte(shellQuote(oldBinary)), []byte(shellQuote("/new/aidlc")))
+			if !bytes.Equal(after, want) {
+				t.Fatal("OKF skill binary reference was not relocated")
+			}
+		})
 	}
 }

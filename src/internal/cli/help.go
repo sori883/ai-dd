@@ -77,7 +77,7 @@ func Help(args []string) (string, bool) {
 		text += "bindは現在stateと必須Rule全文を読む。--recoverは同じsession/Space/Intentで、失敗toolの終了を確認した後だけ使用する。実行中と推測して解除しない。inspectは読取りのみ。\n"
 	}
 	if key == "install/codex" {
-		text += "移転: aidlc install codex --relocate --project-dir NEW_ROOT --from-project-dir OLD_ROOT --from-binary OLD_BINARY\n新binaryは実行中のaidlc。旧pathは絶対参照文字列で存在不要。移転先AI開始前に端末から実行する。既知のaidlc/aidlc-cli両skillと製品hooksの3ファイルを事前検査し参照だけを更新する。独自hookや旧WORKFLOW、Knowledgeを保持し、旧版のupgradeを兼ねない。部分失敗はPathsが更新済み、Pendingが未処理。全件再検査する同じ引数の再試行で復旧する。未知編集は自動上書きしない。新ROOT/.codex/hooks.jsonの絶対pathを確認し、Codexのhook trustを利用者が確認する。trust/認証設定は変更しない。\n"
+		text += "移転: aidlc install codex --relocate --project-dir NEW_ROOT --from-project-dir OLD_ROOT --from-binary OLD_BINARY\n新binaryは実行中のaidlc。旧pathは絶対参照文字列で存在不要。移転先AI開始前に端末から実行する。既知のaidlc/aidlc-cli/aidlc-okfの3skillと製品hooksの4ファイルを事前検査し参照だけを更新する。独自hookや旧WORKFLOW、Knowledgeを保持し、旧版のupgradeを兼ねない。部分失敗はPathsが更新済み、Pendingが未処理。全件再検査する同じ引数の再試行で復旧する。未知編集は自動上書きしない。新ROOT/.codex/hooks.jsonの絶対pathを確認し、Codexのhook trustを利用者が確認する。trust/認証設定は変更しない。\n"
 	}
 	if key == "unit/claim" {
 		text += `REQUEST.json例: {"registry_epoch":"initのepoch","request_id":"一意の要求ID","coordinator_session":"メイン会話ID","step_id":"現在step_id","unit":"a","session":"worker-a","root":"/project"}
@@ -150,7 +150,7 @@ Intentは一つの案件、Sensorは段階の開始・終了条件を調べる�
   終了: beginで保存した開始入力との整合と現在の入力、現在のstep_idに結び付けた宣言出力を確認する。
 
 initialization:
-  開始: Rule、固定workflow、配置2skill（aidlc・aidlc-cli）、hooks設定の有効なJSONを確認する。
+  開始: Rule、固定workflow、配置3skill（aidlc・aidlc-cli・aidlc-okf）、hooks設定の有効なJSONを確認する。
   終了: 開始入力との整合と宣言出力を確認する。
 
 discovery:

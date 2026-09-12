@@ -128,7 +128,12 @@ func TestInstallMemoryCommandGuidance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	okf, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc-okf/SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	raw = append(raw, common...)
+	raw = append(raw, okf...)
 	raw = append(raw, procedure...)
 	for _, action := range []string{"create", "update", "show", "search"} {
 		h, ok := cli.Help([]string{"memory", action, "--help"})
@@ -259,6 +264,59 @@ func TestInstallHookCommands(t *testing.T) {
 			}
 			if got := groups[0].Hooks[0].Command; got != want {
 				t.Fatalf("command = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestOKFSkillInstall(t *testing.T) {
+	t.Parallel()
+	const path = ".agents/skills/aidlc-okf/SKILL.md"
+	for _, existing := range []bool{false, true} {
+		name := "fresh"
+		if existing {
+			name = "preserve existing"
+		}
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			destination := filepath.Join(root, path)
+			if existing {
+				if err := os.MkdirAll(filepath.Dir(destination), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(destination, []byte("user skill"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			result, err := Codex(root, "/opt/aidlc binary")
+			if existing {
+				if err == nil || len(result.Paths) != 0 {
+					t.Fatalf("collision wrote files: %+v, %v", result, err)
+				}
+				raw, readErr := os.ReadFile(destination)
+				if readErr != nil || string(raw) != "user skill" {
+					t.Fatalf("existing skill changed: %s, %v", raw, readErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := os.ReadFile(destination)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(raw), "'/opt/aidlc binary'") || strings.Contains(string(raw), "@@BINARY@@") {
+				t.Fatalf("binary reference not resolved: %s", raw)
+			}
+			for _, skill := range []string{"aidlc", "aidlc-cli"} {
+				entry, err := os.ReadFile(filepath.Join(root, ".agents/skills", skill, "SKILL.md"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(string(entry), "../aidlc-okf/SKILL.md") {
+					t.Errorf("%s lacks OKF skill link", skill)
+				}
 			}
 		})
 	}

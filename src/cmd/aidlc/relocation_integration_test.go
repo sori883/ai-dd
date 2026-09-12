@@ -104,7 +104,7 @@ func TestRelocationCommand(t *testing.T) {
 		before[runtimeIgnore] = filestore.Hash([]byte("*\n"))
 	}
 	for p, hash := range before {
-		if p == ".codex/hooks.json" || p == ".agents/skills/aidlc/SKILL.md" || p == ".agents/skills/aidlc-cli/SKILL.md" {
+		if p == ".codex/hooks.json" || p == ".agents/skills/aidlc/SKILL.md" || p == ".agents/skills/aidlc-cli/SKILL.md" || p == ".agents/skills/aidlc-okf/SKILL.md" {
 			continue
 		}
 		if after[p] != hash {
@@ -115,7 +115,7 @@ func TestRelocationCommand(t *testing.T) {
 		t.Fatal("relocation added or removed assets")
 	}
 	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
-	for _, name := range []string{"aidlc", "aidlc-cli"} {
+	for _, name := range []string{"aidlc", "aidlc-cli", "aidlc-okf"} {
 		p := filepath.Join(".agents/skills", name, "SKILL.md")
 		old := operationsRead(t, filepath.Join(f.root, p))
 		want := bytes.ReplaceAll(old, []byte(quote(f.binary)), []byte(quote(g.binary)))

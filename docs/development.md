@@ -127,7 +127,7 @@ aidlc unit reassign --help
 aidlc unit reassign INTENT_ID --space SPACE --expect REVISION --file reassignment.json
 ```
 
-relocateは現在版のaidlc/aidlc-cli両skillと製品hooksの3ファイルを事前検査し、既知の参照だけを更新し、既存WORKFLOW・独自hook・Knowledgeを保持します。
+relocateは現在版のaidlc/aidlc-cli/aidlc-okfの3skillと製品hooksの4ファイルを事前検査し、既知の参照だけを更新し、既存WORKFLOW・独自hook・Knowledgeを保持します。
 Pathsは更新済み、Pendingは未処理です。部分失敗は同じ引数で再検査して再試行できます。
 新ROOT/.codex/hooks.jsonの絶対pathを確認し、利用者がCodex hook trustを確認します。trust/認証は自動変更しません。
 
@@ -150,7 +150,7 @@ fresh installは `.codex/agents/aidlc-{researcher,requirements,stage-planner,wor
 調整役はintent procedureが返す現在手順を読み、調査・要件整理・承認済み実装・固定成果の独立レビューを必要に応じて委譲する。
 workerはworkspace-write、残る4担当はread-only。
 model/effortは定義で固定せず利用者設定を継承する。共有stateとKnowledge/ADRの保存は調整役が担当する。
-既存配置を自動上書きする更新機能ではないため、利用には5定義とaidlc/aidlc-cliの両skillが配置された環境が必要。
+既存配置を自動上書きする更新機能ではないため、利用には5定義とaidlc/aidlc-cli/aidlc-okfの3skillが配置された環境が必要。
 配置原稿との一致は `go test -count=1 ./src/internal/install -run '^TestProductAgent'` で確認する。
 実際のnamed agent起動は固定Codex環境で別途検証し、配置testだけで実行や任意の成果品質を保証しない。
 
@@ -183,7 +183,7 @@ plan/plan-approvalで保存します。
 
 fresh配置は `aidlc/workflow/stage-graph.json` と `stages/*.md` を含む。
 `aidlc intent procedure ID --space SPACE` は現在段階、定義hash、手順path・frontmatter・本文、前進先、差戻し候補をJSONで返す。
-aidlcスキルは進行・承認規約とこの読取りを案内し、aidlc-cliは操作目的からhelpへ案内する。段階変更・再開後に現在手順を取り直す。
+aidlcスキルは進行・承認規約とこの読取りを案内し、aidlc-cliは操作目的からhelpへ案内し、aidlc-okfは知識の検索・保存を案内する。段階変更・再開後に現在手順を取り直す。
 定義のpathとbytesはIntent作成時に結び付く。変更・欠落時は作業を停止し、元版の復元または新Intentで再開する。
 show/list診断は維持する。旧schemaの移行や既設assetの自動上書きは行わない。
 
@@ -256,7 +256,7 @@ Entry・文書宣言・実測JSON・Unit要求には実際のstep_idを用い、
 `AIDLC_HUMAN_APPROVAL_LIVE=1 go test -tags=integration -count=1 -v -timeout 20m ./src/cmd/aidlc -run '^TestHumanApprovalLive$'`
 は試験用の2承認待ちを準備し、実hookの作業拒否、同じ回答の出典、別承認CLIの成功、finishと確定履歴を照合します。
 
-プロジェクトの共通ルールはknowledge/rules/rule.mdに記載します。初期状態は「追加ルールはありません」で、製品が言語や設計制約を決めません。AI-DLCの進行・会話承認・記録先はaidlcスキル、操作案内はaidlc-cli、正確な引数・JSONはhelpにあります。工程手順はstage、担当責務はagent定義から取得します。新配布にはWORKFLOW.mdを含めません。既設Ruleや旧配置は自動移行・削除せず、新版は新配布・新Intentで利用します。
+プロジェクトの共通ルールはknowledge/rules/rule.mdに記載します。初期状態は「追加ルールはありません」で、製品が言語や設計制約を決めません。AI-DLCの進行・会話承認・記録先はaidlcスキル、操作案内はaidlc-cli、知識の検索・保存はaidlc-okf、正確な引数・JSONはhelpにあります。工程手順はstage、担当責務はagent定義から取得します。新配布にはWORKFLOW.mdを含めません。既設Ruleや旧配置は自動移行・削除せず、新版は新配布・新Intentで利用します。
 
 ## native担当と作業場所の予約
 
