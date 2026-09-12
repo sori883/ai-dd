@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [製品のminimal名称を取り除く](decisions/2026-09-12-product-naming-cleanup-approved.md): 原稿のcore/Codex直下配置、内部app package、`__hook`への改名を直接承認。配置と保存形式を保ち、旧hook別名は追加しない。[具体計画](../design/product-naming-cleanup-plan.md)。
+
 - [Gitなし一周fixtureの公開出力処理を修復](decisions/2026-09-11-git-independent-journey-fixture-repair.md): Issue #171。assignment list配列処理とUnit欠落検出、実行commandとの一致、Unit結果の保持を修正。小helperとtagged compile確認、一周は親finalで再実行。
 
 - [Git不要化finalのfixture・help修復](decisions/2026-09-11-git-independent-final-fixture-repair.md): Issue #171。schema期待・不正入力生成を修正し、集合SHAのhelp回帰とKnowledge例を復元。targeted成功、全体finalは再実行待ち。
