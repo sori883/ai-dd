@@ -26,7 +26,7 @@ severity: info, warn, critical。短文は統計検査の最低量に届かな�
 func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
 func run(args []string, in io.Reader, out, errout io.Writer) int {
 	fs := flag.NewFlagSet("natural-japanese-go", flag.ContinueOnError)
-	fs.SetOutput(errout)
+	fs.SetOutput(io.Discard)
 	var jsonOutput, help, showVersion, list bool
 	var genre, baseline string
 	fs.BoolVar(&jsonOutput, "json", false, "")
@@ -54,9 +54,11 @@ func run(args []string, in io.Reader, out, errout io.Writer) int {
 		}
 	}
 	if err := fs.Parse(flags); err != nil {
+		fmt.Fprintf(errout, "引数が不正です: %v（--helpで利用方法を確認）\n", err)
 		return 2
 	}
 	if genre != "" && genre != "essay" && genre != "tech" && genre != "business" {
+		fmt.Fprintf(errout, "genre %q は使用できません。essay、tech、businessを指定してください。\n", genre)
 		return 2
 	}
 	modes := 0
@@ -66,10 +68,12 @@ func run(args []string, in io.Reader, out, errout io.Writer) int {
 		}
 	}
 	if modes > 1 || (modes > 0 && (len(files) > 0 || genre != "" || baseline != "")) || (modes == 0 && len(files) != 1) {
+		fmt.Fprintln(errout, "引数の組合せが不正です。検査にはFILEを1つ指定してください。利用方法は--helpで確認できます。")
 		return 2
 	}
 	write := func(text string) int {
 		if _, err := io.WriteString(out, text); err != nil {
+			fmt.Fprintf(errout, "出力に失敗しました: %v\n", err)
 			return 1
 		}
 		return 0
@@ -83,6 +87,7 @@ func run(args []string, in io.Reader, out, errout io.Writer) int {
 	if list {
 		if jsonOutput {
 			if err := json.NewEncoder(out).Encode(categories); err != nil {
+				fmt.Fprintf(errout, "出力に失敗しました: %v\n", err)
 				return 1
 			}
 			return 0
@@ -94,40 +99,36 @@ func run(args []string, in io.Reader, out, errout io.Writer) int {
 	if files[0] == "-" {
 		raw, err = io.ReadAll(in)
 	} else {
-		var f *os.File
-		f, err = os.Open(files[0])
-		if err == nil {
-			var info os.FileInfo
-			info, err = f.Stat()
-			if err == nil && !info.Mode().IsRegular() {
-				err = fmt.Errorf("input is not a regular file")
-			}
-			if err == nil {
-				raw, err = io.ReadAll(f)
-			}
-			if closeErr := f.Close(); err == nil {
-				err = closeErr
-			}
-		}
+		raw, err = readRegularFile(files[0])
 	}
-	if err != nil || !utf8.Valid(raw) {
+	if err != nil {
+		fmt.Fprintf(errout, "入力 %q の読込みに失敗しました: %v\n", files[0], err)
+		return 1
+	}
+	if !utf8.Valid(raw) {
+		fmt.Fprintf(errout, "入力 %q は有効なUTF-8ではありません。\n", files[0])
 		return 1
 	}
 
 	report, err := naturaljapanese.Check(string(raw), files[0], genre)
-	if err == nil && baseline != "" {
+	if err != nil {
+		fmt.Fprintf(errout, "解析に失敗しました: %v\n", err)
+		return 1
+	}
+	if baseline != "" {
 		var previous []byte
-		previous, err = os.ReadFile(baseline)
+		previous, err = readRegularFile(baseline)
 		if err == nil {
 			report, err = naturaljapanese.Compare(report, previous)
 		}
 	}
 	if err != nil {
-		fmt.Fprintln(errout, err)
+		fmt.Fprintf(errout, "baseline %q の処理に失敗しました: %v\n", baseline, err)
 		return 1
 	}
 	if jsonOutput {
 		if err := json.NewEncoder(out).Encode(report); err != nil {
+			fmt.Fprintf(errout, "出力に失敗しました: %v\n", err)
 			return 1
 		}
 		return 0
@@ -141,4 +142,31 @@ func run(args []string, in io.Reader, out, errout io.Writer) int {
 		fmt.Fprintf(&result, "比較: 新規%d 継続%d 解消%d\n", report.Comparison["new"], report.Comparison["persisting"], report.Comparison["resolved"])
 	}
 	return write(result.String())
+}
+
+// readRegularFile rejects special files before opening them, then verifies the opened file.
+func readRegularFile(path string) ([]byte, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s: 通常ファイルではありません", path)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	info, err = f.Stat()
+	if err == nil && !info.Mode().IsRegular() {
+		err = fmt.Errorf("%s: 通常ファイルではありません", path)
+	}
+	var raw []byte
+	if err == nil {
+		raw, err = io.ReadAll(f)
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	return raw, err
 }

@@ -31,6 +31,9 @@ func Compare(current Report, raw []byte) (Report, error) {
 		return current, fmt.Errorf("baseline requires file, stats and findings")
 	}
 	for _, f := range old.Findings {
+		if f.Excerpt == "" {
+			return current, fmt.Errorf("baseline finding requires non-empty excerpt")
+		}
 		if f.Line < 1 || !member(f.Category, Categories...) || !member(f.Severity, "info", "warn", "critical") || f.Detail == "" {
 			return current, fmt.Errorf("invalid baseline finding")
 		}

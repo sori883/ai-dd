@@ -2,6 +2,7 @@ package naturaljapanese
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -37,5 +38,29 @@ func TestBaselineInvalid(t *testing.T) {
 				t.Fatal("accepted malformed or incompatible baseline")
 			}
 		})
+	}
+}
+
+func TestBaselineExcerptRequired(t *testing.T) {
+	r, err := Check("非常に重要。", "-", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, missing := range []bool{true, false} {
+		raw, _ := json.Marshal(r)
+		var doc map[string]any
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			t.Fatal(err)
+		}
+		f := doc["findings"].([]any)[0].(map[string]any)
+		if missing {
+			delete(f, "excerpt")
+		} else {
+			f["excerpt"] = ""
+		}
+		raw, _ = json.Marshal(doc)
+		if _, err := Compare(r, raw); err == nil || !strings.Contains(err.Error(), "excerpt") {
+			t.Fatalf("missing=%v error=%v", missing, err)
+		}
 	}
 }
