@@ -40,6 +40,8 @@ aidlc memory search --help
 
 型・引数・JSONの詳細は利用中のCLIのhelp、現在の工程の担当・入力・出力は`intent procedure`で確認できます。
 
+Intent・Bolt単位でGitHub Issue／PRを使う場合は、[任意導入の追加skill](src/docs/optional-skills.md)を利用できます。本体の標準配置とは別に、必要なプロジェクトへコピーして使います。
+
 ## 開発者向け資料
 
 - [開発・検証手順](docs/development.md)
