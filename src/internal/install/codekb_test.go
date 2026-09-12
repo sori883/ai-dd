@@ -45,6 +45,23 @@ func TestCodeKBGuidance(t *testing.T) {
 	if _, err := Codex(root, "/opt/aidlc"); err != nil {
 		t.Fatal(err)
 	}
+	commonPath := filepath.Join(root, ".agents/skills/aidlc-cli/SKILL.md")
+	common, err := os.ReadFile(commonPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, link, found := strings.Cut(string(common), "[aidlc-okf](")
+	if !found {
+		t.Fatal("common operations lack OKF skill reference")
+	}
+	link, _, found = strings.Cut(link, ")")
+	if !found {
+		t.Fatal("unterminated OKF skill reference")
+	}
+	knowledge, err := os.ReadFile(filepath.Join(filepath.Dir(commonPath), link))
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, stage := range []string{"discovery", "planning", "tdd", "integration"} {
 		raw, err := os.ReadFile(filepath.Join(root, "aidlc/workflow/stages", stage+".md"))
 		if err != nil {
@@ -53,11 +70,8 @@ func TestCodeKBGuidance(t *testing.T) {
 		if !strings.Contains(string(raw), "aidlc-cli") {
 			t.Fatal("stage lacks common-operation reference")
 		}
-		common, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc-cli/SKILL.md"))
-		if err != nil {
-			t.Fatal(err)
-		}
 		raw = append(raw, common...)
+		raw = append(raw, knowledge...)
 		if (!strings.Contains(string(raw), "codekb/NAME") || !strings.Contains(string(raw), "memory create --help")) || strings.Contains(string(raw), "memory create knowledge/") {
 			t.Errorf("%s uses old Concept guidance", stage)
 		}
@@ -74,11 +88,7 @@ func TestCodeKBGuidance(t *testing.T) {
 			t.Errorf("architecture output: %s", ref.Path)
 		}
 	}
-	raw, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc-cli/SKILL.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(raw), "codekb/") {
+	if !strings.Contains(string(knowledge), "codekb/") {
 		t.Fatal("workflow omits current knowledge folder")
 	}
 }

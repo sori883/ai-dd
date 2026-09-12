@@ -40,7 +40,8 @@ stateのrevisionやreview記録だけの更新では対象hashを変えません
 製品CLIはエージェントを起動しません。5種類の専門担当は要件整理、調査、ステージ計画、worker、reviewerです。
 worker以外はread-onlyで本文案や報告を返し、共有Knowledgeの保存はメインAIが行います。
 製品の行動規約は[aidlc Skill](../src/harness/codex/SKILL.md)、操作の選択は
-[aidlc-cli Skill](../src/harness/codex/aidlc-cli/SKILL.md)、正確な引数・型はCLI helpにあります。
+[aidlc-cli Skill](../src/harness/codex/aidlc-cli/SKILL.md)、知識の検索・保存は
+[aidlc-okf Skill](../src/harness/codex/aidlc-okf/SKILL.md)、正確な引数・型はCLI helpにあります。
 
 Unitは担当範囲、検証、依存、Bolt（作業のまとまり）を持ち、workerは通常ディレクトリへ割り当てます。同じrootでの順次作業を許可し、同一・親子rootの重複予約を拒否します。
 依存統合前や担当範囲の重複を拒否し、結果は現在のrun/session/rootと実効検証集合のSHAに照合します。反映時は管理元の同じ集合の内容一致を確認します。

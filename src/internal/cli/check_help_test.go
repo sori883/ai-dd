@@ -21,7 +21,7 @@ func TestCheckHelpStageBoundaries(t *testing.T) {
 	}{
 		{
 			name:  "initialization",
-			start: []string{"Rule", "固定workflow", "2skill", "aidlc", "aidlc-cli", "hooks", "有効なJSON"},
+			start: []string{"Rule", "固定workflow", "3skill", "aidlc", "aidlc-cli", "aidlc-okf", "hooks", "有効なJSON"},
 			end:   []string{"開始入力", "宣言出力"},
 		},
 		{

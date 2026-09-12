@@ -383,11 +383,11 @@ func (s Service) workflowRead(input HookInput) bool {
 		return false
 	}
 	argv, ok := shellWords(input.Input.Command)
-	if !ok || len(argv) < 2 || len(argv) > 3 || argv[0] != "cat" {
+	if !ok || len(argv) < 2 || len(argv) > 4 || argv[0] != "cat" {
 		return false
 	}
 	for _, name := range argv[1:] {
-		if name != ".agents/skills/aidlc/SKILL.md" && name != ".agents/skills/aidlc-cli/SKILL.md" {
+		if name != ".agents/skills/aidlc/SKILL.md" && name != ".agents/skills/aidlc-cli/SKILL.md" && name != ".agents/skills/aidlc-okf/SKILL.md" {
 			return false
 		}
 		if _, err := okfmemory.ReadFile(s.Root, name); err != nil {

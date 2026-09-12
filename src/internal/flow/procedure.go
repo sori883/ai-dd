@@ -259,7 +259,7 @@ func (c *boundaryCollector) requiredInputs(st State) []FileVersion {
 	}
 	files := c.references(st, refs)
 	if st.Stage == "initialization" {
-		for _, name := range []string{".codex/hooks.json", ".agents/skills/aidlc/SKILL.md", ".agents/skills/aidlc-cli/SKILL.md"} {
+		for _, name := range []string{".codex/hooks.json", ".agents/skills/aidlc/SKILL.md", ".agents/skills/aidlc-cli/SKILL.md", ".agents/skills/aidlc-okf/SKILL.md"} {
 			raw, ok := c.file(name)
 			if !ok {
 				continue

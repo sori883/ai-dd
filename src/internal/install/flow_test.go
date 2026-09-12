@@ -63,7 +63,12 @@ func TestFlowInstallJapaneseProcedure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	okf, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc-okf/SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	procedure = append(procedure, common...)
+	procedure = append(procedure, okf...)
 	for _, word := range []string{"実装計画", "独立review", "intent review", "unit claim", "memory update"} {
 		if !strings.Contains(string(procedure), word) {
 			t.Errorf("missing %s", word)

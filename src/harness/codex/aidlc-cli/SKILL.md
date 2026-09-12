@@ -20,20 +20,20 @@ description: AI-DLC CLIの操作目的からコマンドとhelpを選ぶ。Inten
 | Knowledge/ADRの作成・更新・読取り | `A memory create --help`、`A memory update --help`、`A memory show --help`、`A memory search --help` |
 | session読込み・復旧、配置・移転、Unit移転 | `A session bind --help`、`A install codex --help`、`A unit reassign --help` |
 
+知識の検索・保存規約は [aidlc-okf](../aidlc-okf/SKILL.md) を読む。
+
 ## 文書と実測
 
-Knowledgeは現行what/how、ADRは判断のwhy・代替案・影響、進捗はstate。毎操作の日誌や一律ADRは作らない。必要なADRを作り、不要なら理由をreviewする。
 outputsは期待する文書だけで、なければなし。プログラム・テストコード・commitを文書outputsへ列挙せず、検証証拠は別に説明する。共有文書のID/日時を形式だけのために更新しない。
 
 procedureのmetadata条件と解決path/版を読み、documentsでinputs/outputs両一覧を置換する。新文書は未存在でも宣言できるが、実測test_resultsは実行後に存在する結果だけを指定する。accepted入力は前回合格のpath/hashを保持し、変更にはreopenが必要。共有currentと同回outputは更新できる。各宣言・Unit・実測へ現在step_idを使う。
-本文だけをsessionのdraftへ書き、memory CLIでmetadataを生成する。Concept IDは拡張子なし。Knowledgeはcodekb/NAME、ADRはadr/NAMEでtype adr。要件はdesign/ID/requirements、実装計画はdesign/ID/implementation-plan、共有解析はcodekb/current-analysis、構成図はcodekb/architecture。新規ADRのIntent IDを保持する。update前にshowのcontent/hashを確認する。
 TDD/integrationではverification_pathsへコード・テスト・設定・共通部品の適切な範囲を指定する。`A intent hash ID --space SPACE` →テスト→hashの前後一致を確認し、step_id/stage/verification_scope/verification_sha256/runsを持つ結果JSONをaidlc/evidenceへ保存してtest_resultsへ登録する。runはunit_id/command/exit_code/output_path。Unit結果はトップレベルunit_id/run_idも対応させる。最終検証は最新Intent全体SHAの各Unit+commandの成功を要求する。個別ファイルSHAは登録しない。
 
 ## 承認と復旧
 
 reviewは別session（同root可）へassignし、実報告をacceptする。コードを扱う段階の別reviewer rootは同じverification_pathsの集合SHAにする。plan-approval/approvalは表示されたrequest_id/targetと実回答のsession/turn/quoteを使う。計画整理・読取り・質問回答は承認待ちでもできる。
-reopenは--stepで対象を指定する。保存途中は同じexpect・decisionを再試行する。durable pending後は時刻と前後hashが固定され、log改変時は元版を復元する。記録の存在だけで成功扱いせずstateのrevision確定を確認する。generated.atは更新日時で承認を意味しない。work-logはmemory search work-log、memory show log/ID-work-logで読む。
-移転前に端末からinstall codex --helpを読み、--relocateへ旧root/binaryの配置済み絶対文字列を渡す。両skillとhooksの既知参照だけを移し、版更新や未知編集の上書きを兼ねない。利用者が新hooksの絶対pathとCodex trustを確認する。部分失敗はPaths/Pendingを見て同じ引数で再検査する。
+reopenは--stepで対象を指定する。保存途中は同じexpect・decisionを再試行する。durable pending後は時刻と前後hashが固定され、log改変時は元版を復元する。記録の存在だけで成功扱いせずstateのrevision確定を確認する。generated.atは更新日時で承認を意味しない。work-logの読取りはaidlc-okfを参照する。
+移転前に端末からinstall codex --helpを読み、--relocateへ旧root/binaryの配置済み絶対文字列を渡す。3つのskillとhooksの既知参照だけを移し、版更新や未知編集の上書きを兼ねない。利用者が新hooksの絶対pathとCodex trustを確認する。部分失敗はPaths/Pendingを見て同じ引数で再検査する。
 Unit移転は旧run停止を確認してからreassignする。runningはpause/resumeでneeds_confirmationにし、previous_run_stoppedは確認時だけtrue。保存途中は同じexpect/JSONで再試行する。新runで再検証し、現在verification_sha256と結果を提出する。CLIはworker起動やファイル移送を代行しない。
 
 ## native担当の登録

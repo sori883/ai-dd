@@ -14,7 +14,7 @@ func TestRuleSkillSeparationAssets(t *testing.T) {
 	if _, err := Codex(root, "/opt/aidlc"); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"aidlc", "aidlc-cli"} {
+	for _, name := range []string{"aidlc", "aidlc-cli", "aidlc-okf"} {
 		raw, err := os.ReadFile(filepath.Join(root, ".agents/skills", name, "SKILL.md"))
 		if err != nil {
 			t.Errorf("missing %s: %v", name, err)
@@ -50,7 +50,7 @@ func TestRuleSkillSeparationRelocate(t *testing.T) {
 	for _, mode := range []string{"success", "partial", "missing", "edited", "legacy", "symlink"} {
 		t.Run(mode, func(t *testing.T) {
 			root, oldRoot, oldBinary := relocateFixture(t)
-			paths := []string{".agents/skills/aidlc/SKILL.md", ".agents/skills/aidlc-cli/SKILL.md", ".codex/hooks.json"}
+			paths := []string{".agents/skills/aidlc/SKILL.md", ".agents/skills/aidlc-cli/SKILL.md", ".agents/skills/aidlc-okf/SKILL.md", ".codex/hooks.json"}
 			p := filepath.Join(root, paths[1])
 			before := map[string]string{}
 			for _, name := range paths {
@@ -88,22 +88,22 @@ func TestRuleSkillSeparationRelocate(t *testing.T) {
 				return filestore.WriteFile(r, p, b)
 			})
 			if mode == "success" {
-				if err != nil || len(result.Paths) != 3 {
+				if err != nil || len(result.Paths) != len(paths) {
 					t.Fatalf("relocate %+v %v", result, err)
 				}
 			} else if mode == "partial" {
-				if err == nil || len(result.Paths) != 1 || len(result.Pending) != 2 || result.Pending[0] != paths[1] {
+				if err == nil || len(result.Paths) != 1 || len(result.Pending) != len(paths)-1 || result.Pending[0] != paths[1] {
 					t.Fatalf("partial %+v %v", result, err)
 				}
 				retry, err := Relocate(root, "/new/aidlc", oldRoot, oldBinary)
-				if err != nil || len(retry.Paths) != 2 {
+				if err != nil || len(retry.Paths) != len(paths)-1 {
 					t.Fatalf("retry %+v %v", retry, err)
 				}
 			} else {
 				if err == nil || len(result.Paths) != 0 {
 					t.Fatalf("accepted unknown deployment %+v %v", result, err)
 				}
-				for _, name := range []string{paths[0], paths[2]} {
+				for _, name := range []string{paths[0], paths[2], paths[3]} {
 					raw, _ := os.ReadFile(filepath.Join(root, name))
 					if string(raw) != before[name] {
 						t.Fatal("changed before validation", name)

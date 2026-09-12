@@ -32,7 +32,7 @@ func relocate(root, binary, fromRoot, fromBinary string, write func(string, stri
 	if err != nil {
 		return result, err
 	}
-	paths := []string{".agents/skills/aidlc/SKILL.md", ".agents/skills/aidlc-cli/SKILL.md", ".codex/hooks.json"}
+	paths := []string{".agents/skills/aidlc/SKILL.md", ".agents/skills/aidlc-cli/SKILL.md", ".agents/skills/aidlc-okf/SKILL.md", ".codex/hooks.json"}
 	before := make([][]byte, len(paths))
 	after := make([][]byte, len(paths))
 	for i, p := range paths {
@@ -41,7 +41,7 @@ func relocate(root, binary, fromRoot, fromBinary string, write func(string, stri
 			return result, fmt.Errorf("%s: %w", p, err)
 		}
 	}
-	for i, source := range []string{"SKILL.md", "aidlc-cli/SKILL.md"} {
+	for i, source := range []string{"SKILL.md", "aidlc-cli/SKILL.md", "aidlc-okf/SKILL.md"} {
 		template, err := fs.ReadFile(codex.Files, source)
 		if err != nil {
 			return result, err
@@ -53,9 +53,10 @@ func relocate(root, binary, fromRoot, fromBinary string, write func(string, stri
 		}
 		after[i] = newSkill
 	}
-	after[2], err = relocateHooks(before[2], shellQuote(fromBinary)+" __hook --project-dir "+shellQuote(fromRoot), shellQuote(binary)+" __hook --project-dir "+shellQuote(root))
+	hookIndex := len(paths) - 1
+	after[hookIndex], err = relocateHooks(before[hookIndex], shellQuote(fromBinary)+" __hook --project-dir "+shellQuote(fromRoot), shellQuote(binary)+" __hook --project-dir "+shellQuote(root))
 	if err != nil {
-		return result, fmt.Errorf("%s: %w", paths[2], err)
+		return result, fmt.Errorf("%s: %w", paths[hookIndex], err)
 	}
 	for i, p := range paths {
 		if !bytes.Equal(before[i], after[i]) {

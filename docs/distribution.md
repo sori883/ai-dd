@@ -76,7 +76,7 @@ AIDLC_DIST_DIR="$dist_output" go test -tags=integration -count=1 -v \
 
 | 対象 | 扱い |
 | --- | --- |
-| `.agents/skills/aidlc/SKILL.md`、`.agents/skills/aidlc-cli/SKILL.md` | 既知の製品Skillとして旧新を比較する |
+| `.agents/skills/aidlc/SKILL.md`、`.agents/skills/aidlc-cli/SKILL.md`、`.agents/skills/aidlc-okf/SKILL.md` | 既知の製品Skillとして旧新を比較する |
 | `.codex/agents/aidlc-*.toml`の製品5担当 | 既知の5fileを比較する。利用者が作った別agentは保持する |
 | `aidlc/workflow/stage-graph.json`、`aidlc/workflow/stages/*.md`、`aidlc/templates/adr.md` | 対応する定義・templateを組で比較する |
 | `.codex/hooks.json` | 製品handlerを比較し、独自handlerを残して手動mergeする |
@@ -99,9 +99,9 @@ NEW_BINARY install codex --relocate --project-dir REAL_ROOT \
 
 すべて実際の絶対pathへ置き換えます。この例は新binaryのままroot参照をstagingから実利用先へ補正します。別pathからの配置移転では、元配置に埋め込まれた旧root/binaryをfromへ渡します。元pathが今も存在する必要はありません。
 
-`--relocate`の対象はaidlc/aidlc-cli両Skillとhooks.jsonの3fileだけです。既知の現行Skill bytes、既知の製品handler形状、元/新の参照が成立する場合にだけ補正し、独自hookのbytesを保持します。未知のSkill編集、製品command、matcher等があれば拒否します。エラーを回避するために利用者編集を無断で消さず、比較へ戻ってください。移転は版更新や定義移行ではありません。
+`--relocate`の対象はaidlc/aidlc-cli/aidlc-okfの3Skillとhooks.jsonの4fileだけです。既知の現行Skill bytes、既知の製品handler形状、元/新の参照が成立する場合にだけ補正し、独自hookのbytesを保持します。未知のSkill編集、製品command、matcher等があれば拒否します。エラーを回避するために利用者編集を無断で消さず、比較へ戻ってください。移転は版更新や定義移行ではありません。
 
-部分失敗のPathsは更新済み、Pendingは未完了です。処理終了と原因を確認し、同じ引数で再検査できます。成功後も3fileの実pathと独自hookを確認します。通常のCodex hook trust確認、許可/拒否の対照を経てからAIを再開してください。trustや認証設定は自動変更しません。
+部分失敗のPathsは更新済み、Pendingは未完了です。処理終了と原因を確認し、同じ引数で再検査できます。成功後も4fileの実pathと独自hookを確認します。通常のCodex hook trust確認、許可/拒否の対照を経てからAIを再開してください。trustや認証設定は自動変更しません。
 
 定義hashが変わった場合、既存Intentは元の定義に結び付いています。旧版で進めている仕事を整理し、新定義では新Intentを使ってください。元Intentの定義hashだけを書き換えて移行したことにはしません。
 

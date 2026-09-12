@@ -5,5 +5,5 @@ import "embed"
 
 // Files contains source assets mapped to Codex discovery paths by the installer.
 //
-//go:embed SKILL.md aidlc-cli agents
+//go:embed SKILL.md aidlc-cli aidlc-okf agents
 var Files embed.FS

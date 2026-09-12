@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	codex "github.com/sori883/ai-dd/src/harness/codex"
 	"github.com/sori883/ai-dd/src/internal/app"
 	"github.com/sori883/ai-dd/src/internal/cli"
 	"github.com/sori883/ai-dd/src/internal/filestore"
@@ -37,10 +38,13 @@ func memoryLiveArgs(binary, command string) ([]string, bool) {
 	if len(args) == 3 && (args[0] == "/bin/zsh" || args[0] == "/bin/bash") && args[1] == "-lc" {
 		args, ok = flowShellWords(args[2])
 	}
-	return args, ok && len(args) > 1 && args[0] == binary
+	return args, ok && (len(args) > 1 && args[0] == binary ||
+		len(args) == 2 && args[0] == "cat" && args[1] == ".agents/skills/aidlc-okf/SKILL.md")
 }
 func verifyMemoryLive(binary string, transport []byte, records []memoryLiveRecord) error {
-	fail := func() error { return fmt.Errorf("missing actual unselected help and body-only create/update evidence") }
+	fail := func() error {
+		return fmt.Errorf("missing actual skill read, unselected help and body-only create/update evidence")
+	}
 	type execution struct {
 		exit   int
 		output string
@@ -75,6 +79,12 @@ func verifyMemoryLive(binary string, transport []byte, records []memoryLiveRecor
 		}
 		executions[session+"/"+strings.Join(args, "\x00")] = execution{*event.Item.Exit, event.Item.Output}
 	}
+	template, err := codex.Files.ReadFile("aidlc-okf/SKILL.md")
+	if err != nil {
+		return err
+	}
+	expectedSkill := strings.ReplaceAll(string(template), "@@BINARY@@", "'"+strings.ReplaceAll(binary, "'", "'\"'\"'")+"'")
+	skillRead := map[string]bool{}
 	pending := map[string]memoryLiveRecord{}
 	helped, created, updated := false, false, false
 	var previous okfmemory.Document
@@ -111,6 +121,23 @@ func verifyMemoryLive(binary string, transport []byte, records []memoryLiveRecor
 		if input.Event != "PostToolUse" {
 			continue
 		}
+		if args[0] == "cat" {
+			pre, ok := pending[key]
+			if !ok || !pre.Bound || !ran || execution.exit != 0 || execution.output != expectedSkill {
+				return fail()
+			}
+			var before app.HookInput
+			if json.Unmarshal(pre.Raw, &before) != nil {
+				return fail()
+			}
+			preArgs, ok := memoryLiveArgs(binary, before.Input.Command)
+			if !ok || !reflect.DeepEqual(preArgs, args) {
+				return fail()
+			}
+			delete(pending, key)
+			skillRead[input.Session] = true
+			continue
+		}
 		r, err := cli.ParseCommand(args[1:])
 		if err != nil || r.Command != "memory" || (r.Action != "create" && r.Action != "update") {
 			continue
@@ -119,7 +146,7 @@ func verifyMemoryLive(binary string, transport []byte, records []memoryLiveRecor
 			continue
 		}
 		pre, ok := pending[key]
-		if !ok || !pre.Bound || !ran || execution.exit != 0 || !helped {
+		if !ok || !pre.Bound || !ran || execution.exit != 0 || !helped || !skillRead[input.Session] {
 			return fail()
 		}
 		var before app.HookInput
@@ -173,6 +200,12 @@ func verifyMemoryLive(binary string, transport []byte, records []memoryLiveRecor
 func TestMemoryMetadataCommandEvidence(t *testing.T) {
 	binary := "/bin/aidlc"
 	help := binary + " memory create --help"
+	skillCommand := "cat .agents/skills/aidlc-okf/SKILL.md"
+	template, err := codex.Files.ReadFile("aidlc-okf/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	skill := strings.ReplaceAll(string(template), "@@BINARY@@", "'/bin/aidlc'")
 	create := binary + " memory create codekb/live-note --space default --body-file body.md --actor process:codex --type Design --title Arithmetic --description Current"
 	update := binary + " memory update codekb/live-note --space default --body-file body.md --actor process:codex --expect first"
 	document := func(body string) []byte {
@@ -180,45 +213,78 @@ func TestMemoryMetadataCommandEvidence(t *testing.T) {
 	}
 	first, second := document("FIRST-BODY\n"), document("SECOND-BODY\n")
 	update = strings.Replace(update, "--expect first", "--expect "+filestore.Hash(first), 1)
-	var records []memoryLiveRecord
-	add := func(event, id, command string, doc, body []byte, bound bool) {
-		in := app.HookInput{Event: event, Session: "session", Turn: "turn", ID: id, Tool: "Bash"}
-		in.Input.Command = command
-		raw, _ := json.Marshal(in)
-		records = append(records, memoryLiveRecord{Raw: raw, Output: json.RawMessage(`{}`), Document: doc, Body: body, Bound: bound})
-	}
-	add("PreToolUse", "help", help, nil, nil, false)
-	add("PreToolUse", "create", create, nil, []byte("FIRST-BODY\n"), true)
-	add("PostToolUse", "create", create, first, []byte("FIRST-BODY\n"), true)
-	add("PreToolUse", "update", update, first, []byte("SECOND-BODY\n"), true)
-	add("PostToolUse", "update", update, second, []byte("SECOND-BODY\n"), true)
-	var wire bytes.Buffer
-	write := func(value any) { raw, _ := json.Marshal(value); wire.Write(raw); wire.WriteByte('\n') }
-	write(map[string]any{"type": "thread.started", "thread_id": "session"})
-	expected, _ := cli.Help([]string{"memory", "create", "--help"})
-	for _, item := range []struct{ cmd, out string }{{help, expected}, {create, `{"hash":"` + filestore.Hash(first) + `"}`}, {update, `{"hash":"` + filestore.Hash(second) + `"}`}} {
-		write(map[string]any{"type": "item.completed", "item": map[string]any{"type": "command_execution", "command": item.cmd, "exit_code": 0, "aggregated_output": item.out}})
-	}
-	if err := verifyMemoryLive(binary, wire.Bytes(), records); err != nil {
-		t.Fatal(err)
-	}
-	for _, change := range []func([]memoryLiveRecord) []memoryLiveRecord{
-		func(r []memoryLiveRecord) []memoryLiveRecord { return r[:3] },
-		func(r []memoryLiveRecord) []memoryLiveRecord { r[0].Bound = true; return r },
-		func(r []memoryLiveRecord) []memoryLiveRecord { r[2].Document = second; return r },
-		func(r []memoryLiveRecord) []memoryLiveRecord { r[4].Body = []byte("frontmatter injected"); return r },
-		func(r []memoryLiveRecord) []memoryLiveRecord {
-			r[1].Output = json.RawMessage(`{"hookSpecificOutput":{"permissionDecision":"deny"}}`)
-			return r
-		},
-	} {
-		copyRecords := append([]memoryLiveRecord{}, records...)
-		if verifyMemoryLive(binary, wire.Bytes(), change(copyRecords)) == nil {
-			t.Fatal("invented metadata evidence accepted")
-		}
-	}
-	if verifyMemoryLive(binary, []byte(`{"type":"item.completed","item":{"type":"agent_message","text":"done"}}`), records) == nil {
-		t.Fatal("self-report accepted")
+	for _, mode := range []string{"valid", "missing skill", "denied skill", "mismatched skill", "failed skill", "missing skill post", "late skill", "missing update", "bound help", "wrong document", "wrong body", "denied create", "self report"} {
+		t.Run(mode, func(t *testing.T) {
+			var records []memoryLiveRecord
+			add := func(event, id, command string, doc, body []byte, bound bool) {
+				in := app.HookInput{Event: event, Session: "session", Turn: "turn", ID: id, Tool: "Bash"}
+				in.Input.Command = command
+				raw, _ := json.Marshal(in)
+				records = append(records, memoryLiveRecord{Raw: raw, Output: json.RawMessage(`{}`), Document: doc, Body: body, Bound: bound})
+			}
+			add("PreToolUse", "help", help, nil, nil, mode == "bound help")
+			addSkill := func() {
+				if mode == "missing skill" {
+					return
+				}
+				add("PreToolUse", "skill", skillCommand, nil, nil, true)
+				if mode == "denied skill" {
+					records[len(records)-1].Output = json.RawMessage(`{"hookSpecificOutput":{"permissionDecision":"deny"}}`)
+				}
+				if mode != "missing skill post" {
+					add("PostToolUse", "skill", skillCommand, nil, nil, true)
+				}
+			}
+			if mode != "late skill" {
+				addSkill()
+			}
+			add("PreToolUse", "create", create, nil, []byte("FIRST-BODY\n"), true)
+			if mode == "denied create" {
+				records[len(records)-1].Output = json.RawMessage(`{"hookSpecificOutput":{"permissionDecision":"deny"}}`)
+			}
+			saved := first
+			if mode == "wrong document" {
+				saved = second
+			}
+			add("PostToolUse", "create", create, saved, []byte("FIRST-BODY\n"), true)
+			if mode == "late skill" {
+				addSkill()
+			}
+			if mode != "missing update" {
+				add("PreToolUse", "update", update, first, []byte("SECOND-BODY\n"), true)
+				body := []byte("SECOND-BODY\n")
+				if mode == "wrong body" {
+					body = []byte("frontmatter injected")
+				}
+				add("PostToolUse", "update", update, second, body, true)
+			}
+			var wire bytes.Buffer
+			write := func(value any) { raw, _ := json.Marshal(value); wire.Write(raw); wire.WriteByte('\n') }
+			write(map[string]any{"type": "thread.started", "thread_id": "session"})
+			expected, _ := cli.Help([]string{"memory", "create", "--help"})
+			skillOutput := skill
+			if mode == "mismatched skill" {
+				skillOutput = "other skill"
+			}
+			for _, item := range []struct{ cmd, out string }{{help, expected}, {skillCommand, skillOutput}, {create, `{"hash":"` + filestore.Hash(first) + `"}`}, {update, `{"hash":"` + filestore.Hash(second) + `"}`}} {
+				if mode == "missing skill" && item.cmd == skillCommand {
+					continue
+				}
+				exitCode := 0
+				if mode == "failed skill" && item.cmd == skillCommand {
+					exitCode = 1
+				}
+				write(map[string]any{"type": "item.completed", "item": map[string]any{"type": "command_execution", "command": item.cmd, "exit_code": exitCode, "aggregated_output": item.out}})
+			}
+			if mode == "self report" {
+				wire.Reset()
+				write(map[string]any{"type": "item.completed", "item": map[string]any{"type": "agent_message", "text": "done"}})
+			}
+			err := verifyMemoryLive(binary, wire.Bytes(), records)
+			if (err == nil) != (mode == "valid") {
+				t.Fatalf("evidence result = %v", err)
+			}
+		})
 	}
 }
 
@@ -342,7 +408,7 @@ func TestMemoryMetadataLive(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
 	defer cancel()
-	prompt := `Use the installed aidlc skill. Before selecting or creating an Intent, read memory create help through the installed binary. Then follow the skill to select an Intent, read its project Rules, explicitly read both .agents/skills/aidlc/SKILL.md and .agents/skills/aidlc-cli/SKILL.md, and obtain the current deployed procedure. Record the current behavior of arithmetic.go in Concept codekb/live-note: title Arithmetic, type Design, tag arithmetic, extension audience=maintainers. The first body must include FIRST-BODY and describe Add. Then read update help, revise only the body to include SECOND-BODY instead and add a concrete example; preserve its metadata. Use actor process:codex. Inspect the saved document afterward. Use one literal CLI command per tool call so its result can be observed. Do not edit the product hooks or Rules. Stop after the Knowledge update; this task does not require the full implementation journey.`
+	prompt := `Use the installed aidlc skill. Before selecting or creating an Intent, read memory create help through the installed binary. Then follow the skill to select an Intent, read its project Rules, explicitly read .agents/skills/aidlc/SKILL.md and .agents/skills/aidlc-cli/SKILL.md, then run exactly cat .agents/skills/aidlc-okf/SKILL.md in its own tool call before any memory create/update, and obtain the current deployed procedure. Record the current behavior of arithmetic.go in Concept codekb/live-note: title Arithmetic, type Design, tag arithmetic, extension audience=maintainers. The first body must include FIRST-BODY and describe Add. Then read update help, revise only the body to include SECOND-BODY instead and add a concrete example; preserve its metadata. Use actor process:codex. Inspect the saved document afterward. Use one literal CLI command per tool call so its result can be observed. Do not edit the product hooks or Rules. Stop after the Knowledge update; this task does not require the full implementation journey.`
 	if _, err := flowRunModel(ctx, cfg, root, "memory", prompt, "workspace-write"); err != nil {
 		t.Fatalf("model failed: %v; evidence %s", err, evidence)
 	}

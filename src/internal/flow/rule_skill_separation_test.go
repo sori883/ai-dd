@@ -73,3 +73,17 @@ func TestRuleSkillSeparationHookMissingCLI(t *testing.T) {
 		t.Fatal("missing CLI skill accepted")
 	}
 }
+
+func TestOKFSkillInitialization(t *testing.T) {
+	s := executionFixture(t)
+	st, err := s.Create("check install")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(s.Root, ".agents/skills/aidlc-okf/SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Begin(st.ID, st.Revision); err == nil {
+		t.Fatal("missing OKF skill accepted")
+	}
+}
