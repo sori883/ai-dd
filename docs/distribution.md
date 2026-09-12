@@ -124,3 +124,11 @@ go test -tags=integration -count=1 -v ./src/cmd/aidlc-dist -run '^TestDistributi
 このfixtureは同一sourceからversion付きの旧/新binaryを別pathへbuildし、隔離projectで独自hookと利用者dataの不変、手動で選んだ製品fileの切替、参照補正、元bytesの復元を確認します。未知版へのupgrade互換、自動updater、実利用環境での切替成功を実証するものではありません。
 
 archive展開・配置file生成は実Codex hookの実行成功と別です。macOS/Codex CLI 0.153.4の通常trust実測はPR #164の記録を参照し、Windowsの実hook動作や全ハーネスの互換性は未確認として残します。実機検証の有無は各変更の計画・検証記録で確認してください。
+
+## 日本語補助CLIの別配布
+
+`aidlc-dist --product natural-japanese-go` は `natural-japanese-go-OS-ARCH[.exe]` を入力として別directoryへ梱包します。既定のaidlc配布は従来どおりです。Go buildは `CGO_ENABLED=0 go build -trimpath -ldflags "-X main.version=VERSION" -o FILE ./src/cmd/natural-japanese-go` を使い、OS/ARCHごとに環境変数を設定します。
+
+補助archiveには実行ファイル、README.md、LICENSES/のMITとUniDic BSD帰属を含め、manifest schema 1とSHA256SUMSで照合します。本体aidlcへ辞書をリンクしません。新規候補で検証してからbinaryと対応skillを更新し、問題時は旧候補へ戻します。Rule・state・runtimeの初期化を復旧手順にしません。正式release公開や自動アップロードは行いません。
+
+finalで `AIDLC_NATURAL_DIST_DIR=DIR go test -tags=integration -count=1 ./src/cmd/aidlc-dist -run ^TestNaturalJapaneseDistributionArchives$` とnative journeyを確認します。実Codexの限定fixtureは `AIDLC_STAGE_SKILLS_LIVE=1 AIDLC_NATURAL_JAPANESE_BINARY=/absolute/binary go test -tags=integration -count=1 ./src/cmd/aidlc -run ^TestStageSkillsLive$`。固定Codex 0.153.4と明示的試験用trustを使い、通常利用者trustの全経路を検証したとは報告しません。

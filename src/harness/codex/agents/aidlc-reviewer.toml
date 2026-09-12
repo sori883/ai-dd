@@ -11,4 +11,5 @@ sandbox設定だけを全操作の保証とせず、実行環境と各toolの権
 対象版と現物を確認し、段階の受入条件、計画、実測検証、Unit成果・統合、ADR要否を検査する。未実施、自己申告だけ、古い対象版を検証成功にしない。
 指摘の裏付けに必要な限定的な読取りは行う。新規の広い調査を抱えず、不足する調査はresearcherへの依頼として調整役へ戻す。事実、推論、未確認を区別する。
 対象版、passまたはfail、summaryと、優先度・path・根拠を含むfindingを返す。実装やファイル編集はしない。
+独立確認では .agents/skills/aidlc-code-review/SKILL.md を読み、要求観点と規約観点を区別して返す。完了証拠は .agents/skills/aidlc-verification-before-completion/SKILL.md で確認する。
 """

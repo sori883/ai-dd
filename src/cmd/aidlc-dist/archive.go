@@ -7,6 +7,8 @@ import (
 	"compress/gzip"
 	"errors"
 	"fmt"
+	codex "github.com/sori883/ai-dd/src/harness/codex"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,6 +18,7 @@ import (
 )
 
 type options struct {
+	Product                                         string
 	writeFile                                       func(string, []byte) error
 	InputDir, OutputDir, Version, Commit, GoVersion string
 	Targets                                         []string
@@ -25,6 +28,9 @@ var supportedTargets = []string{"darwin/amd64", "darwin/arm64", "linux/amd64", "
 var errInvalidInput = errors.New("invalid input")
 
 func packageArchives(o options) error {
+	if o.Product == "" {
+		o.Product = "aidlc"
+	}
 	inputs, err := validateInputs(o)
 	if err != nil {
 		return err
@@ -39,15 +45,15 @@ func packageArchives(o options) error {
 	m := manifest{SchemaVersion: 1, Version: o.Version, SourceCommit: o.Commit, GoVersion: o.GoVersion}
 	for _, input := range inputs {
 		windows := strings.HasPrefix(input.target, "windows/")
-		archive, err := archiveBytes(input.raw, windows)
+		archive, err := productArchiveBytes(input.raw, windows, o.Product)
 		if err != nil {
 			return err
 		}
-		suffix, binary := ".tar.gz", "aidlc"
+		suffix, binary := ".tar.gz", o.Product
 		if windows {
-			suffix, binary = ".zip", "aidlc.exe"
+			suffix, binary = ".zip", o.Product+".exe"
 		}
-		name := "aidlc_" + o.Version + "_" + strings.ReplaceAll(input.target, "/", "_") + suffix
+		name := o.Product + "_" + o.Version + "_" + strings.ReplaceAll(input.target, "/", "_") + suffix
 		if err := write(filepath.Join(o.OutputDir, name), archive); err != nil {
 			return fmt.Errorf("write %s (candidate is incomplete): %w", name, err)
 		}
@@ -62,6 +68,12 @@ type binaryInput struct {
 }
 
 func validateInputs(o options) ([]binaryInput, error) {
+	if o.Product == "" {
+		o.Product = "aidlc"
+	}
+	if o.Product != "aidlc" && o.Product != "natural-japanese-go" {
+		return nil, fmt.Errorf("%w: unknown product", errInvalidInput)
+	}
 	if o.InputDir == "" || o.OutputDir == "" || !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`).MatchString(o.Version) || strings.Contains(o.Version, "..") {
 		return nil, fmt.Errorf("%w: directories and safe version required", errInvalidInput)
 	}
@@ -81,7 +93,7 @@ func validateInputs(o options) ([]binaryInput, error) {
 		if !slices.Contains(supportedTargets, target) || i > 0 && targets[i-1] == target {
 			return nil, fmt.Errorf("%w: unknown or duplicate target %q", errInvalidInput, target)
 		}
-		name := "aidlc-" + strings.ReplaceAll(target, "/", "-")
+		name := o.Product + "-" + strings.ReplaceAll(target, "/", "-")
 		if strings.HasPrefix(target, "windows/") {
 			name += ".exe"
 		}
@@ -114,27 +126,75 @@ func writeNewFile(path string, raw []byte) error {
 }
 
 func archiveBytes(raw []byte, windows bool) ([]byte, error) {
-	var buf bytes.Buffer
+	return productArchiveBytes(raw, windows, "aidlc")
+}
+func productArchiveBytes(raw []byte, windows bool, product string) ([]byte, error) {
+	binary := product
 	if windows {
-		z := zip.NewWriter(&buf)
-		h := &zip.FileHeader{Name: "aidlc.exe", Method: zip.Deflate, Modified: time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)}
-		h.SetMode(0644)
-		w, err := z.CreateHeader(h)
+		binary += ".exe"
+	}
+	entries := map[string][]byte{binary: raw}
+	names := []string{binary}
+	if product == "natural-japanese-go" {
+		readme, err := codex.Files.ReadFile("stage-skills/natural-japanese-go/references/cli.md")
 		if err != nil {
 			return nil, err
 		}
-		_, err = w.Write(raw)
-		if err = errors.Join(err, z.Close()); err != nil {
+		entries["README.md"] = readme
+		names = append(names, "README.md")
+		err = fs.WalkDir(codex.Files, "stage-skills/natural-japanese-go/licenses", func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			raw, err := codex.Files.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			name := "LICENSES/" + filepath.Base(path)
+			entries[name] = raw
+			names = append(names, name)
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	var buf bytes.Buffer
+	if windows {
+		z := zip.NewWriter(&buf)
+		for _, name := range names {
+			h := &zip.FileHeader{Name: name, Method: zip.Deflate, Modified: time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)}
+			h.SetMode(0644)
+			w, err := z.CreateHeader(h)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := w.Write(entries[name]); err != nil {
+				return nil, err
+			}
+		}
+		if err := z.Close(); err != nil {
 			return nil, err
 		}
 	} else {
 		gz := gzip.NewWriter(&buf)
 		tr := tar.NewWriter(gz)
-		if err := tr.WriteHeader(&tar.Header{Name: "aidlc", Mode: 0755, Size: int64(len(raw)), Typeflag: tar.TypeReg}); err != nil {
-			return nil, err
+		for _, name := range names {
+			mode := int64(0644)
+			if name == binary {
+				mode = 0755
+			}
+			if err := tr.WriteHeader(&tar.Header{Name: name, Mode: mode, Size: int64(len(entries[name])), Typeflag: tar.TypeReg}); err != nil {
+				return nil, err
+			}
+			if _, err := tr.Write(entries[name]); err != nil {
+				return nil, err
+			}
 		}
-		_, err := tr.Write(raw)
-		if err = errors.Join(err, tr.Close(), gz.Close()); err != nil {
+		if err := errors.Join(tr.Close(), gz.Close()); err != nil {
 			return nil, err
 		}
 	}

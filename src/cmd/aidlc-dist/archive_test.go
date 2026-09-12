@@ -193,3 +193,88 @@ func TestArchiveRejectsInvalidInput(t *testing.T) {
 		}
 	})
 }
+func TestProductArchive(t *testing.T) {
+	for _, windows := range []bool{false, true} {
+		name := "linux/amd64"
+		if windows {
+			name = "windows/amd64"
+		}
+		t.Run(name, func(t *testing.T) {
+			o := archiveFixture(t)
+			o.Product = "natural-japanese-go"
+			o.Targets = []string{name}
+			suffix := ""
+			if windows {
+				suffix = ".exe"
+			}
+			if err := os.WriteFile(filepath.Join(o.InputDir, "natural-japanese-go-"+strings.ReplaceAll(name, "/", "-")+suffix), []byte("natural binary"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := packageArchives(o); err != nil {
+				t.Fatal(err)
+			}
+			ext := ".tar.gz"
+			if windows {
+				ext = ".zip"
+			}
+			raw := mustRead(t, filepath.Join(o.OutputDir, "natural-japanese-go_"+o.Version+"_"+strings.ReplaceAll(name, "/", "_")+ext))
+			entries := map[string][]byte{}
+			if windows {
+				z, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, f := range z.File {
+					r, err := f.Open()
+					if err != nil {
+						t.Fatal(err)
+					}
+					b, err := io.ReadAll(r)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := r.Close(); err != nil {
+						t.Fatal(err)
+					}
+					entries[f.Name] = b
+				}
+			} else {
+				gz, err := gzip.NewReader(bytes.NewReader(raw))
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer gz.Close()
+				tr := tar.NewReader(gz)
+				for {
+					h, err := tr.Next()
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					b, err := io.ReadAll(tr)
+					if err != nil {
+						t.Fatal(err)
+					}
+					entries[h.Name] = b
+				}
+			}
+			for _, path := range []string{"natural-japanese-go" + suffix, "README.md", "LICENSES/natural-japanese.txt", "LICENSES/kagome.txt", "LICENSES/kagome-dict.txt", "LICENSES/uni.txt", "LICENSES/UniDic-NOTICE.txt"} {
+				if len(entries[path]) == 0 {
+					t.Errorf("missing %s", path)
+				}
+			}
+			if string(entries["natural-japanese-go"+suffix]) != "natural binary" {
+				t.Fatal("wrong binary")
+			}
+		})
+	}
+}
+func TestProductInvalid(t *testing.T) {
+	o := archiveFixture(t)
+	o.Product = "../escape"
+	if err := packageArchives(o); err == nil {
+		t.Fatal("accepted product")
+	}
+}

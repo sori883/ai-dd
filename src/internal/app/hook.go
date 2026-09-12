@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	codex "github.com/sori883/ai-dd/src/harness/codex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -387,7 +388,7 @@ func (s Service) workflowRead(input HookInput) bool {
 		return false
 	}
 	for _, name := range argv[1:] {
-		if name != ".agents/skills/aidlc/SKILL.md" && name != ".agents/skills/aidlc-cli/SKILL.md" && name != ".agents/skills/aidlc-okf/SKILL.md" {
+		if !codex.WorkflowMarkdown(name) {
 			return false
 		}
 		if _, err := okfmemory.ReadFile(s.Root, name); err != nil {

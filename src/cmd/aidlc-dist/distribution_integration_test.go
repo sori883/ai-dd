@@ -34,6 +34,9 @@ func TestDistributionArchives(t *testing.T) {
 }
 
 func verifyDistribution(t *testing.T, dir string) manifest {
+	return verifyProductDistribution(t, dir, "aidlc")
+}
+func verifyProductDistribution(t *testing.T, dir, product string) manifest {
 	t.Helper()
 	raw := mustRead(t, filepath.Join(dir, "manifest.json"))
 	var m manifest
@@ -72,11 +75,11 @@ func verifyDistribution(t *testing.T, dir string) manifest {
 		if !valid {
 			t.Fatal("unknown target", a.Target)
 		}
-		binary, suffix := "aidlc", ".tar.gz"
+		binary, suffix := product, ".tar.gz"
 		if strings.HasPrefix(a.Target, "windows/") {
-			binary, suffix = "aidlc.exe", ".zip"
+			binary, suffix = product+".exe", ".zip"
 		}
-		expected := "aidlc_" + m.Version + "_" + strings.ReplaceAll(a.Target, "/", "_") + suffix
+		expected := product + "_" + m.Version + "_" + strings.ReplaceAll(a.Target, "/", "_") + suffix
 		if a.Binary != binary || a.Archive != expected || filepath.Base(expected) != expected {
 			t.Fatalf("unexpected archive names: %+v", a)
 		}
@@ -84,7 +87,12 @@ func verifyDistribution(t *testing.T, dir string) manifest {
 		if a.ArchiveSize != int64(len(compressed)) || a.ArchiveSHA256 != digest(compressed) || sums[a.Archive] != a.ArchiveSHA256 {
 			t.Fatal("archive metadata mismatch", a.Target)
 		}
-		payload := distributionPayload(t, a, compressed)
+		var payload []byte
+		if product == "natural-japanese-go" {
+			payload = naturalDistributionPayload(t, a, compressed)
+		} else {
+			payload = distributionPayload(t, a, compressed)
+		}
 		if a.BinarySize != int64(len(payload)) || a.BinarySHA256 != digest(payload) || len(payload) == 0 {
 			t.Fatal("binary metadata mismatch", a.Target)
 		}
@@ -393,4 +401,140 @@ func TestDistributionJourney(t *testing.T) {
 		t.Fatal("old binary unavailable after rollback")
 	}
 	t.Log("manual reference switch and byte restoration passed; no Codex hook execution or unknown-version upgrade compatibility claimed")
+}
+
+func TestNaturalJapaneseDistributionArchives(t *testing.T) {
+	dir := os.Getenv("AIDLC_NATURAL_DIST_DIR")
+	if dir == "" {
+		t.Skip("set AIDLC_NATURAL_DIST_DIR")
+	}
+	m := verifyProductDistribution(t, dir, "natural-japanese-go")
+	if len(m.Artifacts) != 6 {
+		t.Fatal("six targets required")
+	}
+}
+func naturalDistributionPayload(t *testing.T, a artifact, raw []byte) []byte {
+	t.Helper()
+	entries := map[string][]byte{}
+	save := func(name string, r io.Reader) {
+		if _, exists := entries[name]; exists {
+			t.Fatal("duplicate entry", name)
+		}
+		b, err := io.ReadAll(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries[name] = b
+	}
+	if strings.HasSuffix(a.Archive, ".zip") {
+		z, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range z.File {
+			if !f.Mode().IsRegular() {
+				t.Fatal("nonregular entry")
+			}
+			r, err := f.Open()
+			if err != nil {
+				t.Fatal(err)
+			}
+			save(f.Name, r)
+			if err := r.Close(); err != nil {
+				t.Fatal(err)
+			}
+		}
+	} else {
+		gz, err := gzip.NewReader(bytes.NewReader(raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer gz.Close()
+		tr := tar.NewReader(gz)
+		for {
+			h, err := tr.Next()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if h.Typeflag != tar.TypeReg {
+				t.Fatal("nonregular entry")
+			}
+			if h.Name == a.Binary && h.Mode != 0755 {
+				t.Fatal("binary is not executable")
+			}
+			save(h.Name, tr)
+		}
+	}
+	expected := []string{a.Binary, "README.md", "LICENSES/natural-japanese.txt", "LICENSES/kagome.txt", "LICENSES/kagome-dict.txt", "LICENSES/uni.txt", "LICENSES/UniDic-NOTICE.txt"}
+	if len(entries) != len(expected) {
+		t.Fatal("unexpected archive entries", entries)
+	}
+	for _, name := range expected {
+		if len(entries[name]) == 0 {
+			t.Fatal("missing", name)
+		}
+	}
+	return entries[a.Binary]
+}
+func TestNaturalJapaneseDistributionJourney(t *testing.T) {
+	source, err := filepath.Abs("../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := t.TempDir()
+	input := filepath.Join(base, "input")
+	if err := os.Mkdir(input, 0700); err != nil {
+		t.Fatal(err)
+	}
+	target := runtime.GOOS + "/" + runtime.GOARCH
+	name := "natural-japanese-go-" + runtime.GOOS + "-" + runtime.GOARCH
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	distributionOK(t, source, "go", "build", "-trimpath", "-o", filepath.Join(input, name), "./src/cmd/natural-japanese-go")
+	o := options{Product: "natural-japanese-go", InputDir: input, OutputDir: filepath.Join(base, "candidate"), Version: "test", Commit: strings.Repeat("a", 40), GoVersion: "go1.26.4", Targets: []string{target}}
+	if err := packageArchives(o); err != nil {
+		t.Fatal(err)
+	}
+	m := verifyProductDistribution(t, o.OutputDir, o.Product)
+	a := m.Artifacts[0]
+	binary := filepath.Join(base, a.Binary)
+	payload := naturalDistributionPayload(t, a, mustRead(t, filepath.Join(o.OutputDir, a.Archive)))
+	if err := os.WriteFile(binary, payload, 0700); err != nil {
+		t.Fatal(err)
+	}
+	text := filepath.Join(base, "text.md")
+	if err := os.WriteFile(text, []byte("非常に重要。\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run := func(args ...string) []byte {
+		ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, binary, args...)
+		cmd.Dir = base
+		cmd.Env = append(os.Environ(), "PATH="+filepath.Join(base, "no-runtime"))
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatal(err, string(out))
+		}
+		return out
+	}
+	run("--help")
+	report := run("--json", text)
+	if !bytes.Contains(report, []byte("forbidden_phrase")) {
+		t.Fatal(string(report))
+	}
+	baseline := filepath.Join(base, "previous.json")
+	if err := os.WriteFile(baseline, report, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if out := run("--json", "--baseline", baseline, text); !bytes.Contains(out, []byte("persisting")) {
+		t.Fatal(string(out))
+	}
+	if string(mustRead(t, text)) != "非常に重要。\n" {
+		t.Fatal("input modified")
+	}
 }

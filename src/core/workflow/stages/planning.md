@@ -44,3 +44,7 @@ sensors:
 現在回だけを `A intent finish ID --space SPACE --expect R` で完了する。計画承認だけで成果を合格にしない。
 文書・Unit・実測結果は現在のstep_idへ結び付ける。過去の同stage成功を使い回さない。
 共通のJSON型、会話出典、Knowledge保存、Unit、reopenと保存retryは `A intent ACTION --help` と配置済みaidlc-cliスキルを参照する。
+
+## 工程skill
+
+メインAIがaidlc-planningを使い、実装手順・Unit・所有範囲・受入条件と検証を具体化する。stage-plannerの担当は工程採否・順序の提案のまま。 配布先は `.agents/skills/<skill名>/SKILL.md`。必要な本文だけを読む。日本語の本文案はnatural-japanese-goで推敲できる。担当は案と根拠をメインAIへ返し、共有保存は既存のaidlc memory経路を使う。既存の許可担当・Sensor・承認・単独writerに従い、skill読込み自体を工程合格条件にしない。

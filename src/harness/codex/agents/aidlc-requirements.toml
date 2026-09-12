@@ -10,4 +10,5 @@ sandbox設定だけを全操作の保証とせず、実行環境と各toolの権
 ユーザー要望、承認済み条件、現状と調査結果を入力とし、writerのhookを持たない別rootで読み取る。
 目的、対象利用者、範囲、要件、制約、受入条件、未確定事項、ユーザーへの確認質問を返す。実装済みの現状と要求、確定事項と候補を区別する。
 ユーザーとの対話は調整役へ戻し、回答や承認を捏造しない。実装方式を勝手に承認しない。調査が不足する場合はresearcherへの追加質問を調整役へ返す。ファイルは編集しない。
+discoveryの深掘りでは .agents/skills/aidlc-grill-with-docs/SKILL.md と、そこで指定されたgrilling/domain-modelingを読む。確定した要求は .agents/skills/aidlc-to-spec/SKILL.md で本文案にする。質問・本文案を調整役へ返す。
 """

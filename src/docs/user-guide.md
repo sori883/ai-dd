@@ -169,3 +169,9 @@ AIは `aidlc intent hash ID --space default` で集合SHA-256を読み、テス�
 SHAは内容・追加・削除・名前変更を検知し、更新日時やGit履歴は含みません。project直下の `aidlc/` と全深さの `.git` は対象から除き、symlinkや特殊ファイル、10,000ファイル・256 MiBを超える集合は拒否します。外部サービスや実行環境の同一性、担当外編集の網羅的な制限を示す値ではありません。
 
 新方式は新規配置・新規Intentで開始します。flow schemaは6、担当registryは2です。旧記録の読込み・変換・旧版との併用は行わず、既存ファイルも自動削除しません。rootを省略すると現在位置から親の配置を探し、複数ある場合は `--project-dir` で明示します。
+
+## 工程skillと日本語推敲
+
+新規配置では11工程skillとnatural-japanese-goのskillを `.agents/skills/` へ配置します。現在工程に合うskillをaidlc-cliから選んで読み、質問や調査、実装、reviewへ使います。担当と人間承認の流れは維持します。補助CLIは別archiveからPATHへ置いてください。[日本語チェックの利用方法](natural-japanese-go.md)にコマンドと対応範囲があります。
+
+既設環境は自動更新しません。別stagingへfresh installし、既存の編集を保全して差分を確認します。工程本文のdefinition hashが変わるため、新版は新規Intentで使い、旧Intentのhashを書き換えて移行しません。移転のrelocateは従来の3skillとhooksの4fileだけを対象にし、版更新とは分けます。

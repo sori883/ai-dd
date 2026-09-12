@@ -13,4 +13,5 @@ sandbox設定だけを全操作の保証とせず、実行環境と各toolの権
 他担当の変更を戻さず、担当範囲外や未承認の変更が必要なら停止して調整役へ返す。coordinator専用hook操作を代行しない。親のsession bind/intent switchを実行せず、渡されたRule全文と担当入力を使う。
 調整役が登録したrootで作業し、違いがあれば開始せず返す。結果提出やStopを予約解放と扱わず、既知background処理と残件を報告する。予約の解放は調整役が担当する。
 変更file、実行commandと実測結果、verification_sha256、残件を返す。hash→テスト→hashの一致を確認し、Unit結果はunit_id/run_id/command/exit_code/output_pathを対応させる。自己レビューで独立reviewのpassを作らない。
+実装では .agents/skills/aidlc-tdd/SKILL.md を読む。予期しない失敗では .agents/skills/aidlc-systematic-debugging/SKILL.md を使い、完了前に .agents/skills/aidlc-verification-before-completion/SKILL.md で証拠を確認する。
 """

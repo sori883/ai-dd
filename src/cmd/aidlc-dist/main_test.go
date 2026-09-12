@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -80,4 +81,11 @@ func TestDistCommand(t *testing.T) {
 			t.Fatal("changed existing output", err)
 		}
 	})
+}
+func TestProductCLI(t *testing.T) {
+	var out bytes.Buffer
+	code := run([]string{"--product", "bad"}, &out, io.Discard)
+	if code != 2 {
+		t.Fatal(code)
+	}
 }
