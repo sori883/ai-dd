@@ -1,5 +1,11 @@
 # 開発プロジェクトRAM
 
+- [3環境向け配布基盤D1の実装](decisions/2026-09-12-three-host-distribution-d1-evidence.md): Issue #183。ManifestとCodex生成を分離し、旧配置69fileとの一致を確認。[hook前提確認](research/2026-09-12-three-host-hook-preflight.md)ではClaude実測（自動通知も入力イベントになる点を含む）とVS Code未確認・選択待ちを区別する。
+
+- [3環境への製品対応を実装する直接依頼](decisions/2026-09-12-three-host-product-implementation-approved.md): 本家2.6.123の共通資材・環境別配布構成を流用。Codex配布の動作維持と新host接続の前提確認から着手する。[具体計画](../design/three-host-distribution-plan.md)。
+
+- [AI-DLC本体のCodex・Claude Code・VS Code Copilot対応を調査](research/2026-09-12-three-agent-environments-feasibility.md): 対象は任意skillだけでなく製品全体。Copilotはユーザー回答によりVS Code版に確定。Go共通本体と環境別接続を提案し、現在のCodex依存、公式hook・子担当の差、共存と実機確認の論点を整理。調査時点では製品変更・実機試験・実装承認なし。後続の直接依頼と実装記録へ継続。
+
 - [GitHub Issue・PRを任意のskillとして追加](decisions/2026-09-12-optional-github-skill-approved.md): Issue #181。直接依頼によりaidlc-githubと導入案内を作成。架空案件で再開・複数repositoryのBolt・未完了Unit・誤close防止を独立適用し、対象Unitと提出時期を明記した。本体・標準配布は変更せず、Intent／Boltの成果確認後、対象工程のfinish前にPRを出す。[具体計画](../design/optional-github-skill-plan.md)。
 
 - [工程skillとKagome版日本語チェックの実装](decisions/2026-09-12-stage-skills-natural-japanese-go-implementation.md): Issue #179／PR #180。11工程skillとGo版skill、14分類の別CLI、配布・hook読取りを接続。依存はKagome/UniDic/共通辞書の3追加module。13項目TDDと親の対象確認を実施。reviewの3指摘とFIFO検査を修復し、CI失敗を受けてbaselineの読込みを解析前へ移動。新headのreview/final/CIで確認する。
