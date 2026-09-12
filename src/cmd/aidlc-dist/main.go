@@ -10,10 +10,11 @@ import (
 	"strings"
 )
 
-const usage = `使い方: aidlc-dist --input-dir DIR --output-dir NEW_DIR --version VERSION --commit SHA --go-version GO_VERSION [--targets OS/ARCH,...]
+const usage = `使い方: aidlc-dist --input-dir DIR --output-dir NEW_DIR --version VERSION --commit SHA --go-version GO_VERSION [--targets OS/ARCH,...] [--product aidlc|natural-japanese-go]
 
 開発者向けにローカルで配布候補を梱包します。アップロードや公開は行いません。
---input-dir    ビルド済みの aidlc-OS-ARCH を置いたディレクトリ（Windowsは末尾に .exe）
+--product      aidlc（既定）またはnatural-japanese-go。別directoryへ梱包
+--input-dir    ビルド済みの PRODUCT-OS-ARCH を置いたディレクトリ（Windowsは末尾に .exe）
 --output-dir   出力先の新しいディレクトリ（既存のディレクトリは指定不可）
 --version      配布候補の版名。例: dev-abcdef0
 --commit       ソースのコミットID（小文字の16進数40桁）
@@ -27,6 +28,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	var o options
 	fs := flag.NewFlagSet("aidlc-dist", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
+	fs.StringVar(&o.Product, "product", "aidlc", "")
 	fs.StringVar(&o.InputDir, "input-dir", "", "")
 	fs.StringVar(&o.OutputDir, "output-dir", "", "")
 	fs.StringVar(&o.Version, "version", "", "")

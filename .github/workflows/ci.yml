@@ -47,6 +47,8 @@ jobs:
       - name: Test fresh four-stage distribution journey
         run: go test -tags=integration -count=1 ./src/cmd/aidlc -run '^Test(FlowJourney|GitIndependentJourney)$'
 
+      - name: Test standalone Japanese binary
+        run: go test -tags=integration -count=1 ./src/cmd/natural-japanese-go -run '^TestCommandBinary$'
       - name: Check module metadata
         run: go mod tidy -diff
       - name: Smoke test native binary
@@ -154,3 +156,10 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: go build -trimpath -o "${{ runner.temp }}/aidlc-${GOOS}-${GOARCH}${{ matrix.extension }}" ./src/cmd/aidlc
+
+      - name: Build Japanese helper
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -trimpath -o "${{ runner.temp }}/natural-japanese-go-${GOOS}-${GOARCH}${{ matrix.extension }}" ./src/cmd/natural-japanese-go

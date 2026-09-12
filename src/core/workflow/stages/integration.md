@@ -47,3 +47,7 @@ sensors:
 共通のJSON型、会話出典、Knowledge保存、Unit、reopenと保存retryは `A intent ACTION --help` と配置済みaidlc-cliスキルを参照する。
 
 verification_pathsへコード・設定・テスト・共通部品を指定する。intent hash→テスト→intent hashの一致を確認し、step_id/stage/verification_scope/verification_sha256/runsを持つ結果JSONをaidlc/evidenceへ保存してtest_resultsへ登録する。各runはunit_id/command/exit_code/output_path。Unit結果にはトップレベルunit_id/run_idも指定する。Unitのresult/integrateは内容を照合する。終了時は最新Intent全体SHAで全Unit+commandの成功を確認する。
+
+## 工程skill
+
+reviewerはaidlc-code-reviewで固定成果を確認し、メインAIはaidlc-verification-before-completionで完了主張と最新証拠を照合する。 配布先は `.agents/skills/<skill名>/SKILL.md`。必要な本文だけを読む。日本語の本文案はnatural-japanese-goで推敲できる。担当は案と根拠をメインAIへ返し、共有保存は既存のaidlc memory経路を使う。既存の許可担当・Sensor・承認・単独writerに従い、skill読込み自体を工程合格条件にしない。

@@ -55,3 +55,7 @@ sensors:
 共通のJSON型、会話出典、Knowledge保存、Unit、reopenと保存retryは `A intent ACTION --help` と配置済みaidlc-cliスキルを参照する。
 
 任意4段階の採否・省略理由をintent planで提示し、intent plan-approvalで承認する。計画と成果の両requestを提示済みなら同じ後続回答を双方へ記録できる。後から作ったrequestへ転用しない。
+
+## 工程skill
+
+深掘りはaidlc-grill-with-docsからgrilling/domain-modelingを読み、researcherはaidlc-research、要件統合はaidlc-to-specを使う。 配布先は `.agents/skills/<skill名>/SKILL.md`。必要な本文だけを読む。日本語の本文案はnatural-japanese-goで推敲できる。担当は案と根拠をメインAIへ返し、共有保存は既存のaidlc memory経路を使う。既存の許可担当・Sensor・承認・単独writerに従い、skill読込み自体を工程合格条件にしない。

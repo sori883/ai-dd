@@ -50,3 +50,21 @@ CLIは起動しない。メインAIがprocedureの担当と登録task_nameをnat
 一般Toolが残る場合は、非同期処理を終端までpollし、成功・失敗を問わず実際の終了を確認する。同じSpace・Intent・sessionでメインAIが `A session bind ID --space SPACE --session SESSION --recover` を実行できる。固定Codex 0.153.4では失敗patchにPostがないため、終了確認とこの明示復旧を使う。時間やStopだけで解除せず、workerの割当解放とは別に扱う。
 
 Gitは利用時に不要。明示--project-dirを優先し、省略時は上方向のaidlc/workflow/stage-graph.jsonで管理rootを探す。候補が複数なら明示する。検証集合は管理aidlcと全深さ.gitを除き、symlink・特殊file・範囲外参照を拒否する。10,000ファイル/256 MiBが上限。範囲の十分性を計画と独立reviewで確認する。レビュー中は編集を止める。
+
+## 工程に合うskillを読む
+
+必要な工程と担当だけが次の本文を読む。一括読込みや追加の工程合格条件にはしない。
+
+| 作業 | 読むskill |
+| --- | --- |
+| discoveryの深掘り | [aidlc-grill-with-docs](../aidlc-grill-with-docs/SKILL.md)。そこからgrillingとdomain-modelingを実際に読む |
+| 一次資料の調査 | researcherが [aidlc-research](../aidlc-research/SKILL.md) |
+| 実装済み構成の説明 | [aidlc-architecture](../aidlc-architecture/SKILL.md) |
+| 確定した要求の統合 | requirementsが [aidlc-to-spec](../aidlc-to-spec/SKILL.md) |
+| planningの実装計画・Unit | メインAIが [aidlc-planning](../aidlc-planning/SKILL.md) |
+| tddの実装・修正 | workerが [aidlc-tdd](../aidlc-tdd/SKILL.md)、不具合時は [aidlc-systematic-debugging](../aidlc-systematic-debugging/SKILL.md) |
+| 独立review | reviewerが [aidlc-code-review](../aidlc-code-review/SKILL.md) |
+| 完了主張の証拠確認 | [aidlc-verification-before-completion](../aidlc-verification-before-completion/SKILL.md) |
+| 日本語の本文案の推敲 | [natural-japanese-go](../natural-japanese-go/SKILL.md) |
+
+メインAIはroot相対の既知Markdownを `cat .agents/skills/aidlc-planning/SKILL.md` のように最大3fileずつ読む。子へは担当範囲と必要なskill本文または参照先を渡す。子の起動は前述のnative登録を維持する。本文案・根拠はメインAIへ返し、共有保存はaidlc memoryで行う。日本語CLIは開始済み工程の通常toolとして実行し、承認待ちの例外を作らない。stage-plannerの工程採否・順序提案と、メインAIの実装計画を区別する。

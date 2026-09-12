@@ -66,8 +66,9 @@ hookは最大3ファイルの単純なcatだけを既存どおり扱い、配布
 | github.com/ikawaha/kagome-dict/uni | v1.2.6、UniDic一種類を補助CLIへ埋込み |
 
 Kagomeと必要な辞書の追加はユーザーが指定した。Go標準ライブラリには日本語の単語分割・品詞・原形・読みを
-得る解析器と辞書がないため利用する。Kagomeの必要な推移依存であるkagome-dict v1.1.7、golang.org/x/text
-v0.32.0等もgo.mod/go.sumへ固定する。無関係なCLI frameworkや解析libraryは追加しない。
+得る解析器と辞書がないため利用する。必要な推移依存はkagome-dict v1.1.7で、go.mod/go.sumへ固定する。
+実装後のimport graphとtidyでは、調査時に候補へ挙げたIPA辞書とgolang.org/x/textは不要と確認できたため追加しない。
+無関係なCLI frameworkや解析libraryは追加しない。
 UniDicは品詞・原形・読みを一つの辞書で扱うため選び、実行時の辞書選択やダウンロードを要求しない。
 辞書dataは確認版で約45.5MBあり、補助CLIの容量は増える。本体aidlcのimport graphへは含めない。
 
