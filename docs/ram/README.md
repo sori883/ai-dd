@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [workerの通常フォルダ・順次実装を明記](decisions/2026-09-12-worker-root-guidance-repair.md): 指定された元checkoutの旧worktree前提を補正し、現行配布原稿にも既存方針を明記する直接依頼。descriptionと他の未commit変更を保全する。
+
 - [製品のminimal名称を取り除く](decisions/2026-09-12-product-naming-cleanup-approved.md): 原稿のcore/Codex直下配置、内部app package、`__hook`への改名を直接承認。配置と保存形式を保ち、旧hook別名は追加しない。[具体計画](../design/product-naming-cleanup-plan.md)。
 - [製品名称整理の実装](decisions/2026-09-12-product-naming-cleanup-implementation.md): Issue #173 loop実装・新hook名・原稿と保存契約の維持（review/finalは別gate）。
 
