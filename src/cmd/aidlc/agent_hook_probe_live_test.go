@@ -85,8 +85,8 @@ func agentProbePrepare(dir, binary string, scenario agentProbeScenario) (agentPr
 		return fixture, err
 	}
 	nonce := hex.EncodeToString(nonceBytes[:])
-	processCommand := minimalProbeQuote(binary) + " -test.run='^TestAgentHookProbeProcess$' -- agent-process " + minimalProbeQuote(filepath.Join(dir, "processes")) + " " + nonce + " 15000"
-	hookCommand := minimalProbeQuote(binary) + " -test.run='^TestAgentHookProbeHelper$' -- agent-hook " + minimalProbeQuote(filepath.Join(dir, "events")) + " " + minimalProbeQuote(scenario.Mode)
+	processCommand := hookProbeQuote(binary) + " -test.run='^TestAgentHookProbeProcess$' -- agent-process " + hookProbeQuote(filepath.Join(dir, "processes")) + " " + nonce + " 15000"
+	hookCommand := hookProbeQuote(binary) + " -test.run='^TestAgentHookProbeHelper$' -- agent-hook " + hookProbeQuote(filepath.Join(dir, "events")) + " " + hookProbeQuote(scenario.Mode)
 	hooks := map[string]any{}
 	for _, event := range []string{"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "Stop"} {
 		hooks[event] = []any{map[string]any{"hooks": []any{map[string]any{"type": "command", "command": hookCommand, "timeout": 1}}}}
@@ -116,7 +116,7 @@ developer_instructions = "Run only the provided finite probe command once. Do no
 	if err := os.WriteFile(filepath.Join(dir, "prompt.txt"), []byte(prompt), 0600); err != nil {
 		return fixture, err
 	}
-	args := []string{"exec", "--ignore-user-config", "--dangerously-bypass-hook-trust", "-s", "workspace-write", "-c", `approval_policy="never"`, "-m", "gpt-6-astra", "-c", `model_reasoning_effort="xhigh"`, "-c", minimalProbeTrustConfig(root), "--add-dir", dir, "-C", root, "--json", prompt}
+	args := []string{"exec", "--ignore-user-config", "--dangerously-bypass-hook-trust", "-s", "workspace-write", "-c", `approval_policy="never"`, "-m", "gpt-6-astra", "-c", `model_reasoning_effort="xhigh"`, "-c", hookProbeTrustConfig(root), "--add-dir", dir, "-C", root, "--json", prompt}
 	if err := agentProbeWriteJSON(filepath.Join(dir, "command.json"), append([]string{"codex"}, args...)); err != nil {
 		return fixture, err
 	}

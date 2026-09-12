@@ -192,7 +192,7 @@ func TestHookReliabilityProbeLive(t *testing.T) {
 		if err := json.Unmarshal(data, &record); err != nil {
 			t.Fatal(err)
 		}
-		var input minimalProbeInput
+		var input hookProbeInput
 		if err := json.Unmarshal(record.Raw, &input); err != nil {
 			t.Fatal(err)
 		}
@@ -289,7 +289,7 @@ func reliabilityCollect(evidence string) (map[string]reliabilityResult, error) {
 		if err := json.Unmarshal(data, &record); err != nil {
 			return nil, fmt.Errorf("incomplete wrapper record %s: %w", name, err)
 		}
-		var input minimalProbeInput
+		var input hookProbeInput
 		if err := json.Unmarshal(record.Raw, &input); err != nil {
 			return nil, err
 		}

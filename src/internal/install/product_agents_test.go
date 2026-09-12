@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	codex "github.com/sori883/ai-dd/src/harness/codex/minimal"
+	codex "github.com/sori883/ai-dd/src/harness/codex"
 )
 
 func TestProductAgentAssets(t *testing.T) {

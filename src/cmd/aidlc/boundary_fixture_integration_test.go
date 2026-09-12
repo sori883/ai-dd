@@ -22,13 +22,13 @@ func boundaryFixtureDocument(t *testing.T, root, id, kind string) string {
 		}
 	}
 	name := "aidlc/spaces/default/knowledge/" + rel
-	writeMinimalFixture(t, filepath.Join(root, name), body)
+	writeAIDLCFixture(t, filepath.Join(root, name), body)
 	return name
 }
 func boundaryFixtureResults(t *testing.T, root, step, stage, head string, commands []string, output []byte) string {
 	t.Helper()
 	log := "aidlc/evidence/" + stage + ".txt"
-	writeMinimalFixture(t, filepath.Join(root, log), string(output))
+	writeAIDLCFixture(t, filepath.Join(root, log), string(output))
 	states, err := (flow.Store{Root: root, Space: "default"}).List()
 	if err != nil {
 		t.Fatal(err)
@@ -59,6 +59,6 @@ func boundaryFixtureResults(t *testing.T, root, step, stage, head string, comman
 		t.Fatal(err)
 	}
 	name := "aidlc/evidence/" + stage + ".json"
-	writeMinimalFixture(t, filepath.Join(root, name), string(raw))
+	writeAIDLCFixture(t, filepath.Join(root, name), string(raw))
 	return name
 }

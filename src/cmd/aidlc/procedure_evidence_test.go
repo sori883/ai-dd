@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/sori883/ai-dd/src/internal/app"
 	"github.com/sori883/ai-dd/src/internal/cli"
 	"github.com/sori883/ai-dd/src/internal/flow"
-	"github.com/sori883/ai-dd/src/internal/minimal"
 )
 
 func verifyProcedureEvidence(binary, id string, records []boundaryObservation, executions map[string]int, canary bool) error {
@@ -19,9 +19,9 @@ func verifyProcedureEvidence(binary, id string, records []boundaryObservation, e
 	}
 	step := 0
 	session := ""
-	pending := map[string]minimal.HookInput{}
+	pending := map[string]app.HookInput{}
 	for _, record := range records {
-		var h minimal.HookInput
+		var h app.HookInput
 		if json.Unmarshal(record.Raw, &h) != nil {
 			return fail()
 		}
@@ -75,7 +75,7 @@ func verifyProcedureEvidence(binary, id string, records []boundaryObservation, e
 		if !ok || len(argv) < 2 || argv[0] != binary {
 			continue
 		}
-		r, err := cli.ParseMinimal(argv[1:])
+		r, err := cli.ParseCommand(argv[1:])
 		if err != nil || r.Command != "intent" || r.Target != id || r.Space != "default" {
 			continue
 		}
@@ -116,7 +116,7 @@ func TestProcedureEvidenceSequence(t *testing.T) {
 	executions := map[string]int{}
 	for i, command := range commands {
 		for _, event := range []string{"PreToolUse", "PostToolUse"} {
-			h := minimal.HookInput{Event: event, Session: "session", ID: fmt.Sprint(i), Tool: "Bash"}
+			h := app.HookInput{Event: event, Session: "session", ID: fmt.Sprint(i), Tool: "Bash"}
 			h.Input.Command = command
 			raw, _ := json.Marshal(h)
 			stage := "tdd"

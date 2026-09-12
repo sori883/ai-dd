@@ -33,10 +33,10 @@ type reliabilityRecord struct {
 
 func reliabilityCapture(ctx context.Context, binary, root string, raw []byte) reliabilityRecord {
 	r := reliabilityRecord{Raw: raw, Exit: -1, Started: time.Now()}
-	var input minimalProbeInput
+	var input hookProbeInput
 	_ = json.Unmarshal(raw, &input)
 	r.Before = reliabilityReadSession(root, input.Session)
-	cmd := exec.CommandContext(ctx, binary, "__minimal-hook", "--project-dir", root)
+	cmd := exec.CommandContext(ctx, binary, "__hook", "--project-dir", root)
 	cmd.Dir = root
 	cmd.Stdin = bytes.NewReader(raw)
 	var out, errout bytes.Buffer
@@ -135,7 +135,7 @@ func TestHookReliabilityProbeProtocol(t *testing.T) {
 				}
 			}
 			// The independent product invocation supplies the expected wire result.
-			cmd := exec.CommandContext(t.Context(), binary, "__minimal-hook", "--project-dir", root)
+			cmd := exec.CommandContext(t.Context(), binary, "__hook", "--project-dir", root)
 			cmd.Stdin = bytes.NewBufferString(tc.raw)
 			var stdout, stderr bytes.Buffer
 			cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -182,14 +182,14 @@ func TestHookReliabilityProbeProtocol(t *testing.T) {
 			if json.Unmarshal(data, &saved) != nil || !bytes.Equal(saved.Raw, []byte(tc.raw)) || saved.Exit != wantExit {
 				t.Fatal("helper lost record")
 			}
-			var input minimalProbeInput
+			var input hookProbeInput
 			if tc.name != "invalid_wire" && (json.Unmarshal(got.Raw, &input) != nil || input.Session != "session" || input.Turn != "turn" || input.ID != "tool") {
 				t.Fatal("lost correlation IDs")
 			}
 			if err := os.MkdirAll(filepath.Join(root, ".codex"), 0700); err != nil {
 				t.Fatal(err)
 			}
-			registration := fmt.Sprintf(`{"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":%q}]}]}}`, minimalProbeQuote(binary)+" __minimal-hook --project-dir "+minimalProbeQuote(root))
+			registration := fmt.Sprintf(`{"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":%q}]}]}}`, hookProbeQuote(binary)+" __hook --project-dir "+hookProbeQuote(root))
 			if err := os.WriteFile(filepath.Join(root, ".codex/hooks.json"), []byte(registration), 0600); err != nil {
 				t.Fatal(err)
 			}
@@ -259,7 +259,7 @@ func reliabilityEvaluate(records []reliabilityRecord, terminal []byte) reliabili
 	var previous []byte
 	failure := ""
 	for i, r := range records {
-		var input minimalProbeInput
+		var input hookProbeInput
 		if json.Unmarshal(r.Raw, &input) != nil || input.Session != e.Session || input.Turn != e.Turn || input.ID != e.Item.ID || input.Tool != "Bash" {
 			return unknown("hook/terminal IDs differ")
 		}
@@ -377,7 +377,7 @@ func TestHookReliabilityProbeEvidence(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		original := []byte(fmt.Sprintf(`{"hooks":{"PreToolUse":[{"matcher":"^Bash$","hooks":[{"type":"command","command":%q,"timeout":10},{"type":"command","command":"echo user-hook","timeout":4}]}]}}`, minimalProbeQuote(binary)+" __minimal-hook --project-dir "+minimalProbeQuote(root)))
+		original := []byte(fmt.Sprintf(`{"hooks":{"PreToolUse":[{"matcher":"^Bash$","hooks":[{"type":"command","command":%q,"timeout":10},{"type":"command","command":"echo user-hook","timeout":4}]}]}}`, hookProbeQuote(binary)+" __hook --project-dir "+hookProbeQuote(root)))
 		if err := os.WriteFile(filepath.Join(root, ".codex/hooks.json"), original, 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -535,7 +535,7 @@ func reliabilityPrepare(root, binary, helper, evidence string) error {
 		return fmt.Errorf("no deployed hooks")
 	}
 	owned := 0
-	productCommand := minimalProbeQuote(binary) + " __minimal-hook --project-dir " + minimalProbeQuote(root)
+	productCommand := hookProbeQuote(binary) + " __hook --project-dir " + hookProbeQuote(root)
 	for _, value := range hooks {
 		groups, ok := value.([]any)
 		if !ok {
@@ -558,7 +558,7 @@ func reliabilityPrepare(root, binary, helper, evidence string) error {
 				if hook["type"] != "command" || hook["command"] != productCommand {
 					continue
 				}
-				hook["command"] = minimalProbeQuote(filepath.Join(evidence, "wrapper.sh"))
+				hook["command"] = hookProbeQuote(filepath.Join(evidence, "wrapper.sh"))
 				owned++
 			}
 		}
@@ -578,7 +578,7 @@ func reliabilityPrepare(root, binary, helper, evidence string) error {
 	if err != nil {
 		return err
 	}
-	wrapper := "#!/bin/sh\nrecord=$(mktemp " + minimalProbeQuote(filepath.Join(evidence, "record-XXXXXXXX")) + " 2>/dev/null) || exec " + productCommand + "\nAIDLC_RELIABILITY_HELPER=1 exec " + minimalProbeQuote(helper) + " '-test.run=^TestHookReliabilityProbeHelper$' -- " + minimalProbeQuote(binary) + " " + minimalProbeQuote(root) + " \"$record\"\n"
+	wrapper := "#!/bin/sh\nrecord=$(mktemp " + hookProbeQuote(filepath.Join(evidence, "record-XXXXXXXX")) + " 2>/dev/null) || exec " + productCommand + "\nAIDLC_RELIABILITY_HELPER=1 exec " + hookProbeQuote(helper) + " '-test.run=^TestHookReliabilityProbeHelper$' -- " + hookProbeQuote(binary) + " " + hookProbeQuote(root) + " \"$record\"\n"
 	manifest, err := json.MarshalIndent(map[string]any{"root": root, "binary": binary, "helper": helper, "product_sha256": reliabilityHash(product), "helper_sha256": reliabilityHash(worker), "original_hooks_sha256": reliabilityHash(original), "candidate_hooks_sha256": reliabilityHash(candidate), "model": "gpt-6-astra", "effort": "xhigh", "codex_version": "0.153.4", "case_seconds": 300, "total_seconds": 1500, "status": "prepared; normal hook trust and Intent preparation required before run"}, "", "  ")
 	if err != nil {
 		return err

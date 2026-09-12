@@ -15,7 +15,7 @@ func TestExecutionPlanCLIGrammar(t *testing.T) {
 		{"intent", "history", "id", "--space", "default"},
 		{"intent", "reopen", "id", "--space", "default", "--expect", "1", "--step", "s01", "--reason", "retry"},
 	} {
-		if _, err := ParseMinimal(args); err != nil {
+		if _, err := ParseCommand(args); err != nil {
 			t.Errorf("valid %v: %v", args, err)
 		}
 	}
@@ -26,7 +26,7 @@ func TestExecutionPlanCLIGrammar(t *testing.T) {
 		}
 	}
 	for _, args := range [][]string{{"intent", "plan", "id", "--space", "default", "--file", "plan.json"}, {"intent", "reopen", "id", "--space", "default", "--expect", "1", "--stage", "discovery", "--reason", "retry"}} {
-		if _, err := ParseMinimal(args); err == nil {
+		if _, err := ParseCommand(args); err == nil {
 			t.Errorf("invalid accepted: %v", args)
 		}
 	}

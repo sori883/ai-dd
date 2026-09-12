@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sori883/ai-dd/src/internal/app"
 	"github.com/sori883/ai-dd/src/internal/assignment"
 	"github.com/sori883/ai-dd/src/internal/flow"
-	"github.com/sori883/ai-dd/src/internal/minimal"
 )
 
 type operationsFixture struct {
@@ -37,7 +37,7 @@ func operationsNew(t *testing.T) operationsFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := operationsFixture{t, buildMinimalBinary(t), root}
+	f := operationsFixture{t, buildAIDLCBinary(t), root}
 	f.git("init", "-q")
 	f.git("-c", "user.name=Operations", "-c", "user.email=operations@example.invalid", "commit", "--allow-empty", "-qm", "base")
 	f.ok("install", "codex", "--project-dir", root)
@@ -89,7 +89,7 @@ func (f operationsFixture) rejectCode(code int, message string, args ...string) 
 }
 func (f operationsFixture) git(args ...string) string {
 	f.t.Helper()
-	return strings.TrimSpace(string(runMinimalProcess(f.t, f.root, "git", args...)))
+	return strings.TrimSpace(string(runFixtureProcess(f.t, f.root, "git", args...)))
 }
 func (f operationsFixture) create(name string) flow.State {
 	f.t.Helper()
@@ -134,16 +134,16 @@ func (f operationsFixture) request(value any) string {
 		f.t.Fatal(err)
 	}
 	p := filepath.Join(f.root, "aidlc/.runtime/request.json")
-	writeMinimalFixture(f.t, p, string(raw))
+	writeAIDLCFixture(f.t, p, string(raw))
 	return p
 }
 func (f operationsFixture) bind(s flow.State, session string) {
 	f.t.Helper()
 	f.ok("intent", "switch", "--id", s.ID, "--space", "default", "--session", session)
 }
-func (f operationsFixture) session(name string) minimal.Session {
+func (f operationsFixture) session(name string) app.Session {
 	f.t.Helper()
-	var s minimal.Session
+	var s app.Session
 	if err := json.Unmarshal(f.ok("session", "inspect", "--session", name), &s); err != nil {
 		f.t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func (f operationsFixture) review(s flow.State) flow.State {
 func (f operationsFixture) tdd() flow.State {
 	f.t.Helper()
 	s := f.create("Unit work")
-	writeMinimalFixture(f.t, filepath.Join(f.root, "body.md"), "Current operation contract.\n")
+	writeAIDLCFixture(f.t, filepath.Join(f.root, "body.md"), "Current operation contract.\n")
 	if _, err := os.Stat(filepath.Join(f.root, "aidlc/spaces/default/knowledge/codekb/current.md")); os.IsNotExist(err) {
 		f.ok("memory", "create", "codekb/current", "--space", "default", "--body-file", "body.md", "--actor", "process:test", "--type", "Design", "--title", "Current", "--description", "Operations")
 	}
@@ -278,14 +278,14 @@ func (f operationsFixture) unit(s flow.State, action string, r flow.UnitRequest)
 			runs := []map[string]any{}
 			for i, command := range unit.Tests {
 				output := fmt.Sprintf("aidlc/evidence/unit-%s-%d.txt", unit.ID, i)
-				writeMinimalFixture(f.t, filepath.Join(r.Root, output), "synthetic lifecycle fixture command output\n")
+				writeAIDLCFixture(f.t, filepath.Join(r.Root, output), "synthetic lifecycle fixture command output\n")
 				runs = append(runs, map[string]any{"unit_id": unit.ID, "command": command, "exit_code": 0, "output_path": output})
 			}
 			raw, err := json.Marshal(map[string]any{"step_id": s.CurrentStepID, "stage": "tdd", "verification_scope": "unit", "verification_sha256": digest.SHA256, "unit_id": unit.ID, "run_id": r.RunID, "runs": runs})
 			if err != nil {
 				f.t.Fatal(err)
 			}
-			writeMinimalFixture(f.t, filepath.Join(r.Root, "aidlc/evidence/unit.json"), string(raw))
+			writeAIDLCFixture(f.t, filepath.Join(r.Root, "aidlc/evidence/unit.json"), string(raw))
 		}
 	}
 
@@ -476,14 +476,14 @@ func TestOperationsSaveRecovery(t *testing.T) {
 		t.Fatal("state retry failed")
 	}
 	body := filepath.Join(f.root, "body.md")
-	writeMinimalFixture(t, body, "Before\n")
+	writeAIDLCFixture(t, body, "Before\n")
 	create := []string{"memory", "create", "codekb/save", "--space", "default", "--body-file", body, "--actor", "process:test", "--type", "Design", "--title", "Save", "--description", "Recovery"}
 	f.ok(create...)
 	concept := filepath.Join(f.root, "aidlc/spaces/default/knowledge/codekb/save.md")
 	original := operationsRead(t, concept)
 	hash := sha256.Sum256(original)
 	update := []string{"memory", "update", "codekb/save", "--space", "default", "--body-file", body, "--actor", "process:test", "--expect", fmt.Sprintf("%x", hash)}
-	writeMinimalFixture(t, body, "After\n")
+	writeAIDLCFixture(t, body, "After\n")
 	restore = operationsReadOnly(t, filepath.Dir(concept))
 	f.rejectCode(1, "permission denied", update...)
 	if !bytes.Equal(original, operationsRead(t, concept)) {

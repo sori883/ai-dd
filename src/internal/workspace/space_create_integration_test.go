@@ -4,7 +4,7 @@ package workspace
 
 import (
 	"errors"
-	core "github.com/sori883/ai-dd/src/core/minimal"
+	core "github.com/sori883/ai-dd/src/core"
 	"io"
 	"io/fs"
 	"maps"

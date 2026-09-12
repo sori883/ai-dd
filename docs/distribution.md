@@ -88,6 +88,8 @@ AIDLC_DIST_DIR="$dist_output" go test -tags=integration -count=1 -v \
 
 比較して扱いを決めた製品資材を、新binaryに対応する組で切り替えます。製品handlerはSessionStart/UserPromptSubmit/PreToolUse/PostToolUse/Stopの5イベントにあります。独自hookを消さず、製品のcommand・matcher・timeout等を候補と照合してください。
 
+現行の製品handlerは内部command `__hook` を呼びます。旧名 `__minimal-hook` の別名対応や自動変換はありません。新binaryだけを交換すると旧hook設定は動かないため、対応する製品handlerと組で切り替えてください。旧handlerを残した状態での `--relocate` は版移行になりません。
+
 stagingで生成したSkillにはbinaryの絶対path、hookにはbinaryとstaging rootの絶対pathが入ります。実利用先へそのままコピーしてAIを再開してはいけません。新しい版の資材を選んだ後、既知形式の参照を補正する場合に限り、次を使えます。
 
 ```text
@@ -109,7 +111,7 @@ NEW_BINARY install codex --relocate --project-dir REAL_ROOT \
 
 ## 検証の範囲
 
-Codex CLI 0.153.4の固定sourceでは、linked worktreeのhook探索先は主checkoutの `.codex` です。worktree自身への配置だけでhookが有効になるとは限りません。主checkoutへ製品hookを置くだけでも、command中の絶対project-dirが各worktreeへ切り替わる保証はありません。通常trust、列挙元path、実際の許可・拒否を対象rootで確認してください。今回の調査はこの条件の確認であり、環境変換やCodex更新は実施していません。
+Codex CLI 0.153.4の固定sourceでは、linked worktreeのhook探索先は主checkoutの `.codex` です。worktree自身への配置だけでhookが有効になるとは限りません。主checkoutへ製品hookを置くだけでも、command中の絶対project-dirが各worktreeへ切り替わる保証はありません。通常trust、列挙元path、実際の許可・拒否を対象rootで確認してください。PR #172の配置調査はこの条件の確認であり、環境変換やCodex更新は実施していません。
 
 Hookのsession保存競合には最大2秒の再試行がありますが、終了通知が届かなければ自動解除しません。Tool残存時は実処理の終了を確認し、同じSpace・Intent・sessionでメインAIが既存の `session bind ... --recover` を使います。配布検査だけでは、この復旧や子の途中報告が実Codexで成功した証拠にはなりません。
 
@@ -121,4 +123,4 @@ go test -tags=integration -count=1 -v ./src/cmd/aidlc-dist -run '^TestDistributi
 
 このfixtureは同一sourceからversion付きの旧/新binaryを別pathへbuildし、隔離projectで独自hookと利用者dataの不変、手動で選んだ製品fileの切替、参照補正、元bytesの復元を確認します。未知版へのupgrade互換、自動updater、実利用環境での切替成功を実証するものではありません。
 
-archive展開・配置file生成は実Codex hookの実行成功と別です。macOS/Codex CLI 0.153.4の通常trust実測はPR #164の記録を参照し、Windowsの実hook動作や全ハーネスの互換性は未確認として残します。今回その実機を再実行しません。
+archive展開・配置file生成は実Codex hookの実行成功と別です。macOS/Codex CLI 0.153.4の通常trust実測はPR #164の記録を参照し、Windowsの実hook動作や全ハーネスの互換性は未確認として残します。実機検証の有無は各変更の計画・検証記録で確認してください。

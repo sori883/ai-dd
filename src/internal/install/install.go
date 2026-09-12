@@ -10,9 +10,9 @@ import (
 	"sort"
 	"strings"
 
-	core "github.com/sori883/ai-dd/src/core/minimal"
+	core "github.com/sori883/ai-dd/src/core"
 	coreworkflow "github.com/sori883/ai-dd/src/core/workflow"
-	codex "github.com/sori883/ai-dd/src/harness/codex/minimal"
+	codex "github.com/sori883/ai-dd/src/harness/codex"
 )
 
 // Result names each file saved before success or a partial failure.
@@ -69,7 +69,7 @@ func Codex(root, binary string) (result Result, err error) {
 	}
 	hooks := map[string]any{}
 	for _, event := range []string{"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"} {
-		group := map[string]any{"hooks": []any{map[string]any{"type": "command", "command": shellQuote(binary) + " __minimal-hook --project-dir " + shellQuote(root), "timeout": 10}}}
+		group := map[string]any{"hooks": []any{map[string]any{"type": "command", "command": shellQuote(binary) + " __hook --project-dir " + shellQuote(root), "timeout": 10}}}
 		if event == "SessionStart" {
 			group["hooks"].([]any)[0].(map[string]any)["additionalContextLimit"] = 8192
 		}

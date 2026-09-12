@@ -6,10 +6,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/sori883/ai-dd/src/internal/app"
 	"github.com/sori883/ai-dd/src/internal/cli"
 	"github.com/sori883/ai-dd/src/internal/flow"
 	"github.com/sori883/ai-dd/src/internal/install"
-	"github.com/sori883/ai-dd/src/internal/minimal"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,12 +40,12 @@ func TestHumanApprovalLive(t *testing.T) {
 	if err = os.MkdirAll(root, 0700); err != nil {
 		t.Fatal(err)
 	}
-	binary, err := filepath.EvalSymlinks(buildMinimalBinary(t))
+	binary, err := filepath.EvalSymlinks(buildAIDLCBinary(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	runMinimalProcess(t, root, "git", "init", "-q")
-	runMinimalProcess(t, root, "git", "-c", "user.name=Boundary", "-c", "user.email=boundary@example.invalid", "commit", "--allow-empty", "-qm", "base")
+	runFixtureProcess(t, root, "git", "init", "-q")
+	runFixtureProcess(t, root, "git", "-c", "user.name=Boundary", "-c", "user.email=boundary@example.invalid", "commit", "--allow-empty", "-qm", "base")
 	if _, err = install.Codex(root, binary); err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestHumanApprovalLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeMinimalFixture(t, cfgPath, string(raw))
+	writeAIDLCFixture(t, cfgPath, string(raw))
 	testBinary, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +86,7 @@ func TestHumanApprovalLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeMinimalFixture(t, hooksPath, string(raw))
+	writeAIDLCFixture(t, hooksPath, string(raw))
 
 	f := operationsFixture{t: t, binary: binary, root: root}
 	st := operationsState(t, f.ok("intent", "create", "Human approval live", "--space", "default"))
@@ -204,7 +204,7 @@ func TestHumanApprovalLive(t *testing.T) {
 	}
 	denied, planExecuted := false, false
 	for _, record := range records {
-		var h minimal.HookInput
+		var h app.HookInput
 		if err = json.Unmarshal(record.Raw, &h); err != nil {
 			t.Fatal(err)
 		}
@@ -225,7 +225,7 @@ func TestHumanApprovalLive(t *testing.T) {
 		if !ok || len(args) < 2 {
 			continue
 		}
-		r, err := cli.ParseMinimal(args[1:])
+		r, err := cli.ParseCommand(args[1:])
 		if err != nil || r.Target != st.ID {
 			continue
 		}

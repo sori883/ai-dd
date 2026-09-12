@@ -37,12 +37,12 @@ func TestProcedureLive(t *testing.T) {
 	if err = os.MkdirAll(root, 0700); err != nil {
 		t.Fatal(err)
 	}
-	binary, err := filepath.EvalSymlinks(buildMinimalBinary(t))
+	binary, err := filepath.EvalSymlinks(buildAIDLCBinary(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	runMinimalProcess(t, root, "git", "init", "-q")
-	runMinimalProcess(t, root, "git", "-c", "user.name=Boundary", "-c", "user.email=boundary@example.invalid", "commit", "--allow-empty", "-qm", "base")
+	runFixtureProcess(t, root, "git", "init", "-q")
+	runFixtureProcess(t, root, "git", "-c", "user.name=Boundary", "-c", "user.email=boundary@example.invalid", "commit", "--allow-empty", "-qm", "base")
 	if _, err = install.Codex(root, binary); err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestProcedureLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeMinimalFixture(t, cfgPath, string(raw))
+	writeAIDLCFixture(t, cfgPath, string(raw))
 	testBinary, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +87,7 @@ func TestProcedureLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeMinimalFixture(t, hooksPath, string(raw))
+	writeAIDLCFixture(t, hooksPath, string(raw))
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
 	defer cancel()
 	prompt := "Use the installed aidlc skill. Select the existing Intent " + st.ID + ". Retrieve its current procedure, begin the stage through the documented CLI, then run the literal Bash command touch procedure-work.txt. Reconsider the implementation plan: propose reopening planning step s03 with reason live plan reconsideration. Show the pending plan and wait for my answer. Keep CLI operations separate. Do not change workflow, hooks or Rules."

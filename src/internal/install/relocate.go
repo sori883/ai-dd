@@ -11,7 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	codex "github.com/sori883/ai-dd/src/harness/codex/minimal"
+	codex "github.com/sori883/ai-dd/src/harness/codex"
 	"github.com/sori883/ai-dd/src/internal/filestore"
 )
 
@@ -53,7 +53,7 @@ func relocate(root, binary, fromRoot, fromBinary string, write func(string, stri
 		}
 		after[i] = newSkill
 	}
-	after[2], err = relocateHooks(before[2], shellQuote(fromBinary)+" __minimal-hook --project-dir "+shellQuote(fromRoot), shellQuote(binary)+" __minimal-hook --project-dir "+shellQuote(root))
+	after[2], err = relocateHooks(before[2], shellQuote(fromBinary)+" __hook --project-dir "+shellQuote(fromRoot), shellQuote(binary)+" __hook --project-dir "+shellQuote(root))
 	if err != nil {
 		return result, fmt.Errorf("%s: %w", paths[2], err)
 	}
@@ -196,7 +196,7 @@ func relocateHooks(raw []byte, old, new string) ([]byte, error) {
 				command := handler.object["command"]
 				s, _ := nodeValue(command).(string)
 				if s != old && s != new {
-					if strings.Contains(s, "__minimal-hook") {
+					if strings.Contains(s, "__hook") {
 						return fail("unknown product command")
 					}
 					continue

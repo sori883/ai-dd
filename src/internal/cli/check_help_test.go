@@ -230,7 +230,7 @@ func TestCheckHelpRejectsExecutionArguments(t *testing.T) {
 				&stdout,
 				&stderr,
 				buildinfo.Info{},
-				cli.Dependencies{Minimal: func(cli.MinimalRequest) ([]byte, error) {
+				cli.Dependencies{Execute: func(cli.CommandRequest) ([]byte, error) {
 					t.Fatal("不正なhelp引数で実操作が呼ばれた")
 					return nil, nil
 				}},
@@ -283,7 +283,7 @@ func runCheckHelp(t *testing.T, args []string) string {
 		&stderr,
 		buildinfo.Info{},
 		cli.Dependencies{
-			Minimal: func(cli.MinimalRequest) ([]byte, error) {
+			Execute: func(cli.CommandRequest) ([]byte, error) {
 				t.Fatal("helpから実操作が呼ばれた")
 				return nil, nil
 			},

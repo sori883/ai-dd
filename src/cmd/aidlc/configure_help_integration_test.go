@@ -14,27 +14,27 @@ import (
 )
 
 func TestConfigureHelpExamples(t *testing.T) {
-	binary := buildMinimalBinary(t)
+	binary := buildAIDLCBinary(t)
 	for _, tc := range []struct {
 		name  string
 		index int
 	}{{"without_units", 0}, {"with_units", 1}} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
-			runMinimalProcess(t, root, "git", "init", "-q")
-			runMinimalCLI(t, binary, root, nil, "install", "codex", "--project-dir", root)
-			writeMinimalFixture(t, filepath.Join(root, "aidlc/spaces/default/knowledge/codekb/current.md"), "---\ntype: Design\ntitle: Addition\ndescription: Current behavior\n---\nAdd returns the sum.\n")
-			runMinimalProcess(t, root, "git", "add", ".")
-			runMinimalProcess(t, root, "git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "assets")
-			head := strings.TrimSpace(string(runMinimalProcess(t, root, "git", "rev-parse", "HEAD")))
-			help := runMinimalCLI(t, binary, root, nil, "intent", "configure", "--help")
+			runFixtureProcess(t, root, "git", "init", "-q")
+			runAIDLCCLI(t, binary, root, nil, "install", "codex", "--project-dir", root)
+			writeAIDLCFixture(t, filepath.Join(root, "aidlc/spaces/default/knowledge/codekb/current.md"), "---\ntype: Design\ntitle: Addition\ndescription: Current behavior\n---\nAdd returns the sum.\n")
+			runFixtureProcess(t, root, "git", "add", ".")
+			runFixtureProcess(t, root, "git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "assets")
+			head := strings.TrimSpace(string(runFixtureProcess(t, root, "git", "rev-parse", "HEAD")))
+			help := runAIDLCCLI(t, binary, root, nil, "intent", "configure", "--help")
 			examples := regexp.MustCompile("(?s)```json\\n(.*?)\\n```").FindAllStringSubmatch(string(help), -1)
 			if len(examples) != 2 {
 				t.Fatalf("missing examples: %s", help)
 			}
 			config := strings.ReplaceAll(examples[tc.index][1], "<CURRENT_HEAD>", head)
 			file := filepath.Join(root, "aidlc/.runtime/config.json")
-			writeMinimalFixture(t, file, strings.ReplaceAll(config, "<CURRENT_STEP>", "s02"))
+			writeAIDLCFixture(t, file, strings.ReplaceAll(config, "<CURRENT_STEP>", "s02"))
 			var st flow.State
 			read := func(raw []byte) {
 				t.Helper()
@@ -42,11 +42,11 @@ func TestConfigureHelpExamples(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			read(runMinimalCLI(t, binary, root, nil, "intent", "create", tc.name, "--space", "default"))
+			read(runAIDLCCLI(t, binary, root, nil, "intent", "create", tc.name, "--space", "default"))
 			call := func(action string, args ...string) {
 				t.Helper()
 				base := []string{"intent", action, st.ID, "--space", "default", "--expect", strconv.FormatUint(st.Revision, 10)}
-				read(runMinimalCLI(t, binary, root, nil, append(base, args...)...))
+				read(runAIDLCCLI(t, binary, root, nil, append(base, args...)...))
 			}
 			f := operationsFixture{t: t, binary: binary, root: root}
 			st = f.action(st, "begin")
@@ -57,7 +57,7 @@ func TestConfigureHelpExamples(t *testing.T) {
 			call("configure", "--file", file)
 			call("begin")
 			reviewer := filepath.Join(t.TempDir(), "review")
-			runMinimalProcess(t, root, "git", "worktree", "add", "--detach", reviewer, head)
+			runFixtureProcess(t, root, "git", "worktree", "add", "--detach", reviewer, head)
 			request := func(r flow.ReviewRequest) string {
 				t.Helper()
 				raw, err := json.Marshal(r)
@@ -65,14 +65,14 @@ func TestConfigureHelpExamples(t *testing.T) {
 					t.Fatal(err)
 				}
 				p := filepath.Join(root, "aidlc/.runtime/review.json")
-				writeMinimalFixture(t, p, string(raw))
+				writeAIDLCFixture(t, p, string(raw))
 				return p
 			}
 			call("review", "--file", request(flow.ReviewRequest{Action: "assign", CoordinatorSession: "coordinator", Session: "reviewer", Root: reviewer}))
 			check := func() flow.Gate {
 				t.Helper()
 				var gate flow.Gate
-				raw := runMinimalCLI(t, binary, root, nil, "intent", "check", st.ID, "--space", "default")
+				raw := runAIDLCCLI(t, binary, root, nil, "intent", "check", st.ID, "--space", "default")
 				if err := json.Unmarshal(raw, &gate); err != nil {
 					t.Fatal(err)
 				}
@@ -90,7 +90,7 @@ func TestConfigureHelpExamples(t *testing.T) {
 			// Reapply the public help example at planning, then evaluate its real prerequisites.
 			boundaryFixtureDocument(t, root, st.ID, "ImplementationPlan")
 			call("begin")
-			writeMinimalFixture(t, file, strings.ReplaceAll(config, "<CURRENT_STEP>", st.CurrentStepID))
+			writeAIDLCFixture(t, file, strings.ReplaceAll(config, "<CURRENT_STEP>", st.CurrentStepID))
 			call("configure", "--file", file)
 			check()
 			if f.git("rev-parse", "HEAD") != head || len(st.Config.Units) != tc.index {

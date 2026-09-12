@@ -268,21 +268,21 @@ func TestFlowCommandRejectsInventedReviewEvidence(t *testing.T) {
 	}
 }
 
-func flowReviewCommand(binary, command string) (cli.MinimalRequest, string, bool) {
+func flowReviewCommand(binary, command string) (cli.CommandRequest, string, bool) {
 	args, ok := flowShellWords(command)
 	if !ok {
-		return cli.MinimalRequest{}, "", false
+		return cli.CommandRequest{}, "", false
 	}
 	if len(args) == 3 && (args[0] == "/bin/zsh" || args[0] == "/bin/bash") && args[1] == "-lc" {
 		args, ok = flowShellWords(args[2])
 		if !ok {
-			return cli.MinimalRequest{}, "", false
+			return cli.CommandRequest{}, "", false
 		}
 	}
 	if len(args) < 2 || args[0] != binary {
-		return cli.MinimalRequest{}, "", false
+		return cli.CommandRequest{}, "", false
 	}
-	r, err := cli.ParseMinimal(args[1:])
+	r, err := cli.ParseCommand(args[1:])
 	return r, strings.Join(args, "\x00"), err == nil && r.Command == "intent" && r.Action == "review"
 }
 

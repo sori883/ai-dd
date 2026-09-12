@@ -7,10 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/sori883/ai-dd/src/internal/app"
 	"github.com/sori883/ai-dd/src/internal/cli"
 	"github.com/sori883/ai-dd/src/internal/filestore"
 	"github.com/sori883/ai-dd/src/internal/install"
-	"github.com/sori883/ai-dd/src/internal/minimal"
 	"github.com/sori883/ai-dd/src/internal/okfmemory"
 	"io"
 	"os"
@@ -80,7 +80,7 @@ func verifyMemoryLive(binary string, transport []byte, records []memoryLiveRecor
 	var previous okfmemory.Document
 	previousHash := ""
 	for _, record := range records {
-		var input minimal.HookInput
+		var input app.HookInput
 		if json.Unmarshal(record.Raw, &input) != nil {
 			return fail()
 		}
@@ -111,7 +111,7 @@ func verifyMemoryLive(binary string, transport []byte, records []memoryLiveRecor
 		if input.Event != "PostToolUse" {
 			continue
 		}
-		r, err := cli.ParseMinimal(args[1:])
+		r, err := cli.ParseCommand(args[1:])
 		if err != nil || r.Command != "memory" || (r.Action != "create" && r.Action != "update") {
 			continue
 		}
@@ -122,7 +122,7 @@ func verifyMemoryLive(binary string, transport []byte, records []memoryLiveRecor
 		if !ok || !pre.Bound || !ran || execution.exit != 0 || !helped {
 			return fail()
 		}
-		var before minimal.HookInput
+		var before app.HookInput
 		if json.Unmarshal(pre.Raw, &before) != nil {
 			return fail()
 		}
@@ -182,7 +182,7 @@ func TestMemoryMetadataCommandEvidence(t *testing.T) {
 	update = strings.Replace(update, "--expect first", "--expect "+filestore.Hash(first), 1)
 	var records []memoryLiveRecord
 	add := func(event, id, command string, doc, body []byte, bound bool) {
-		in := minimal.HookInput{Event: event, Session: "session", Turn: "turn", ID: id, Tool: "Bash"}
+		in := app.HookInput{Event: event, Session: "session", Turn: "turn", ID: id, Tool: "Bash"}
 		in.Input.Command = command
 		raw, _ := json.Marshal(in)
 		records = append(records, memoryLiveRecord{Raw: raw, Output: json.RawMessage(`{}`), Document: doc, Body: body, Bound: bound})
@@ -240,24 +240,24 @@ func TestMemoryMetadataLiveHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(cfg.Binary, "__minimal-hook", "--project-dir", cfg.Root)
+	cmd := exec.Command(cfg.Binary, "__hook", "--project-dir", cfg.Root)
 	cmd.Stdin = bytes.NewReader(input)
 	output, err := cmd.Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	var hook minimal.HookInput
+	var hook app.HookInput
 	if err := json.Unmarshal(input, &hook); err != nil {
 		t.Fatal(err)
 	}
-	session, err := (minimal.Service{Root: cfg.Root, Binary: cfg.Binary}).Inspect(hook.Session)
+	session, err := (app.Service{Root: cfg.Root, Binary: cfg.Binary}).Inspect(hook.Session)
 	if err != nil {
 		t.Fatal(err)
 	}
 	record := memoryLiveRecord{Raw: input, Output: output, Bound: session.Intent != ""}
 	record.Document, _ = filestore.ReadFile(cfg.Root, "aidlc/spaces/default/knowledge/codekb/live-note.md")
 	if args, ok := memoryLiveArgs(cfg.Binary, hook.Input.Command); ok {
-		if request, err := cli.ParseMinimal(args[1:]); err == nil && request.BodyFile != "" {
+		if request, err := cli.ParseCommand(args[1:]); err == nil && request.BodyFile != "" {
 			name := request.BodyFile
 			if filepath.IsAbs(name) {
 				name, err = filepath.Rel(cfg.Root, name)
@@ -295,12 +295,12 @@ func TestMemoryMetadataLive(t *testing.T) {
 	if err := os.MkdirAll(root, 0700); err != nil {
 		t.Fatal(err)
 	}
-	binary, err := filepath.EvalSymlinks(buildMinimalBinary(t))
+	binary, err := filepath.EvalSymlinks(buildAIDLCBinary(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	runMinimalProcess(t, root, "git", "init", "-q")
-	writeMinimalFixture(t, filepath.Join(root, "arithmetic.go"), "package arithmetic\nfunc Add(a,b int)int{return a+b}\n")
+	runFixtureProcess(t, root, "git", "init", "-q")
+	writeAIDLCFixture(t, filepath.Join(root, "arithmetic.go"), "package arithmetic\nfunc Add(a,b int)int{return a+b}\n")
 	if _, err := install.Codex(root, binary); err != nil {
 		t.Fatal(err)
 	}

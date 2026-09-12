@@ -109,7 +109,7 @@ func TestInstallRecoveryGuidanceAndContextLimit(t *testing.T) {
 
 func TestInstallMemoryCommandGuidance(t *testing.T) {
 	root := t.TempDir()
-	binary := "/private/var/folders/example/aidlc-minimal-journey-1234567890/bin/aidlc"
+	binary := "/private/var/folders/example/aidlc-journey-1234567890/bin/aidlc"
 	if _, err := Codex(root, binary); err != nil {
 		t.Fatal(err)
 	}
@@ -216,6 +216,49 @@ func TestOKFWorkLogInstalledGuidance(t *testing.T) {
 				if !strings.Contains(string(raw), want) {
 					t.Errorf("missing %q", want)
 				}
+			}
+		})
+	}
+}
+
+func TestInstallHookCommands(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	binary := "/opt/aidlc binary"
+	if _, err := Codex(root, binary); err != nil {
+		t.Fatal(err)
+	}
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, ".codex/hooks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(raw, &config); err != nil {
+		t.Fatal(err)
+	}
+	events := []string{"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"}
+	if len(config.Hooks) != len(events) {
+		t.Fatalf("events = %v", config.Hooks)
+	}
+	want := shellQuote(binary) + " __hook --project-dir " + shellQuote(root)
+	for _, event := range events {
+		t.Run(event, func(t *testing.T) {
+			groups := config.Hooks[event]
+			if len(groups) != 1 || len(groups[0].Hooks) != 1 {
+				t.Fatalf("handlers = %+v", groups)
+			}
+			if got := groups[0].Hooks[0].Command; got != want {
+				t.Fatalf("command = %q, want %q", got, want)
 			}
 		})
 	}

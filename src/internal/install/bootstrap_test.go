@@ -1,8 +1,8 @@
 package install_test
 
 import (
+	"github.com/sori883/ai-dd/src/internal/app"
 	"github.com/sori883/ai-dd/src/internal/install"
-	"github.com/sori883/ai-dd/src/internal/minimal"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,7 +29,7 @@ func TestInstallBootstrapBinaryPathBudget(t *testing.T) {
 			if len(skill) > 4096 {
 				t.Errorf("deployed skill = %d bytes, limit 4096 (binary %d bytes)", len(skill), len(binary))
 			}
-			out, err := (minimal.Service{Root: root, Binary: binary}).Hook(minimal.HookInput{Event: "SessionStart", Session: "bootstrap"})
+			out, err := (app.Service{Root: root, Binary: binary}).Hook(app.HookInput{Event: "SessionStart", Session: "bootstrap"})
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	core "github.com/sori883/ai-dd/src/core/minimal"
+	core "github.com/sori883/ai-dd/src/core"
 	"github.com/sori883/ai-dd/src/internal/okf"
 	"io"
 	"io/fs"

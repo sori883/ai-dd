@@ -19,7 +19,7 @@ func main() {
 		os.Stderr,
 		buildinfo.Current(),
 		cli.Dependencies{
-			Minimal:     minimalCommand,
+			Execute:     executeCommand,
 			CreateSpace: spaceCreator(os.Getwd, os.Getenv, workspace.CreateSpace),
 			ListSpaces:  spaceLister(os.Getwd, os.Getenv, workspace.ReadSpaces),
 			SwitchSpace: spaceSwitcher(os.Getwd, os.Getenv, workspace.SwitchSpace),
