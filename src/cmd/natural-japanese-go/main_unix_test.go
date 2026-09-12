@@ -28,7 +28,10 @@ func TestCommandFIFO(t *testing.T) {
 			if err := syscall.Mkfifo(path, 0600); err != nil {
 				t.Fatal(err)
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			// This bounds a blocked FIFO read, not command performance: baseline
+			// validation also starts a process and initializes the dictionary,
+			// which takes longer under the race detector and concurrent tests.
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCommandFIFO$")
 			cmd.Env = append(os.Environ(), "NATURAL_JAPANESE_FIFO_TEST="+path)
@@ -39,7 +42,7 @@ func TestCommandFIFO(t *testing.T) {
 			cmd.Stdout, cmd.Stderr = &out, &stderr
 			err := cmd.Run()
 			if ctx.Err() != nil {
-				t.Fatal("FIFO input blocked until timeout")
+				t.Fatalf("command did not reject FIFO within 30 seconds: stderr=%s", &stderr)
 			}
 			if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 || out.Len() != 0 {
 				t.Fatalf("err=%v stdout=%s stderr=%s", err, &out, &stderr)

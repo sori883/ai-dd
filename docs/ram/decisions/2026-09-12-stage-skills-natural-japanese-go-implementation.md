@@ -57,6 +57,11 @@ FILEとbaselineは開く前と開いた後に通常ファイルかを調べ、Un
 日本語skillの独立適用では、実CLIで原文5件から推敲案1件への変化を確認した。
 残った統計指摘を理由なく消そうとせず、検討中・試験予定の情報も維持した。これも一つの例による確認である。
 
+初回finalの通常testは成功したが、race付き全体testでFIFOのbaselineケースが2秒の制限を超えた。
+このケースは辞書初期化と子process起動も測るため、処理停止の検査へ性能条件を混ぜていた。
+testだけを30秒の有限待機へ直し、writerのないFIFOが停止したままなら失敗する条件、exit 1、標準出力なしを維持した。
+製品処理は変更していない。対象testを確認し、再review後の新headでfinalをやり直す。
+
 独立コードreview、read-only final、固定Codex 0.153.4の実測、GitHub checksの結果は、
 Issue #179に紐づくPRと検証記録へ保存する。実Codex fixtureは既存の試験用trust helperを使い、
 通常利用者のhook trustや全OSの全経路を確認したとは扱わない。

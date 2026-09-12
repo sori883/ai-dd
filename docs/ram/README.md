@@ -1,6 +1,6 @@
 # 開発プロジェクトRAM
 
-- [工程skillとKagome版日本語チェックの実装](decisions/2026-09-12-stage-skills-natural-japanese-go-implementation.md): Issue #179。11工程skillとGo版skill、14分類の別CLI、配布・hook読取りを接続。依存はKagome/UniDic/共通辞書の3追加module。13項目TDDと親の対象確認を実施。reviewの3指摘を回帰testで修正し、再review/finalは別gate。
+- [工程skillとKagome版日本語チェックの実装](decisions/2026-09-12-stage-skills-natural-japanese-go-implementation.md): Issue #179。11工程skillとGo版skill、14分類の別CLI、配布・hook読取りを接続。依存はKagome/UniDic/共通辞書の3追加module。13項目TDDと親の対象確認を実施。reviewの3指摘と初回finalのFIFO test時間制限を修正し、再review/finalは別gate。
 
 - [工程skill導入とKagome版日本語lintを実装承認](decisions/2026-09-12-stage-skills-natural-japanese-go-approved.md): 他11 skillを先に導入し、通常14カテゴリのnatural-japanese-goを別CLIで作る直接依頼。Kagome/辞書の依存を許可し、既存の承認・Sensor・OKF保存・単独writerを維持。[具体計画](../design/stage-skills-natural-japanese-go-plan.md)。
 
