@@ -32,3 +32,11 @@ CLI help、TestMemoryMetadataCommandEvidenceを作業単位末尾で再実行し
 実機fixtureは既存helperを通して製品hookを呼び、試験用trust設定を使用する。
 通常利用者のtrust操作やhookの全経路を再検証する試験ではない。
 最終検証結果はIssueとPRに記録する。
+
+## 全体確認で見つかった既存testの追従
+
+初回finalの全package testでTestCodeKBGuidanceが失敗した。他のpackageは成功した。
+原因は製品の旧保存先ではなく、案内をaidlc-okfへ移した後もtestがaidlc-cliだけを読んでいたことだった。
+実際のMarkdownリンクを解決して新skillまで確認するようtestだけを修正し、codekbの案内、
+旧path禁止、共有文書の期待値を保持した。targetedとinstall全packageのloop確認は成功した。
+対象差分が変わったため、独立review確認後にfresh finalをやり直す。
