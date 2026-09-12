@@ -1,5 +1,11 @@
 # 開発プロジェクトRAM
 
+- [工程skill導入とKagome版日本語lintを実装承認](decisions/2026-09-12-stage-skills-natural-japanese-go-approved.md): 他11 skillを先に導入し、通常14カテゴリのnatural-japanese-goを別CLIで作る直接依頼。Kagome/辞書の依存を許可し、既存の承認・Sensor・OKF保存・単独writerを維持。[具体計画](../design/stage-skills-natural-japanese-go-plan.md)。
+
+- [工程別skillの第一候補を選定し、日本語lintの実行方式を検討](decisions/2026-09-12-stage-skills-selection-and-lint-options.md): 第一候補10件とgrilling/domain-modelingの採用方針に同意。Pythonは実行時に必要だがuvで自動準備可能。Go標準の文字・統計検査と日本語解析の依存を分け、別CLIの許容と未決定の互換範囲を記録。製品導入・Go移植は未実施。
+
+- [工程別skill候補の比較](research/2026-09-12-stage-skill-candidates.md): GitHub・作者ブログ・X検索を使い、深掘り、調査、現状解析、要件、計画、TDD、デバッグ、レビュー、統合検証、日本語の10観点で複数候補を比較。grill-with-docsの依存とOKF保存先、natural-japaneseの任意の外部実行依存を区別。調査のみで、採用・導入・配布は未決定。
+
 - [AI-DLCに合わせたOKF専用skillを追加](decisions/2026-09-12-aidlc-okf-skill-approved.md): Issue #177の直接作成依頼。aidlc-okfへ知識の検索・保存手順を分離し、配布・移転・既存gate内の読込みへ接続。単独writerのTDDと独立reviewを実施し、初回finalで見つかった既存の案内参照testを修復。最終結果はPRへ記録する。[具体計画](../design/aidlc-okf-skill-plan.md)。
 
 - [workerの通常フォルダ・順次実装を明記](decisions/2026-09-12-worker-root-guidance-repair.md): 指定された元checkoutの旧worktree前提を補正し、現行配布原稿にも既存方針を明記する直接依頼。descriptionと他の未commit変更を保全する。
