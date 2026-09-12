@@ -23,12 +23,33 @@ type deployedAsset struct {
 // The fixture was captured from the installer at f8d9eb0d83143144bbcb2fc5b6a9dc5db80acf94,
 // before introducing Manifest.Render. Only the temporary root in hooks is normalized.
 func TestCodexManifestParity(t *testing.T) {
-	root := t.TempDir()
+	root := filepath.Join(t.TempDir(), "project's root")
+	if err := os.Mkdir(root, 0755); err != nil {
+		t.Fatal(err)
+	}
 	result, err := Codex(root, "/opt/aidlc's binary")
 	if err != nil {
 		t.Fatal(err)
 	}
 	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Replace only the encoded root token; preserve hook JSON formatting and all other bytes.
+	rootToken, err := json.Marshal(shellQuote(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixedToken, err := json.Marshal(shellQuote("/fixed/project"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A control file observes the caller's umask without changing process-wide state.
+	controlPath := filepath.Join(filepath.Dir(root), "mode-control")
+	if err := os.WriteFile(controlPath, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	controlInfo, err := os.Stat(controlPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,11 +70,14 @@ func TestCodexManifestParity(t *testing.T) {
 			return err
 		}
 		if filepath.ToSlash(path) == ".codex/hooks.json" {
-			raw = bytes.ReplaceAll(raw, []byte(root), []byte("/fixed/project"))
+			raw = bytes.ReplaceAll(raw, rootToken[1:len(rootToken)-1], fixedToken[1:len(fixedToken)-1])
 		}
 		info, err := entry.Info()
 		if err != nil {
 			return err
+		}
+		if !info.Mode().IsRegular() {
+			t.Errorf("deployed asset %q is not regular: %v", path, info.Mode())
 		}
 		sum := sha256.Sum256(raw)
 		got = append(got, deployedAsset{filepath.ToSlash(path), hex.EncodeToString(sum[:]), info.Mode()})
@@ -77,6 +101,9 @@ func TestCodexManifestParity(t *testing.T) {
 	var want []deployedAsset
 	if err := json.Unmarshal(raw, &want); err != nil {
 		t.Fatal(err)
+	}
+	for i := range want {
+		want[i].Mode = controlInfo.Mode().Perm()
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Codex deployment changed\ngot: %+v\nwant: %+v", got, want)
