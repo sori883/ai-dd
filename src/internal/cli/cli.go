@@ -56,7 +56,7 @@ Exit codes: 0 success, 2 invalid input or conflict, 1 operational failure.
 // Dependencies groups the workspace operations used by Run. Nil callbacks are
 // valid for commands that do not invoke the corresponding operation.
 type Dependencies struct {
-	Minimal       func(MinimalRequest) ([]byte, error)
+	Execute       func(CommandRequest) ([]byte, error)
 	CreateSpace   func(rawName, explicitDir string) (string, error)
 	ListSpaces    func(explicitDir string) ([]workspace.Space, error)
 	SwitchSpace   func(rawName, explicitDir string) (string, error)
@@ -93,11 +93,11 @@ func Run(
 			)
 		}
 	}
-	if isMinimal(args) {
+	if isServiceCommand(args) {
 		if dependencies.PrepareOutput != nil {
 			dependencies.PrepareOutput()
 		}
-		return runMinimal(args, stdout, stderr, dependencies)
+		return runServiceCommand(args, stdout, stderr, dependencies)
 	}
 	command, explicitDir, _, err := workspaceArguments(args, false)
 	hasSpaceSubcommand := len(command) >= 2 && command[0] == "space"

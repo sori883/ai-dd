@@ -11,15 +11,15 @@ func TestMemoryHelp(t *testing.T) {
 	for _, args := range [][]string{{"--help"}, {"help"}, {"memory", "--help"}, {"memory", "help"}, {"help", "memory"}, {"help", "memory", "create"}, {"memory", "create", "--help"}, {"memory", "update", "help"}, {"memory", "help", "update"}, {"intent", "review", "--help"}, {"unit", "claim", "--help"}, {"space", "switch", "--help"}, {"session", "bind", "--help"}, {"install", "codex", "--help"}} {
 		var out, errout bytes.Buffer
 		calls := 0
-		code := Run(args, &out, &errout, buildinfo.Info{}, Dependencies{Minimal: func(MinimalRequest) ([]byte, error) { calls++; return nil, nil }, PrepareOutput: func() { calls++ }})
+		code := Run(args, &out, &errout, buildinfo.Info{}, Dependencies{Execute: func(CommandRequest) ([]byte, error) { calls++; return nil, nil }, PrepareOutput: func() { calls++ }})
 		if code != 0 || out.Len() == 0 || errout.Len() != 0 || calls != 0 {
 			t.Errorf("help %v exit=%d calls=%d out=%s err=%s", args, code, calls, &out, &errout)
 		}
 	}
-	for _, args := range [][]string{{"help", "unknown"}, {"memory", "unknown", "--help"}, {"memory", "create", "name", "--help"}, {"memory", "create", "--help", "--body-file", "secret"}, {"__minimal-hook", "--help"}} {
+	for _, args := range [][]string{{"help", "unknown"}, {"memory", "unknown", "--help"}, {"memory", "create", "name", "--help"}, {"memory", "create", "--help", "--body-file", "secret"}, {"__hook", "--help"}} {
 		var out, errout bytes.Buffer
 		calls := 0
-		code := Run(args, &out, &errout, buildinfo.Info{}, Dependencies{Minimal: func(MinimalRequest) ([]byte, error) { calls++; return nil, nil }})
+		code := Run(args, &out, &errout, buildinfo.Info{}, Dependencies{Execute: func(CommandRequest) ([]byte, error) { calls++; return nil, nil }})
 		if code != 2 || calls != 0 {
 			t.Errorf("invalid help %v code=%d calls=%d", args, code, calls)
 		}

@@ -13,23 +13,23 @@ import (
 )
 
 func TestMemoryMetadataCommand(t *testing.T) {
-	binary := buildMinimalBinary(t)
+	binary := buildAIDLCBinary(t)
 	root := t.TempDir()
-	runMinimalProcess(t, root, "git", "init", "-q")
-	runMinimalCLI(t, binary, root, nil, "install", "codex", "--project-dir", root)
+	runFixtureProcess(t, root, "git", "init", "-q")
+	runAIDLCCLI(t, binary, root, nil, "install", "codex", "--project-dir", root)
 	unrelated := t.TempDir()
-	if out := runMinimalCLI(t, binary, unrelated, nil, "memory", "create", "--help"); !strings.Contains(string(out), "generated.at") {
+	if out := runAIDLCCLI(t, binary, unrelated, nil, "memory", "create", "--help"); !strings.Contains(string(out), "generated.at") {
 		t.Fatal("help missing metadata")
 	}
 	nested := filepath.Join(root, "drafts")
-	writeMinimalFixture(t, filepath.Join(nested, "body.md"), "# First body\n")
+	writeAIDLCFixture(t, filepath.Join(nested, "body.md"), "# First body\n")
 	for _, tc := range []struct{ id, kind string }{{"codekb/example", "Design"}, {"adr/example", "adr"}, {"rules/example", "Rule"}} {
 		args := []string{"memory", "create", tc.id, "--space", "default", "--project-dir", root, "--body-file", "body.md", "--actor", "process:codex", "--type", tc.kind, "--title", "Example", "--description", "Current behavior", "--tag", "lookup", "--metadata-json", `{"extension":{"keep":true}}`}
 		if tc.kind != "Rule" {
 			args = append(args, "--intent-id", strings.Repeat("a", 32))
 		}
-		runMinimalCLI(t, binary, nested, nil, args...)
-		show := runMinimalCLI(t, binary, root, nil, "memory", "show", tc.id, "--space", "default")
+		runAIDLCCLI(t, binary, nested, nil, args...)
+		show := runAIDLCCLI(t, binary, root, nil, "memory", "show", tc.id, "--space", "default")
 		var before struct{ Content, Hash string }
 		if err := json.Unmarshal(show, &before); err != nil {
 			t.Fatal(err)
@@ -44,8 +44,8 @@ func TestMemoryMetadataCommand(t *testing.T) {
 		if tc.kind == "Rule" && doc.String("intent_id") != "" {
 			t.Fatal("Rule received implicit Intent")
 		}
-		writeMinimalFixture(t, filepath.Join(nested, "body.md"), "# Second body\n")
-		runMinimalCLI(t, binary, nested, nil, "memory", "update", tc.id, "--space", "default", "--project-dir", root, "--body-file", "body.md", "--actor", "human:editor", "--expect", before.Hash)
+		writeAIDLCFixture(t, filepath.Join(nested, "body.md"), "# Second body\n")
+		runAIDLCCLI(t, binary, nested, nil, "memory", "update", tc.id, "--space", "default", "--project-dir", root, "--body-file", "body.md", "--actor", "human:editor", "--expect", before.Hash)
 		raw, err := os.ReadFile(filepath.Join(root, "aidlc/spaces/default/knowledge", tc.id+".md"))
 		if err != nil {
 			t.Fatal(err)
@@ -64,12 +64,12 @@ func TestMemoryMetadataCommand(t *testing.T) {
 		if err := cmd.Run(); err == nil {
 			t.Fatal("stale hash accepted")
 		}
-		writeMinimalFixture(t, filepath.Join(nested, "body.md"), "# First body\n")
+		writeAIDLCFixture(t, filepath.Join(nested, "body.md"), "# First body\n")
 	}
-	out := runMinimalCLI(t, binary, root, nil, "memory", "search", "lookup", "--space", "default", "--intent-id", strings.Repeat("a", 32))
+	out := runAIDLCCLI(t, binary, root, nil, "memory", "search", "lookup", "--space", "default", "--intent-id", strings.Repeat("a", 32))
 	var found []map[string]string
 	if err := json.Unmarshal(out, &found); err != nil || len(found) != 2 {
 		t.Fatalf("search %s %v", out, err)
 	}
-	runMinimalCLI(t, binary, root, nil, "memory", "check", "--space", "default")
+	runAIDLCCLI(t, binary, root, nil, "memory", "check", "--space", "default")
 }

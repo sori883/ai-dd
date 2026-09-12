@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-func buildMinimalBinary(t *testing.T) string {
+func buildAIDLCBinary(t *testing.T) string {
 	t.Helper()
 	binary := filepath.Join(t.TempDir(), "aidlc")
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
@@ -27,7 +27,7 @@ func buildMinimalBinary(t *testing.T) string {
 	}
 	return binary
 }
-func runMinimalCLI(t *testing.T, binary, root string, input []byte, args ...string) []byte {
+func runAIDLCCLI(t *testing.T, binary, root string, input []byte, args ...string) []byte {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
@@ -44,7 +44,7 @@ func runMinimalCLI(t *testing.T, binary, root string, input []byte, args ...stri
 	}
 	return output
 }
-func runMinimalProcess(t *testing.T, root, name string, args ...string) []byte {
+func runFixtureProcess(t *testing.T, root, name string, args ...string) []byte {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
@@ -56,7 +56,7 @@ func runMinimalProcess(t *testing.T, root, name string, args ...string) []byte {
 	}
 	return output
 }
-func writeMinimalFixture(t *testing.T, path, body string) {
+func writeAIDLCFixture(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		t.Fatal(err)
@@ -72,11 +72,11 @@ func TestFlowJourney(t *testing.T)      { runBoundaryJourney(t) }
 func TestBoundaryJourney(t *testing.T)  { runBoundaryJourney(t) }
 func TestProcedureJourney(t *testing.T) { runBoundaryJourney(t) }
 func runBoundaryJourney(t *testing.T) {
-	runGitIndependentBoundaryJourney(t, buildMinimalBinary(t), t.TempDir(), false)
+	runGitIndependentBoundaryJourney(t, buildAIDLCBinary(t), t.TempDir(), false)
 }
 func runGitIndependentBoundaryJourney(t *testing.T, binary, root string, units bool) {
 	t.Helper()
-	runMinimalCLI(t, binary, root, nil, "install", "codex", "--project-dir", root)
+	runAIDLCCLI(t, binary, root, nil, "install", "codex", "--project-dir", root)
 	var st flow.State
 	read := func(raw []byte) {
 		t.Helper()
@@ -84,11 +84,11 @@ func runGitIndependentBoundaryJourney(t *testing.T, binary, root string, units b
 			t.Fatalf("state %s: %v", raw, err)
 		}
 	}
-	read(runMinimalCLI(t, binary, root, nil, "intent", "create", "Fresh journey", "--space", "default"))
+	read(runAIDLCCLI(t, binary, root, nil, "intent", "create", "Fresh journey", "--space", "default"))
 	procedure := func() {
 		t.Helper()
 		var view flow.ProcedureView
-		raw := runMinimalCLI(t, binary, root, nil, "intent", "procedure", st.ID, "--space", "default")
+		raw := runAIDLCCLI(t, binary, root, nil, "intent", "procedure", st.ID, "--space", "default")
 		if json.Unmarshal(raw, &view) != nil || view.Stage != st.Stage || view.DefinitionHash != st.DefinitionHash || view.Procedure.Text == "" {
 			t.Fatalf("procedure mismatch: %s", raw)
 		}
@@ -97,7 +97,7 @@ func runGitIndependentBoundaryJourney(t *testing.T, binary, root string, units b
 	call := func(action string, args ...string) {
 		t.Helper()
 		base := []string{"intent", action, st.ID, "--space", "default", "--expect", strconv.FormatUint(st.Revision, 10)}
-		read(runMinimalCLI(t, binary, root, nil, append(base, args...)...))
+		read(runAIDLCCLI(t, binary, root, nil, append(base, args...)...))
 		procedure()
 	}
 	writeRequest := func(name string, value any) string {
@@ -107,18 +107,18 @@ func runGitIndependentBoundaryJourney(t *testing.T, binary, root string, units b
 			t.Fatal(err)
 		}
 		file := filepath.Join(root, "aidlc/.runtime", name)
-		writeMinimalFixture(t, file, string(raw))
+		writeAIDLCFixture(t, file, string(raw))
 		return file
 	}
 	knowledge := "aidlc/spaces/default/knowledge/codekb/current.md"
-	writeMinimalFixture(t, filepath.Join(root, knowledge), "---\ntype: Design\ntitle: Addition\ndescription: Adds two integers\n---\nAdd returns the sum.\n")
+	writeAIDLCFixture(t, filepath.Join(root, knowledge), "---\ntype: Design\ntitle: Addition\ndescription: Adds two integers\n---\nAdd returns the sum.\n")
 	config := flow.Config{NoMaterialsReason: "fresh project", Objective: "Addition", Scope: []string{"add.go"}, Acceptance: []string{"Add(2,3)=5"}, VerificationPaths: []string{"add.go", "add_test.go", "go.mod"}, ADR: flow.ADR{Reason: "No architectural decision"}, Artifacts: []flow.Artifact{{Path: knowledge, Kind: "Knowledge", Stage: "discovery"}}}
 	review := func(status string) {
 		t.Helper()
 		reviewRoot := root
 		call("review", "--file", writeRequest("review.json", flow.ReviewRequest{Action: "assign", CoordinatorSession: "c", Session: "r", Root: reviewRoot}))
 		var gate flow.Gate
-		if err := json.Unmarshal(runMinimalCLI(t, binary, root, nil, "intent", "check", st.ID, "--space", "default"), &gate); err != nil {
+		if err := json.Unmarshal(runAIDLCCLI(t, binary, root, nil, "intent", "check", st.ID, "--space", "default"), &gate); err != nil {
 			t.Fatal(err)
 		}
 		call("review", "--file", writeRequest("review.json", flow.ReviewRequest{Action: "accept", Session: "r", Root: reviewRoot, Target: gate.Target, Status: status, Summary: "Fixture review for CLI integration; not actual AI evidence"}))
@@ -158,7 +158,7 @@ func runGitIndependentBoundaryJourney(t *testing.T, binary, root string, units b
 	if _, err := okfmemory.Parse(log); err != nil {
 		t.Fatal("reopen log is not OKF", err)
 	}
-	found := runMinimalCLI(t, binary, root, nil, "memory", "search", "work-log", "--space", "default", "--intent-id", st.ID)
+	found := runAIDLCCLI(t, binary, root, nil, "memory", "search", "work-log", "--space", "default", "--intent-id", st.ID)
 	var records []map[string]string
 	if err := json.Unmarshal(found, &records); err != nil {
 		t.Fatal(err)
@@ -166,7 +166,7 @@ func runGitIndependentBoundaryJourney(t *testing.T, binary, root string, units b
 	if len(records) != 1 || records[0]["concept_id"] != "log/"+st.ID+"-work-log" {
 		t.Fatalf("reopen log search: %s", found)
 	}
-	shown := runMinimalCLI(t, binary, root, nil, "memory", "show", records[0]["concept_id"], "--space", "default")
+	shown := runAIDLCCLI(t, binary, root, nil, "memory", "show", records[0]["concept_id"], "--space", "default")
 	var record map[string]string
 	if err := json.Unmarshal(shown, &record); err != nil {
 		t.Fatal(err)
@@ -178,21 +178,21 @@ func runGitIndependentBoundaryJourney(t *testing.T, binary, root string, units b
 	review("pass")
 	st = f.finish(st)
 	call("begin")
-	writeMinimalFixture(t, filepath.Join(root, "go.mod"), "module example.invalid/add\n\ngo 1.26\n")
-	writeMinimalFixture(t, filepath.Join(root, "add.go"), "package add\nfunc Add(a,b int)int{return 0}\n")
-	writeMinimalFixture(t, filepath.Join(root, "add_test.go"), "package add\nimport \"testing\"\nfunc TestAdd(t *testing.T){if Add(2,3)!=5{t.Fatal(\"wrong sum\")}}\n")
+	writeAIDLCFixture(t, filepath.Join(root, "go.mod"), "module example.invalid/add\n\ngo 1.26\n")
+	writeAIDLCFixture(t, filepath.Join(root, "add.go"), "package add\nfunc Add(a,b int)int{return 0}\n")
+	writeAIDLCFixture(t, filepath.Join(root, "add_test.go"), "package add\nimport \"testing\"\nfunc TestAdd(t *testing.T){if Add(2,3)!=5{t.Fatal(\"wrong sum\")}}\n")
 	red := exec.Command("go", "test", "-count=1", "-run", "^TestAdd$")
 	red.Dir = root
 	if raw, err := red.CombinedOutput(); err == nil || !bytes.Contains(raw, []byte("wrong sum")) {
 		t.Fatalf("not assertion RED: %s %v", raw, err)
 	}
-	writeMinimalFixture(t, filepath.Join(root, "add.go"), "package add\nfunc Add(a,b int)int{return a+b}\n")
-	green := runMinimalProcess(t, root, "go", "test", "-count=1", "-run", "^TestAdd$")
-	writeMinimalFixture(t, filepath.Join(root, "aidlc/evidence/results.txt"), string(green))
+	writeAIDLCFixture(t, filepath.Join(root, "add.go"), "package add\nfunc Add(a,b int)int{return a+b}\n")
+	green := runFixtureProcess(t, root, "go", "test", "-count=1", "-run", "^TestAdd$")
+	writeAIDLCFixture(t, filepath.Join(root, "aidlc/evidence/results.txt"), string(green))
 	config.Artifacts = append(config.Artifacts, flow.Artifact{Path: "aidlc/evidence/results.txt", Kind: "test", Stage: "tdd"})
 	if units {
 		config = runGitIndependentUnits(t, binary, root, &st, config)
-		green = runMinimalProcess(t, root, "go", "test", "-count=1", "-run", "^TestAdd$")
+		green = runFixtureProcess(t, root, "go", "test", "-count=1", "-run", "^TestAdd$")
 	}
 	call("configure", "--file", writeRequest("config.json", config))
 	config.TestResults = append(config.TestResults, boundaryFixtureResults(t, root, st.CurrentStepID, "tdd", "", config.Tests, green))
@@ -217,10 +217,10 @@ func runGitIndependentBoundaryJourney(t *testing.T, binary, root string, units b
 	call("documents", "--file", writeRequest("documents.json", flow.IntentDocuments{Inputs: []flow.DocumentDeclaration{}, Outputs: []flow.DocumentDeclaration{{StepID: st.CurrentStepID, Stage: "integration", Path: name, Metadata: okfmemory.DocumentMatch{Type: "Knowledge", Title: &title, Description: &description}}}}))
 	config.Units = nil
 	call("configure", "--file", writeRequest("config.json", config))
-	integrationOutput := runMinimalProcess(t, root, "go", "test", "-count=1", "-run", "^TestAdd$")
+	integrationOutput := runFixtureProcess(t, root, "go", "test", "-count=1", "-run", "^TestAdd$")
 	config.TestResults = append(config.TestResults, boundaryFixtureResults(t, root, st.CurrentStepID, "integration", "", config.Tests, integrationOutput))
 	call("configure", "--file", writeRequest("config.json", config))
-	runMinimalCLI(t, binary, root, nil, "session", "bind", st.ID, "--space", "default", "--session", "second")
+	runAIDLCCLI(t, binary, root, nil, "session", "bind", st.ID, "--space", "default", "--session", "second")
 	review("pass")
 	st = f.finish(st)
 	if st.Status != "completed" {

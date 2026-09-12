@@ -7,10 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/sori883/ai-dd/src/internal/app"
 	"github.com/sori883/ai-dd/src/internal/filestore"
 	"github.com/sori883/ai-dd/src/internal/flow"
 	"github.com/sori883/ai-dd/src/internal/install"
-	"github.com/sori883/ai-dd/src/internal/minimal"
 	"io"
 	"os"
 	"os/exec"
@@ -89,13 +89,13 @@ func TestFlowLiveHelper(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		cmd := exec.Command(cfg.Binary, "__minimal-hook", "--project-dir", cfg.Root)
+		cmd := exec.Command(cfg.Binary, "__hook", "--project-dir", cfg.Root)
 		cmd.Stdin = bytes.NewReader(input)
 		out, err := cmd.Output()
 		if err != nil {
 			t.Fatal(err)
 		}
-		var h minimal.HookInput
+		var h app.HookInput
 		if err := json.Unmarshal(input, &h); err != nil {
 			t.Fatal(err)
 		}
@@ -103,7 +103,7 @@ func TestFlowLiveHelper(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		session, _ := (minimal.Service{Root: cfg.Root, Binary: cfg.Binary}).Inspect(h.Session)
+		session, _ := (app.Service{Root: cfg.Root, Binary: cfg.Binary}).Inspect(h.Session)
 		record := flowLiveRecord{Raw: input, Output: out, States: states, Session: h.Session, Bound: session.Intent != ""}
 		if h.Event == "PreToolUse" && h.Tool == "Bash" {
 			r, _, ok := flowReviewCommand(cfg.Binary, h.Input.Command)
@@ -223,9 +223,9 @@ func TestFlowLiveHelper(t *testing.T) {
 func flowRunModel(ctx context.Context, cfg flowLiveConfig, root, label, prompt, sandbox string, resume ...string) (flowProofJob, error) {
 	job := flowProofJob{Root: root, Start: time.Now().UnixNano()}
 	last := filepath.Join(cfg.Evidence, label+"-last.json")
-	args := []string{"exec", "--ignore-user-config", "--dangerously-bypass-hook-trust", "-s", sandbox, "-c", `approval_policy="never"`, "-m", "gpt-6-astra", "-c", `model_reasoning_effort="medium"`, "-c", minimalProbeTrustConfig(root), "-C", root, "--json", "-o", last, prompt}
+	args := []string{"exec", "--ignore-user-config", "--dangerously-bypass-hook-trust", "-s", sandbox, "-c", `approval_policy="never"`, "-m", "gpt-6-astra", "-c", `model_reasoning_effort="medium"`, "-c", hookProbeTrustConfig(root), "-C", root, "--json", "-o", last, prompt}
 	if len(resume) > 0 {
-		args = []string{"exec", "resume", "--ignore-user-config", "--dangerously-bypass-hook-trust", "-c", `sandbox_mode="` + sandbox + `"`, "-c", `approval_policy="never"`, "-m", "gpt-6-astra", "-c", `model_reasoning_effort="medium"`, "-c", minimalProbeTrustConfig(root), "--json", "-o", last, resume[0], prompt}
+		args = []string{"exec", "resume", "--ignore-user-config", "--dangerously-bypass-hook-trust", "-c", `sandbox_mode="` + sandbox + `"`, "-c", `approval_policy="never"`, "-m", "gpt-6-astra", "-c", `model_reasoning_effort="medium"`, "-c", hookProbeTrustConfig(root), "--json", "-o", last, resume[0], prompt}
 	}
 	if strings.HasPrefix(label, "review-") {
 		schema := filepath.Join(cfg.Evidence, "review-schema.json")
@@ -461,19 +461,19 @@ func TestFlowJourneyLive(t *testing.T) {
 	t.Logf("persistent raw evidence: %s", evidence)
 	root := filepath.Join(evidence, "project")
 	os.MkdirAll(root, 0700)
-	binary := buildMinimalBinary(t)
+	binary := buildAIDLCBinary(t)
 	helper := filepath.Join(root, "flow-helper")
 	cfg := flowLiveConfig{Root: root, Binary: binary, Evidence: evidence, Helper: helper, Workers: map[string]string{}}
-	runMinimalProcess(t, root, "git", "init", "-q")
-	writeMinimalFixture(t, filepath.Join(root, "go.mod"), "module example.invalid/flow\n\ngo 1.26\n")
+	runFixtureProcess(t, root, "git", "init", "-q")
+	writeAIDLCFixture(t, filepath.Join(root, "go.mod"), "module example.invalid/flow\n\ngo 1.26\n")
 	for u, body := range map[string]string{"a": "func Add(a,b int)int{return 0}", "b": "func Mul(a,b int)int{return 0}", "c": "func Combine(a,b int)int{return 0}"} {
-		writeMinimalFixture(t, filepath.Join(root, u+".go"), "package calc\n"+body+"\n")
+		writeAIDLCFixture(t, filepath.Join(root, u+".go"), "package calc\n"+body+"\n")
 	}
-	runMinimalProcess(t, root, "git", "add", "go.mod", "a.go", "b.go", "c.go")
-	runMinimalProcess(t, root, "git", "-c", "user.name=Flow", "-c", "user.email=flow@example.invalid", "commit", "-qm", "fixture scaffold")
+	runFixtureProcess(t, root, "git", "add", "go.mod", "a.go", "b.go", "c.go")
+	runFixtureProcess(t, root, "git", "-c", "user.name=Flow", "-c", "user.email=flow@example.invalid", "commit", "-qm", "fixture scaffold")
 	for _, u := range []string{"a", "b", "c"} {
 		worker := filepath.Join(evidence, "worker-"+u)
-		runMinimalProcess(t, root, "git", "worktree", "add", "--detach", worker, "HEAD")
+		runFixtureProcess(t, root, "git", "worktree", "add", "--detach", worker, "HEAD")
 		cfg.Workers[u] = worker
 	}
 	if _, err := install.Codex(root, binary); err != nil {
@@ -481,14 +481,14 @@ func TestFlowJourneyLive(t *testing.T) {
 	}
 	cfgPath := filepath.Join(root, ".flow-config.json")
 	raw, _ := json.Marshal(cfg)
-	writeMinimalFixture(t, cfgPath, string(raw))
+	writeAIDLCFixture(t, cfgPath, string(raw))
 	testBinary, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
 	script := "#!/bin/sh\nmode=$1\nshift\nexec " + quote(testBinary) + " -test.run='^TestFlowLiveHelper$' -- \"$mode\" " + quote(cfgPath) + " \"$@\"\n"
-	writeMinimalFixture(t, helper, script)
+	writeAIDLCFixture(t, helper, script)
 	os.Chmod(helper, 0700)
 	// Hooks call the same deployed product implementation and retain its raw decisions.
 	hooksPath := filepath.Join(root, ".codex/hooks.json")
@@ -504,10 +504,10 @@ func TestFlowJourneyLive(t *testing.T) {
 	}
 	hooksRaw, _ = json.Marshal(hooks)
 	os.WriteFile(hooksPath, hooksRaw, 0600)
-	writeMinimalFixture(t, filepath.Join(root, ".gitignore"), ".flow-*\nflow-helper\n.codex/\n.agents/\n")
-	writeMinimalFixture(t, filepath.Join(root, "aidlc/spaces/default/knowledge/codekb/current.md"), "---\ntype: Design\ntitle: Arithmetic\ndescription: Current arithmetic behavior\n---\nAdd(0,x) returns 0. Mul multiplies. Combine sums Add and Mul.\n")
-	runMinimalProcess(t, root, "git", "add", ".gitignore")
-	runMinimalProcess(t, root, "git", "-c", "user.name=Flow", "-c", "user.email=flow@example.invalid", "commit", "-qm", "fixture exclusions")
+	writeAIDLCFixture(t, filepath.Join(root, ".gitignore"), ".flow-*\nflow-helper\n.codex/\n.agents/\n")
+	writeAIDLCFixture(t, filepath.Join(root, "aidlc/spaces/default/knowledge/codekb/current.md"), "---\ntype: Design\ntitle: Arithmetic\ndescription: Current arithmetic behavior\n---\nAdd(0,x) returns 0. Mul multiplies. Combine sums Add and Mul.\n")
+	runFixtureProcess(t, root, "git", "add", ".gitignore")
+	runFixtureProcess(t, root, "git", "-c", "user.name=Flow", "-c", "user.email=flow@example.invalid", "commit", "-qm", "fixture exclusions")
 	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Minute)
 	defer cancel()
 	proof := flowProof{Binary: binary}
@@ -584,7 +584,7 @@ This fixture's Git operations need host support under the normal sandbox. The te
 			observations = append(observations, *record.Review)
 		}
 		proof.States = append(proof.States, record.States...)
-		var input minimal.HookInput
+		var input app.HookInput
 		if json.Unmarshal(record.Raw, &input) == nil && input.Event == "PreToolUse" && input.Tool == "Bash" {
 			fields := strings.Fields(input.Input.Command)
 			if len(fields) > 2 && strings.Trim(fields[0], "\"' ") == cfg.Binary && !strings.ContainsAny(input.Input.Command, ";|&\n") {

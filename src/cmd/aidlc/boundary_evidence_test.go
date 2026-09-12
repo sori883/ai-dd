@@ -3,9 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/sori883/ai-dd/src/internal/app"
 	"github.com/sori883/ai-dd/src/internal/cli"
 	"github.com/sori883/ai-dd/src/internal/flow"
-	"github.com/sori883/ai-dd/src/internal/minimal"
 
 	"testing"
 )
@@ -27,7 +27,7 @@ func verifyBoundaryEvidence(binary string, records []boundaryObservation, execut
 	pending := map[string]boundaryObservation{}
 	id, session := "", ""
 	for _, record := range records {
-		var h minimal.HookInput
+		var h app.HookInput
 		if json.Unmarshal(record.Raw, &h) != nil {
 			return fail()
 		}
@@ -66,7 +66,7 @@ func verifyBoundaryEvidence(binary string, records []boundaryObservation, execut
 			continue
 		}
 		delete(pending, key)
-		var before minimal.HookInput
+		var before app.HookInput
 		if json.Unmarshal(pre.Raw, &before) != nil || before.Input.Command != h.Input.Command {
 			return fail()
 		}
@@ -88,7 +88,7 @@ func verifyBoundaryEvidence(binary string, records []boundaryObservation, execut
 		if !ok || len(argv) < 2 || argv[0] != binary {
 			continue
 		}
-		r, err := cli.ParseMinimal(argv[1:])
+		r, err := cli.ParseCommand(argv[1:])
 		if err != nil {
 			continue
 		}
@@ -120,7 +120,7 @@ func TestBoundaryEvidenceSequence(t *testing.T) {
 	var records []boundaryObservation
 	execs := map[string]int{}
 	add := func(event, id, command, decision string, started bool) {
-		h := minimal.HookInput{Event: event, Session: "session", Tool: "Bash", ID: id}
+		h := app.HookInput{Event: event, Session: "session", Tool: "Bash", ID: id}
 		h.Input.Command = command
 		raw, _ := json.Marshal(h)
 		out, _ := json.Marshal(map[string]any{"hookSpecificOutput": map[string]any{"permissionDecision": decision}})

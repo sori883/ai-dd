@@ -360,7 +360,7 @@ func TestDistributionJourney(t *testing.T) {
 		t.Fatal(err)
 	}
 	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
-	expectedCommand := quote(newBinary) + " __minimal-hook --project-dir " + quote(root)
+	expectedCommand := quote(newBinary) + " __hook --project-dir " + quote(root)
 	for event, groups := range parsed.Hooks {
 		if event == "Notification" {
 			continue

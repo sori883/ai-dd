@@ -49,8 +49,8 @@ func TestRelocateReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old, _ := json.Marshal(shellQuote(oldBinary) + " __minimal-hook --project-dir " + shellQuote(oldRoot))
-	new, _ := json.Marshal(shellQuote("/new/aidlc") + " __minimal-hook --project-dir " + shellQuote(root))
+	old, _ := json.Marshal(shellQuote(oldBinary) + " __hook --project-dir " + shellQuote(oldRoot))
+	new, _ := json.Marshal(shellQuote("/new/aidlc") + " __hook --project-dir " + shellQuote(root))
 	want := bytes.ReplaceAll(raw, old, new)
 	if !bytes.Equal(got, want) || len(result.Paths) != 3 {
 		t.Fatalf("references not relocated: paths=%v\n%s", result.Paths, got)
@@ -73,8 +73,11 @@ func TestRelocateRejectsBeforeSaving(t *testing.T) {
 		{"invalid utf8", func(b []byte) []byte { return append(b, 255) }},
 		{"trailing", func(b []byte) []byte { return append(b, []byte(` {}`)...) }},
 		{"wrong timeout", func(b []byte) []byte { return bytes.Replace(b, []byte(`"timeout": 10`), []byte(`"timeout": 1`), 1) }},
+		{"extra unknown product", func(b []byte) []byte {
+			return bytes.Replace(b, []byte(`"hooks": {`), []byte(`"hooks": {"CustomEvent": [{"hooks":[{"type":"command","command":"aidlc __hook --unknown"}]}],`), 1)
+		}},
 		{"unknown product", func(b []byte) []byte {
-			return bytes.Replace(b, []byte("__minimal-hook"), []byte("__minimal-hook --unknown"), 1)
+			return bytes.Replace(b, []byte("__hook"), []byte("__hook --unknown"), 1)
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -63,10 +63,10 @@ func TestRelocationCommand(t *testing.T) {
 		t.Fatal(canonicalErr)
 	}
 	f.binary = canonicalBinary
-	writeMinimalFixture(t, filepath.Join(f.root, "go.mod"), "module example.invalid/relocation\n\ngo 1.26\n")
-	writeMinimalFixture(t, filepath.Join(f.root, "a.go"), "package relocation\nfunc A()int{return 0}\n")
-	writeMinimalFixture(t, filepath.Join(f.root, "b.go"), "package relocation\nfunc B()int{return 0}\n")
-	writeMinimalFixture(t, filepath.Join(f.root, "work_test.go"), "package relocation\nimport \"testing\"\nfunc TestA(t *testing.T){if A()!=1{t.Fatal(\"A\")}}\nfunc TestB(t *testing.T){if B()!=2{t.Fatal(\"B\")}}\n")
+	writeAIDLCFixture(t, filepath.Join(f.root, "go.mod"), "module example.invalid/relocation\n\ngo 1.26\n")
+	writeAIDLCFixture(t, filepath.Join(f.root, "a.go"), "package relocation\nfunc A()int{return 0}\n")
+	writeAIDLCFixture(t, filepath.Join(f.root, "b.go"), "package relocation\nfunc B()int{return 0}\n")
+	writeAIDLCFixture(t, filepath.Join(f.root, "work_test.go"), "package relocation\nimport \"testing\"\nfunc TestA(t *testing.T){if A()!=1{t.Fatal(\"A\")}}\nfunc TestB(t *testing.T){if B()!=2{t.Fatal(\"B\")}}\n")
 	st := f.tdd()
 	planned := st.Config
 	for i := range planned.Units {
@@ -139,7 +139,7 @@ func TestRelocationCommand(t *testing.T) {
 	if !ok || args[0] != g.binary {
 		t.Fatal("bad relocated command")
 	}
-	runMinimalCLI(t, args[0], clone, []byte(`{"hook_event_name":"UserPromptSubmit","session_id":"new-coordinator","turn_id":"turn"}`), args[1:]...)
+	runAIDLCCLI(t, args[0], clone, []byte(`{"hook_event_name":"UserPromptSubmit","session_id":"new-coordinator","turn_id":"turn"}`), args[1:]...)
 	g.bind(st, "new-coordinator")
 	st = g.action(st, "resume", "--reason", "old workers stopped, clone inspected")
 	// Clone has no local registry. Never attach new reservations to its old Unit runs.
@@ -166,20 +166,20 @@ func TestRelocationCommand(t *testing.T) {
 		if err := json.Unmarshal(raw, &assignment); err != nil {
 			t.Fatal(err)
 		}
-		writeMinimalFixture(t, filepath.Join(worker, id+".go"), fmt.Sprintf("package relocation\nfunc %s()int{return %d}\n", strings.ToUpper(id), i+1))
-		output := runMinimalProcess(t, worker, "go", "test", "-count=1", "-run", "^Test"+strings.ToUpper(id)+"$")
+		writeAIDLCFixture(t, filepath.Join(worker, id+".go"), fmt.Sprintf("package relocation\nfunc %s()int{return %d}\n", strings.ToUpper(id), i+1))
+		output := runFixtureProcess(t, worker, "go", "test", "-count=1", "-run", "^Test"+strings.ToUpper(id)+"$")
 		w := operationsFixture{t, g.binary, worker}
 		commit := w.commit("verified " + id)
 		outputPath := "aidlc/evidence/relocated-" + id + ".log"
-		writeMinimalFixture(t, filepath.Join(clone, outputPath), string(output))
+		writeAIDLCFixture(t, filepath.Join(clone, outputPath), string(output))
 		runs = append(runs, map[string]any{"unit_id": id, "command": st.Config.Units[i].Tests[0], "exit_code": 0, "output_path": outputPath})
 		st = g.unit(st, "result", flow.UnitRequest{Unit: id, Session: "new-" + id, Root: worker, RunID: assignment.RunID, VerificationSHA256: commit})
 		g.git("-c", "user.name=Relocation", "-c", "user.email=relocation@example.invalid", "merge", "--no-edit", commit)
 		st = g.unit(st, "integrate", flow.UnitRequest{Unit: id, VerificationSHA256: g.git("rev-parse", "HEAD")})
 	}
-	output := runMinimalProcess(t, clone, "go", "test", "-count=1")
+	output := runFixtureProcess(t, clone, "go", "test", "-count=1")
 	// Record the latest whole-project regression output before independent fixture review.
-	writeMinimalFixture(t, filepath.Join(clone, "aidlc/evidence/relocated-all.log"), string(output))
+	writeAIDLCFixture(t, filepath.Join(clone, "aidlc/evidence/relocated-all.log"), string(output))
 	g.commit("integration evidence")
 	c := st.Config
 	for _, run := range runs {
@@ -194,7 +194,7 @@ func TestRelocationCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeMinimalFixture(t, filepath.Join(clone, resultPath), string(resultJSON))
+	writeAIDLCFixture(t, filepath.Join(clone, resultPath), string(resultJSON))
 	c.TestResults = []string{resultPath}
 	c.Artifacts = append(c.Artifacts, flow.Artifact{Path: "aidlc/evidence/relocated-all.log", Kind: "test", Stage: "tdd"})
 	st = g.action(st, "configure", "--file", g.request(c))

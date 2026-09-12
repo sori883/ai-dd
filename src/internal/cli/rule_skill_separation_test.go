@@ -1,7 +1,7 @@
 package cli
 
 import (
-	codex "github.com/sori883/ai-dd/src/harness/codex/minimal"
+	codex "github.com/sori883/ai-dd/src/harness/codex"
 	"io/fs"
 	"regexp"
 	"strings"

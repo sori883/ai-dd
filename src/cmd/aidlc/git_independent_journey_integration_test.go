@@ -13,7 +13,7 @@ import (
 )
 
 func TestGitIndependentJourney(t *testing.T) {
-	binary := buildMinimalBinary(t)
+	binary := buildAIDLCBinary(t)
 	for _, mode := range []string{"no-git", "detect-git"} {
 		t.Run(mode, func(t *testing.T) {
 			productPath := t.TempDir()
@@ -53,49 +53,49 @@ func runGitIndependentUnits(t *testing.T, binary, root string, st *flow.State, c
 			t.Fatal(err)
 		}
 		p := filepath.Join(root, "aidlc/.runtime/request.json")
-		writeMinimalFixture(t, p, string(raw))
+		writeAIDLCFixture(t, p, string(raw))
 		return p
 	}
 	update := func(command, action string, value any) {
 		args := []string{command, action, st.ID, "--space", "default", "--expect", strconv.FormatUint(st.Revision, 10), "--file", request(value)}
-		raw := runMinimalCLI(t, binary, root, nil, args...)
+		raw := runAIDLCCLI(t, binary, root, nil, args...)
 		if err := json.Unmarshal(raw, st); err != nil {
 			t.Fatal(err)
 		}
 	}
 	update("intent", "configure", config)
 	var registry assignment.Registry
-	raw := runMinimalCLI(t, binary, root, nil, "assignment", "init", "--file", request(assignment.InitRequest{RequestID: "init", HumanConfirmed: true, Reason: "synthetic fixture: no prior workers"}))
+	raw := runAIDLCCLI(t, binary, root, nil, "assignment", "init", "--file", request(assignment.InitRequest{RequestID: "init", HumanConfirmed: true, Reason: "synthetic fixture: no prior workers"}))
 	if err := json.Unmarshal(raw, &registry); err != nil {
 		t.Fatal(err)
 	}
 	for _, unit := range []string{"a", "b"} {
 		claim := flow.UnitRequest{StepID: st.CurrentStepID, Unit: unit, Root: root, Session: "worker-" + unit, CoordinatorSession: "main", RegistryEpoch: registry.Epoch, RequestID: "claim-" + unit}
 		update("unit", "claim", claim)
-		reservation, err := gitIndependentReservation(runMinimalCLI(t, binary, root, nil, "assignment", "list"), unit)
+		reservation, err := gitIndependentReservation(runAIDLCCLI(t, binary, root, nil, "assignment", "list"), unit)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if unit == "b" {
-			writeMinimalFixture(t, filepath.Join(root, "add.go"), "package add\n// Unit B adjusts shared implementation after A is integrated.\nfunc Add(a,b int)int{return b+a}\n")
+			writeAIDLCFixture(t, filepath.Join(root, "add.go"), "package add\n// Unit B adjusts shared implementation after A is integrated.\nfunc Add(a,b int)int{return b+a}\n")
 		}
 		var view flow.VerificationView
-		if err := json.Unmarshal(runMinimalCLI(t, binary, root, nil, "intent", "hash", st.ID, "--space", "default", "--unit", unit, "--root", root), &view); err != nil {
+		if err := json.Unmarshal(runAIDLCCLI(t, binary, root, nil, "intent", "hash", st.ID, "--space", "default", "--unit", unit, "--root", root), &view); err != nil {
 			t.Fatal(err)
 		}
-		output := runMinimalProcess(t, root, "go", "test", "-count=1", "-run", "^TestAdd$")
+		output := runFixtureProcess(t, root, "go", "test", "-count=1", "-run", "^TestAdd$")
 		log := "aidlc/evidence/" + unit + ".txt"
-		writeMinimalFixture(t, filepath.Join(root, log), string(output))
+		writeAIDLCFixture(t, filepath.Join(root, log), string(output))
 		doc := map[string]any{"step_id": st.CurrentStepID, "stage": "tdd", "verification_scope": "unit", "verification_sha256": view.SHA256, "unit_id": unit, "run_id": reservation.RunID, "runs": []map[string]any{{"unit_id": unit, "command": config.Tests[0], "exit_code": 0, "output_path": log}}}
 		raw, _ := json.Marshal(doc)
 		result := "aidlc/evidence/unit-" + unit + ".json"
-		writeMinimalFixture(t, filepath.Join(root, result), string(raw))
+		writeAIDLCFixture(t, filepath.Join(root, result), string(raw))
 		current := st.Config
 		current.TestResults = append(current.TestResults, result)
 		update("intent", "configure", current)
 		update("unit", "result", flow.UnitRequest{StepID: st.CurrentStepID, Unit: unit, Root: root, Session: claim.Session, RunID: reservation.RunID, VerificationSHA256: view.SHA256})
 		update("unit", "integrate", flow.UnitRequest{StepID: st.CurrentStepID, Unit: unit})
-		runMinimalCLI(t, binary, root, nil, "assignment", "release", reservation.ID, "--session", "main", "--expect", strconv.FormatUint(reservation.EntryRevision, 10), "--file", request(assignment.ReleaseRequest{RegistryEpoch: registry.Epoch, RequestID: "release-" + unit, PreviousRunStopped: true, NoMoreRequests: true, Reason: "synthetic synchronous worker collected"}))
+		runAIDLCCLI(t, binary, root, nil, "assignment", "release", reservation.ID, "--session", "main", "--expect", strconv.FormatUint(reservation.EntryRevision, 10), "--file", request(assignment.ReleaseRequest{RegistryEpoch: registry.Epoch, RequestID: "release-" + unit, PreviousRunStopped: true, NoMoreRequests: true, Reason: "synthetic synchronous worker collected"}))
 		if st.Config.Units[0].Status != "integrated" {
 			t.Fatal("Unit A lost integrated status")
 		}

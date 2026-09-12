@@ -39,8 +39,8 @@ stateのrevisionやreview記録だけの更新では対象hashを変えません
 メインAIがユーザーとの対話、共有stateと文書の保存、標準ツールによる担当の起動と結果回収を行います。
 製品CLIはエージェントを起動しません。5種類の専門担当は要件整理、調査、ステージ計画、worker、reviewerです。
 worker以外はread-onlyで本文案や報告を返し、共有Knowledgeの保存はメインAIが行います。
-製品の行動規約は[aidlc Skill](../src/harness/codex/minimal/SKILL.md)、操作の選択は
-[aidlc-cli Skill](../src/harness/codex/minimal/aidlc-cli/SKILL.md)、正確な引数・型はCLI helpにあります。
+製品の行動規約は[aidlc Skill](../src/harness/codex/SKILL.md)、操作の選択は
+[aidlc-cli Skill](../src/harness/codex/aidlc-cli/SKILL.md)、正確な引数・型はCLI helpにあります。
 
 Unitは担当範囲、検証、依存、Bolt（作業のまとまり）を持ち、workerは通常ディレクトリへ割り当てます。同じrootでの順次作業を許可し、同一・親子rootの重複予約を拒否します。
 依存統合前や担当範囲の重複を拒否し、結果は現在のrun/session/rootと実効検証集合のSHAに照合します。反映時は管理元の同じ集合の内容一致を確認します。
@@ -53,7 +53,7 @@ Unitなしのworkerも作業場所を登録します。同一管理rootの全Spa
 
 ## hookとローカル情報
 
-`src/internal/minimal`は公開操作とCodex hookを接続します。session選択、現在turnのRule全文読込hash、
+`src/internal/app`は公開操作とCodex hookを接続します。session選択、現在turnのRule全文読込hash、
 実行中tool IDなどをローカルに保持します。PreToolUseは通常操作の前提・承認待ち・現在段階の担当を確認します。
 同じIDのPostでtool slotを解放しますが、子エージェントの稼働終了を意味しません。
 Postが届かない場合は処理終了を確認し、同じsession/Space/Intentへの明示`session bind --recover`を使います。
@@ -73,7 +73,7 @@ hookは通常のAI操作の飛ばし防止で、OS権限による全書込み経
 `okf`と`okfmemory`は固定OKF v0.2のmetadataを検査・保持・検索します。日時とfrontmatterはmemory CLIで生成します。
 外部依存は承認済み`go.yaml.in/yaml/v3 v3.0.5`です。
 
-配置原稿は`src/core/minimal`、`src/core/workflow`、`src/harness/codex/minimal`です。
+配置原稿は`src/core`、`src/core/workflow`、`src/harness/codex`です。
 installがfresh projectへ配置し、実行時は配置済みの定義・Rule・Skillを読みます。原稿へのfallbackはありません。
 入口Skillは4 KiB以内、必須Rule本文は16 KiB以内とし、超過時に切り捨てません。
 

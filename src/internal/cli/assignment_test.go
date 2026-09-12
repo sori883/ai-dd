@@ -16,7 +16,7 @@ func TestAssignmentContract(t *testing.T) {
 		{"assignment", "release", "id", "--session", "main", "--expect", "1", "--file", "release.json"},
 	} {
 		t.Run(args[1], func(t *testing.T) {
-			if _, err := ParseMinimal(args); err != nil {
+			if _, err := ParseCommand(args); err != nil {
 				t.Fatal(err)
 			}
 			text, ok := Help([]string{"assignment", args[1], "--help"})
@@ -26,7 +26,7 @@ func TestAssignmentContract(t *testing.T) {
 		})
 	}
 	for _, args := range [][]string{{"assignment", "release", "id", "--expect", "1", "--file", "release.json"}, {"assignment", "init"}, {"assignment", "reserve", "id", "--space", "default", "--file", "r.json"}} {
-		if _, err := ParseMinimal(args); err == nil {
+		if _, err := ParseCommand(args); err == nil {
 			t.Fatalf("invalid args accepted: %v", args)
 		}
 	}

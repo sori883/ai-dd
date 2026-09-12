@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/sori883/ai-dd/src/internal/app"
 	"github.com/sori883/ai-dd/src/internal/assignment"
 	"github.com/sori883/ai-dd/src/internal/flow"
-	"github.com/sori883/ai-dd/src/internal/minimal"
 )
 
 func TestAssignmentJourney(t *testing.T) {
@@ -22,13 +22,13 @@ func TestAssignmentJourney(t *testing.T) {
 		t.Fatalf("reservations: %+v %v", records, err)
 	}
 	v := records[0]
-	call := func(input minimal.HookInput) map[string]any {
+	call := func(input app.HookInput) map[string]any {
 		t.Helper()
 		raw, err := json.Marshal(input)
 		if err != nil {
 			t.Fatal(err)
 		}
-		output := runMinimalCLI(t, f.binary, f.root, raw, "__minimal-hook", "--project-dir", f.root)
+		output := runAIDLCCLI(t, f.binary, f.root, raw, "__hook", "--project-dir", f.root)
 		var out map[string]any
 		if err := json.Unmarshal(output, &out); err != nil {
 			t.Fatal(err)
@@ -39,15 +39,15 @@ func TestAssignmentJourney(t *testing.T) {
 		specific, _ := out["hookSpecificOutput"].(map[string]any)
 		return specific["permissionDecision"] == "deny"
 	}
-	call(minimal.HookInput{Event: "UserPromptSubmit", Session: "coordinator", Turn: "turn"})
+	call(app.HookInput{Event: "UserPromptSubmit", Session: "coordinator", Turn: "turn"})
 	f.bind(st, "coordinator")
-	pre := minimal.HookInput{Event: "PreToolUse", Session: "coordinator", Turn: "turn", ID: "spawn", Tool: "collaborationspawn_agent"}
+	pre := app.HookInput{Event: "PreToolUse", Session: "coordinator", Turn: "turn", ID: "spawn", Tool: "collaborationspawn_agent"}
 	pre.Input.AgentType = "aidlc-worker"
 	pre.Input.TaskName = v.TaskName
 	if out := call(pre); denied(out) {
 		t.Fatalf("reserved spawn rejected: %+v", out)
 	}
-	follow := minimal.HookInput{Event: "PreToolUse", Session: "coordinator", Turn: "turn", ID: "follow", Tool: "collaborationfollowup_task"}
+	follow := app.HookInput{Event: "PreToolUse", Session: "coordinator", Turn: "turn", ID: "follow", Tool: "collaborationfollowup_task"}
 	follow.Input.Target = v.TaskName
 	if !denied(call(follow)) {
 		t.Fatal("missing post allowed followup")

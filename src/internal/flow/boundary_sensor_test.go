@@ -4,7 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	core "github.com/sori883/ai-dd/src/core/minimal"
+	core "github.com/sori883/ai-dd/src/core"
 	"os"
 	"path/filepath"
 	"strings"

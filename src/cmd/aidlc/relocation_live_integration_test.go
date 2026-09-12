@@ -16,14 +16,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sori883/ai-dd/src/internal/app"
 	"github.com/sori883/ai-dd/src/internal/cli"
-	"github.com/sori883/ai-dd/src/internal/minimal"
 )
 
 func relocationSelected(binary, id string, records []memoryLiveRecord) string {
 	pending := map[string]string{}
 	for _, r := range records {
-		var in minimal.HookInput
+		var in app.HookInput
 		if json.Unmarshal(r.Raw, &in) != nil {
 			continue
 		}
@@ -31,7 +31,7 @@ func relocationSelected(binary, id string, records []memoryLiveRecord) string {
 		if !ok {
 			continue
 		}
-		request, err := cli.ParseMinimal(args[1:])
+		request, err := cli.ParseCommand(args[1:])
 		if err != nil || request.Command != "intent" || request.Action != "switch" || request.IntentID == nil || *request.IntentID != id || request.Session != in.Session {
 			continue
 		}
@@ -57,7 +57,7 @@ func TestRelocationCommandSelectionEvidence(t *testing.T) {
 	binary, id := "/new/aidlc", strings.Repeat("a", 32)
 	cmd := binary + " intent switch --id " + id + " --space default --session s"
 	record := func(event string) memoryLiveRecord {
-		in := minimal.HookInput{Event: event, Session: "s", ID: "call", Tool: "Bash"}
+		in := app.HookInput{Event: event, Session: "s", ID: "call", Tool: "Bash"}
 		in.Input.Command = cmd
 		raw, _ := json.Marshal(in)
 		return memoryLiveRecord{Raw: raw, Output: json.RawMessage(`{}`), Bound: true}
@@ -91,14 +91,14 @@ func TestRelocationLive(t *testing.T) {
 	if err := os.MkdirAll(source, 0700); err != nil {
 		t.Fatal(err)
 	}
-	binary, err := filepath.EvalSymlinks(buildMinimalBinary(t))
+	binary, err := filepath.EvalSymlinks(buildAIDLCBinary(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	f := operationsFixture{t, binary, source}
 	f.git("init", "-q")
 	f.ok("install", "codex", "--project-dir", source)
-	writeMinimalFixture(t, filepath.Join(source, "arithmetic.go"), "package arithmetic\nfunc Add(a,b int)int{return a+b}\n")
+	writeAIDLCFixture(t, filepath.Join(source, "arithmetic.go"), "package arithmetic\nfunc Add(a,b int)int{return a+b}\n")
 	st := f.create("Relocated arithmetic knowledge")
 	f.commit("source knowledge work")
 	clone := filepath.Join(evidence, "clone")
@@ -135,7 +135,7 @@ func TestRelocationLive(t *testing.T) {
 			for _, handler := range group.(map[string]any)["hooks"].([]any) {
 				h := handler.(map[string]any)
 				args, ok := flowShellWords(h["command"].(string))
-				if !ok || len(args) != 4 || args[0] != g.binary || args[1] != "__minimal-hook" || args[3] != clone {
+				if !ok || len(args) != 4 || args[0] != g.binary || args[1] != "__hook" || args[3] != clone {
 					t.Fatal("relocated handler mismatch")
 				}
 				h["command"] = quote(helper)

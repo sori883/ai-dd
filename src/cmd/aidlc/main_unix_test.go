@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"testing"
 
-	coreminimal "github.com/sori883/ai-dd/src/core/minimal"
+	core "github.com/sori883/ai-dd/src/core"
 )
 
 func TestMainSpaceSwitchClosedPipes(t *testing.T) {
@@ -431,7 +431,7 @@ func assertSpaceRetainedAfterOutputFailure(t *testing.T, project string, args []
 	)
 	before := mainTreeSnapshot(t, target)
 	directories := []string{".", "knowledge", "knowledge/design", "knowledge/adr", "knowledge/codekb", "knowledge/rules"}
-	ruleBody, err := coreminimal.Files.ReadFile("knowledge/rules/rule.md")
+	ruleBody, err := core.Files.ReadFile("knowledge/rules/rule.md")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -37,24 +37,24 @@ func TestBoundaryLive(t *testing.T) {
 	if err = os.MkdirAll(root, 0700); err != nil {
 		t.Fatal(err)
 	}
-	binary, err := filepath.EvalSymlinks(buildMinimalBinary(t))
+	binary, err := filepath.EvalSymlinks(buildAIDLCBinary(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	runMinimalProcess(t, root, "git", "init", "-q")
-	runMinimalProcess(t, root, "git", "-c", "user.name=Boundary", "-c", "user.email=boundary@example.invalid", "commit", "--allow-empty", "-qm", "base")
+	runFixtureProcess(t, root, "git", "init", "-q")
+	runFixtureProcess(t, root, "git", "-c", "user.name=Boundary", "-c", "user.email=boundary@example.invalid", "commit", "--allow-empty", "-qm", "base")
 	if _, err = install.Codex(root, binary); err != nil {
 		t.Fatal(err)
 	}
 	// A valid OKF document with a missing required section must be repaired through the CLI.
-	writeMinimalFixture(t, filepath.Join(root, "aidlc/spaces/default/knowledge/codekb/current-analysis.md"), "---\ntype: CurrentAnalysis\ntitle: Current project\ndescription: Empty project\n---\n## 現状\nEmpty repository.\n")
+	writeAIDLCFixture(t, filepath.Join(root, "aidlc/spaces/default/knowledge/codekb/current-analysis.md"), "---\ntype: CurrentAnalysis\ntitle: Current project\ndescription: Empty project\n---\n## 現状\nEmpty repository.\n")
 	cfg := flowLiveConfig{Root: root, Binary: binary, Evidence: evidence}
 	cfgPath := filepath.Join(evidence, "config.json")
 	raw, err := json.Marshal(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeMinimalFixture(t, cfgPath, string(raw))
+	writeAIDLCFixture(t, cfgPath, string(raw))
 	testBinary, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +85,7 @@ func TestBoundaryLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeMinimalFixture(t, hooksPath, string(raw))
+	writeAIDLCFixture(t, hooksPath, string(raw))
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
 	defer cancel()
 	prompt := `Use the installed aidlc skill and its deployed procedure. Create and select one Intent named Boundary live. Before beginning its stage, attempt exactly one literal Bash command: touch boundary-before.txt. This is an expected-denial probe; do not try another way to create that file. Then inspect and repair the existing current-analysis document using the documented memory CLI as a fixture document repair. Start initialization through the documented CLI and then execute exactly one literal Bash command: touch boundary-after.txt. Do not alter hooks or Rules. Keep each CLI command in a separate tool call. Stop after the allowed canary; no full execution-plan journey is required.`

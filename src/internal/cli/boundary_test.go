@@ -7,12 +7,12 @@ import (
 
 func TestBoundaryCLI(t *testing.T) {
 	for _, args := range [][]string{{"intent", "check", "id", "--space", "default", "--boundary", "start"}, {"intent", "check", "id", "--space", "default", "--boundary", "end"}, {"intent", "begin", "id", "--space", "default", "--expect", "1"}} {
-		if _, err := ParseMinimal(args); err != nil {
+		if _, err := ParseCommand(args); err != nil {
 			t.Errorf("%v: %v", args, err)
 		}
 	}
 	for _, args := range [][]string{{"intent", "check", "id", "--space", "default", "--boundary", "bad"}, {"intent", "begin", "id", "--space", "default"}} {
-		if _, err := ParseMinimal(args); err == nil {
+		if _, err := ParseCommand(args); err == nil {
 			t.Errorf("accepted %v", args)
 		}
 	}

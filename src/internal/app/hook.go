@@ -1,0 +1,492 @@
+package app
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/sori883/ai-dd/src/internal/assignment"
+	"github.com/sori883/ai-dd/src/internal/cli"
+	"github.com/sori883/ai-dd/src/internal/flow"
+	"github.com/sori883/ai-dd/src/internal/okfmemory"
+)
+
+// Hook returns Codex control JSON and never interprets model transcripts.
+func (s Service) Hook(input HookInput) (map[string]any, error) {
+	if input.AgentID != "" || input.AgentType != "" {
+		return s.childHook(input)
+	}
+	out := map[string]any{}
+	if input.Event == "PreToolUse" && input.Tool == "Bash" && input.ID != "" && input.Turn != "" {
+		if _, err := sessionPath(input.Session); err == nil {
+			argv, ok := shellWords(input.Input.Command)
+			if ok && len(argv) > 1 && sameBinary(argv[0], s.Binary) {
+				if _, help := cli.Help(argv[1:]); help {
+					return out, nil
+				}
+			}
+		}
+	}
+	_, err := s.withHookSession(input.Session, func(state *Session) ([]byte, error) {
+		if nativeAction(input.Tool) != "" && input.Event == "PostToolUse" {
+			if nativeAction(input.Tool) == "spawn" {
+				_, err := (assignment.Store{Root: s.Root}).PostSpawn(input.Session, input.ID, input.Response)
+				return nil, err
+			}
+			return nil, nil
+		}
+		if nativeAction(input.Tool) != "" && input.Event == "PreToolUse" {
+			return nil, s.agentPre(input, *state)
+		}
+		switch input.Event {
+		case "SessionStart":
+			state.RuleTurn = ""
+			state.RuleHash = ""
+			if err := s.save(input.Session, *state); err != nil {
+				return nil, err
+			}
+			skill, err := okfmemory.ReadFile(s.Root, ".agents/skills/aidlc/SKILL.md")
+			if err != nil {
+				return nil, fmt.Errorf("read deployed aidlc skill: %w", err)
+			}
+			if len(skill) > 4096 {
+				return nil, invalid("deployed aidlc skill exceeds 4 KiB bootstrap limit")
+			}
+			out["hookSpecificOutput"] = map[string]any{"hookEventName": "SessionStart", "additionalContext": fmt.Sprintf("Session: %s. Draft: %s. Required Rules are NOT loaded by this bootstrap.\n%s", input.Session, s.draftPath(input.Session), skill)}
+			return nil, nil
+
+		case "UserPromptSubmit":
+			if input.Turn == "" {
+				return nil, invalid("missing turn ID")
+			}
+			if state.Intent != "" && state.Space != "" {
+				if err := (flow.Store{Root: s.Root, Space: state.Space}).CaptureApproval(state.Intent, input.Session, state.Turn, input.Turn, input.Prompt); err != nil {
+					return nil, err
+				}
+			}
+			state.Turn = input.Turn
+
+			state.RuleTurn = ""
+			state.RuleHash = ""
+		case "PreToolUse":
+			if input.ID == "" || input.Turn == "" {
+				return nil, invalid("missing tool or turn ID")
+			}
+			if input.Tool == "apply_patch" && s.protectedPatch(input.Input.Command) {
+				return nil, invalid("use Intent CLI updates; do not patch canonical state or session state")
+			}
+			if err := s.assignmentCommand(input, state); err != nil {
+				return nil, err
+			}
+			if s.exception(input, state) {
+				return nil, nil
+			}
+			if state.Tool != "" {
+				return nil, invalid("another tool is still running. " + s.recoveryHint(input.Session, state))
+			}
+			if state.Intent == "" || state.Space == "" {
+				return nil, invalid("select an Intent and read its state and Rules first")
+			}
+			if state.Turn != input.Turn || state.RuleTurn != state.Turn || state.RuleHash == "" {
+				return nil, invalid("read state and Rules for this turn with intent switch")
+			}
+			selected, err := (flow.Store{Root: s.Root, Space: state.Space}).Read(state.Intent)
+			if err != nil {
+				return nil, err
+			}
+			_, hash, err := s.rules(state.Space)
+			if err != nil {
+				return nil, err
+			}
+			if hash != state.RuleHash {
+				return nil, invalid("required Rules changed; select the Intent again to reread")
+			}
+
+			if selected.Status != "active" && !s.workflowRead(input) {
+				return nil, invalid("Intent is waiting, paused or finished; read the deployed procedure with cat .agents/skills/aidlc-cli/SKILL.md, then resume or reopen explicitly")
+			}
+
+			if !s.workflowRead(input) {
+				if selected.PendingReopen != nil {
+					return nil, invalid("reopen save pending; retry the identical request")
+				}
+				if _, err := (flow.Store{Root: s.Root, Space: state.Space}).Procedure(state.Intent); err != nil {
+					return nil, err
+				}
+			}
+			pending := selected.ExecutionPlan.Draft != nil || selected.Approval != nil && selected.Approval.Status == "pending"
+			if pending && !s.workflowRead(input) && !approvalRead(input) {
+				return nil, invalid("human approval pending; read, discuss or use plan/approval commands")
+			}
+			if !s.workflowRead(input) && !(pending && approvalRead(input)) && !s.documentRepair(input, state, selected) {
+				if err := (flow.Store{Root: s.Root, Space: state.Space}).CheckWork(state.Intent); err != nil {
+					return nil, err
+				}
+			}
+			state.Tool = input.ID
+		case "PostToolUse":
+			if state.Tool == input.ID && input.ID != "" {
+				state.Tool = ""
+			} else {
+				return nil, nil
+			}
+		case "Stop":
+			if state.Tool != "" {
+				if input.Active {
+					out["systemMessage"] = "A tool is still running. Stopping with a warning; verify the process before recovery."
+				} else {
+					out["decision"] = "block"
+					out["reason"] = "A tool is still running. " + s.recoveryHint(input.Session, state)
+				}
+			}
+			return nil, nil
+		default:
+			return nil, invalid("unsupported hook event")
+		}
+		return nil, s.save(input.Session, *state)
+	})
+	if err != nil {
+		if input.Event == "PreToolUse" {
+			return map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": err.Error()}}, nil
+		}
+		if input.Event == "Stop" {
+			if input.Active {
+				return map[string]any{"systemMessage": err.Error()}, nil
+			}
+			return map[string]any{"decision": "block", "reason": "aidlc needs recovery: " + err.Error()}, nil
+		}
+		return map[string]any{"continue": false, "stopReason": err.Error()}, nil
+	}
+	return out, nil
+}
+
+// assignmentCommand rejects mismatched managed commands before general Bash gates.
+func (s Service) assignmentCommand(input HookInput, state *Session) error {
+	if input.Tool != "Bash" {
+		return nil
+	}
+	argv, ok := shellWords(input.Input.Command)
+	if !ok || len(argv) < 2 || !sameBinary(argv[0], s.Binary) {
+		return nil
+	}
+	r, err := cli.ParseCommand(argv[1:])
+	if err != nil {
+		return nil
+	}
+	unit := r.Command == "unit" && (r.Action == "claim" || r.Action == "reassign")
+	if r.Command != "assignment" && !unit {
+		return nil
+	}
+	if r.ProjectDir != "" && filepath.Clean(r.ProjectDir) != filepath.Clean(s.Root) {
+		return invalid("assignment command management root mismatch")
+	}
+	if r.Command == "assignment" && (r.Action == "reserve" || r.Action == "release") && r.Session != input.Session {
+		return invalid("assignment command session mismatch")
+	}
+	if unit || r.Command == "assignment" && r.Action == "reserve" {
+		if state.Space == "" || state.Intent == "" || r.Space != state.Space || r.Target != state.Intent {
+			return invalid("assignment command selected Space or Intent mismatch")
+		}
+	}
+	if unit {
+		var req flow.UnitRequest
+		if err := s.decodeDraft(r.File, &req); err != nil {
+			return err
+		}
+		if req.CoordinatorSession != input.Session {
+			return invalid("Unit coordinator session mismatch")
+		}
+	}
+	return nil
+}
+
+func (s Service) exception(input HookInput, state *Session) bool {
+	if input.Tool == "apply_patch" {
+		files := 0
+		for _, line := range strings.Split(input.Input.Command, "\n") {
+			if strings.HasPrefix(line, "*** Move to:") || strings.HasPrefix(line, "*** Delete File:") {
+				return false
+			}
+			for _, prefix := range []string{"*** Add File: ", "*** Update File: "} {
+				if strings.HasPrefix(line, prefix) {
+					files++
+					if !s.sameDraft(strings.TrimPrefix(line, prefix), input.Session) {
+						return false
+					}
+				}
+			}
+		}
+		return files == 1 && strings.HasPrefix(input.Input.Command, "*** Begin Patch\n") && strings.HasSuffix(strings.TrimSpace(input.Input.Command), "*** End Patch") && state.Tool == ""
+	}
+	if input.Tool != "Bash" {
+		return false
+	}
+	argv, ok := shellWords(input.Input.Command)
+	if !ok || len(argv) < 2 || !sameBinary(argv[0], s.Binary) {
+		return false
+	}
+	r, err := cli.ParseCommand(argv[1:])
+	if err != nil {
+		return false
+	}
+	if r.ProjectDir != "" && filepath.Clean(r.ProjectDir) != filepath.Clean(s.Root) {
+		return false
+	}
+	switch r.Command + "/" + r.Action {
+	case "assignment/init", "assignment/reset", "assignment/list", "assignment/show", "assignment/check":
+		return state.Tool == ""
+	case "assignment/release":
+		return state.Tool == "" && r.Session == input.Session
+	case "assignment/reserve":
+		return state.Tool == "" && r.Session == input.Session && r.Space == state.Space && r.Target == state.Intent
+
+	case "intent/plan", "intent/documents":
+		return r.File == "" || (state.Tool == "" && r.Space == state.Space && r.Target == state.Intent)
+	case "memory/rules", "memory/search", "memory/show", "memory/check", "intent/list", "intent/hash", "intent/show", "intent/procedure", "intent/history", "intent/check", "session/inspect":
+		return true
+	case "intent/create":
+		return state.Tool == ""
+	case "session/bind", "intent/switch":
+		if r.Command == "session" && r.Recover && r.Session == input.Session && r.Space == state.Space && r.Target == state.Intent && state.Intent != "" {
+			return true
+		}
+		return state.Tool == "" && r.Session == input.Session
+	case "intent/plan-approval", "intent/approval", "intent/finish", "intent/begin", "intent/configure", "intent/review", "intent/advance", "intent/wait", "intent/pause", "intent/resume", "intent/reopen", "intent/cancel", "unit/claim", "unit/result", "unit/integrate", "unit/confirm", "unit/reassign":
+		return state.Tool == "" && r.Space == state.Space && r.Target == state.Intent
+
+	}
+	return false
+}
+
+// shellWords accepts literals only. It rejects expansion, redirection, command
+// substitution and compound commands instead of trying to interpret a shell.
+func shellWords(command string) ([]string, bool) {
+	var words []string
+	var word strings.Builder
+	quote := rune(0)
+	escaped := false
+	started := false
+	for _, r := range command {
+		if escaped {
+			word.WriteRune(r)
+			escaped = false
+			started = true
+			continue
+		}
+		if quote == '\'' {
+			if r == '\'' {
+				quote = 0
+			} else {
+				word.WriteRune(r)
+			}
+			continue
+		}
+		if r == '$' || r == '`' || r == '\n' || r == '\r' {
+			return nil, false
+		}
+		if r == '\\' {
+			escaped = true
+			started = true
+			continue
+		}
+		if quote == '"' {
+			if r == '"' {
+				quote = 0
+			} else {
+				word.WriteRune(r)
+			}
+			continue
+		}
+		if r == '\'' || r == '"' {
+			quote = r
+			started = true
+			continue
+		}
+		if strings.ContainsRune(";|&<>()", r) {
+			return nil, false
+		}
+		if r == ' ' || r == '\t' {
+			if started {
+				words = append(words, word.String())
+				word.Reset()
+				started = false
+			}
+			continue
+		}
+		word.WriteRune(r)
+		started = true
+	}
+	if quote != 0 || escaped {
+		return nil, false
+	}
+	if started {
+		words = append(words, word.String())
+	}
+	return words, true
+}
+
+func (s Service) protectedPatch(patch string) bool {
+	for _, line := range strings.Split(patch, "\n") {
+		for _, prefix := range []string{"*** Add File: ", "*** Update File: ", "*** Delete File: ", "*** Move to: "} {
+			if !strings.HasPrefix(line, prefix) {
+				continue
+			}
+			name := strings.TrimPrefix(line, prefix)
+			if filepath.IsAbs(name) {
+				relative, err := filepath.Rel(s.Root, name)
+				if err != nil {
+					return true
+				}
+				name = relative
+			}
+			name = filepath.ToSlash(filepath.Clean(name))
+			if strings.HasPrefix(name, "aidlc/spaces/") && strings.Contains(name, "/intents/") {
+				return true
+			}
+			if strings.HasPrefix(name, "aidlc/.runtime/") && !strings.HasPrefix(name, "aidlc/.runtime/drafts/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (s Service) recoveryHint(session string, state *Session) string {
+	if state.Tool == "" {
+		return "No running tool slot."
+	}
+	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
+	return "Poll a running Bash process to terminal. Only after the main AI confirms the tool ended, whether success or failure, recover within the same Space, Intent and session as one command: " + quote(s.Binary) + " session bind " + quote(state.Intent) + " --space " + quote(state.Space) + " --session " + quote(session) + " --recover. If termination is unknown, do not recover or rerun the operation. Recovery clears the retained tool slot and does not release worker assignments. Inspect the result before advancing the Intent."
+}
+
+// sameBinary preserves exact configured paths and resolves absolute aliases only.
+func sameBinary(command, configured string) bool {
+	if command == configured {
+		return true
+	}
+	if !filepath.IsAbs(command) || !filepath.IsAbs(configured) {
+		return false
+	}
+	actual, err := os.Stat(command)
+	if err != nil {
+		return false
+	}
+	expected, err := os.Stat(configured)
+	return err == nil && actual.Mode().IsRegular() && expected.Mode().IsRegular() && os.SameFile(actual, expected)
+}
+
+// workflowRead permits only the deployed procedure, after selection and Rules checks.
+// It uses a normal tool slot; this is not an exception to in-flight protection.
+func (s Service) workflowRead(input HookInput) bool {
+	if input.Tool != "Bash" {
+		return false
+	}
+	argv, ok := shellWords(input.Input.Command)
+	if !ok || len(argv) < 2 || len(argv) > 3 || argv[0] != "cat" {
+		return false
+	}
+	for _, name := range argv[1:] {
+		if name != ".agents/skills/aidlc/SKILL.md" && name != ".agents/skills/aidlc-cli/SKILL.md" {
+			return false
+		}
+		if _, err := okfmemory.ReadFile(s.Root, name); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// documentRepair bypasses only the start gate, after turn Rules and active checks.
+func (s Service) documentRepair(input HookInput, session *Session, st flow.State) bool {
+	if input.Tool != "Bash" {
+		return false
+	}
+	argv, ok := shellWords(input.Input.Command)
+	if !ok || len(argv) < 2 || !sameBinary(argv[0], s.Binary) {
+		return false
+	}
+	r, err := cli.ParseCommand(argv[1:])
+	if err != nil || r.Command != "memory" || (r.Action != "create" && r.Action != "update") || r.Space != session.Space {
+		return false
+	}
+	if r.ProjectDir != "" && filepath.Clean(r.ProjectDir) != filepath.Clean(s.Root) {
+		return false
+	}
+	prefix := "aidlc/spaces/" + session.Space + "/knowledge/"
+	name := prefix + r.Target + ".md"
+	allowed := []string{prefix + "design/" + session.Intent + "/requirements.md", prefix + "design/" + session.Intent + "/implementation-plan.md", prefix + "codekb/current-analysis.md", prefix + "codekb/architecture.md"}
+	for _, list := range [][]flow.DocumentDeclaration{st.Config.DocumentInputs, st.Config.DocumentOutputs} {
+		for _, doc := range list {
+			if doc.Stage == st.Stage {
+				allowed = append(allowed, doc.Path)
+			}
+		}
+	}
+	for _, a := range st.Config.Artifacts {
+		if a.Kind == "Knowledge" || a.Kind == "ADR" {
+			allowed = append(allowed, a.Path)
+		}
+	}
+	for _, p := range allowed {
+		if name == p && strings.HasPrefix(p, prefix) {
+			return true
+		}
+	}
+	if _, err := okfmemory.ConceptPath(r.Target); err != nil {
+		return false
+	}
+	view, err := (flow.Store{Root: s.Root, Space: session.Space}).Procedure(st.ID)
+	if err != nil {
+		return false
+	}
+	metadata := map[string]any{}
+	for key, value := range map[string]*string{"type": r.Metadata.Type, "title": r.Metadata.Title, "description": r.Metadata.Description, "intent_id": r.IntentID, "status": r.Metadata.Status} {
+		if value != nil {
+			metadata[key] = *value
+		}
+	}
+	if r.Metadata.Tags != nil {
+		metadata["tags"] = r.Metadata.Tags
+	}
+	if r.Action == "update" {
+		raw, err := okfmemory.ReadFile(s.Root, name)
+		if err != nil {
+			return false
+		}
+		doc, err := okfmemory.Parse(raw)
+		if err != nil {
+			return false
+		}
+		for key, value := range metadata {
+			doc.Metadata[key] = value
+		}
+		metadata = doc.Metadata
+	}
+	for _, ref := range view.Procedure.Inputs {
+		if ref.Match == nil || ref.Match.Type == "Rule" {
+			continue
+		}
+		match := *ref.Match
+		if match.IntentID != nil && *match.IntentID == "${intent_id}" {
+			id := st.ID
+			match.IntentID = &id
+		}
+		if match.Matches(okfmemory.Document{Metadata: metadata}) {
+			return true
+		}
+	}
+	return false
+}
+
+func approvalRead(input HookInput) bool {
+	switch input.Tool {
+	case "Read", "Glob", "Grep", "AskUserQuestion", "request_user_input":
+		return true
+	}
+	if input.Tool != "Bash" {
+		return false
+	}
+	argv, ok := shellWords(input.Input.Command)
+	return ok && len(argv) > 0 && (argv[0] == "cat" || argv[0] == "pwd" || argv[0] == "ls")
+}

@@ -68,7 +68,7 @@ loopでは実装計画のtargeted testだけを実行します。全package/race
 
 ```sh
 go test -count=1 ./src/internal/flow -run '^TestFlow'
-go test -count=1 ./src/internal/minimal ./src/internal/cli -run '^TestFlow'
+go test -count=1 ./src/internal/app ./src/internal/cli -run '^TestFlow'
 go test -count=1 ./src/internal/install ./src/internal/workspace ./src/internal/okfmemory -run '^TestFlow'
 go test -count=1 ./src/cmd/aidlc -run '^TestFlowCommand'
 ```
@@ -298,3 +298,11 @@ resetは新epochを発行し、読める旧記録を保管します。古い要�
 ## 配布候補と既設更新
 
 6targetのarchive・manifest・SHA256SUMS生成、native展開/導入確認、利用者dataを保全する比較・手動切替・復旧は[配布手順](distribution.md)を参照してください。開発用`src/cmd/aidlc-dist`はlocal/CI候補を生成し、tag/Release/uploadを行いません。既存relocateは参照補正であり、自動updaterではありません。
+
+## Hook probeの名称
+
+hookの入力・transportを照合する補助testは `src/cmd/aidlc/hook_probe_test.go`、
+実機用の補助処理は `hook_probe_live_test.go` にあります。
+`TestHookProbeVerify` 等の限定testで証拠の検査処理を確認できます。
+実機用の起動指定は `AIDLC_HOOK_LIVE=1`、保存済み証拠を再検査する入力先は `AIDLC_HOOK_EVIDENCE` です。
+通常のtest成功を実機検証の成功に数えず、実機実行は承認済み計画のfinal範囲で行います。
