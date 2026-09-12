@@ -20,12 +20,15 @@ Codex CLI 0.153.4、Claude Code 2.1.238、VS Code 1.135.0（08d4889f9ec4a1685d25
 | 子終了と親応答 | SubagentStop.agent_idと、親Agent Postのtool_response.agentIdが一致。親Postのstatusはcompleted |
 | Read失敗 | 存在しない試験fileに対するPostToolUseFailureが同じtool_use_idで届いた。error本文も存在した |
 | 同じ子への追加依頼 | SendMessageのtoで既存agent IDを指定。PostのresumedAgentIdが同じIDになり、子のReadと応答を確認。新しいAgent起動は行わなかった |
+| 自動通知の入力イベント | backgroundで再開した子の完了通知も、別prompt_idを持つUserPromptSubmitとして届いた。promptはtask-notification要素で、構造化した送信者origin欄は無かった |
 
 初回のCLI起動は可変長の--tools引数にpromptが吸収され、入力不足で失敗した。`--`でprompt境界を明示して再実行した。これはhost機能の故障とは扱わない。また最初の再開試験ではSendMessageをtoolsへ含めていなかった。追加後に実際の再開が成功したため、最初の自己報告を『Claudeは再開不可』の根拠にしない。
 
 現行CLIでは追加依頼はAgent.resumeではなくSendMessage.toを使った。古いSDKのschema例を固定CLIの実測より優先しない。[公式subagentの再開手順](https://code.claude.com/docs/en/sub-agents#resume-subagents)もSendMessageによる再開を説明している。ツール許可とAI-DLCの成果承認は別物であり、今回の試験で製品の人間承認を代行したわけではない。
 
 [公式hook資料](https://code.claude.com/docs/en/hooks)にあるイベントと照合した。ただし、background初回起動・強制中断・通知欠落・OS別挙動・製品の承認と進捗連携はまだ実機確認していない。結果提出やStopだけでworker枠を解放する根拠にはしない。
+
+**UserPromptSubmitというイベント名とprompt_idだけでは、人間の回答だと断定できない。** 子の自動通知を成果承認の証拠として取り込まない区別が必要であり、その製品契約を解決するまではD2の承認接続を実装しない。観測したXML形式だけで将来の全自動入力を判別できるとも断定しない。
 
 ## VS Codeで確認したことと未実測
 

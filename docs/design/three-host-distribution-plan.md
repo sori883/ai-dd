@@ -55,7 +55,7 @@ loop対象は `go test ./src/harness/... ./src/internal/install` と、変更で
 ## D2へ進む前に確定する項目
 
 - VS CodeがClaudeのsettingsも読む場合の二重登録回避。利用者のhookを一括無効化しない。
-- hostとsessionの識別、各回答のturn対応、native tool/子IDと割当の対応。自然文から担当rootや対応IDを推測しない。
+- hostとsessionの識別、各回答のturn対応、native tool/子IDと割当の対応。自然文から担当rootや対応IDを推測しない。Claudeの自動通知もUserPromptSubmitになることを実測したため、イベント名だけで人間の回答と認めない契約も必要。
 - host間切替の停止・回収条件、保存場所とschema、既存配置の追加導入。過去の『後方互換不要』を新しい重要設計の包括承認に拡張しない。
 - 初期化Sensorが確認する配置集合と証拠失効条件。共通工程の定義hashを環境切替だけで変えない。
 - VS Codeの子は同じ子への追加会話を提供しないため、新しい子へ既存Unitの状況を渡す際の安全条件。

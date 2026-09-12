@@ -1,6 +1,6 @@
 # 開発プロジェクトRAM
 
-- [3環境向け配布基盤D1の実装](decisions/2026-09-12-three-host-distribution-d1-evidence.md): Issue #183。ManifestとCodex生成を分離し、旧配置69fileとの一致を確認。[hook前提確認](research/2026-09-12-three-host-hook-preflight.md)ではClaude実測とVS Code未確認・選択待ちを区別する。
+- [3環境向け配布基盤D1の実装](decisions/2026-09-12-three-host-distribution-d1-evidence.md): Issue #183。ManifestとCodex生成を分離し、旧配置69fileとの一致を確認。[hook前提確認](research/2026-09-12-three-host-hook-preflight.md)ではClaude実測（自動通知も入力イベントになる点を含む）とVS Code未確認・選択待ちを区別する。
 
 - [3環境への製品対応を実装する直接依頼](decisions/2026-09-12-three-host-product-implementation-approved.md): 本家2.6.123の共通資材・環境別配布構成を流用。Codex配布の動作維持と新host接続の前提確認から着手する。[具体計画](../design/three-host-distribution-plan.md)。
 

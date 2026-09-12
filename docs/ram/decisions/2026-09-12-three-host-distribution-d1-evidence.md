@@ -11,3 +11,9 @@ d1-01の旧動作固定はALREADY_GREEN。最初にWalkDir順と全path sort順�
 親はwork unit末尾に全差分を確認し、`go test -count=1 ./src/harness/... ./src/internal/install` と対象app読取りtestを再実行して成功した。外部module追加なし。Go担当はreview前にgofmtを適用した。
 
 D1は3環境の製品対応全体を完了させる変更ではない。[接続前提確認](../research/2026-09-12-three-host-hook-preflight.md)ではClaudeの正常・拒否・失敗・追加依頼を実測し、VS CodeのUI実機確認と重要な接続選択を残している。
+
+## 独立reviewでの訂正
+
+最初のreviewは製品コードにP0/P1なし。比較testにアポストロフィ付き一時rootの正規化漏れと、umask 077のmode偽陽性というP2があり、同じ単独担当がtestのみ修正した。rootはshell引用とJSON escape後のtokenだけを正規化し、modeは同じ作成条件のroot外controlfileと比較する。元69fileの期待SHAと製品codeは変更していない。親も通常時とumask 077の対象testを確認した。
+
+D2には追加の確認gateがある。Claudeの子完了通知がUserPromptSubmitとして届くことを実測したため、イベント名だけで人間承認を認定しない接続契約が必要。G0の詳細記録を参照する。
