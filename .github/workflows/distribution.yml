@@ -192,6 +192,9 @@ jobs:
           grep -Fxq TestReleaseCandidateNative <<< "$tests"
           AIDLC_DIST_DIR="$RUNNER_TEMP/dist-candidate" go test -tags=integration -count=1 -v \
             ./src/cmd/aidlc-dist -run '^TestReleaseCandidateNative$'
+          go test -count=1 -v ./src/bootstrap -run '^TestBootstrap$|^TestBootstrapPowerShell$'
+          AIDLC_DIST_DIR="$RUNNER_TEMP/dist-candidate" go test -tags=integration -count=1 -v \
+            ./src/bootstrap -run '^TestBootstrapCandidateNative$'
 
   draft:
     name: Create verified Release draft
@@ -275,15 +278,15 @@ jobs:
           build Go版: $AIDLC_RELEASE_GO_VERSION
           対応環境: macOS・Linux・Windows、それぞれamd64・arm64。
 
-          OS・CPUに合うaidlc-install_${AIDLC_RELEASE_VERSION}_OS_ARCH.tar.gz（Windowsは.zip）とaidlc-install-SHA256SUMS、aidlc-install-manifest.jsonを取得し、SHA-256を照合してから空のdirectoryへ展開してください。
-          展開したaidlc-installの--versionと--helpを確認し、aidlc-install codex --release-version $AIDLC_RELEASE_VERSION --project-dir ROOTで新規配置します。
-          指定版のruntimeと共通資材を取得します。Codex本体の導入は別途必要です。
+          OS・CPU別のai-dd_${AIDLC_RELEASE_VERSION}_OS_ARCH.tar.gz（Windowsは.zip）6個とSHA256SUMSの計7個です。初回取得scriptが実行環境の1個を選び、SHA-256を照合してinstallerだけを取り出します。
+          手動で取得した場合は、SHA256SUMSと対象archiveを同じdirectoryへ置き、aidlc-install codex --release-version $AIDLC_RELEASE_VERSION --release-dir CANDIDATE_DIR --project-dir ROOTで新規配置します。
+          取得済み一式を再利用するため、同じarchiveを再取得しません。Codex本体の導入は別途必要です。
           詳しい取得・照合・配置手順: https://github.com/$GH_REPO/blob/$AIDLC_RELEASE_COMMIT/docs/distribution.md
 
           公開前に正式版名、製品ライセンスと表示、初回成果物の内容を確認してください。
           3OSの候補実行検査は全6CPU構成の実行や、実Codex hookの動作成功を意味しません。
           EOF_NOTES
           files=("$RUNNER_TEMP/dist-candidate/"*)
-          [[ ${#files[@]} -eq 43 ]] || { echo '候補ファイルは43個必要です'; exit 1; }
+          [[ ${#files[@]} -eq 7 ]] || { echo '候補ファイルは7個必要です'; exit 1; }
           gh release create "$RELEASE_TAG" --verify-tag --draft \
             --title "AI-DD $AIDLC_RELEASE_VERSION" --notes-file "$notes" "${files[@]}"

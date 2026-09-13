@@ -21,7 +21,7 @@ func TestDistCommand(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out, errs bytes.Buffer
-			if code := run(tc.args, &out, &errs); code != 0 || !strings.Contains(out.String(), "--targets") || errs.Len() != 0 {
+			if code := run(tc.args, &out, &errs); code != 0 || !strings.Contains(out.String(), "--targets") || errs.Len() != 0 || !strings.Contains(out.String(), "SHA256SUMS") {
 				t.Fatalf("help code/output: %d %q %q", code, out.String(), errs.String())
 			}
 		})
@@ -31,7 +31,7 @@ func TestDistCommand(t *testing.T) {
 		extra []string
 		count int
 	}{
-		{"default six", nil, 43},
+		{"default six", nil, 7},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			o := releaseFixture(t)

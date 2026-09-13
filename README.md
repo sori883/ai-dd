@@ -11,28 +11,42 @@ AIと対話しながら、ソフトウェアの開発を進めるための道具
 
 - **Codex**：AIと対話する環境。あらかじめ利用できる状態にします。
 - **プロジェクトフォルダ**：開発するアプリや資料を置く場所。新しく作る場合は空のフォルダで構いません。
-- **`aidlc-install`実行ファイル**：プロジェクトにAI-DDを設定するためのファイルです。
-
-実行ファイルの取得先は[GitHub Releases](https://github.com/sori883/ai-dd/releases)です。お使いのOS・CPUに合う圧縮ファイルを展開して使います。
+- **標準の取得ツール**：macOS・Linuxはsh、curl、tarとSHA-256の検査ツール、WindowsはPowerShell 5.1または7とcurl.exeを使います。Goの導入は不要です。
 
 ### 2. プロジェクトに設定する
 
-ターミナルで次のコマンドを実行します。実行ファイルとプロジェクトのパスは、自分の環境に合わせて置き換えてください。
+以下は**公開前のv0.1.2候補の手順**です。v0.1.2のtagとReleaseが公開されるまでは実行できません。
+公開済みv0.1.1を使う場合は、その[Releaseの説明](https://github.com/sori883/ai-dd/releases/tag/v0.1.1)を参照してください。
+
+導入先の既存プロジェクトフォルダで実行します。OSと実行中のCPUを自動で判定し、対応する一式を取得します。
+取得完了とSHA-256の一致を確認してからinstallerを起動します。
 
 macOS・Linuxの場合：
 
 ```sh
-"/path/to/aidlc-install" codex --release-version v0.1.1 --project-dir "/path/to/project"
+(
+  set -e
+  script="$(mktemp)"
+  trap 'rm -f "$script"' EXIT
+  curl --disable --proto '=https' --proto-redir '=https' --location --fail \
+    --connect-timeout 30 --max-time 120 --max-filesize 1048576 \
+    --output "$script" https://raw.githubusercontent.com/sori883/ai-dd/v0.1.2/src/bootstrap/install.sh
+  sh "$script" v0.1.2 "$PWD"
+)
 ```
 
 WindowsのPowerShellの場合：
 
 ```powershell
-& "C:\tools\aidlc-install.exe" codex --release-version v0.1.1 --project-dir "C:\projects\my-app"
+$script = (Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/sori883/ai-dd/v0.1.2/src/bootstrap/install.ps1').Content
+& ([scriptblock]::Create($script)) 'v0.1.2' (Get-Location).Path
 ```
 
-AI用の手順や設定がプロジェクトに配置されます。三つのruntimeは`aidlc/bin/v0.1.1/`へ入り、設定は各役割の絶対pathを参照します。
-既存のAI-DD設定と重なって配置できない場合や更新したい場合は、[配置・更新の手順](docs/distribution.md#新形式の候補を配置する前に)を参照してください。
+AI用の手順や設定と、日常用の`aidlc`・`okf`・`natural-japanese-go`が`aidlc/bin/v0.1.2/`へ配置されます。
+設定は各役割の絶対pathを参照します。取得済み一式をinstallerへ渡すので、同じファイルを再取得しません。
+必要な標準ツールがなければ理由を表示して停止します。
+
+手動取得・オフライン導入や配置が重なる場合は、[配布・配置の手順](docs/distribution.md)を参照してください。
 
 ### 3. Codexで最初の作業を依頼する
 
@@ -91,9 +105,9 @@ AIに「記録を確認して」と頼めます。文書はMarkdownなので、�
 コマンドを自分で調べる場合は、プロジェクトに配置された役割別runtimeの`--help`を使います。版directoryは導入時に選んだRelease名に合わせます。Windowsでは各実行ファイルに`.exe`が付きます。導入用の`aidlc-install`と日常操作用runtimeは別のファイルです。
 
 ```sh
-"/path/to/project/aidlc/bin/v0.1.1/aidlc" --help
-"/path/to/project/aidlc/bin/v0.1.1/aidlc" intent list --help
-"/path/to/project/aidlc/bin/v0.1.1/okf" search --help
+"/path/to/project/aidlc/bin/VERSION/aidlc" --help
+"/path/to/project/aidlc/bin/VERSION/aidlc" intent list --help
+"/path/to/project/aidlc/bin/VERSION/okf" search --help
 ```
 
 - [詳しい利用者ガイド](src/docs/user-guide.md)：工程、記録、再開のしくみ

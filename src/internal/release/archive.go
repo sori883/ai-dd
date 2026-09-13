@@ -14,6 +14,9 @@ import (
 )
 
 func Archive(entries map[string][]byte, binary string, windows bool) ([]byte, error) {
+	return ArchiveModes(entries, map[string]uint32{binary: 0755}, windows)
+}
+func ArchiveModes(entries map[string][]byte, modes map[string]uint32, windows bool) ([]byte, error) {
 	names := make([]string, 0, len(entries))
 	for name := range entries {
 		if !fs.ValidPath(name) || strings.Contains(name, "\\") {
@@ -28,7 +31,7 @@ func Archive(entries map[string][]byte, binary string, windows bool) ([]byte, er
 		for _, name := range names {
 			h := &zip.FileHeader{Name: name, Method: zip.Deflate, Modified: time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)}
 			mode := fs.FileMode(0644)
-			if name == binary {
+			if modes[name] == 0755 {
 				mode = 0755
 			}
 			h.SetMode(mode)
@@ -48,7 +51,7 @@ func Archive(entries map[string][]byte, binary string, windows bool) ([]byte, er
 		t := tar.NewWriter(g)
 		for _, name := range names {
 			mode := int64(0644)
-			if name == binary {
+			if modes[name] == 0755 {
 				mode = 0755
 			}
 			if e := t.WriteHeader(&tar.Header{Name: name, Mode: mode, Size: int64(len(entries[name])), Typeflag: tar.TypeReg}); e != nil {

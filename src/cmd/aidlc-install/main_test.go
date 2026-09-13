@@ -18,6 +18,9 @@ func TestInstallerCommand(t *testing.T) {
 			if got != tc.code {
 				t.Fatalf("exit %d want %d: %s", got, tc.code, &err)
 			}
+			if tc.name == "help" && (!strings.Contains(out.String(), "SHA256SUMS") || !strings.Contains(out.String(), "ai-dd_VERSION_OS_ARCH")) {
+				t.Fatal("missing bundle input description")
+			}
 			if tc.code == 0 && !strings.Contains(out.String(), "aidlc-install") {
 				t.Fatal("missing CLI identity")
 			}

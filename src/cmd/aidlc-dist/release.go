@@ -30,10 +30,74 @@ func packageRelease(o options) error {
 		}
 		inputs[product] = data
 	}
-	data, dm, err := release.BuildData(o.Version, o.Commit, core.Files, codex.Files, licenses["PRODUCT.txt"])
+	data, _, err := release.BuildData(o.Version, o.Commit, core.Files, codex.Files, licenses["PRODUCT.txt"])
 	if err != nil {
 		return err
 	}
+	sources, err := release.Unpack(data, false, release.MaxSourceBytes)
+	if err != nil {
+		return err
+	}
+	// Validate every complete archive before creating the candidate directory.
+	output := map[string][]byte{}
+	var lines []string
+	for _, target := range release.Targets {
+		entries := map[string][]byte{}
+		for p, b := range sources {
+			entries[p] = b
+		}
+		for _, product := range release.Products {
+			var body []byte
+			for _, in := range inputs[product] {
+				if in.target == target {
+					body = in.raw
+				}
+			}
+			if len(body) == 0 {
+				return fmt.Errorf("%w: missing target %s", errInvalidInput, target)
+			}
+			binary := product
+			if strings.HasPrefix(target, "windows/") {
+				binary += ".exe"
+			}
+			licensed, err := licensedEntries(binary, body, product, licenses)
+			if err != nil {
+				return err
+			}
+			for p, b := range licensed {
+				if strings.HasPrefix(p, "LICENSES/") {
+					p = "LICENSES/" + product + "/" + strings.TrimPrefix(p, "LICENSES/")
+				}
+				entries[p] = b
+			}
+		}
+		modes := release.BundlePaths(target)
+		m := release.BundleManifest{SchemaVersion: 2, Version: o.Version, SourceCommit: o.Commit, GoVersion: o.GoVersion, Target: target}
+		names := make([]string, 0, len(entries))
+		for p := range entries {
+			names = append(names, p)
+		}
+		slices.Sort(names)
+		for _, p := range names {
+			m.Files = append(m.Files, release.BundleFile{Path: p, Size: int64(len(entries[p])), SHA256: release.Hash(entries[p]), Mode: modes[p]})
+		}
+		entries["manifest.json"], err = json.MarshalIndent(m, "", "  ")
+		if err != nil {
+			return err
+		}
+		entries["manifest.json"] = append(entries["manifest.json"], '\n')
+		raw, err := release.ArchiveModes(entries, modes, strings.HasPrefix(target, "windows/"))
+		if err != nil {
+			return err
+		}
+		if _, _, err := release.ValidateBundleArchive(raw, o.Version, target, release.Hash(raw)); err != nil {
+			return err
+		}
+		name := release.BundleName(o.Version, target)
+		output[name] = raw
+		lines = append(lines, release.Hash(raw)+"  "+name)
+	}
+	output["SHA256SUMS"] = []byte(strings.Join(lines, "\n") + "\n")
 	if err := os.Mkdir(o.OutputDir, 0755); err != nil {
 		return err
 	}
@@ -41,49 +105,15 @@ func packageRelease(o options) error {
 	if write == nil {
 		write = writeNewFile
 	}
-	for _, product := range release.Products {
-		m := manifest{SchemaVersion: 1, Version: o.Version, SourceCommit: o.Commit, GoVersion: o.GoVersion}
-		for _, input := range inputs[product] {
-			windows := strings.HasPrefix(input.target, "windows/")
-			binary, suffix := product, ".tar.gz"
-			if windows {
-				binary += ".exe"
-				suffix = ".zip"
-			}
-			entries, err := licensedEntries(binary, input.raw, product, licenses)
-			if err != nil {
-				return err
-			}
-			raw, err := release.Archive(entries, binary, windows)
-			if err != nil {
-				return err
-			}
-			name := product + "_" + o.Version + "_" + strings.ReplaceAll(input.target, "/", "_") + suffix
-			if err := write(filepath.Join(o.OutputDir, name), raw); err != nil {
-				return fmt.Errorf("candidate incomplete: %w", err)
-			}
-			m.Artifacts = append(m.Artifacts, artifact{input.target, binary, checksum(input.raw), int64(len(input.raw)), name, checksum(raw), int64(len(raw))})
-		}
-		if err := writeProductManifest(o.OutputDir, product, m, write); err != nil {
-			return err
+	names := make([]string, 0, len(output))
+	for p := range output {
+		names = append(names, p)
+	}
+	slices.Sort(names)
+	for _, p := range names {
+		if err := write(filepath.Join(o.OutputDir, p), output[p]); err != nil {
+			return fmt.Errorf("candidate incomplete: %w", err)
 		}
 	}
-	raw, err := json.MarshalIndent(dm, "", "  ")
-	if err != nil {
-		return err
-	}
-	raw = append(raw, '\n')
-	for _, file := range []struct {
-		name string
-		data []byte
-	}{{dm.Archive, data}, {"aidlc-assets-manifest.json", raw}} {
-		if err := write(filepath.Join(o.OutputDir, file.name), file.data); err != nil {
-			return err
-		}
-	}
-	lines := []string{checksum(raw) + "  aidlc-assets-manifest.json", checksum(data) + "  " + dm.Archive}
-	slices.SortFunc(lines, func(a, b string) int {
-		return strings.Compare(strings.SplitN(a, "  ", 2)[1], strings.SplitN(b, "  ", 2)[1])
-	})
-	return write(filepath.Join(o.OutputDir, "aidlc-assets-SHA256SUMS"), []byte(strings.Join(lines, "\n")+"\n"))
+	return nil
 }

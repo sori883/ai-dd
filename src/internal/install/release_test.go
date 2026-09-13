@@ -50,48 +50,56 @@ func TestInstallFailure(t *testing.T) {
 
 func candidateFiles(t *testing.T) map[string][]byte {
 	t.Helper()
-	files := map[string][]byte{}
 	version, commit := "v0.1.1", strings.Repeat("a", 40)
-	for _, product := range []string{"aidlc", "okf", "natural-japanese-go"} {
-		m := release.Manifest{SchemaVersion: 1, Version: version, SourceCommit: commit, GoVersion: "go1.26.4"}
-		for _, target := range release.Targets {
-			binary, suffix := product, ".tar.gz"
-			windows := strings.HasPrefix(target, "windows/")
-			if windows {
-				binary += ".exe"
-				suffix = ".zip"
-			}
-			body := []byte(product + " " + target)
-			raw, err := release.Archive(map[string][]byte{binary: body, "LICENSES/PRODUCT.txt": []byte("license"), "LICENSES/Go-LICENSE.txt": []byte("go"), "LICENSES/Go-PATENTS.txt": []byte("patents")}, binary, windows)
-			if err != nil {
-				t.Fatal(err)
-			}
-			name := product + "_" + version + "_" + strings.ReplaceAll(target, "/", "_") + suffix
-			files[name] = raw
-			m.Artifacts = append(m.Artifacts, release.Artifact{Target: target, Binary: binary, BinarySHA256: release.Hash(body), BinarySize: int64(len(body)), Archive: name, ArchiveSHA256: release.Hash(raw), ArchiveSize: int64(len(raw))})
-		}
-		name, sums := release.MetadataNames(product)
-		files[name], _ = json.Marshal(m)
-		lines := []string{release.Hash(files[name]) + "  " + name}
-		for _, a := range m.Artifacts {
-			lines = append(lines, a.ArchiveSHA256+"  "+a.Archive)
-		}
-		sort.Slice(lines, func(i, j int) bool {
-			return strings.SplitN(lines[i], "  ", 2)[1] < strings.SplitN(lines[j], "  ", 2)[1]
-		})
-		files[sums] = []byte(strings.Join(lines, "\n") + "\n")
-	}
 	license, err := os.ReadFile("../../../LICENSE")
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, m, err := release.BuildData(version, commit, core.Files, codex.Files, license)
+	data, _, err := release.BuildData(version, commit, core.Files, codex.Files, license)
 	if err != nil {
 		t.Fatal(err)
 	}
-	files[m.Archive] = data
-	files["aidlc-assets-manifest.json"], _ = json.Marshal(m)
-	files["aidlc-assets-SHA256SUMS"] = []byte(release.Hash(files["aidlc-assets-manifest.json"]) + "  aidlc-assets-manifest.json\n" + release.Hash(data) + "  " + m.Archive + "\n")
+	sources, err := release.Unpack(data, false, release.MaxSourceBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string][]byte{}
+	var lines []string
+	for _, target := range release.Targets {
+		entries := map[string][]byte{}
+		modes := release.BundlePaths(target)
+		for p := range modes {
+			entries[p] = []byte("license")
+		}
+		for p, b := range sources {
+			entries[p] = b
+		}
+		for _, product := range release.Products {
+			binary := product
+			if strings.HasPrefix(target, "windows/") {
+				binary += ".exe"
+			}
+			entries[binary] = []byte(product + " " + target)
+		}
+		m := release.BundleManifest{SchemaVersion: 2, Version: version, SourceCommit: commit, GoVersion: "go1.26.4", Target: target}
+		var names []string
+		for p := range entries {
+			names = append(names, p)
+		}
+		sort.Strings(names)
+		for _, p := range names {
+			m.Files = append(m.Files, release.BundleFile{Path: p, Size: int64(len(entries[p])), SHA256: release.Hash(entries[p]), Mode: modes[p]})
+		}
+		entries["manifest.json"], _ = json.Marshal(m)
+		raw, err := release.ArchiveModes(entries, modes, strings.HasPrefix(target, "windows/"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		name := release.BundleName(version, target)
+		files[name] = raw
+		lines = append(lines, release.Hash(raw)+"  "+name)
+	}
+	files["SHA256SUMS"] = []byte(strings.Join(lines, "\n") + "\n")
 	return files
 }
 func candidateFetch(files map[string][]byte) func(context.Context, string) ([]byte, error) {
@@ -109,23 +117,33 @@ func TestReleaseAssetValidationCandidate(t *testing.T) {
 			files := candidateFiles(t)
 			switch mode {
 			case "binary hash":
-				files["okf_v0.1.1_linux_amd64.tar.gz"] = []byte("corrupted")
+				files["ai-dd_v0.1.1_linux_amd64.tar.gz"] = []byte("corrupted")
 			case "missing source":
-				delete(files, "aidlc-assets_v0.1.1.tar.gz")
+				delete(files, "ai-dd_v0.1.1_linux_amd64.tar.gz")
 			case "other version", "schema", "extra path":
-				var m release.DataManifest
-				json.Unmarshal(files["aidlc-assets-manifest.json"], &m)
+				name := "ai-dd_v0.1.1_linux_amd64.tar.gz"
+				entries, err := release.Unpack(files[name], false, release.MaxArchiveBytes)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var m release.BundleManifest
+				json.Unmarshal(entries["manifest.json"], &m)
 				if mode == "other version" {
 					m.Version = "v0.1.2"
 				}
 				if mode == "schema" {
-					m.SchemaVersion = 2
+					m.SchemaVersion = 1
 				}
 				if mode == "extra path" {
-					m.Files = append(m.Files, release.DataFile{Path: "core/../state.json", SHA256: strings.Repeat("a", 64), Size: 1})
+					m.Files = append(m.Files, release.BundleFile{Path: "core/../state.json", SHA256: strings.Repeat("a", 64), Size: 1, Mode: 0644})
 				}
-				files["aidlc-assets-manifest.json"], _ = json.Marshal(m)
-				files["aidlc-assets-SHA256SUMS"] = []byte(release.Hash(files["aidlc-assets-manifest.json"]) + "  aidlc-assets-manifest.json\n" + release.Hash(files[m.Archive]) + "  " + m.Archive + "\n")
+				entries["manifest.json"], _ = json.Marshal(m)
+				old := release.Hash(files[name])
+				files[name], err = release.ArchiveModes(entries, release.BundlePaths("linux/amd64"), false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				files["SHA256SUMS"] = []byte(strings.ReplaceAll(string(files["SHA256SUMS"]), old, release.Hash(files[name])))
 			}
 			root := t.TempDir()
 			r, err := InstallRelease(context.Background(), ReleaseOptions{Root: root, Version: "v0.1.1", Target: "linux/amd64", fetch: candidateFetch(files)})
@@ -138,7 +156,7 @@ func TestReleaseAssetValidationCandidate(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(r.Paths) != 83 {
+			if len(r.Paths) != 120 {
 				t.Fatalf("installed %d files", len(r.Paths))
 			}
 			for _, name := range []string{"aidlc", "okf", "natural-japanese-go"} {
@@ -246,12 +264,15 @@ func TestReleaseAssetValidationOffline(t *testing.T) {
 	files := candidateFiles(t)
 	dir := t.TempDir()
 	for name, raw := range files {
+		if name != "SHA256SUMS" && name != "ai-dd_v0.1.1_linux_amd64.tar.gz" {
+			continue
+		}
 		if err := os.WriteFile(filepath.Join(dir, name), raw, 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	r, err := InstallRelease(context.Background(), ReleaseOptions{Root: t.TempDir(), Version: "v0.1.1", Target: "linux/amd64", Directory: dir})
-	if err != nil || len(r.Paths) != 83 {
+	if err != nil || len(r.Paths) != 120 {
 		t.Fatalf("offline %+v %v", r, err)
 	}
 }
@@ -360,5 +381,30 @@ func TestReleaseLicenseRetention(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestReleaseBundleDownloads(t *testing.T) {
+	files := candidateFiles(t)
+	var calls []string
+	_, err := InstallRelease(context.Background(), ReleaseOptions{Root: t.TempDir(), Version: "v0.1.1", Target: "linux/amd64", fetch: func(ctx context.Context, name string) ([]byte, error) {
+		calls = append(calls, name)
+		return candidateFetch(files)(ctx, name)
+	}})
+	if err != nil {
+		t.Fatal("complete bundle must install", err)
+	}
+	if strings.Join(calls, ",") != "SHA256SUMS,ai-dd_v0.1.1_linux_amd64.tar.gz" {
+		t.Fatal("expected only two downloads", calls)
+	}
+}
+
+func TestReleaseDownloadRedirectMustRemainHTTPS(t *testing.T) {
+	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("payload")) }))
+	defer destination.Close()
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, destination.URL, http.StatusFound) }))
+	defer redirect.Close()
+	if _, err := download(context.Background(), redirect.URL); err == nil {
+		t.Fatal("HTTP redirect accepted")
 	}
 }
