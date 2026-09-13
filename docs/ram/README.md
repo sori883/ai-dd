@@ -1,5 +1,27 @@
 # 開発プロジェクトRAM
 
+- [共通手順とCodex設定を分離しClaude未完了作業を破棄する](decisions/2026-09-13-common-skills-codex-approved.md): 具体計画への直接承認。共通原稿とCodex生成を整備し、Claude専用Issue・ローカルbranch・作業treeを削除する。下記の回収記録は検討履歴であり、Claude実装の継続許可ではない。
+
+Claude専用作業treeから回収した履歴（現在の扱いは上記の後続決定を優先）：
+- [Claude接続の承認記録・故障時拒否・担当toolを補修する](decisions/2026-09-12-claude-adapter-boundary-repair.md)
+- [Claudeアダプターの既存fixture修復と接続境界](decisions/2026-09-12-claude-adapter-loop-fixture-repair.md)
+- [Claudeの承認を標準の質問画面で受け付ける](decisions/2026-09-12-claude-question-approval-accepted.md)
+- [Claudeの担当名の長さをアダプターで吸収する](decisions/2026-09-12-claude-worker-dispatch-name.md)
+- [Copilot対応を当面の対象から外す](decisions/2026-09-12-copilot-support-deferred.md)
+- [未リリースのため新規配置に限定し、AI環境への対応はアダプターに置く](decisions/2026-09-12-fresh-host-adapters-only.md)
+- [AI環境ごとの対応困難な機能を無理に補わない](decisions/2026-09-12-host-support-without-forced-parity.md)
+- [Claude対応を未完了のまま保留する](decisions/2026-09-13-claude-adapter-paused-incomplete.md)
+- [単一CLIと同梱資材をGitHub Releasesで配布する](decisions/2026-09-13-single-cli-github-releases-distribution.md)
+- [固定Claudeの構造化nameとアダプター実装順序](research/2026-09-12-claude-named-agent-adapter-contract.md)
+- [固定Claudeの子からメインへの報告と通知順序](research/2026-09-12-claude-parent-report-wire.md)
+- [Claude製品アダプターの実機G0と一時ロック競合](research/2026-09-12-claude-product-g0-first-run.md)
+- [Claude標準の承認質問を対話起動で確認する](research/2026-09-12-claude-question-interactive-probe.md)
+- [Claude Codeの利用者専用コマンドと承認入力の確認](research/2026-09-12-claude-user-command-approval-probe.md)
+- [本家のClaude承認方式を確認し、専用コマンドの案を改訂する](research/2026-09-12-upstream-claude-approval-and-revised-plan.md)
+
+
+- [READMEの見出しをAI-DDにする](decisions/2026-09-13-readme-ai-dd-heading.md): ユーザー指定により冒頭の見出しを`AI-DD`へ変更。この修正ではIssueを作成しない。
+
 - [READMEへ公開予定や準備状況を書かない](decisions/2026-09-13-readme-usage-only.md): Issue #194。ユーザー指定により公開予定の注記と公開前試用の説明を削除し、概要と使い方へ集中する。公開時期を入口に明記する旧編集方針を置き換える。
 
 - [READMEを初心者向けの利用マニュアルにする](decisions/2026-09-13-beginner-readme-request.md): Issue #192。会話の経緯や内部実装を知らない人向けに、概要・導入・初回依頼・承認・中断と再開を整理する直接依頼。日常操作は会話例、詳細は既存文書へ案内する。公開準備中の記載は後続の上記方針で削除。
