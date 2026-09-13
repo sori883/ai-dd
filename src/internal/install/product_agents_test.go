@@ -1,13 +1,11 @@
 package install
 
 import (
-	"bytes"
-	"io/fs"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
-
-	codex "github.com/sori883/ai-dd/src/harness/codex"
 )
 
 func TestProductAgentAssets(t *testing.T) {
@@ -29,13 +27,27 @@ func TestProductAgentAssets(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			source, err := fs.ReadFile(codex.Files, "agents/"+name+".toml")
-			if err != nil {
+			settings, encoded, ok := strings.Cut(string(placed), "developer_instructions = ")
+			if !ok {
+				t.Fatal("missing generated instructions")
+			}
+			var body string
+			if err := json.Unmarshal([]byte(strings.TrimSpace(encoded)), &body); err != nil {
 				t.Fatal(err)
 			}
-			if !bytes.Equal(placed, source) {
-				t.Fatal("deployed definition differs from embedded source")
+			sandbox := "read-only"
+			if name == "aidlc-worker" {
+				sandbox = "workspace-write"
 			}
+			if !strings.Contains(settings, `sandbox_mode = "`+sandbox+`"`) {
+				t.Fatal("wrong permissions")
+			}
+			for _, want := range []string{"必要なRule全文", "共有stateとOKF Knowledge/ADRを直接更新しない", "既存の他担当・利用者の変更を保全", "send_messageのtarget"} {
+				if !strings.Contains(body, want) {
+					t.Errorf("%s missing %s", name, want)
+				}
+			}
+
 		})
 	}
 }

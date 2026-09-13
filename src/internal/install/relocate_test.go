@@ -227,3 +227,29 @@ func TestOKFSkillRelocate(t *testing.T) {
 		})
 	}
 }
+
+func TestRelocateComposedContractEditRejected(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Codex(root, "/old/aidlc"); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, ".agents/skills/aidlc-cli/SKILL.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := bytes.Replace(data, []byte("共有stateの単独writer"), []byte("共有stateの複数writer"), 1)
+	if bytes.Equal(data, edited) {
+		t.Fatal("missing composed writer contract")
+	}
+	if err := os.WriteFile(path, edited, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Relocate(root, "/new/aidlc", root, "/old/aidlc"); err == nil {
+		t.Fatal("accepted edited composed contract")
+	}
+	current, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(current, edited) {
+		t.Fatal("changed edited content", err)
+	}
+}

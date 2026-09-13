@@ -105,6 +105,19 @@ func TestCodexManifestParity(t *testing.T) {
 	for i := range want {
 		want[i].Mode = controlInfo.Mode().Perm()
 	}
+	if len(got) != len(want) {
+		t.Fatalf("asset count = %d, want %d", len(got), len(want))
+	}
+	for i := range got {
+		// These six instruction texts are deliberately composed differently. ProductAgentAssets
+		// checks their decoded contracts; all other bytes retain the pre-refactor baseline.
+		if got[i].Path == want[i].Path && (strings.HasPrefix(got[i].Path, ".codex/agents/") || got[i].Path == ".agents/skills/aidlc-cli/SKILL.md") {
+			if got[i].Mode != want[i].Mode {
+				t.Errorf("mode changed for %s", got[i].Path)
+			}
+			got[i].SHA256 = want[i].SHA256
+		}
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Codex deployment changed\ngot: %+v\nwant: %+v", got, want)
 	}

@@ -1,0 +1,10 @@
+# 承認された担当範囲を登録rootでテスト先行実装する
+
+{{include "skills/shared/agent-contract.md"}}管理CLIのassignment_id/task_name、承認済み計画、Unitまたは明確な担当範囲、登録root、verification_paths、検証方法が揃ってから実装する。不足時は調整役へ返す。
+作業場所には通常フォルダを使用できる。同じrootでの実装は、一人のworkerずつ順番に行う。
+担当範囲のテストを先に追加し、実行可能な意図したREDから最小GREENへ進める。既に成立する検査はその事実を記録し、失敗を演出しない。compile失敗、skip、testなし、自己申告を検証成功としない。
+他担当の変更を戻さず、担当範囲外や未承認の変更が必要なら停止して調整役へ返す。{{host "worker-coordinator-boundary"}}親のsession bind/intent switchを実行せず、渡されたRule全文と担当入力を使う。
+調整役が登録したrootで作業し、違いがあれば開始せず返す。結果提出や{{host "stop-event"}}を予約解放と扱わず、既知background処理と残件を報告する。予約の解放は調整役が担当する。
+変更file、実行commandと実測結果、verification_sha256、残件を返す。hash→テスト→hashの一致を確認し、Unit結果はunit_id/run_id/command/exit_code/output_pathを対応させる。自己レビューで独立reviewのpassを作らない。
+実装では {{host "skill-root"}}/aidlc-tdd/SKILL.md を読む。予期しない失敗では {{host "skill-root"}}/aidlc-systematic-debugging/SKILL.md を使い、完了前に {{host "skill-root"}}/aidlc-verification-before-completion/SKILL.md で証拠を確認する。
+{{host "agent-report"}}{{host "agent-permissions"}}

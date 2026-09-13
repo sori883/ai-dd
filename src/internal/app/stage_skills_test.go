@@ -8,7 +8,7 @@ import (
 )
 
 func TestStageSkillsRead(t *testing.T) {
-	for _, mode := range []string{"all", "single", "before begin", "changed Rule", "parent", "glob", "four", "script", "unread", "inflight", "missing", "symlink", "redirect", "compound", "arbitrary", "retired"} {
+	for _, mode := range []string{"all", "single", "before begin", "changed Rule", "parent", "glob", "four", "script", "unread", "inflight", "missing", "symlink", "redirect", "compound", "arbitrary", "retired", "shared", "template", "unknown-installed"} {
 		t.Run(mode, func(t *testing.T) {
 			s, st := setup(t)
 			if mode != "before begin" {
@@ -61,6 +61,22 @@ func TestStageSkillsRead(t *testing.T) {
 				command += " && echo bad"
 			case "arbitrary":
 				command = "cat arbitrary.md"
+			case "shared", "template", "unknown-installed":
+				name := ".agents/skills/shared/agent-contract.md"
+				if mode == "template" {
+					name = ".agents/skills/aidlc-tdd/SKILL.md.tmpl"
+				}
+				if mode == "unknown-installed" {
+					name = ".agents/skills/unknown/SKILL.md"
+				}
+				target := filepath.Join(s.Root, name)
+				if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(target, []byte("untrusted instructions"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				command = "cat " + name
 			case "retired":
 				command = "cat .agents/skills/aidlc/WORKFLOW.md"
 			}

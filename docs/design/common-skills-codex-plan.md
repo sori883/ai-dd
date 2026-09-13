@@ -36,7 +36,7 @@ Go標準ライブラリと既存Manifestの完成資材を使う。合成原稿�
 | src/internal/flow、src/internal/workflowの関連test | 工程bytes/hash、初期化Sensorとprocedureの回帰。保存/判定処理を変更しない |
 | src/cmd/aidlc-dist/archive.goと関連test | 日本語補助CLIのREADME・licensesの取得元を共通へ移す |
 | src/cmd/aidlc/stage_skills_live_integration_test.go等の関連fixture | 完成配布の実読込み証拠へ追従。通常trustの証拠とfixtureを区別 |
-| docs/architecture.md、docs/distribution.md、docs/developer-references-and-dependencies.md、docs/natural-japanese-go.md、src/docs/user-guide.md | 現行原稿path・編集と配置の説明を整合 |
+| docs/architecture.md、docs/distribution.md、docs/developer-references-and-dependencies.md、src/docs/natural-japanese-go.md、src/docs/user-guide.md | 現行原稿path・編集と配置の説明を整合 |
 | 本計画、関連RAM・索引 | 親が準備。実装担当がloop末尾の証拠と必要な補足を記録 |
 
 親が承認・Issue・Claude整理・PRを管理し、実装担当はGitHubや他treeを操作しない。Claude整理とGo実装は別treeだが、同じtreeを同時編集しない。
@@ -83,3 +83,13 @@ go test -tags=integration -count=1 ./src/cmd/aidlc-dist -run '^Test(Distribution
 削除前にClaude専用treeの未保存RAMと計画を回収し、取消を後続決定へ記録する。Issue #185、local branch codex/claude-adapter、専用tree ai-dd-namingを対象とし、対象に実行中作業がないこととremote/PR状態を再確認する。調査時点でremote branch・PRはない。mainのD1・他tree・元checkoutの未commit資材を削除しない。
 
 原稿整理はPR revertで戻せる。利用projectは新規配置で確認し、既存fileやKnowledge/stateを自動更新しない。旧binaryと新skillを混ぜた移転・移行機能へ広げない。実装途中で工程bytes維持が不可能な重要な選択が判明した場合は黙ってhashを変更しない。Claude対応・公開ReleaseはCodex確認後に別途決める。
+
+## 実装時の具体化
+
+`src/internal/cli/rule_skill_separation_test.go`と既存のworkflow／live evidence fixtureは旧原稿の物理位置を直接参照していたため、完成資材の読取りへ追従した。親が同ファイルと同種のtest-only追従を所有範囲へ追加済みで、CLI・stateの動作は変更しない。日本語guideの実在pathは`src/docs/natural-japanese-go.md`であり、上記表も合わせた。
+
+`.tmpl`で合成原稿を明示し、共通`RenderContent`がinclude・host参照を検査する。agentの先頭Markdown見出しを共通の役割説明としてTOMLのdescriptionへ符号化する。Codex側の設定原稿はsandboxだけとし、nameは共通roleのfile名から取得する。TOML basic stringに互換なJSON文字列符号化で引用符・改行・制御文字を保護する。通常Manifest.Generatedに完成資材を載せ、保存前の重複・親file競合検査は既存Manifestを使う。
+
+旧69資材の独立hash fixtureは保持する。本文構成を整理したaidlc-cliと5 agentの6資材は意味と権限を別testで確認し、それ以外の63資材は旧hashへ直接照合する。工程の7資材は別testでも旧hashを照合する。共通担当契約の変更が5担当すべてへ、共通工程操作の変更が6工程すべてへ伝わることを独立の文字列で検査する。
+
+loopの実測と後続gateは[承認記録](../ram/decisions/2026-09-13-common-skills-codex-approved.md)に追記する。

@@ -1,8 +1,8 @@
 package workflow
 
 import (
+	"github.com/sori883/ai-dd/src/core"
 	coreworkflow "github.com/sori883/ai-dd/src/core/workflow"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,23 +49,19 @@ func TestDocumentDeclaration(t *testing.T) {
 
 func TestDocumentDeclarationDefault(t *testing.T) {
 	root := t.TempDir()
-	err := fs.WalkDir(coreworkflow.Files, ".", func(name string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		raw, err := coreworkflow.Files.ReadFile(name)
-		if err != nil {
-			return err
-		}
+	completed, err := coreworkflow.Render(core.Files, map[string]string{"skill-root": ".agents/skills"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, raw := range completed {
 		dest := filepath.Join(root, "aidlc/workflow", name)
 		if err = os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-			return err
+			t.Fatal(err)
 		}
-		return os.WriteFile(dest, raw, 0644)
-	})
+		if err := os.WriteFile(dest, raw, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

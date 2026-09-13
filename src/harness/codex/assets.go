@@ -3,29 +3,29 @@ package codex
 
 import (
 	"embed"
+	"github.com/sori883/ai-dd/src/core"
 	"io/fs"
 	"strings"
 )
 
 // Files contains source assets mapped to Codex discovery paths by the installer.
 //
-//go:embed SKILL.md aidlc-cli aidlc-okf agents stage-skills
+//go:embed skills agents
 var Files embed.FS
 
 // WorkflowMarkdown reports whether name is an exact deployed Markdown asset.
 func WorkflowMarkdown(name string) bool {
-	switch name {
-	case ".agents/skills/aidlc/SKILL.md", ".agents/skills/aidlc-cli/SKILL.md", ".agents/skills/aidlc-okf/SKILL.md":
-		return true
-	}
-	const prefix = ".agents/skills/"
-	if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, ".md") {
+	if !fs.ValidPath(name) || !strings.HasPrefix(name, ".agents/skills/") || !strings.HasSuffix(name, ".md") {
 		return false
 	}
-	source := "stage-skills/" + strings.TrimPrefix(name, prefix)
-	if !fs.ValidPath(source) {
+	assets, err := contentAssets(core.Files, Files, "aidlc")
+	if err != nil {
 		return false
 	}
-	info, err := fs.Stat(Files, source)
-	return err == nil && info.Mode().IsRegular()
+	for _, asset := range assets {
+		if asset.Path == name {
+			return true
+		}
+	}
+	return false
 }

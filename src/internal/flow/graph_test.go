@@ -1,8 +1,8 @@
 package flow
 
 import (
+	"github.com/sori883/ai-dd/src/core"
 	coreworkflow "github.com/sori883/ai-dd/src/core/workflow"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,23 +10,19 @@ import (
 
 func deployFlowDefinition(t *testing.T, s Store) {
 	t.Helper()
-	err := fs.WalkDir(coreworkflow.Files, ".", func(name string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		raw, err := coreworkflow.Files.ReadFile(name)
-		if err != nil {
-			return err
-		}
+	completed, err := coreworkflow.Render(core.Files, map[string]string{"skill-root": ".agents/skills"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, raw := range completed {
 		p := filepath.Join(s.Root, "aidlc/workflow", name)
 		if err = os.MkdirAll(filepath.Dir(p), 0755); err != nil {
-			return err
+			t.Fatal(err)
 		}
-		return os.WriteFile(p, raw, 0644)
-	})
+		if err := os.WriteFile(p, raw, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

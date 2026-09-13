@@ -114,11 +114,11 @@ func verifyStageSkillsEvidence(binary string, transport []byte, records []memory
 			seen[input.Session] = map[string]bool{}
 		}
 		if index < 2 {
-			name := "stage-skills/aidlc-grilling/SKILL.md"
+			name := ".agents/skills/aidlc-grilling/SKILL.md"
 			if index == 1 {
-				name = "stage-skills/natural-japanese-go/SKILL.md"
+				name = ".agents/skills/natural-japanese-go/SKILL.md"
 			}
-			expected, err := codex.Files.ReadFile(name)
+			expected, err := completedSkill(name, "/opt/aidlc")
 			if err != nil {
 				return err
 			}
@@ -192,11 +192,11 @@ func stageEvidenceOutput(t *testing.T, i int) string {
 	if i == 2 {
 		return `{"schema_version":1,"engine":"Kagome v2.11.0","dictionary":"UniDic v1.2.6","file":"text.md","stats":{},"findings":[{"line":1,"category":"forbidden_phrase","excerpt":"非常に重要","severity":"warn","detail":"test"}]}`
 	}
-	name := "stage-skills/aidlc-grilling/SKILL.md"
+	name := ".agents/skills/aidlc-grilling/SKILL.md"
 	if i == 1 {
-		name = "stage-skills/natural-japanese-go/SKILL.md"
+		name = ".agents/skills/natural-japanese-go/SKILL.md"
 	}
-	raw, err := codex.Files.ReadFile(name)
+	raw, err := completedSkill(name, "/opt/aidlc")
 	if err != nil {
 		return "not installed"
 	}
@@ -305,4 +305,18 @@ func TestStageSkillsLive(t *testing.T) {
 	if err := verifyStageSkillsEvidence(naturalBinary, transport, records); err != nil {
 		t.Fatalf("%v; evidence %s", err, evidence)
 	}
+}
+
+// completedSkill reads the same completed distribution that install writes.
+func completedSkill(name, binary string) ([]byte, error) {
+	assets, err := codex.Distribution("/project", binary)
+	if err != nil {
+		return nil, err
+	}
+	for _, asset := range assets {
+		if asset.Path == name {
+			return asset.Data, nil
+		}
+	}
+	return nil, fmt.Errorf("missing completed skill %s", name)
 }

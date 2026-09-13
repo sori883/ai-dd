@@ -35,7 +35,7 @@ Codex（利用者が別途用意するAI実行環境）
 
 Spaceは関連する作業と知識をまとめる場所、Intentは一つの目的を持つ作業単位です。利用プロジェクトの知識は`aidlc/spaces/<space>/knowledge/`に置きます。`codekb/`には現行の仕様・使い方、`design/`には要件・計画、`adr/`には設計判断の理由、`rules/`にはプロジェクト共通ルール、`log/`には作業ログを置きます。本リポジトリの開発判断を保存する`docs/ram/`とは別のものです。
 
-現在のmainで配置できるAI環境はCodexです。Claude Code対応は[Issue #185](https://github.com/sori883/ai-dd/issues/185)で未完了・保留中、VS CodeのGitHub Copilot対応も現行の公開対象に含めていません。
+現在のmainで配置できるAI環境はCodexです。Claude Codeの未完了実装・専用Issue・ローカルbranch・作業treeは[承認済み方針](ram/decisions/2026-09-13-common-skills-codex-approved.md)に従って破棄しました。再開はCodex確認後の新計画で検討します。VS CodeのGitHub Copilot対応も現行の公開対象に含めていません。
 
 ## 2. 設計・知識管理の参考リポジトリ
 
@@ -70,7 +70,7 @@ skillはAIに渡す作業手順のMarkdownです。元プロジェクトの作�
 | [obra/superpowers](https://github.com/obra/superpowers/tree/b36e0829c6d0140e93cfef2ca599b1b07d4a7797) | `aidlc-systematic-debugging`、`aidlc-verification-before-completion` | 原因を調べて修正する、完了前に証拠を確認する |
 | [coji/natural-japanese](https://github.com/coji/natural-japanese/tree/9a78a42964096da509b8f3e011f0085a5f080151)（v1.5.0） | `natural-japanese-go` | 日本語文章の設計・執筆・推敲と、別CLIによる検査 |
 
-この12個に、進行全体の`aidlc`、操作案内の`aidlc-cli`、知識操作の`aidlc-okf`を加えた**15個が標準配置のskill**です。原稿は[src/harness/codex/](../src/harness/codex/)にあり、利用先では`.agents/skills/`へ配置されます。表の12個はそれぞれ`references/source.md`と`LICENSE`を保持し、原典はいずれもMITです。[採用・翻案の計画](design/stage-skills-natural-japanese-go-plan.md)に固定元を記録しています。
+この12個に、進行全体の`aidlc`、操作案内の`aidlc-cli`、知識操作の`aidlc-okf`を加えた**15個が標準配置のskill**です。共通原稿は[src/core/skills/](../src/core/skills/)にあり、Codexの接続差分を配置時に合成し、利用先では`.agents/skills/`へ配置されます。表の12個はそれぞれ`references/source.md`と`LICENSE`を保持し、原典はいずれもMITです。[採用・翻案の計画](design/stage-skills-natural-japanese-go-plan.md)に固定元を記録しています。
 
 `natural-japanese-go`のプログラムは、原典の通常14分類の検査をGoへ移植したものです。原典のPython/SudachiからKagome/UniDicへ解析器を変えているため、同じ文章でも結果が完全一致するとは限りません。skill自体は標準配置されますが、検査を実行する場合は別の`natural-japanese-go`実行ファイルが必要です。詳しい対応範囲は[日本語補助CLIの説明](../src/docs/natural-japanese-go.md)にあります。
 
@@ -131,7 +131,7 @@ Go標準ライブラリ・runtimeも実行ファイルを構成します。[Go�
 
 リポジトリ直下の`.agents/skills/`には、製品開発用の手順もあります。[samber/cc-skills-golang](https://github.com/samber/cc-skills-golang)由来の`golang-*`群はMITで、Goの実装・調査・レビューを助けます。個別skillのmetadata版はありますが、取り込み元repo全体の固定commitは記録されていません。これらを利用者向け15skillと混同しないでください。
 
-`aidlc-reference`・`okf-reference`は参考資料を読むため、`github-pr-workflow`は本リポジトリのIssue・PR運用のための手順です。利用先へ任意導入する`aidlc-github`とは目的が異なります。開発用のcustom agentは`.codex/`、製品として配置するagentの原稿は`src/harness/codex/agents/`にあります。
+`aidlc-reference`・`okf-reference`は参考資料を読むため、`github-pr-workflow`は本リポジトリのIssue・PR運用のための手順です。利用先へ任意導入する`aidlc-github`とは目的が異なります。開発用のcustom agentは`.codex/`、製品として配置するagentの役割本文は`src/core/agents/`にあります。Codexのsandbox設定は`src/harness/codex/agents/`、toolやeventの接続説明は`src/harness/codex/skills/`で管理します。
 
 開発時にはSerenaでコードを参照し、Context7で外部仕様を調べます。これらのMCP接続は開発AIの環境にある補助機能で、`aidlc`の外部Go依存や利用者への必須インストールには含まれません。Go系skillに例示された追加ライブラリも、それだけでは本製品の採用済み依存ではありません。
 
@@ -177,9 +177,9 @@ MITの原典表示・出典を各フォルダに保持しているのは、第3�
 | 部品・確認版 | ライセンスと原典の表示 | 配布で扱う原文・注意点 |
 | --- | --- | --- |
 | go-yaml v3.0.5 | [LICENSE](https://github.com/yaml/go-yaml/blob/v3.0.5/LICENSE)：ファイル別にMITとApache-2.0。MIT側は2006–2010／2006–2011 Kirill Simonov、Apache側は2011–2019 Canonical Ltd | **[NOTICE](https://raw.githubusercontent.com/yaml/go-yaml/v3.0.5/NOTICE)も存在**し、2011–2016 Canonical Ltdの表示がある。moduleのLICENSE、Apache-2.0全文、NOTICEを配布物で引き継ぐ整備が残る |
-| Kagome v2.11.0 | [LICENSE](https://github.com/ikawaha/kagome/blob/v2.11.0/LICENSE)：MIT。2020 ikawaha | 日本語補助CLIの[licenses/kagome.txt](../src/harness/codex/stage-skills/natural-japanese-go/licenses/kagome.txt)に原文を保持 |
+| Kagome v2.11.0 | [LICENSE](https://github.com/ikawaha/kagome/blob/v2.11.0/LICENSE)：MIT。2020 ikawaha | 日本語補助CLIの[licenses/kagome.txt](../src/core/skills/natural-japanese-go/licenses/kagome.txt)に原文を保持 |
 | kagome-dict v1.1.7／uni module v1.2.6 | [共通moduleのLICENSE](https://github.com/ikawaha/kagome-dict/blob/v1.1.7/LICENSE)・[uniのLICENSE](https://github.com/ikawaha/kagome-dict/blob/uni/v1.2.6/uni/LICENSE)：ともにMIT。前者は2021 ikawaha、後者は2020 ikawaha | 補助CLIの`licenses/kagome-dict.txt`と`licenses/uni.txt`に原文を保持。辞書データの条件は次行 |
-| UniDicデータ `unidic-mecab-2.1.2` | [NOTICE.txt](https://raw.githubusercontent.com/ikawaha/kagome-dict/uni/v1.2.6/uni/NOTICE.txt)：BSD-3-Clause。2011–2013 The UniDic Consortium | 補助CLIの[licenses/UniDic-NOTICE.txt](../src/harness/codex/stage-skills/natural-japanese-go/licenses/UniDic-NOTICE.txt)に著作権・条件・免責を保持 |
+| UniDicデータ `unidic-mecab-2.1.2` | [NOTICE.txt](https://raw.githubusercontent.com/ikawaha/kagome-dict/uni/v1.2.6/uni/NOTICE.txt)：BSD-3-Clause。2011–2013 The UniDic Consortium | 補助CLIの[licenses/UniDic-NOTICE.txt](../src/core/skills/natural-japanese-go/licenses/UniDic-NOTICE.txt)に著作権・条件・免責を保持 |
 | Goのruntime・標準ライブラリ、調査時`go1.26.4` | [Go LICENSE](https://github.com/golang/go/blob/go1.26.4/LICENSE)：BSD-3-Clause。2009 The Go Authors。別に[PATENTS](https://raw.githubusercontent.com/golang/go/go1.26.4/PATENTS)もある | 3つのCLIに関係する。実際に配布するbuild版の許諾文と、含まれるコードの追加表示を確認する。独立したGoの許諾文は現archiveに未同梱 |
 
 YAMLのMIT対象は`apic.go`、`emitterc.go`、`parserc.go`、`readerc.go`、`scannerc.go`、`writerc.go`、`yamlh.go`、`yamlprivateh.go`で、LICENSEは残りのファイルをApache-2.0としています。**MITかApacheを自由に選べるという意味ではありません。** また、OKF仕様にはNOTICEがなく、YAMLにはあるため、Apache-2.0という名前だけで表示内容を同じにしないようにします。
@@ -210,6 +210,6 @@ GoのPATENTSは、Googleが対象となるGo実装の特許利用を追加で許
 3. 公開するソースのcommitと`0.1.0`のtagを確定し、その内容から候補を作って検証します。現時点ではtagを作成していません。通常の開発buildは引き続き`dev`表記で、ここで版を決めただけでは書き換わりません。
 4. 検証済みの候補・許諾文・導入手順を確認してReleaseの下書きを作り、内容確認後に一般公開します。文書のPRをmergeする操作と、製品を公開する操作は別です。
 
-PR #187では、macOS・Linux・Windowsで同じ配布候補集合を使う導入検査が成功しています。ただし、これを6種類のCPU構成すべてでの実行確認や、すべてのOSでの実Codex hook検証へ読み替えません。Claude Codeの検証保留も継続します。
+PR #187では、macOS・Linux・Windowsで同じ配布候補集合を使う導入検査が成功しています。ただし、これを6種類のCPU構成すべてでの実行確認や、すべてのOSでの実Codex hook検証へ読み替えません。Claude Codeは未完了実装を破棄済みであり、対応を再開する場合はCodex確認後に新しい計画を作成します。
 
 更新時は、変更した参考元のcommit、`go.mod`・`go.sum`、各CLIの`go list -deps`、skillの`references/source.md`とLICENSE、workflowの固定SHA、実archiveの内容を照合してこの一枚を更新します。`go list -m all`の一覧だけから配布内容を判断しないようにしてください。

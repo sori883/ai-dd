@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/sori883/ai-dd/src/harness/codex"
@@ -33,7 +34,8 @@ func TestDistribution(t *testing.T) {
 	}
 	for i, asset := range assets {
 		sum := sha256.Sum256(asset.Data)
-		if asset.Path != want[i].Path || hex.EncodeToString(sum[:]) != want[i].SHA256 {
+		changedText := strings.HasPrefix(asset.Path, ".codex/agents/") || asset.Path == ".agents/skills/aidlc-cli/SKILL.md"
+		if asset.Path != want[i].Path || (!changedText && hex.EncodeToString(sum[:]) != want[i].SHA256) {
 			t.Errorf("asset %d (%s) differs from old installer", i, asset.Path)
 		}
 	}

@@ -7,7 +7,7 @@ import (
 	"compress/gzip"
 	"errors"
 	"fmt"
-	codex "github.com/sori883/ai-dd/src/harness/codex"
+	"github.com/sori883/ai-dd/src/core"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -136,20 +136,20 @@ func productArchiveBytes(raw []byte, windows bool, product string) ([]byte, erro
 	entries := map[string][]byte{binary: raw}
 	names := []string{binary}
 	if product == "natural-japanese-go" {
-		readme, err := codex.Files.ReadFile("stage-skills/natural-japanese-go/references/cli.md")
+		readme, err := core.Files.ReadFile("skills/natural-japanese-go/references/cli.md")
 		if err != nil {
 			return nil, err
 		}
 		entries["README.md"] = readme
 		names = append(names, "README.md")
-		err = fs.WalkDir(codex.Files, "stage-skills/natural-japanese-go/licenses", func(path string, d fs.DirEntry, err error) error {
+		err = fs.WalkDir(core.Files, "skills/natural-japanese-go/licenses", func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
 			if d.IsDir() {
 				return nil
 			}
-			raw, err := codex.Files.ReadFile(path)
+			raw, err := core.Files.ReadFile(path)
 			if err != nil {
 				return err
 			}

@@ -173,6 +173,6 @@ SHAは内容・追加・削除・名前変更を検知し、更新日時やGit�
 
 ## 工程skillと日本語推敲
 
-新規配置では11工程skillとnatural-japanese-goのskillを `.agents/skills/` へ配置します。現在工程に合うskillをaidlc-cliから選んで読み、質問や調査、実装、reviewへ使います。担当と人間承認の流れは維持します。補助CLIは別archiveからPATHへ置いてください。[日本語チェックの利用方法](natural-japanese-go.md)にコマンドと対応範囲があります。
+新規配置では、binary内の共通原稿とCodex接続説明を自動で組み合わせ、11工程skillとnatural-japanese-goのskillを `.agents/skills/` へ配置します。現在工程に合うskillをaidlc-cliから選んで読み、質問や調査、実装、reviewへ使います。担当と人間承認の流れは維持します。補助CLIは別archiveからPATHへ置いてください。[日本語チェックの利用方法](natural-japanese-go.md)にコマンドと対応範囲があります。
 
-既設環境は自動更新しません。別stagingへfresh installし、既存の編集を保全して差分を確認します。工程本文のdefinition hashが変わるため、新版は新規Intentで使い、旧Intentのhashを書き換えて移行しません。移転のrelocateは従来の3skillとhooksの4fileだけを対象にし、版更新とは分けます。
+既設環境は自動更新しません。別stagingへfresh installし、既存の編集を保全して差分を確認します。工程本文を変更する版ではdefinition hashも変わるため、新規Intentを使い、旧Intentのhashを書き換えて移行しません。共通原稿へ整理した今回の版では、完成工程本文とdefinition hashを維持しています。移転のrelocateは従来の3skillとhooksの4fileだけを対象にし、版更新とは分けます。

@@ -41,15 +41,29 @@ func relocate(root, binary, fromRoot, fromBinary string, write func(string, stri
 			return result, fmt.Errorf("%s: %w", p, err)
 		}
 	}
-	for i, source := range []string{"SKILL.md", "aidlc-cli/SKILL.md", "aidlc-okf/SKILL.md"} {
-		template, err := fs.ReadFile(codex.Files, source)
-		if err != nil {
-			return result, err
+	oldAssets, err := codex.Distribution(fromRoot, fromBinary)
+	if err != nil {
+		return result, err
+	}
+	newAssets, err := codex.Distribution(root, binary)
+	if err != nil {
+		return result, err
+	}
+	oldSkills, newSkills := make(map[string][]byte), make(map[string][]byte)
+	for _, asset := range oldAssets {
+		oldSkills[asset.Path] = asset.Data
+	}
+	for _, asset := range newAssets {
+		newSkills[asset.Path] = asset.Data
+	}
+	for i, name := range paths[:len(paths)-1] {
+		oldSkill, oldOK := oldSkills[name]
+		newSkill, newOK := newSkills[name]
+		if !oldOK || !newOK {
+			return result, fmt.Errorf("missing distribution asset %s: %w", name, fs.ErrInvalid)
 		}
-		oldSkill := []byte(strings.ReplaceAll(string(template), "@@BINARY@@", shellQuote(fromBinary)))
-		newSkill := []byte(strings.ReplaceAll(string(template), "@@BINARY@@", shellQuote(binary)))
 		if !bytes.Equal(before[i], oldSkill) && !bytes.Equal(before[i], newSkill) {
-			return result, fmt.Errorf("%s: unknown asset bytes: %w", paths[i], fs.ErrInvalid)
+			return result, fmt.Errorf("%s: unknown asset bytes: %w", name, fs.ErrInvalid)
 		}
 		after[i] = newSkill
 	}

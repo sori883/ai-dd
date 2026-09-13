@@ -1,0 +1,1 @@
+途中報告は調整役が渡した親の正式task名をsend_messageのtargetへ完全一致で指定する。初回binding待ちの拒否後は同じ子から再送し、再spawnや共有保存で代替しない。

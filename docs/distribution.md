@@ -2,6 +2,8 @@
 
 AI-DLCの利用者が実行するファイルは`aidlc`一つです。工程定義、Codex用Skill・agent・hookはbinaryに内包されています。`aidlc-dist`は開発者がbuild済みbinaryを圧縮するためのcommandで、利用先へ追加導入する必要はありません。
 
+共通skill・担当契約は`src/core/skills/`と`src/core/agents/`で編集し、Codexの接続差分は`src/harness/codex/`で編集します。`.tmpl`原稿は新規配置時に同じbinary内で合成され、共通部品や未展開templateは配置されません。完成後の配置pathは従来どおりです。日本語補助CLIのREADMEとライセンスも`src/core/skills/natural-japanese-go/`を原稿として梱包します。
+
 取得先は[GitHub Releases](https://github.com/sori883/ai-dd/releases)です。公開版が用意されたら、必要なversionのOS・CPU別archiveと`manifest.json`、`SHA256SUMS`を取得します。現在は候補検証と手動指定時のRelease下書き作成を整備した段階で、正式version、初回公開物、Go製品のライセンスは未確定です。
 
 Distribution CIは候補8ファイルをActions artifactへ1日保存し、同じ候補を3OSで検査します。検証だけの実行でも、この一時artifactはActionsから取得できます。手動で`create_draft=true`を指定した場合だけ、検証後にGitHub Releaseの下書きを作ります。下書きも一時artifactも一般公開版の完成とは扱いません。
