@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [単一CLIのGitHub Releases配布機構を整備する](decisions/2026-09-13-github-release-pipeline-approved.md): バージョン別の同梱binaryと環境引数の方式を直接依頼。mainのCodexを基準に、候補そのものの3OS検証・一時artifact転送・手動指定時のRelease下書き作成を整備する。同tagの直列化と既存Draft拒否を具体化。Review修復で候補のGit不要導入検証を補強。Bash 3の拒否漏れに明示exitを追加。Windows checkoutの改行変換をstep限定configで抑止。[具体計画](../design/github-release-pipeline-plan.md)。正式版・ライセンス・実公開は別に確定し、ClaudeのIssue #185は保留を維持する。
+
 - [3環境向け配布基盤D1の実装](decisions/2026-09-12-three-host-distribution-d1-evidence.md): Issue #183。ManifestとCodex生成を分離し、旧配置69fileとの一致を確認。[hook前提確認](research/2026-09-12-three-host-hook-preflight.md)ではClaude実測（自動通知も入力イベントになる点を含む）とVS Code未確認・選択待ちを区別する。
 
 - [3環境への製品対応を実装する直接依頼](decisions/2026-09-12-three-host-product-implementation-approved.md): 本家2.6.123の共通資材・環境別配布構成を流用。Codex配布の動作維持と新host接続の前提確認から着手する。[具体計画](../design/three-host-distribution-plan.md)。

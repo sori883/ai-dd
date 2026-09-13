@@ -3,24 +3,103 @@ name: Distribution
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 検証する既存tag（mainに含まれるcommit）
+        required: true
+        type: string
+      create_draft:
+        description: 検証成功後にReleaseの下書きを作成する
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 jobs:
+  prepare:
+    name: Resolve candidate commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      commit: ${{ steps.resolve.outputs.commit }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - name: Check out invocation
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        env:
+          # Preserve committed bytes across build and verification hosts.
+          GIT_CONFIG_COUNT: '2'
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: 'false'
+          GIT_CONFIG_KEY_1: core.eol
+          GIT_CONFIG_VALUE_1: lf
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve existing tag or invocation SHA
+        id: resolve
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INVOCATION_REF: ${{ github.ref }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse HEAD)"
+          version="dev-${commit:0:12}"
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            [[ "$INVOCATION_REF" == refs/heads/main ]] || { echo '手動実行はmainから起動してください'; exit 1; }
+            [[ "$RELEASE_TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && ${#RELEASE_TAG} -le 128 && "$RELEASE_TAG" != *..* ]] || { echo '不正なtag名です'; exit 1; }
+            git fetch --no-tags origin \
+              +refs/heads/main:refs/remotes/origin/main \
+              "refs/tags/$RELEASE_TAG:refs/release/candidate"
+            commit="$(git rev-parse 'refs/release/candidate^{commit}')"
+            git merge-base --is-ancestor "$commit" refs/remotes/origin/main
+            version="$RELEASE_TAG"
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
   package:
     name: Package (six targets)
+    needs: prepare
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      go_version: ${{ steps.build.outputs.go_version }}
+    env:
+      AIDLC_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      AIDLC_RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        env:
+          # Preserve committed bytes across build and verification hosts.
+          GIT_CONFIG_COUNT: '2'
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: 'false'
+          GIT_CONFIG_KEY_1: core.eol
+          GIT_CONFIG_VALUE_1: lf
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: 1.26.x
           cache: false
+      - name: Require release validation entry points
+        shell: bash
+        run: |
+          set -euo pipefail
+          tests="$(go test -tags=integration -list '^TestReleaseCandidate(Metadata|Native)$' ./src/cmd/aidlc-dist)"
+          grep -Fxq TestReleaseCandidateMetadata <<< "$tests"
+          grep -Fxq TestReleaseCandidateNative <<< "$tests"
       - name: Build and package candidates
+        id: build
         shell: bash
         run: |
           set -euo pipefail
@@ -28,9 +107,11 @@ jobs:
           output="${RUNNER_TEMP}/dist-candidate"
           natural_output="${RUNNER_TEMP}/natural-dist-candidate"
           mkdir "$input"
-          commit="$(git rev-parse HEAD)"
-          version="dev-${commit:0:12}"
+          commit="$AIDLC_RELEASE_COMMIT"
+          version="$AIDLC_RELEASE_VERSION"
+          [[ "$(git rev-parse HEAD)" == "$commit" ]] || { echo '検証対象のcommitが一致しません'; exit 1; }
           toolchain="$(go env GOVERSION)"
+          echo "go_version=$toolchain" >> "$GITHUB_OUTPUT"
           for os in darwin linux windows; do
             for arch in amd64 arm64; do
               extension=""
@@ -45,15 +126,30 @@ jobs:
           done
           go run ./src/cmd/aidlc-dist --input-dir "$input" --output-dir "$output" \
             --version "$version" --commit "$commit" --go-version "$toolchain"
-          AIDLC_DIST_DIR="$output" go test -tags=integration -count=1 -v \
-            ./src/cmd/aidlc-dist -run '^TestDistributionArchives$'
+          AIDLC_DIST_DIR="$output" AIDLC_RELEASE_GO_VERSION="$toolchain" go test -tags=integration -count=1 -v \
+            ./src/cmd/aidlc-dist -run '^Test(DistributionArchives|ReleaseCandidateMetadata|ReleaseCandidateMetadataValidation|ReleaseCandidateNativeSelection|ReleaseCandidateProjectDirectory)$'
           go run ./src/cmd/aidlc-dist --product natural-japanese-go --input-dir "$input" --output-dir "$natural_output" \
             --version "$version" --commit "$commit" --go-version "$toolchain"
           AIDLC_NATURAL_DIST_DIR="$natural_output" go test -tags=integration -count=1 -v \
             ./src/cmd/aidlc-dist -run '^TestNaturalJapaneseDistributionArchives$'
 
+      - name: Transfer verified candidate files
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: aidlc-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dist-candidate/*
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: false
+
   native:
     name: Native distribution (${{ matrix.os }})
+    needs: [prepare, package]
+    env:
+      AIDLC_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      AIDLC_RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
+      AIDLC_RELEASE_GO_VERSION: ${{ needs.package.outputs.go_version }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -63,10 +159,131 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        env:
+          # Preserve committed bytes across build and verification hosts.
+          GIT_CONFIG_COUNT: '2'
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: 'false'
+          GIT_CONFIG_KEY_1: core.eol
+          GIT_CONFIG_VALUE_1: lf
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: 1.26.x
           cache: false
+      - name: Download this run's verified candidates
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.package.outputs.artifact_id }}
+          path: ${{ runner.temp }}/dist-candidate
+          merge-multiple: true
+          digest-mismatch: error
+      - name: Test the downloaded native candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$AIDLC_RELEASE_COMMIT" ]] || { echo '検証対象のcommitが一致しません'; exit 1; }
+          tests="$(go test -tags=integration -list '^TestReleaseCandidateNative$' ./src/cmd/aidlc-dist)"
+          grep -Fxq TestReleaseCandidateNative <<< "$tests"
+          AIDLC_DIST_DIR="$RUNNER_TEMP/dist-candidate" go test -tags=integration -count=1 -v \
+            ./src/cmd/aidlc-dist -run '^TestReleaseCandidateNative$'
       - name: Test native archive and manual update procedure
         run: go test -tags=integration -count=1 -v ./src/cmd/aidlc-dist -run '^Test(DistributionJourney|NaturalJapaneseDistributionJourney)$'
+
+  draft:
+    name: Create verified Release draft
+    needs: [prepare, package, native]
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_draft && needs.package.result == 'success' && needs.native.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: release-draft-${{ inputs.tag }}
+      cancel-in-progress: false
+    env:
+      AIDLC_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      AIDLC_RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
+      AIDLC_RELEASE_GO_VERSION: ${{ needs.package.outputs.go_version }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - name: Check out exact candidate source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        env:
+          # Preserve committed bytes across build and verification hosts.
+          GIT_CONFIG_COUNT: '2'
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: 'false'
+          GIT_CONFIG_KEY_1: core.eol
+          GIT_CONFIG_VALUE_1: lf
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: 1.26.x
+          cache: false
+      - name: Download this run's verified candidates
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.package.outputs.artifact_id }}
+          path: ${{ runner.temp }}/dist-candidate
+          merge-multiple: true
+          digest-mismatch: error
+      - name: Recheck candidate contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$AIDLC_RELEASE_COMMIT" ]] || { echo '検証対象のcommitが一致しません'; exit 1; }
+          tests="$(go test -tags=integration -list '^TestReleaseCandidateMetadata$' ./src/cmd/aidlc-dist)"
+          grep -Fxq TestReleaseCandidateMetadata <<< "$tests"
+          AIDLC_DIST_DIR="$RUNNER_TEMP/dist-candidate" go test -tags=integration -count=1 -v \
+            ./src/cmd/aidlc-dist -run '^TestReleaseCandidateMetadata$'
+      - name: Verify remote tag and create a new draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && ${#RELEASE_TAG} -le 128 && "$RELEASE_TAG" != *..* ]] || { echo '不正なtag名です'; exit 1; }
+          [[ "$RELEASE_TAG" == "$AIDLC_RELEASE_VERSION" ]] || { echo 'tagと候補versionが一致しません'; exit 1; }
+          git fetch --no-tags origin \
+            +refs/heads/main:refs/remotes/origin/main \
+            "refs/tags/$RELEASE_TAG:refs/release/recheck"
+          [[ "$(git rev-parse 'refs/release/recheck^{commit}')" == "$AIDLC_RELEASE_COMMIT" ]] || { echo 'remote tagのcommitが変わりました'; exit 1; }
+          git merge-base --is-ancestor "$AIDLC_RELEASE_COMMIT" refs/remotes/origin/main
+          # API failure must stop the job. The list includes existing drafts with this token.
+          gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
+            --jq '.[] | [.tag_name, .id] | @tsv' > "$RUNNER_TEMP/releases.tsv"
+          while IFS=$'\t' read -r existing_tag release_id; do
+            if [[ "$existing_tag" == "$RELEASE_TAG" ]]; then
+              echo "同じtagのReleaseが既に存在します: $release_id"
+              exit 1
+            fi
+          done < "$RUNNER_TEMP/releases.tsv"
+          notes="$RUNNER_TEMP/release-notes.md"
+          cat > "$notes" <<EOF_NOTES
+          AI-DLC $AIDLC_RELEASE_VERSION の配布候補です。まだ一般公開していません。
+
+          対象commit: $AIDLC_RELEASE_COMMIT
+          build Go版: $AIDLC_RELEASE_GO_VERSION
+          対応環境: macOS・Linux・Windows、それぞれamd64・arm64。
+
+          OS・CPUに合うarchiveとSHA256SUMS、manifest.jsonを取得し、SHA-256を照合してから空のdirectoryへ展開してください。
+          展開したaidlcのversionと--helpを確認し、aidlc install codex --project-dir ROOTで新規配置します。
+          同梱資材はbinaryと同じ版です。Codex本体の導入は別途必要です。
+          詳しい取得・照合・配置手順: https://github.com/$GH_REPO/blob/$AIDLC_RELEASE_COMMIT/docs/distribution.md
+
+          公開前に正式版名、製品ライセンスと表示、初回成果物の内容を確認してください。
+          3OSの候補実行検査は全6CPU構成の実行や、実Codex hookの動作成功を意味しません。
+          EOF_NOTES
+          files=("$RUNNER_TEMP/dist-candidate/"*)
+          [[ ${#files[@]} -eq 8 ]] || { echo '候補ファイルは8個必要です'; exit 1; }
+          gh release create "$RELEASE_TAG" --verify-tag --draft \
+            --title "AI-DLC $AIDLC_RELEASE_VERSION" --notes-file "$notes" "${files[@]}"
