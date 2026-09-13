@@ -14,7 +14,7 @@ import (
 const usage = `使い方: aidlc-dist --input-dir DIR --output-dir NEW_DIR --version VERSION --commit SHA --go-version GO_VERSION [--targets OS/ARCH,...] --license-dir DIR
 
 開発者向けにローカルで配布候補を梱包します。アップロードや公開は行いません。
---license-dir  同じbuildの独自MIT・Go・YAML等の許諾入力。5製品と資材の43件を同時に梱包
+--license-dir  同じbuildの独自MIT・Go・YAML等の許諾入力。5製品と資材を6一式archive＋SHA256SUMSの7件へ梱包
 --input-dir    ビルド済みの PRODUCT-OS-ARCH を置いたディレクトリ（Windowsは末尾に .exe）
 --output-dir   出力先の新しいディレクトリ（既存のディレクトリは指定不可）
 --version      配布候補の版名。例: dev-abcdef0

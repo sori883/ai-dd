@@ -33,24 +33,35 @@ type ReleaseResult struct {
 }
 
 func download(ctx context.Context, url string) ([]byte, error) {
+	return downloadLimit(ctx, url, release.MaxArchiveBytes)
+}
+func downloadLimit(ctx context.Context, url string, limit int64) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
-	client := http.Client{Timeout: 2 * time.Minute}
+	client := http.Client{Timeout: 2 * time.Minute, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if req.URL.Scheme != "https" {
+			return fmt.Errorf("release redirect must use HTTPS")
+		}
+		if len(via) >= 10 {
+			return fmt.Errorf("too many release redirects")
+		}
+		return nil
+	}}
 	response, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK || response.ContentLength > release.MaxArchiveBytes {
+	if response.StatusCode != http.StatusOK || response.ContentLength > limit {
 		return nil, fmt.Errorf("download status/size invalid: %s", response.Status)
 	}
-	raw, err := io.ReadAll(io.LimitReader(response.Body, release.MaxArchiveBytes+1))
+	raw, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(raw)) > release.MaxArchiveBytes {
+	if int64(len(raw)) > limit {
 		return nil, fmt.Errorf("download too large")
 	}
 	return raw, nil
@@ -63,8 +74,12 @@ func releaseFetcher(o ReleaseOptions) func(context.Context, string) ([]byte, err
 		if filepath.Base(name) != name || strings.ContainsAny(name, "/\\\x00") {
 			return nil, fs.ErrInvalid
 		}
+		limit := release.MaxArchiveBytes
+		if name == "SHA256SUMS" {
+			limit = release.MaxSumsBytes
+		}
 		if o.Directory == "" {
-			return download(ctx, "https://github.com/sori883/ai-dd/releases/download/"+o.Version+"/"+name)
+			return downloadLimit(ctx, "https://github.com/sori883/ai-dd/releases/download/"+o.Version+"/"+name, limit)
 		}
 		root, err := os.OpenRoot(o.Directory)
 		if err != nil {
@@ -75,7 +90,7 @@ func releaseFetcher(o ReleaseOptions) func(context.Context, string) ([]byte, err
 		if err != nil {
 			return nil, err
 		}
-		if !info.Mode().IsRegular() || info.Size() > release.MaxArchiveBytes {
+		if !info.Mode().IsRegular() || info.Size() > limit {
 			return nil, fmt.Errorf("invalid offline asset")
 		}
 		file, err := root.Open(name)
@@ -83,11 +98,11 @@ func releaseFetcher(o ReleaseOptions) func(context.Context, string) ([]byte, err
 			return nil, err
 		}
 		defer file.Close()
-		raw, err := io.ReadAll(io.LimitReader(file, release.MaxArchiveBytes+1))
+		raw, err := io.ReadAll(io.LimitReader(file, limit+1))
 		if err != nil {
 			return nil, err
 		}
-		if int64(len(raw)) > release.MaxArchiveBytes {
+		if int64(len(raw)) > limit {
 			return nil, fmt.Errorf("offline asset too large")
 		}
 		return raw, nil
@@ -122,68 +137,36 @@ func InstallRelease(ctx context.Context, o ReleaseOptions) (result ReleaseResult
 	}
 	defer func() { err = errors.Join(err, project.Remove(".aidlc-install.lock")) }()
 	fetch := releaseFetcher(o)
+	sumsRaw, err := fetch(ctx, "SHA256SUMS")
+	if err != nil {
+		return result, err
+	}
+	sums, err := release.ParseBundleSums(sumsRaw, o.Version)
+	if err != nil {
+		return result, err
+	}
+	name := release.BundleName(o.Version, o.Target)
+	archive, err := fetch(ctx, name)
+	if err != nil {
+		return result, err
+	}
+	_, entries, err := release.ValidateBundleArchive(archive, o.Version, o.Target, sums[name])
+	if err != nil {
+		return result, err
+	}
 	binaryData := map[string][]byte{}
-	commit, goVersion := "", ""
 	for _, product := range []string{"aidlc", "okf", "natural-japanese-go"} {
-		manifestName, sumsName := release.MetadataNames(product)
-		raw, err := fetch(ctx, manifestName)
-		if err != nil {
-			return result, err
+		binary := product
+		if strings.HasPrefix(o.Target, "windows/") {
+			binary += ".exe"
 		}
-		sums, err := fetch(ctx, sumsName)
-		if err != nil {
-			return result, err
-		}
-		m, a, err := release.ValidateManifest(raw, sums, product, o.Version, o.Target)
-		if err != nil {
-			return result, err
-		}
-		if commit == "" {
-			commit, goVersion = m.SourceCommit, m.GoVersion
-		} else if commit != m.SourceCommit || goVersion != m.GoVersion {
-			return result, fmt.Errorf("mixed source commit/toolchain")
-		}
-		archive, err := fetch(ctx, a.Archive)
-		if err != nil {
-			return result, err
-		}
-		data, err := release.ValidateBinary(archive, a)
-		if err != nil {
-			return result, err
-		}
-		binaryData[a.Binary] = data
-		entries, err := release.Unpack(archive, strings.HasSuffix(a.Archive, ".zip"), release.MaxArchiveBytes)
-		if err != nil {
-			return result, err
-		}
-		for name, raw := range entries {
-			if strings.HasPrefix(name, "LICENSES/") {
-				binaryData["licenses/"+product+"/"+strings.TrimPrefix(name, "LICENSES/")] = raw
+		binaryData[binary] = entries[binary]
+		prefix := "LICENSES/" + product + "/"
+		for p, b := range entries {
+			if strings.HasPrefix(p, prefix) {
+				binaryData["licenses/"+product+"/"+strings.TrimPrefix(p, prefix)] = b
 			}
 		}
-	}
-	manifestRaw, err := fetch(ctx, "aidlc-assets-manifest.json")
-	if err != nil {
-		return result, err
-	}
-	var dm release.DataManifest
-	if err := release.StrictJSON(manifestRaw, &dm); err != nil {
-		return result, err
-	}
-	if dm.Archive != "aidlc-assets_"+o.Version+".tar.gz" {
-		return result, fmt.Errorf("invalid source archive name")
-	}
-	sums, err := fetch(ctx, "aidlc-assets-SHA256SUMS")
-	if err != nil {
-		return result, err
-	}
-	archive, err := fetch(ctx, dm.Archive)
-	if err != nil {
-		return result, err
-	}
-	entries, err := release.ValidateData(manifestRaw, sums, archive, o.Version, commit)
-	if err != nil {
-		return result, err
 	}
 	temp, err := os.MkdirTemp("", "aidlc-release-")
 	if err != nil {
@@ -191,6 +174,9 @@ func InstallRelease(ctx context.Context, o ReleaseOptions) (result ReleaseResult
 	}
 	defer os.RemoveAll(temp)
 	for name, data := range entries {
+		if !strings.HasPrefix(name, "core/") && !strings.HasPrefix(name, "codex/") {
+			continue
+		}
 		p := filepath.Join(temp, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
 			return result, err

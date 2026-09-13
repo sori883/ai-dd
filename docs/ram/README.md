@@ -1,5 +1,24 @@
 # 開発プロジェクトRAM
 
+- [Windows directory同一性の修復05](decisions/2026-09-14-consolidated-release-bootstrap-repair-05.md): 短名・長名等の別表記を実在directoryの同一性で比較するtest修復。
+
+- [coverage子プロセス診断の修復04](decisions/2026-09-14-consolidated-release-bootstrap-repair-04.md): stdout/stderr分離と終了値を維持し、追加ホスト診断を許容する。
+
+- [Windows初回取得の修復03](decisions/2026-09-14-consolidated-release-bootstrap-repair-03.md): 先頭curlの選択、Start失敗診断の保持、候補testのstdout/stderr分離。Windows GREENは新HEADのCI待ち。
+
+- [Go trimpathと候補検証の修復02](decisions/2026-09-14-consolidated-release-bootstrap-repair-02.md): 実際のBuildInfo項目の厳密照合とnative版表示の完全一致。全30構成の静的確認と3OS実行を区別する。
+
+- [初回取得のreview修復01](decisions/2026-09-14-consolidated-release-bootstrap-repair-01.md): PowerShell公開呼出しの復帰・終了値と、manifestに依存しないarchive拒否検査。Windows動的検証は必須の未完gate。
+
+- [7配布物と初回取得のloop実装](decisions/2026-09-14-consolidated-release-bootstrap-loop.md): schema 2、7候補、2回取得・offline、既存配置保持、sh/PowerShell、8項目のTDD証拠とfinal境界。Windows実行・実候補起動は親finalへ残す。
+
+- [7配布物と自動選択による導入を実装する](decisions/2026-09-14-consolidated-release-assets-approved.md): ユーザーの直接承認。6環境の一式＋共通checksum、初回取得scriptとGo installerの二段階検査、3runtime配置を実装する。新版公開の可否は確認中。[具体計画](../design/consolidated-release-bootstrap-plan.md)。
+- [初回取得に使うOS標準ツール](research/2026-09-14-bootstrap-standard-tools.md): Context7と公式資料でcurl、PowerShell 5.1、SHA-256、ZIPのAPIを確認。固定取得先・HTTPS・安全なinstaller単体抽出を提案。Windows実行はCIで確認する。
+
+- [独立した5CLIをOS・CPUごとの一式にまとめる案](decisions/2026-09-14-consolidated-release-assets-proposal.md): ユーザーは添付数そのものの削減も希望。6環境の一式archiveと共通checksumで製品添付を43件から7件へ減らす提案。5実行ファイル・共通原稿・許諾を維持し、次版のinstallerと梱包形式を変更する必要がある。詳細計画と実装承認は未確定。
+
+- [コマンドだけでインストールを完了したい](decisions/2026-09-14-command-line-install-request.md): Assetsの手動選択をなくす希望。OS・CPU判定と初回取得を自動化し、既存Goインストーラーへ渡す[具体案](../design/command-line-install-entry-plan.md)を整理。公開済み43資材は維持し、sh/PowerShell入口の実装は提案段階。
+
 - [実候補Nativeの祖先root探索修復](decisions/2026-09-14-five-cli-native-root-fix.md): 祖先の通常aidlc/workflow fileでENOTDIRになる共有探索を修復し、複数root・IOエラー・明示rootの境界を維持。実測依存表も訂正。
 
 - [五CLIの独立review修復](decisions/2026-09-14-five-cli-release-011-review-fixes.md): runtime許諾保存、公開候補の正本・mode照合、observer転送、installer案内と役割別helpの5findingを修正。

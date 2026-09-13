@@ -18,8 +18,8 @@ import (
 
 const usage = `aidlc-install — Codex向け新規導入
 使い方: aidlc-install codex --release-version VERSION [--project-dir ROOT] [--release-dir DIR]
-指定したGitHub Releaseの3 runtimeと同版資材を検査してaidlc/bin/VERSIONへ配置します。
---release-dirは公開前候補／オフライン入力。通信と同じ検査を通します。
+指定したGitHub Releaseの5 binaryと同版資材を検査し、3 runtimeをaidlc/bin/VERSIONへ配置します。
+--release-dirは公開前候補／オフライン入力。6行のSHA256SUMSと実行環境のai-dd_VERSION_OS_ARCH archiveを置きます。通信と同じ検査を通し、再取得しません。
 既存fileは上書きしません。失敗時はPathsとPendingを確認し、部分配置を成功扱いしないでください。
 移転: 同じ版で --relocate --from-project-dir OLD_ROOT --from-binary OLD_AIDLC。3 runtimeのbytesを照合して既知の参照だけ更新します。
 版表示: aidlc-install --version（導入対象は--release-versionで指定）。

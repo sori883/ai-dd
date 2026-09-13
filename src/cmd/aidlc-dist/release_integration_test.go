@@ -4,12 +4,15 @@ package main
 
 import (
 	"bytes"
+	"debug/buildinfo"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"runtime/debug"
+	"slices"
 	"strings"
 	"testing"
 
@@ -21,128 +24,194 @@ import (
 type releaseExpectation struct{ Version, Commit, GoVersion string }
 
 func TestReleaseCandidateMetadataValidation(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name      string
-		change    func(*manifest, *releaseExpectation)
-		wantError bool
-	}{
-		{"matching six targets", func(*manifest, *releaseExpectation) {}, false},
-		{"missing expected version", func(_ *manifest, e *releaseExpectation) { e.Version = "" }, true},
-		{"missing expected commit", func(_ *manifest, e *releaseExpectation) { e.Commit = "" }, true},
-		{"missing expected go version", func(_ *manifest, e *releaseExpectation) { e.GoVersion = "" }, true},
-		{"version mismatch", func(m *manifest, _ *releaseExpectation) { m.Version = "other" }, true},
-		{"commit mismatch", func(m *manifest, _ *releaseExpectation) { m.SourceCommit = strings.Repeat("b", 40) }, true},
-		{"go version mismatch", func(m *manifest, _ *releaseExpectation) { m.GoVersion = "go1.26.5" }, true},
-		{"schema mismatch", func(m *manifest, _ *releaseExpectation) { m.SchemaVersion = 2 }, true},
-		{"missing target", func(m *manifest, _ *releaseExpectation) { m.Artifacts = m.Artifacts[:5] }, true},
-		{"extra target", func(m *manifest, _ *releaseExpectation) {
-			m.Artifacts = append(m.Artifacts, artifact{Target: "freebsd/amd64"})
-		}, true},
-		{"duplicate target", func(m *manifest, _ *releaseExpectation) { m.Artifacts[5] = m.Artifacts[0] }, true},
-		{"unknown target", func(m *manifest, _ *releaseExpectation) { m.Artifacts[5].Target = "freebsd/amd64" }, true},
+	t.Run("native version output", func(t *testing.T) {
+		e := releaseExpectation{"v0.1.2", strings.Repeat("a", 40), "go1.26.4"}
+		for _, product := range release.Products {
+			for _, change := range []string{"valid", "product", "version", "commit", "prefix", "suffix", "missing newline"} {
+				if product == "natural-japanese-go" && change == "commit" {
+					continue
+				}
+				t.Run(product+"/"+change, func(t *testing.T) {
+					output := product + " v0.1.2 (commit " + strings.Repeat("a", 40) + ")\n"
+					if product == "natural-japanese-go" {
+						output = "natural-japanese-go v0.1.2\n"
+					}
+					switch change {
+					case "product":
+						output = strings.Replace(output, product, "wrong-product", 1)
+					case "version":
+						output = strings.Replace(output, "v0.1.2", "v0.1.20", 1)
+					case "commit":
+						output = strings.Replace(output, strings.Repeat("a", 40), strings.Repeat("b", 40), 1)
+					case "prefix":
+						output = "extra\n" + output
+					case "suffix":
+						output += "extra\n"
+					case "missing newline":
+						output = strings.TrimSuffix(output, "\n")
+					}
+					err := validateNativeVersion([]byte(output), product, e)
+					if change == "valid" {
+						if err != nil {
+							t.Fatal(err)
+						}
+					} else if err == nil {
+						t.Fatal("incorrect native output accepted", change)
+					}
+				})
+			}
+		}
+	})
+	t.Run("binary build identity", func(t *testing.T) {
+		e := releaseExpectation{"v0.1.2", strings.Repeat("a", 40), "go1.26.4"}
+		for _, change := range []string{"valid", "path", "go", "os", "arch", "cgo", "trimpath", "missing cgo", "missing trimpath"} {
+			t.Run(change, func(t *testing.T) {
+				info := debug.BuildInfo{Path: "github.com/sori883/ai-dd/src/cmd/aidlc", GoVersion: e.GoVersion, Settings: []debug.BuildSetting{{Key: "GOOS", Value: "linux"}, {Key: "GOARCH", Value: "amd64"}, {Key: "CGO_ENABLED", Value: "0"}, {Key: "-trimpath", Value: "true"}}}
+				switch change {
+				case "path":
+					info.Path = "github.com/sori883/ai-dd/src/cmd/okf"
+				case "go":
+					info.GoVersion = "go1.26.5"
+				case "os":
+					info.Settings[0].Value = "windows"
+				case "arch":
+					info.Settings[1].Value = "arm64"
+				case "cgo":
+					info.Settings[2].Value = "1"
+				case "trimpath":
+					info.Settings[3].Value = "false"
+				case "missing cgo":
+					info.Settings = append(info.Settings[:2], info.Settings[3])
+				case "missing trimpath":
+					info.Settings = info.Settings[:3]
+				}
+				err := validateBinaryBuild(&info, "aidlc", "linux/amd64", e)
+				if change == "valid" {
+					if err != nil {
+						t.Fatal("valid trimpath binary without ldflags rejected", err)
+					}
+				} else if err == nil {
+					t.Fatal("invalid build accepted", change)
+				}
+			})
+		}
+	})
+	o := releaseFixture(t)
+	if err := packageRelease(o); err != nil {
+		t.Fatal(err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m, e := releaseMetadataFixture()
-			tt.change(&m, &e)
-			if err := validateReleaseMetadata(m, e); (err != nil) != tt.wantError {
-				t.Fatalf("metadata validation error = %v, wantError %v", err, tt.wantError)
+	original := mustRead(t, filepath.Join(o.OutputDir, release.BundleName(o.Version, "linux/amd64")))
+	for _, mode := range []string{"valid", "commit", "version", "toolchain", "target", "schema", "mode", "license", "source"} {
+		t.Run(mode, func(t *testing.T) {
+			entries, err := release.Unpack(original, false, release.MaxArchiveBytes)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var m release.BundleManifest
+			json.Unmarshal(entries["manifest.json"], &m)
+			modes := release.BundlePaths("linux/amd64")
+			switch mode {
+			case "commit":
+				m.SourceCommit = strings.Repeat("b", 40)
+			case "version":
+				m.Version = "v9"
+			case "toolchain":
+				m.GoVersion = "go1.26.5"
+			case "target":
+				m.Target = "linux/arm64"
+			case "schema":
+				m.SchemaVersion = 1
+			case "mode":
+				modes["okf"] = 0644
+			case "license":
+				entries["LICENSES/okf/yaml-NOTICE.txt"] = []byte("changed")
+			case "source":
+				entries["core/adr-template.md"] = []byte("changed")
+			}
+			for i := range m.Files {
+				f := &m.Files[i]
+				f.Size = int64(len(entries[f.Path]))
+				f.SHA256 = release.Hash(entries[f.Path])
+				f.Mode = modes[f.Path]
+			}
+			entries["manifest.json"], _ = json.Marshal(m)
+			raw, err := release.ArchiveModes(entries, modes, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = validateCandidateBundle(raw, releaseExpectation{o.Version, o.Commit, o.GoVersion}, "linux/amd64", release.Hash(raw))
+			if mode == "valid" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil {
+				t.Fatal("invalid candidate accepted", mode)
 			}
 		})
 	}
 }
 
-func releaseMetadataFixture() (manifest, releaseExpectation) {
-	e := releaseExpectation{"v0.1.0", strings.Repeat("a", 40), "go1.26.4"}
-	m := manifest{SchemaVersion: 1, Version: e.Version, SourceCommit: e.Commit, GoVersion: e.GoVersion}
-	for _, target := range fixtureTargets {
-		m.Artifacts = append(m.Artifacts, artifact{Target: target})
+func validateCandidateBundle(raw []byte, e releaseExpectation, target, digest string) error {
+	m, entries, err := release.ValidateBundleArchive(raw, e.Version, target, digest)
+	if err != nil {
+		return err
 	}
-	return m, e
-}
-
-func validateReleaseMetadata(m manifest, e releaseExpectation) error {
-	if e.Version == "" || e.Commit == "" || e.GoVersion == "" {
-		return fmt.Errorf("expected version, commit and Go version are required")
+	if e.Version == "" || e.Commit == "" || e.GoVersion == "" || m.SourceCommit != e.Commit || m.GoVersion != e.GoVersion {
+		return fmt.Errorf("candidate build identity differs")
 	}
-	if m.SchemaVersion != 1 || m.Version != e.Version || m.SourceCommit != e.Commit || m.GoVersion != e.GoVersion {
-		return fmt.Errorf("candidate metadata differs from expected release: %+v", e)
-	}
-	if len(m.Artifacts) != len(fixtureTargets) {
-		return fmt.Errorf("expected six targets, got %d", len(m.Artifacts))
-	}
-	remaining := make(map[string]bool, len(fixtureTargets))
-	for _, target := range fixtureTargets {
-		remaining[target] = true
-	}
-	for _, a := range m.Artifacts {
-		if !remaining[a.Target] {
-			return fmt.Errorf("unknown or duplicate target %q", a.Target)
+	for _, product := range release.Products {
+		if err := validateCandidateLicenses(product, raw, strings.HasPrefix(target, "windows/")); err != nil {
+			return err
 		}
-		delete(remaining, a.Target)
+	}
+	for p, b := range entries {
+		var want []byte
+		var err error
+		switch {
+		case strings.HasPrefix(p, "core/"):
+			want, err = core.Files.ReadFile(strings.TrimPrefix(p, "core/"))
+		case strings.HasPrefix(p, "codex/"):
+			want, err = codex.Files.ReadFile(strings.TrimPrefix(p, "codex/"))
+		case p == "LICENSES/PRODUCT.txt":
+			want, err = os.ReadFile("../../../LICENSE")
+		default:
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(want, b) {
+			return fmt.Errorf("candidate source differs: %s", p)
+		}
 	}
 	return nil
 }
 
 func TestReleaseCandidateNativeSelection(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name, target string
-		artifacts    []artifact
-		want         string
-		wantError    bool
-	}{
-		{"select matching target", "linux/arm64", []artifact{{Target: "linux/amd64", Binary: "aidlc", Archive: "amd64.tar.gz"}, {Target: "linux/arm64", Binary: "aidlc", Archive: "arm64.tar.gz"}}, "arm64.tar.gz", false},
-		{"select windows", "windows/amd64", []artifact{{Target: "windows/amd64", Binary: "aidlc.exe", Archive: "windows.zip"}}, "windows.zip", false},
-		{"missing native", "linux/arm64", []artifact{{Target: "linux/amd64", Binary: "aidlc", Archive: "amd64.tar.gz"}}, "", true},
-		{"duplicate native", "linux/amd64", []artifact{{Target: "linux/amd64", Binary: "aidlc", Archive: "one.tar.gz"}, {Target: "linux/amd64", Binary: "aidlc", Archive: "two.tar.gz"}}, "", true},
-		{"unknown native", "freebsd/amd64", []artifact{{Target: "freebsd/amd64", Binary: "aidlc", Archive: "one.tar.gz"}}, "", true},
-		{"binary mismatch", "linux/amd64", []artifact{{Target: "linux/amd64", Binary: "aidlc.exe", Archive: "one.tar.gz"}}, "", true},
-		{"format mismatch", "windows/amd64", []artifact{{Target: "windows/amd64", Binary: "aidlc.exe", Archive: "one.tar.gz"}}, "", true},
+	for _, target := range append(append([]string{}, release.Targets...), "freebsd/amd64") {
+		sums := map[string]string{}
+		for _, platform := range release.Targets {
+			sums[release.BundleName("v0.1.2", platform)] = strings.Repeat("a", 64)
+		}
+		got, err := selectBundleNative(sums, "v0.1.2", target)
+		if target == "freebsd/amd64" {
+			if err == nil {
+				t.Fatal("unknown target accepted")
+			}
+		} else if err != nil || got != release.BundleName("v0.1.2", target) {
+			t.Fatal(got, err)
+		}
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := selectReleaseNative(tt.artifacts, tt.target)
-			if (err != nil) != tt.wantError {
-				t.Fatalf("native selection error = %v, wantError %v", err, tt.wantError)
-			}
-			if err == nil && got.Archive != tt.want {
-				t.Fatalf("selected archive = %q, want %q", got.Archive, tt.want)
-			}
-		})
+	if _, err := selectBundleNative(map[string]string{}, "v0.1.2", "linux/amd64"); err == nil {
+		t.Fatal("missing native accepted")
 	}
 }
-
-func selectReleaseNative(artifacts []artifact, target string) (artifact, error) {
-	known := false
-	for _, candidate := range fixtureTargets {
-		if target == candidate {
-			known = true
-		}
+func selectBundleNative(sums map[string]string, version, target string) (string, error) {
+	name := release.BundleName(version, target)
+	if !release.ValidVersion(version) || !slices.Contains(release.Targets, target) || !release.ValidHash(sums[name]) {
+		return "", fmt.Errorf("missing or unsupported native bundle")
 	}
-	if !known {
-		return artifact{}, fmt.Errorf("unsupported native target %q", target)
-	}
-	var selected artifact
-	count := 0
-	for _, a := range artifacts {
-		if a.Target == target {
-			selected = a
-			count++
-		}
-	}
-	if count != 1 {
-		return artifact{}, fmt.Errorf("expected one native archive for %s, got %d", target, count)
-	}
-	binary, suffix := "aidlc", ".tar.gz"
-	if strings.HasPrefix(target, "windows/") {
-		binary, suffix = "aidlc.exe", ".zip"
-	}
-	if selected.Binary != binary || !strings.HasSuffix(selected.Archive, suffix) {
-		return artifact{}, fmt.Errorf("native archive format mismatch: %+v", selected)
-	}
-	return selected, nil
+	return name, nil
 }
 
 // Release entry points consume candidates built by the package job; they never rebuild.
@@ -164,29 +233,42 @@ func releaseInputs(t *testing.T) (string, releaseExpectation) {
 	return dir, e
 }
 
-func verifyReleaseCandidate(t *testing.T, dir string, e releaseExpectation) manifest {
+func verifyReleaseCandidate(t *testing.T, dir string, e releaseExpectation) {
 	t.Helper()
-	var m manifest
-	if err := json.Unmarshal(mustRead(t, filepath.Join(dir, "manifest.json")), &m); err != nil {
+	sums, err := release.ParseBundleSums(mustRead(t, filepath.Join(dir, "SHA256SUMS")), e.Version)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := validateReleaseMetadata(m, e); err != nil {
-		t.Fatal(err)
-	}
-	for _, product := range release.Products {
-		got := verifyProductDistribution(t, dir, product)
-		if err := validateReleaseMetadata(got, e); err != nil {
+	for _, target := range release.Targets {
+		name, err := selectBundleNative(sums, e.Version, target)
+		if err != nil {
 			t.Fatal(err)
 		}
-	}
-	if _, err := release.ValidateData(mustRead(t, filepath.Join(dir, "aidlc-assets-manifest.json")), mustRead(t, filepath.Join(dir, "aidlc-assets-SHA256SUMS")), mustRead(t, filepath.Join(dir, "aidlc-assets_"+e.Version+".tar.gz")), e.Version, e.Commit); err != nil {
-		t.Fatal(err)
+		if err := validateCandidateBundle(mustRead(t, filepath.Join(dir, name)), e, target, sums[name]); err != nil {
+			t.Fatal(err)
+		}
+		entries, err := release.Unpack(mustRead(t, filepath.Join(dir, name)), strings.HasPrefix(target, "windows/"), release.MaxArchiveBytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, product := range release.Products {
+			binary := product
+			if strings.HasPrefix(target, "windows/") {
+				binary += ".exe"
+			}
+			info, err := buildinfo.Read(bytes.NewReader(entries[binary]))
+			if err != nil {
+				t.Fatal(binary, err)
+			}
+			if err := validateBinaryBuild(info, product, target, e); err != nil {
+				t.Fatal(product, target, err)
+			}
+		}
 	}
 	files, err := os.ReadDir(dir)
-	if err != nil || len(files) != 43 {
-		t.Fatal("release requires 43 assets", len(files), err)
+	if err != nil || len(files) != 7 {
+		t.Fatal("release requires seven assets", len(files), err)
 	}
-	return m
 }
 
 func TestReleaseCandidateNative(t *testing.T) {
@@ -196,29 +278,33 @@ func TestReleaseCandidateNative(t *testing.T) {
 	base := t.TempDir()
 	bins := map[string]string{}
 	installedLicenses := map[string][]byte{}
+	sums, err := release.ParseBundleSums(mustRead(t, filepath.Join(dir, "SHA256SUMS")), e.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, err := selectBundleNative(sums, e.Version, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, entries, err := release.ValidateBundleArchive(mustRead(t, filepath.Join(dir, name)), e.Version, target, sums[name])
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, product := range release.Products {
-		mn, sn := release.MetadataNames(product)
-		_, a, err := release.ValidateManifest(mustRead(t, filepath.Join(dir, mn)), mustRead(t, filepath.Join(dir, sn)), product, e.Version, target)
-		if err != nil {
-			t.Fatal(err)
+		name := product
+		if runtime.GOOS == "windows" {
+			name += ".exe"
 		}
 		if product == "aidlc" || product == "okf" || product == "natural-japanese-go" {
-			entries, err := release.Unpack(mustRead(t, filepath.Join(dir, a.Archive)), strings.HasSuffix(a.Archive, ".zip"), release.MaxArchiveBytes)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for name, data := range entries {
-				if strings.HasPrefix(name, "LICENSES/") {
-					installedLicenses[filepath.Join("aidlc/bin", e.Version, "licenses", product, strings.TrimPrefix(name, "LICENSES/"))] = data
+			prefix := "LICENSES/" + product + "/"
+			for p, data := range entries {
+				if strings.HasPrefix(p, prefix) {
+					installedLicenses[filepath.Join("aidlc/bin", e.Version, "licenses", product, strings.TrimPrefix(p, prefix))] = data
 				}
 			}
 		}
-		payload, err := release.ValidateBinary(mustRead(t, filepath.Join(dir, a.Archive)), a)
-		if err != nil {
-			t.Fatal(err)
-		}
-		binary := filepath.Join(base, a.Binary)
-		if err := os.WriteFile(binary, payload, 0755); err != nil {
+		binary := filepath.Join(base, name)
+		if err := os.WriteFile(binary, entries[name], 0755); err != nil {
 			t.Fatal(err)
 		}
 		bins[product] = binary
@@ -226,7 +312,7 @@ func TestReleaseCandidateNative(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	for _, product := range release.Products {
 		out := distributionOK(t, base, bins[product], "--version")
-		if !bytes.Contains(out, []byte(e.Version)) {
+		if err := validateNativeVersion(out, product, e); err != nil {
 			t.Fatalf("%s version: %s", product, out)
 		}
 		if len(distributionOK(t, base, bins[product], "--help")) == 0 {
@@ -332,7 +418,7 @@ func TestReleaseCandidateNative(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(moved, ".git")); !os.IsNotExist(err) {
 		t.Fatal("created Git metadata")
 	}
-	t.Logf("same 43-asset candidate: five native CLIs, fresh install, role references, preservation and same-version relocation on %s; no live Codex execution", target)
+	t.Logf("same seven-asset candidate: five native CLIs, fresh install, role references, preservation and same-version relocation on %s; no live Codex execution", target)
 }
 
 func TestReleaseCandidateProjectDirectory(t *testing.T) {
@@ -357,4 +443,29 @@ func releaseProjectDirectory(t *testing.T, root string) string {
 		t.Fatal(err)
 	}
 	return actual
+}
+
+func validateBinaryBuild(info *debug.BuildInfo, product, target string, e releaseExpectation) error {
+	settings := map[string]string{}
+	for _, s := range info.Settings {
+		settings[s.Key] = s.Value
+	}
+	if info.GoVersion != e.GoVersion || settings["GOOS"]+"/"+settings["GOARCH"] != target {
+		return fmt.Errorf("binary toolchain/target differs")
+	}
+	if info.Path != "github.com/sori883/ai-dd/src/cmd/"+product || settings["CGO_ENABLED"] != "0" || settings["-trimpath"] != "true" {
+		return fmt.Errorf("binary product/build settings differ")
+	}
+	return nil
+}
+
+func validateNativeVersion(raw []byte, product string, e releaseExpectation) error {
+	want := product + " " + e.Version
+	if product != "natural-japanese-go" {
+		want += " (commit " + e.Commit + ")"
+	}
+	if string(raw) != want+"\n" {
+		return fmt.Errorf("native version output differs for %s", product)
+	}
+	return nil
 }

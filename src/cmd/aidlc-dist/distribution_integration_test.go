@@ -5,12 +5,9 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"github.com/sori883/ai-dd/src/internal/release"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -18,50 +15,9 @@ import (
 
 // TestDistributionArchives verifies candidates built outside this test, without executing them.
 func TestDistributionArchives(t *testing.T) {
-	dir := os.Getenv("AIDLC_DIST_DIR")
-	if dir == "" {
-		t.Skip("set AIDLC_DIST_DIR to the six-target candidate directory")
-	}
-	m := verifyDistribution(t, dir)
-	if len(m.Artifacts) != 6 {
-		t.Fatalf("six targets required, got %d", len(m.Artifacts))
-	}
-	t.Logf("verified six cross-built archives on %s/%s; foreign binaries were not executed", runtime.GOOS, runtime.GOARCH)
-}
-
-func verifyDistribution(t *testing.T, dir string) manifest {
-	return verifyProductDistribution(t, dir, "aidlc")
-}
-func verifyProductDistribution(t *testing.T, dir, product string) manifest {
-	t.Helper()
-	name, sums := release.MetadataNames(product)
-	raw := mustRead(t, filepath.Join(dir, name))
-	var old manifest
-	if err := json.Unmarshal(raw, &old); err != nil {
-		t.Fatal(err)
-	}
-	m, _, err := release.ValidateManifest(raw, mustRead(t, filepath.Join(dir, sums)), product, old.Version, "linux/amd64")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, a := range m.Artifacts {
-		if err := validateCandidateLicenses(product, mustRead(t, filepath.Join(dir, a.Archive)), strings.HasSuffix(a.Archive, ".zip")); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := release.ValidateBinary(mustRead(t, filepath.Join(dir, a.Archive)), a); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return old
-}
-
-func distributionPayload(t *testing.T, a artifact, raw []byte) []byte {
-	t.Helper()
-	entries, err := release.Unpack(raw, strings.HasSuffix(a.Archive, ".zip"), release.MaxArchiveBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return entries[a.Binary]
+	dir, e := releaseInputs(t)
+	verifyReleaseCandidate(t, dir, e)
+	t.Log("verified same six bundled archives; foreign binaries were not executed")
 }
 
 func distributionCommand(t *testing.T, dir, command string, args ...string) ([]byte, error) {
@@ -83,44 +39,6 @@ func distributionOK(t *testing.T, dir, command string, args ...string) []byte {
 	}
 	return out
 }
-func candidateBinary(t *testing.T, source, base, version, commit string) string {
-	t.Helper()
-	input := filepath.Join(base, "input")
-	if err := os.MkdirAll(input, 0700); err != nil {
-		t.Fatal(err)
-	}
-	target := runtime.GOOS + "/" + runtime.GOARCH
-	name := "aidlc-" + runtime.GOOS + "-" + runtime.GOARCH
-	if runtime.GOOS == "windows" {
-		name += ".exe"
-	}
-	flags := "-X github.com/sori883/ai-dd/src/internal/buildinfo.Version=" + version + " -X github.com/sori883/ai-dd/src/internal/buildinfo.Commit=" + commit
-	distributionOK(t, source, "go", "build", "-trimpath", "-ldflags", flags, "-o", filepath.Join(input, name), "./src/cmd/aidlc")
-	o := options{InputDir: input, OutputDir: filepath.Join(base, "archives"), Version: version, Commit: commit, GoVersion: runtime.Version(), Targets: []string{target}}
-	var stdout, stderr bytes.Buffer
-	if code := run(append(commandArgs(o), "--targets", target), &stdout, &stderr); code != 0 {
-		t.Fatalf("packaging code %d: %s", code, stderr.String())
-	}
-	m := verifyDistribution(t, o.OutputDir)
-	extracted := filepath.Join(base, "extracted")
-	if err := os.Mkdir(extracted, 0700); err != nil {
-		t.Fatal(err)
-	}
-	binary := filepath.Join(extracted, m.Artifacts[0].Binary)
-	payload := distributionPayload(t, m.Artifacts[0], mustRead(t, filepath.Join(o.OutputDir, m.Artifacts[0].Archive)))
-	if err := os.WriteFile(binary, payload, 0755); err != nil {
-		t.Fatal(err)
-	}
-	got := string(distributionOK(t, base, binary, "version"))
-	if strings.TrimSpace(got) != "aidlc "+version+" (commit "+commit+")" {
-		t.Fatalf("version mismatch: %q", got)
-	}
-	if got := distributionOK(t, base, binary, "--help"); !bytes.Contains(got, []byte("Usage:")) {
-		t.Fatal("help missing")
-	}
-	return fixtureBinaryPath(t, binary)
-}
-
 func fixtureBinaryPath(t *testing.T, binary string) string {
 	t.Helper()
 	actual, err := filepath.EvalSymlinks(binary)
@@ -201,18 +119,6 @@ func withCustomHook(t *testing.T, raw []byte) []byte {
 // Same-version relocation is exercised against the one verified release candidate.
 func TestDistributionJourney(t *testing.T) { TestReleaseCandidateNative(t) }
 
-func TestNaturalJapaneseDistributionArchives(t *testing.T) {
-	dir := os.Getenv("AIDLC_NATURAL_DIST_DIR")
-	if dir == "" {
-		t.Skip("set AIDLC_NATURAL_DIST_DIR")
-	}
-	m := verifyProductDistribution(t, dir, "natural-japanese-go")
-	if len(m.Artifacts) != 6 {
-		t.Fatal("six targets required")
-	}
-}
-func naturalDistributionPayload(t *testing.T, a artifact, raw []byte) []byte {
-	return distributionPayload(t, a, raw)
-}
+func TestNaturalJapaneseDistributionArchives(t *testing.T) { TestReleaseCandidateMetadata(t) }
 
 func TestNaturalJapaneseDistributionJourney(t *testing.T) { TestReleaseCandidateNative(t) }

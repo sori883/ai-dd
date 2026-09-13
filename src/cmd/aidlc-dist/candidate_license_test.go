@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -29,7 +30,7 @@ func TestCandidateLicense(t *testing.T) {
 				if err := packageArchives(o); err != nil {
 					t.Fatal(err)
 				}
-				name := tc.product + "_" + o.Version + "_linux_amd64.tar.gz"
+				name := release.BundleName(o.Version, "linux/amd64")
 				raw, err := os.ReadFile(filepath.Join(o.OutputDir, name))
 				if err != nil {
 					t.Fatal(err)
@@ -43,20 +44,15 @@ func TestCandidateLicense(t *testing.T) {
 				}
 				switch mutation {
 				case "missing":
-					delete(entries, tc.path)
+					delete(entries, "LICENSES/"+tc.product+"/"+strings.TrimPrefix(tc.path, "LICENSES/"))
 				case "modified":
-					entries[tc.path] = []byte("changed")
+					entries["LICENSES/"+tc.product+"/"+strings.TrimPrefix(tc.path, "LICENSES/")] = []byte("changed")
 				case "extra":
-					entries["LICENSES/extra.txt"] = []byte("unexpected")
+					entries["LICENSES/"+tc.product+"/extra.txt"] = []byte("unexpected")
 				}
-				bad, err := release.Archive(entries, tc.product, false)
+				bad, err := release.ArchiveModes(entries, release.BundlePaths("linux/amd64"), false)
 				if err != nil {
 					t.Fatal(err)
-				}
-				body := entries[tc.product]
-				a := release.Artifact{Binary: tc.product, BinarySHA256: release.Hash(body), BinarySize: int64(len(body)), Archive: name, ArchiveSHA256: release.Hash(bad), ArchiveSize: int64(len(bad))}
-				if _, err := release.ValidateBinary(bad, a); err != nil {
-					t.Fatal("recomputed transport metadata must pass before source comparison", err)
 				}
 				if err := validateCandidateLicenses(tc.product, bad, false); err == nil {
 					t.Fatal("incorrect candidate license accepted")
@@ -72,6 +68,25 @@ func validateCandidateLicenses(product string, raw []byte, windows bool) error {
 	entries, err := release.Unpack(raw, windows, release.MaxArchiveBytes)
 	if err != nil {
 		return err
+	}
+	bundled := entries["manifest.json"] != nil
+	if bundled {
+		selected := map[string][]byte{}
+		binary := product
+		if windows {
+			binary += ".exe"
+		}
+		selected[binary] = entries[binary]
+		if product == "natural-japanese-go" {
+			selected["README.md"] = entries["README.md"]
+		}
+		prefix := "LICENSES/" + product + "/"
+		for p, b := range entries {
+			if strings.HasPrefix(p, prefix) {
+				selected["LICENSES/"+strings.TrimPrefix(p, prefix)] = b
+			}
+		}
+		entries = selected
 	}
 	paths := map[string]string{"LICENSES/PRODUCT.txt": "../../../LICENSE", "LICENSES/Go-LICENSE.txt": filepath.Join(runtime.GOROOT(), "LICENSE"), "LICENSES/Go-PATENTS.txt": filepath.Join(runtime.GOROOT(), "PATENTS")}
 	if product != "natural-japanese-go" {
@@ -97,7 +112,7 @@ func validateCandidateLicenses(product string, raw []byte, windows bool) error {
 	}
 	checkMode := func(name string, mode fs.FileMode) error {
 		want := fs.FileMode(0644)
-		if name == binary {
+		if name == binary || (bundled && slices.Contains(release.Products, strings.TrimSuffix(name, ".exe"))) {
 			want = 0755
 		}
 		if mode != want {
@@ -168,9 +183,9 @@ func TestCandidateLicenseExecutableMode(t *testing.T) {
 			if err := packageArchives(o); err != nil {
 				t.Fatal(err)
 			}
-			name := "okf_" + o.Version + "_linux_amd64.tar.gz"
+			name := release.BundleName(o.Version, "linux/amd64")
 			if windows {
-				name = "okf_" + o.Version + "_windows_amd64.zip"
+				name = release.BundleName(o.Version, "windows/amd64")
 			}
 			raw, err := os.ReadFile(filepath.Join(o.OutputDir, name))
 			if err != nil {

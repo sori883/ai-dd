@@ -198,7 +198,7 @@ GoのPATENTSは、Googleが対象となるGo実装の特許利用を追加で許
 
 第5節のCodex、Git、gh、Actions、Bash、MCPは別途使う開発・実行ツールで、上表のライブラリのように本製品へ同梱していません。この節ではそれらのツール自体の全依存・利用規約の監査までは行っていません。将来ツール本体やそのコードをコピーして配布する場合は、その配布内容に応じた確認が必要です。
 
-Releaseは五製品各8件と共通data3件、計43件を添付します。Go 1.26.4のvendorにあるx/crypto・net・text・sysのLICENSE/PATENTSはGo rootと同一bytesであることを確認済みです。この確認を別Go版へ一般化しません。
+新版候補のReleaseは五製品と原稿をOS・CPU別の6一式にまとめ、SHA256SUMSを加えた7件です。公開済みv0.1.1の43件は保持します。Go 1.26.4のvendorにあるx/crypto・net・text・sysのLICENSE/PATENTSはGo rootと同一bytesであることを確認済みです。この確認を別Go版へ一般化しません。
 
 ## 7. 0.1.1の公開確認
 

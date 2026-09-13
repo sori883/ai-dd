@@ -1,12 +1,8 @@
 package main
 
 import (
-	"archive/tar"
 	"bytes"
-	"compress/gzip"
-	"encoding/json"
 	"github.com/sori883/ai-dd/src/internal/release"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -47,64 +43,6 @@ func releaseFixture(t *testing.T) options {
 	}
 	return o
 }
-func TestFiveProductManifest(t *testing.T) {
-	o := releaseFixture(t)
-	if err := packageRelease(o); err != nil {
-		t.Fatal(err)
-	}
-	entries, err := os.ReadDir(o.OutputDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 43 {
-		t.Fatalf("public asset count=%d", len(entries))
-	}
-	for _, product := range products {
-		name := "manifest.json"
-		if product != "aidlc" {
-			name = product + "-" + name
-		}
-		raw := mustRead(t, filepath.Join(o.OutputDir, name))
-		var m manifest
-		if err := json.Unmarshal(raw, &m); err != nil {
-			t.Fatal(err)
-		}
-		if len(m.Artifacts) != 6 || m.Version != o.Version || m.SourceCommit != o.Commit {
-			t.Fatalf("manifest %s: %+v", product, m)
-		}
-	}
-}
-func TestFiveProductArchive(t *testing.T) {
-	o := releaseFixture(t)
-	if err := packageRelease(o); err != nil {
-		t.Fatal(err)
-	}
-	for _, product := range products {
-		raw := mustRead(t, filepath.Join(o.OutputDir, product+"_"+o.Version+"_linux_amd64.tar.gz"))
-		gz, err := gzip.NewReader(bytes.NewReader(raw))
-		if err != nil {
-			t.Fatal(err)
-		}
-		tr := tar.NewReader(gz)
-		seen := map[string]bool{}
-		for {
-			h, err := tr.Next()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			seen[h.Name] = true
-		}
-		gz.Close()
-		for _, name := range []string{product, "LICENSES/PRODUCT.txt", "LICENSES/Go-LICENSE.txt", "LICENSES/Go-PATENTS.txt"} {
-			if !seen[name] {
-				t.Errorf("%s missing %s", product, name)
-			}
-		}
-	}
-}
 func TestReleaseLicenseInputs(t *testing.T) {
 	o := releaseFixture(t)
 	o.LicenseDir = t.TempDir()
@@ -116,37 +54,18 @@ func TestReleaseLicenseInputs(t *testing.T) {
 		t.Fatal("invalid input wrote candidate")
 	}
 }
-func TestVersionedAssets(t *testing.T) {
-	o := releaseFixture(t)
-	if err := packageRelease(o); err != nil {
-		t.Fatal(err)
-	}
-	raw := mustRead(t, filepath.Join(o.OutputDir, "aidlc-assets-manifest.json"))
-	var m struct {
-		Schema  int    `json:"schema_version"`
-		Version string `json:"version"`
-		Files   []any  `json:"files"`
-	}
-	if err := json.Unmarshal(raw, &m); err != nil {
-		t.Fatal(err)
-	}
-	if m.Schema != 1 || m.Version != o.Version || len(m.Files) == 0 {
-		t.Fatalf("assets manifest %+v", m)
-	}
-}
-
 func TestVersionedAssetsLicense(t *testing.T) {
 	o := releaseFixture(t)
 	if err := packageRelease(o); err != nil {
 		t.Fatal(err)
 	}
-	raw := mustRead(t, filepath.Join(o.OutputDir, "aidlc-assets_"+o.Version+".tar.gz"))
-	files, err := release.Unpack(raw, false, release.MaxSourceBytes)
+	raw := mustRead(t, filepath.Join(o.OutputDir, release.BundleName(o.Version, "linux/amd64")))
+	files, err := release.Unpack(raw, false, release.MaxArchiveBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(files["LICENSES/PRODUCT.txt"], mustRead(t, "../../../LICENSE")) {
-		t.Fatal("data archive missing canonical product license")
+		t.Fatal("source license missing")
 	}
 }
 
