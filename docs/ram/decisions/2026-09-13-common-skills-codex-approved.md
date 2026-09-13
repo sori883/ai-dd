@@ -90,3 +90,39 @@ exact commandは`go test -count=1 ./src/core/workflow -run '^TestRender'`。
 `go test -count=1 ./src/harness/codex -run '^Test(Distribution|Content)'`を確認する。
 3 commandはすべてexit 0。変更Go 2 fileへgofmtを適用し、`git diff --check`もexit 0。
 修正開始時のtreeはclean、終了HEADは開始HEADと同じ。commit・GitHub操作・全体検証は行っていない。
+
+## 独立review・final・Codex実機の結果
+
+独立review担当が`e59b4e7d27ed4fe2491df5a18d60d3b69bc2bb9d`を再確認し、上記2指摘の解消と、
+新たなP1/P2指摘がないことを報告した。同HEADのread-only finalでは、計画に記載した全10 commandが
+exit 0。全package test、race、vet、format、module差分、diff、workspace／OKF／一連の操作／配布を確認した。
+`gofmt -l src`の出力は空で、moduleの追加はない。
+
+固定Codex CLI `0.153.4`で、新規のGitなしprojectへ同HEADから配置した。
+通常のCodex画面でprojectを信頼し、配置した5つのhookの絶対コマンドを確認して有効化した。
+更新案内はSkipし、hookやsandboxの迂回オプションは使用していない。
+完成15 skillはskill validatorに合格し、5担当のTOMLもparserとCodex設定ロードで確認した。
+
+実sessionは`01a09a9a-4edb-7e91-b9aa-9732af8d43e7`、Intentは`0410218aa81c567e4dbe0cbbb240d945`。
+initializationを開始した状態で、次を実際のtool出力・native記録・配置済みbytesから親が照合した。
+
+- 15個のSKILL.mdを個別の単純catで読み、全件exit 0、出力は配置済み本文と完全一致。
+- 許可されていないaidlc-workerのspawnを1回試み、`agent is not allowed in current stage`で拒否。
+- 許可されたaidlc-stage-plannerを起動。taskは`/root/common_skills_planner`、native活動記録のchild IDは
+  `01a09a9d-2c18-7451-b76f-8cdaa84be362`。spawnの返値はtask名だけで、child IDは別の活動記録から確認した。
+- 子の実ファイル読取り、親へのsend_message、finalと実完了を確認。同じ子へのfollowupでも再読取り・報告・実完了を確認した。
+  worker予約用CLIの成功や、spawn完了だけを子の停止証拠にしていない。
+- 日本語補助CLIはexit 0。JSONのengineはKagome v2.11.0、dictionaryはUniDic v1.2.6で、入力「非常に重要。」を1件検出。
+- 試験前後のskill・担当・workflow・hooksを含む62fileのSHA-256が一致。Gitは作成せず、Intentはinitializationのactiveに保った。
+
+試験指示の「全CLIへ--project-dirを付ける」はhelpにも適用され、実行引数を受け付けないhelpでexit 2となった。
+親が正しい`aidlc assignment check --help`を実行するとexit 0。試験入力の問題として元の失敗も残す。
+また`assignment check`はworkerの予約ID用で、read-only担当のtask名を渡した試行は対象外だった。
+read-only担当の追加依頼では既存PreToolUseが現在のstage／step／definition／登録先を検査し、実際のfollowupが通った。
+並列helpの競合では全呼出しの終了確認後、同じSpace・Intent・sessionに限定したrecoverを1回行い、最終Tool欄は空だった。
+今回の実機は1担当による代表確認であり、全5担当の実業務や全Intent完走を実測したとの説明はしない。
+
+生の検証出力は`/Users/const/sori883/ai-dd-validation/common-skills-196/final-01/`と
+`candidate-01/evidence/`に保存した。後者の`native-verification.json`は親による本文・拒否・起動・再開・終了・SHA照合の結果である。
+この追記後に文書を含む最終差分を固定してread-only finalを確認し、対象PRのchecks成功後にmergeする。
+PRのmerge／CI結果はGitHubの当該PRを正本とし、Release公開は行わない。
