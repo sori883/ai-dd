@@ -50,7 +50,7 @@ go run ./src/cmd/aidlc-dist --input-dir /tmp/release-input \
 
 五製品それぞれ6archive・manifest・checksumの8件、計40件に、`aidlc-assets_VERSION.tar.gz`・`aidlc-assets-manifest.json`・`aidlc-assets-SHA256SUMS`の3件を加え、**43件**です。`aidlc`のmetadataは`manifest.json`と`SHA256SUMS`、他製品は製品名を接頭辞にします。schema 1は受取るpathと機能を固定し、新しい資材集合には対応するschemaとinstallerが必要です。
 
-各binary archiveには独自MIT、実GoのLICENSE・PATENTS、該当するYAML等の許諾を含めます。原稿を含む製品には13skillのLICENSEと出典も含め、日本語CLIには従来の5文書をbytesを変えず同梱します。data archive自身にも独自MITと原典表示を含めます。許諾入力のGo版・本文が梱包器の実Goと一致しなければ出力しません。
+各binary archiveには独自MIT、実GoのLICENSE・PATENTS、該当するYAML等の許諾を含めます。原稿を含む製品には13skillのLICENSEと出典も含め、日本語CLIには従来の5文書をbytesを変えず同梱します。data archive自身にも独自MITと原典表示を含めます。導入時には各runtime archiveの許諾文を`aidlc/bin/VERSION/licenses/PRODUCT/`へ保持します。VERSIONは導入したRelease名、PRODUCTはruntimeの製品名です。許諾入力のGo版・本文が梱包器の実Goと一致しなければ出力しません。
 
 ## GitHub Actionsと公開
 

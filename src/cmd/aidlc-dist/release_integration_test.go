@@ -195,11 +195,23 @@ func TestReleaseCandidateNative(t *testing.T) {
 	target := runtime.GOOS + "/" + runtime.GOARCH
 	base := t.TempDir()
 	bins := map[string]string{}
+	installedLicenses := map[string][]byte{}
 	for _, product := range release.Products {
 		mn, sn := release.MetadataNames(product)
 		_, a, err := release.ValidateManifest(mustRead(t, filepath.Join(dir, mn)), mustRead(t, filepath.Join(dir, sn)), product, e.Version, target)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if product == "aidlc" || product == "okf" || product == "natural-japanese-go" {
+			entries, err := release.Unpack(mustRead(t, filepath.Join(dir, a.Archive)), strings.HasSuffix(a.Archive, ".zip"), release.MaxArchiveBytes)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for name, data := range entries {
+				if strings.HasPrefix(name, "LICENSES/") {
+					installedLicenses[filepath.Join("aidlc/bin", e.Version, "licenses", product, strings.TrimPrefix(name, "LICENSES/"))] = data
+				}
+			}
 		}
 		payload, err := release.ValidateBinary(mustRead(t, filepath.Join(dir, a.Archive)), a)
 		if err != nil {
@@ -239,12 +251,17 @@ func TestReleaseCandidateNative(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Paths) != len(expected)+3 {
+	if len(result.Paths) != len(expected)+3+len(installedLicenses) {
 		t.Fatal("installed count", len(result.Paths))
 	}
 	for _, a := range expected {
 		if !bytes.Equal(mustRead(t, filepath.Join(root, a.Path)), a.Data) {
 			t.Fatal("source mismatch", a.Path)
+		}
+	}
+	for name, want := range installedLicenses {
+		if got := mustRead(t, filepath.Join(root, name)); !bytes.Equal(got, want) {
+			t.Fatal("installed license differs", name)
 		}
 	}
 	before := snapshotFixture(t, root, result.Paths)
@@ -297,6 +314,11 @@ func TestReleaseCandidateNative(t *testing.T) {
 	}
 	writeFixture(t, moved, skill, original)
 	distributionOK(t, moved, bins["aidlc-install"], relocateArgs...)
+	for name, want := range installedLicenses {
+		if got := mustRead(t, filepath.Join(moved, name)); !bytes.Equal(got, want) {
+			t.Fatal("relocated license differs", name)
+		}
+	}
 	hooks := mustRead(t, filepath.Join(moved, ".codex/hooks.json"))
 	if !bytes.Contains(hooks, []byte(customHook)) || bytes.Contains(hooks, []byte(root)) {
 		t.Fatal("custom hook/root changed")

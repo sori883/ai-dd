@@ -269,13 +269,13 @@ jobs:
           done < "$RUNNER_TEMP/releases.tsv"
           notes="$RUNNER_TEMP/release-notes.md"
           cat > "$notes" <<EOF_NOTES
-          AI-DLC $AIDLC_RELEASE_VERSION の配布候補です。まだ一般公開していません。
+          AI-DD $AIDLC_RELEASE_VERSION の配布候補です。まだ一般公開していません。
 
           対象commit: $AIDLC_RELEASE_COMMIT
           build Go版: $AIDLC_RELEASE_GO_VERSION
           対応環境: macOS・Linux・Windows、それぞれamd64・arm64。
 
-          OS・CPUに合うarchiveとSHA256SUMS、manifest.jsonを取得し、SHA-256を照合してから空のdirectoryへ展開してください。
+          OS・CPUに合うaidlc-install_${AIDLC_RELEASE_VERSION}_OS_ARCH.tar.gz（Windowsは.zip）とaidlc-install-SHA256SUMS、aidlc-install-manifest.jsonを取得し、SHA-256を照合してから空のdirectoryへ展開してください。
           展開したaidlc-installの--versionと--helpを確認し、aidlc-install codex --release-version $AIDLC_RELEASE_VERSION --project-dir ROOTで新規配置します。
           指定版のruntimeと共通資材を取得します。Codex本体の導入は別途必要です。
           詳しい取得・照合・配置手順: https://github.com/$GH_REPO/blob/$AIDLC_RELEASE_COMMIT/docs/distribution.md
@@ -286,4 +286,4 @@ jobs:
           files=("$RUNNER_TEMP/dist-candidate/"*)
           [[ ${#files[@]} -eq 43 ]] || { echo '候補ファイルは43個必要です'; exit 1; }
           gh release create "$RELEASE_TAG" --verify-tag --draft \
-            --title "AI-DLC $AIDLC_RELEASE_VERSION" --notes-file "$notes" "${files[@]}"
+            --title "AI-DD $AIDLC_RELEASE_VERSION" --notes-file "$notes" "${files[@]}"

@@ -254,3 +254,7 @@ Issue #200は実装とv0.1.1公開を含む。PRは`Refs #200`で関連付け、
 原稿・設定の変更に伴う旧test期待は新入口へ移す。旧runtime journeyの配置setupは内部install関数のfixtureとし、実Release CLIの検査は同じ43資材を使うReleaseCandidateNativeへ集約する。後者は五CLIの版・help、指定版導入、知識作成・検索、自然文検査、再配置拒否と同版移転を行い、再buildしたbinaryで代用しない。loopではtagged observer/metadataの小testだけ実行する。exact commandとRED/GREENは[loop RAM](../ram/decisions/2026-09-13-five-cli-release-011-loop.md)を参照する。
 
 公開buildをGo 1.26.4へ固定して実GOROOTの許諾入力を照合する。品質CIのstable matrixは保持する。梱包は全六target必須で、部分target集合を公開候補として成功させない。
+
+## 独立reviewの修復単位
+
+work_unit_id `five-cli-release-011-review-fixes`として、runtime許諾の保存と移転照合、同commit正本による公開候補の許諾集合・bytes・mode照合、observerのOKF絶対path転送、draft取得案内、日常操作の役割別helpを順に修復する。既存承認内の欠落修復であり、schema・旧互換・Rule出力認証は拡張しない。所有file・exact targeted command・RED/GREENは[修復RAM](../ram/decisions/2026-09-14-five-cli-release-011-review-fixes.md)に記録する。

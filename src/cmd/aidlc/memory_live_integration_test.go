@@ -305,7 +305,7 @@ func TestMemoryMetadataLiveHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(cfg.Binary, "__hook", "--project-dir", cfg.Root)
+	cmd := observerHookCommand(context.Background(), cfg.Binary, cfg.Root)
 	cmd.Stdin = bytes.NewReader(input)
 	output, err := cmd.Output()
 	if err != nil {

@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [五CLIの独立review修復](decisions/2026-09-14-five-cli-release-011-review-fixes.md): runtime許諾保存、公開候補の正本・mode照合、observer転送、installer案内と役割別helpの5findingを修正。
+
 - [五CLIのRule照合とPost責務](decisions/2026-09-13-five-cli-hook-evidence-clarification.md): 現行説明の誤記を訂正し、bind時のRule保存・次Pre照合と一致IDのPost解放を維持する。
 
 - [五CLI・指定版導入のloop証拠](decisions/2026-09-13-five-cli-release-011-loop.md): 7sliceのTDD、43資材・許諾・版別導入、既存fixtureと実候補検査の区別、Go 1.26.4固定、末尾検証とfinal残件。

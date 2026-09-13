@@ -45,6 +45,9 @@ func verifyProductDistribution(t *testing.T, dir, product string) manifest {
 		t.Fatal(err)
 	}
 	for _, a := range m.Artifacts {
+		if err := validateCandidateLicenses(product, mustRead(t, filepath.Join(dir, a.Archive)), strings.HasSuffix(a.Archive, ".zip")); err != nil {
+			t.Fatal(err)
+		}
 		if _, err := release.ValidateBinary(mustRead(t, filepath.Join(dir, a.Archive)), a); err != nil {
 			t.Fatal(err)
 		}

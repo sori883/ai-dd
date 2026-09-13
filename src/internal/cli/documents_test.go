@@ -33,3 +33,10 @@ func TestIntentDocumentsLowercaseHelp(t *testing.T) {
 		}
 	}
 }
+
+func TestSplitRuntimeHelp(t *testing.T) {
+	text, ok := Help([]string{"intent", "documents", "--help"})
+	if !ok || !strings.Contains(text, "okf create --intent-id") || strings.Contains(text, "memory create") || !strings.Contains(text, "aidlc/bin/VERSION/okf") {
+		t.Fatalf("incorrect knowledge CLI guidance: %s", text)
+	}
+}

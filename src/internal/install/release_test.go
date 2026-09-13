@@ -138,7 +138,7 @@ func TestReleaseAssetValidationCandidate(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(r.Paths) != 74 {
+			if len(r.Paths) != 83 {
 				t.Fatalf("installed %d files", len(r.Paths))
 			}
 			for _, name := range []string{"aidlc", "okf", "natural-japanese-go"} {
@@ -251,7 +251,7 @@ func TestReleaseAssetValidationOffline(t *testing.T) {
 		}
 	}
 	r, err := InstallRelease(context.Background(), ReleaseOptions{Root: t.TempDir(), Version: "v0.1.1", Target: "linux/amd64", Directory: dir})
-	if err != nil || len(r.Paths) != 74 {
+	if err != nil || len(r.Paths) != 83 {
 		t.Fatalf("offline %+v %v", r, err)
 	}
 }
@@ -285,5 +285,80 @@ func TestInstallerCommandRelocation(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(next, ".codex/hooks.json"))
 	if err != nil || bytes.Contains(raw, []byte(old)) {
 		t.Fatalf("old hook path remains %s %v", raw, err)
+	}
+}
+
+func TestReleaseLicenseRetention(t *testing.T) {
+	for _, mode := range []string{"fresh", "collision", "partial", "relocate", "tampered", "missing"} {
+		t.Run(mode, func(t *testing.T) {
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			o := ReleaseOptions{Root: root, Version: "v0.1.1", Target: "linux/amd64", fetch: candidateFetch(candidateFiles(t))}
+			path := "aidlc/bin/v0.1.1/licenses/okf/PRODUCT.txt"
+			if mode == "collision" {
+				if err := os.MkdirAll(filepath.Dir(filepath.Join(root, path)), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(root, path), []byte("user"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if mode == "partial" {
+				o.write = func(root, path string, data []byte, mode uint32) error {
+					if strings.HasPrefix(path, "aidlc/bin/v0.1.1/licenses/") {
+						return errors.New("license write failed")
+					}
+					return os.WriteFile(filepath.Join(root, path), data, os.FileMode(mode))
+				}
+			}
+			r, err := InstallRelease(t.Context(), o)
+			if mode == "collision" {
+				if err == nil || len(r.Paths) != 0 {
+					t.Fatal("license collision accepted", r, err)
+				}
+				return
+			}
+			if mode == "partial" {
+				if err == nil || len(r.Paths) == 0 || len(r.Pending) == 0 || !strings.HasPrefix(r.Pending[0], "aidlc/bin/v0.1.1/licenses/") {
+					t.Fatal("license failure lost partial result", r, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, product := range []string{"aidlc", "okf", "natural-japanese-go"} {
+				raw, err := os.ReadFile(filepath.Join(root, "aidlc/bin/v0.1.1/licenses", product, "PRODUCT.txt"))
+				if err != nil || string(raw) != "license" {
+					t.Fatal("missing exact release license", product, string(raw), err)
+				}
+			}
+			if mode == "fresh" {
+				return
+			}
+			if mode == "tampered" {
+				if err := os.WriteFile(filepath.Join(root, path), []byte("changed"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if mode == "missing" {
+				if err := os.Remove(filepath.Join(root, path)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			o.Relocate = true
+			o.FromProjectDir = root
+			o.FromBinary = r.Binaries.AIDLC
+			r, err = InstallRelease(t.Context(), o)
+			if mode == "tampered" || mode == "missing" {
+				if err == nil || len(r.Paths) != 0 {
+					t.Fatal("modified license accepted", r, err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

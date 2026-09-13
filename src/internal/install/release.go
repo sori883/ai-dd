@@ -152,6 +152,15 @@ func InstallRelease(ctx context.Context, o ReleaseOptions) (result ReleaseResult
 			return result, err
 		}
 		binaryData[a.Binary] = data
+		entries, err := release.Unpack(archive, strings.HasSuffix(a.Archive, ".zip"), release.MaxArchiveBytes)
+		if err != nil {
+			return result, err
+		}
+		for name, raw := range entries {
+			if strings.HasPrefix(name, "LICENSES/") {
+				binaryData["licenses/"+product+"/"+strings.TrimPrefix(name, "LICENSES/")] = raw
+			}
+		}
 	}
 	manifestRaw, err := fetch(ctx, "aidlc-assets-manifest.json")
 	if err != nil {
@@ -235,7 +244,11 @@ func InstallRelease(ctx context.Context, o ReleaseOptions) (result ReleaseResult
 		files = append(files, file{a.Path, a.Data, 0644})
 	}
 	for name, data := range binaryData {
-		files = append(files, file{filepath.ToSlash(filepath.Join("aidlc/bin", o.Version, name)), data, 0755})
+		mode := uint32(0755)
+		if strings.HasPrefix(name, "licenses/") {
+			mode = 0644
+		}
+		files = append(files, file{filepath.ToSlash(filepath.Join("aidlc/bin", o.Version, name)), data, mode})
 	}
 	slices.SortFunc(files, func(a, b file) int { return strings.Compare(a.path, b.path) })
 	for _, f := range files {
