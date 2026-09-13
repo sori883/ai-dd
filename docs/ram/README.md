@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [初回取得のreview修復01](decisions/2026-09-14-consolidated-release-bootstrap-repair-01.md): PowerShell公開呼出しの復帰・終了値と、manifestに依存しないarchive拒否検査。Windows動的検証は必須の未完gate。
+
 - [7配布物と初回取得のloop実装](decisions/2026-09-14-consolidated-release-bootstrap-loop.md): schema 2、7候補、2回取得・offline、既存配置保持、sh/PowerShell、8項目のTDD証拠とfinal境界。Windows実行・実候補起動は親finalへ残す。
 
 - [7配布物と自動選択による導入を実装する](decisions/2026-09-14-consolidated-release-assets-approved.md): ユーザーの直接承認。6環境の一式＋共通checksum、初回取得scriptとGo installerの二段階検査、3runtime配置を実装する。新版公開の可否は確認中。[具体計画](../design/consolidated-release-bootstrap-plan.md)。

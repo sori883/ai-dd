@@ -15,6 +15,8 @@ Get-FileHashと標準.NETのZipArchiveを使います。必要ツールがなけ
 SHA-256の一致を確認する前にarchiveを展開・実行しません。その後、正規fileのinstallerが直下に1個だけあることを
 確認し、64MiB以内で取り出します。Go製installerは元の一式全体を検査します。
 scriptは取得済みのdirectoryを`--release-dir`で渡し、同じarchiveを再取得しません。一時物は終了時に削除します。
+公開PowerShellのScriptBlock呼出しは処理後に呼出元へ戻り、`$LASTEXITCODE`へinstallerの終了値を残します。
+取得・検証失敗は1です。保存したscriptを`-File`で実行する場合は、同じ値をプロセスの終了値として返します。
 実行環境のCPUを使うため、エミュレーション中に物理CPUへ勝手に切り替えません。
 
 `aidlc-install`を既に持つ場合は、次の形で指定Releaseから直接導入できます。

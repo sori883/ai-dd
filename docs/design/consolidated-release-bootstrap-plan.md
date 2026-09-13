@@ -195,3 +195,15 @@ installer64MiBとtar末尾dataの拒否を追加の小testで固定した。
 実候補bootstrap入口は`go test -tags=integration -count=1 -v ./src/bootstrap -run '^TestBootstrapCandidateNative$'`。
 `AIDLC_DIST_DIR`と`AIDLC_RELEASE_VERSION`で同じ候補を渡す。これは親final/CI用でloopでは起動していない。
 Windowsの通常testはPowerShell 5.1/7を両方必要とし、macOS上のskipを成功と数えない。
+
+## Review修復01の順序と受入
+
+Issue #202の承認済み範囲で、`consolidated-release-bootstrap-repair-01`を単独writer、loopで実施する。
+R1はPowerShell公開ScriptBlockが呼出元へ戻り、LASTEXITCODEへ0/17/取得失敗を保持すること。
+既存-Fileもプロセス終了値を保持する。5.1/7の両経路にtestを先に追加し、実候補bootstrapにも公開経路を接続する。
+R2はarchiveの重複・link・path・mode拒否を、正常対照付きunpackBundle直接testで観測する。
+既存実装が通るtestはALREADY_GREENとし、人工REDは作らない。
+末尾は`go test -count=1 ./src/bootstrap -run '^TestBootstrap'`、
+`go test -count=1 ./src/internal/release -run '^TestBundleArchive'`、影響2package通常test、gofmt、diff-check。
+実候補bootstrapはintegrationの-listまで。PowerShellはローカル未導入のため動的RED/GREENを主張せず、
+旧HEADと公式実装の根拠を残し、Windows CIの5.1/7実行を必須gateへ残す。

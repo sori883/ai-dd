@@ -40,7 +40,10 @@ WindowsのPowerShellの場合：
 ```powershell
 $script = (Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/sori883/ai-dd/v0.1.2/src/bootstrap/install.ps1').Content
 & ([scriptblock]::Create($script)) 'v0.1.2' (Get-Location).Path
+$LASTEXITCODE
 ```
+
+PowerShellでは処理後に元の画面へ戻ります。最後の値が0なら成功、0以外なら表示されたエラーを確認してください。
 
 AI用の手順や設定と、日常用の`aidlc`・`okf`・`natural-japanese-go`が`aidlc/bin/v0.1.2/`へ配置されます。
 設定は各役割の絶対pathを参照します。取得済み一式をinstallerへ渡すので、同じファイルを再取得しません。

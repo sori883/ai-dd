@@ -70,10 +70,23 @@ func TestBootstrapCandidateNative(t *testing.T) {
 				args = append([]string{"-NoProfile", "-NonInteractive", "-File"}, args...)
 			}
 			cmd := exec.Command(shell, args...)
-			cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "BOOTSTRAP_HELPER=1", "BOOTSTRAP_FIXTURE="+dir, "BOOTSTRAP_CALLS="+calls, "BOOTSTRAP_VERSION="+version)
+			sentinel := filepath.Join(base, "sentinel")
+			if runtime.GOOS == "windows" {
+				cmd = powerShellBootstrapCommand(shell, script, version, root, "scriptblock", sentinel)
+			}
+			if cmd.Env == nil {
+				cmd.Env = os.Environ()
+			}
+			cmd.Env = append(cmd.Env, "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "BOOTSTRAP_HELPER=1", "BOOTSTRAP_FIXTURE="+dir, "BOOTSTRAP_CALLS="+calls, "BOOTSTRAP_VERSION="+version)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("native bootstrap failed: %v %s", err, out)
+			}
+			if runtime.GOOS == "windows" {
+				got, err := os.ReadFile(sentinel)
+				if err != nil || string(got) != "0" {
+					t.Fatal("public caller did not resume successfully", string(got), err)
+				}
 			}
 			var result struct{ Paths []string }
 			if err := json.Unmarshal(out, &result); err != nil {

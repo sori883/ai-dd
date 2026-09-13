@@ -100,4 +100,9 @@ try {
 } finally {
     if ($null -ne $tempDirectory) { Remove-Item -LiteralPath $tempDirectory -Recurse -Force }
 }
-exit $exitCode
+# A downloaded ScriptBlock must return to its caller; -File retains process status.
+if ($MyInvocation.MyCommand -is [System.Management.Automation.ExternalScriptInfo]) {
+    exit $exitCode
+}
+Set-Variable -Name LASTEXITCODE -Value $exitCode -Scope 1
+return
