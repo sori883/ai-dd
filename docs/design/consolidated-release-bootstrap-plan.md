@@ -235,3 +235,12 @@ coverage付きtest binaryの子プロセスがstderrへ追加するGo診断を�
 先にtargetedの-coverprofile付き実行でREDを確認し、stdout完全一致、stderr先頭sentinel、
 JSONのstderr非混在、終了値0/17を維持する。末尾は通常bootstrapとcoverage付きbootstrap、gofmt/diff-check。
 CIと同じ全package coverageは親finalへ追加する。production・実候補には変更/実行を加えない。
+
+## Windows path表記のtest修復05
+
+Issue #202 / PR #203、consolidated-release-bootstrap-repair-05、単独writer・loop。
+Windows CI34772300383は初回取得の終了値・公開caller復帰を通過し、8.3短名と長名の文字列比較で失敗した。
+productionの実在する絶対path正規化は維持し、testはos.Statとos.SameFileで同じdirectoryかを確認する。
+同一場所の別表記・別directory・存在しないpathの小testを先に追加する。引数数/順/版、空白・日本語を含む
+対象directory、cleanup、2回取得、終了値を維持する。候補testの同種仮定も調査する。
+末尾はbootstrap通常/coverage test、integrationの-list、gofmt/diff-check。Windows動的GREENと実候補は親CI/finalへ残す。

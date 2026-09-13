@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [Windows directory同一性の修復05](decisions/2026-09-14-consolidated-release-bootstrap-repair-05.md): 短名・長名等の別表記を実在directoryの同一性で比較するtest修復。
+
 - [coverage子プロセス診断の修復04](decisions/2026-09-14-consolidated-release-bootstrap-repair-04.md): stdout/stderr分離と終了値を維持し、追加ホスト診断を許容する。
 
 - [Windows初回取得の修復03](decisions/2026-09-14-consolidated-release-bootstrap-repair-03.md): 先頭curlの選択、Start失敗診断の保持、候補testのstdout/stderr分離。Windows GREENは新HEADのCI待ち。

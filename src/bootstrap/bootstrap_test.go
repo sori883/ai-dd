@@ -215,3 +215,24 @@ func TestBootstrapOutputStreams(t *testing.T) {
 		})
 	}
 }
+
+func TestBootstrapProjectDirectory(t *testing.T) {
+	project := filepath.Join(t.TempDir(), "project space 日本語")
+	if err := os.Mkdir(project, 0700); err != nil {
+		t.Fatal(err)
+	}
+	other := t.TempDir()
+	missing := filepath.Join(project, "missing")
+	for _, tc := range []struct {
+		name, actual, expected string
+		want                   bool
+	}{
+		{"same", project, project, true}, {"alternate spelling", project + string(os.PathSeparator) + ".", project, true}, {"different", other, project, false}, {"missing actual", missing, project, false}, {"missing expected", project, missing, false}, {"both missing", missing, missing, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sameProjectDirectory(tc.actual, tc.expected); got != tc.want {
+				t.Fatalf("same directory=%v want=%v", got, tc.want)
+			}
+		})
+	}
+}

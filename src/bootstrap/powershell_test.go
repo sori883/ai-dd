@@ -144,7 +144,7 @@ func TestBootstrapPowerShell(t *testing.T) {
 						}
 						got, _ := os.ReadFile(result)
 						args := strings.Split(string(got), "\n")
-						if len(args) != 7 || args[0] != "codex" || args[1] != "--release-version" || args[2] != version || args[3] != "--project-dir" || !strings.EqualFold(args[4], project) || args[5] != "--release-dir" {
+						if len(args) != 7 || args[0] != "codex" || args[1] != "--release-version" || args[2] != version || args[3] != "--project-dir" || !filepath.IsAbs(args[4]) || !sameProjectDirectory(args[4], project) || args[5] != "--release-dir" {
 							t.Fatal("arguments changed", args)
 						}
 						if _, err := os.Stat(args[6]); !os.IsNotExist(err) {

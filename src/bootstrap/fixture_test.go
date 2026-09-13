@@ -68,3 +68,12 @@ func bootstrapCommandOutput(cmd *exec.Cmd) ([]byte, []byte, error) {
 	err := cmd.Run()
 	return stdout.Bytes(), stderr.Bytes(), err
 }
+
+func sameProjectDirectory(actual, expected string) bool {
+	a, err := os.Stat(actual)
+	if err != nil || !a.IsDir() {
+		return false
+	}
+	b, err := os.Stat(expected)
+	return err == nil && b.IsDir() && os.SameFile(a, b)
+}
