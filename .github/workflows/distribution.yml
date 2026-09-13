@@ -89,7 +89,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: 1.26.x
+          go-version: 1.26.4
           cache: false
       - name: Require release validation entry points
         shell: bash
@@ -105,7 +105,13 @@ jobs:
           set -euo pipefail
           input="${RUNNER_TEMP}/dist-input"
           output="${RUNNER_TEMP}/dist-candidate"
-          natural_output="${RUNNER_TEMP}/natural-dist-candidate"
+          licenses="${RUNNER_TEMP}/release-licenses"
+          mkdir "$licenses"
+          cp LICENSE "$licenses/PRODUCT.txt"
+          cp "$(go env GOROOT)/LICENSE" "$licenses/Go-LICENSE.txt"
+          cp "$(go env GOROOT)/PATENTS" "$licenses/Go-PATENTS.txt"
+          go env GOVERSION > "$licenses/GO_VERSION"
+          cp src/distribution/licenses/*.txt "$licenses/"
           mkdir "$input"
           commit="$AIDLC_RELEASE_COMMIT"
           version="$AIDLC_RELEASE_VERSION"
@@ -116,22 +122,18 @@ jobs:
             for arch in amd64 arm64; do
               extension=""
               if [[ "$os" == windows ]]; then extension=".exe"; fi
-              CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath \
-                -ldflags "-X github.com/sori883/ai-dd/src/internal/buildinfo.Version=$version -X github.com/sori883/ai-dd/src/internal/buildinfo.Commit=$commit" \
-                -o "$input/aidlc-$os-$arch$extension" ./src/cmd/aidlc
-              CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath \
-                -ldflags "-X main.version=$version" \
-                -o "$input/natural-japanese-go-$os-$arch$extension" ./src/cmd/natural-japanese-go
+              for product in aidlc-install aidlc okf natural-japanese-go aidlc-dist; do
+                flags="-X github.com/sori883/ai-dd/src/internal/buildinfo.Version=$version -X github.com/sori883/ai-dd/src/internal/buildinfo.Commit=$commit"
+                if [[ "$product" == natural-japanese-go ]]; then flags="-X main.version=$version"; fi
+                CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath \
+                  -ldflags "$flags" -o "$input/$product-$os-$arch$extension" "./src/cmd/$product"
+              done
             done
           done
           go run ./src/cmd/aidlc-dist --input-dir "$input" --output-dir "$output" \
-            --version "$version" --commit "$commit" --go-version "$toolchain"
+            --version "$version" --commit "$commit" --go-version "$toolchain" --license-dir "$licenses"
           AIDLC_DIST_DIR="$output" AIDLC_RELEASE_GO_VERSION="$toolchain" go test -tags=integration -count=1 -v \
             ./src/cmd/aidlc-dist -run '^Test(DistributionArchives|ReleaseCandidateMetadata|ReleaseCandidateMetadataValidation|ReleaseCandidateNativeSelection|ReleaseCandidateProjectDirectory)$'
-          go run ./src/cmd/aidlc-dist --product natural-japanese-go --input-dir "$input" --output-dir "$natural_output" \
-            --version "$version" --commit "$commit" --go-version "$toolchain"
-          AIDLC_NATURAL_DIST_DIR="$natural_output" go test -tags=integration -count=1 -v \
-            ./src/cmd/aidlc-dist -run '^TestNaturalJapaneseDistributionArchives$'
 
       - name: Transfer verified candidate files
         id: upload
@@ -172,7 +174,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: 1.26.x
+          go-version: 1.26.4
           cache: false
       - name: Download this run's verified candidates
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -190,8 +192,6 @@ jobs:
           grep -Fxq TestReleaseCandidateNative <<< "$tests"
           AIDLC_DIST_DIR="$RUNNER_TEMP/dist-candidate" go test -tags=integration -count=1 -v \
             ./src/cmd/aidlc-dist -run '^TestReleaseCandidateNative$'
-      - name: Test native archive and manual update procedure
-        run: go test -tags=integration -count=1 -v ./src/cmd/aidlc-dist -run '^Test(DistributionJourney|NaturalJapaneseDistributionJourney)$'
 
   draft:
     name: Create verified Release draft
@@ -226,7 +226,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: 1.26.x
+          go-version: 1.26.4
           cache: false
       - name: Download this run's verified candidates
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -276,14 +276,14 @@ jobs:
           対応環境: macOS・Linux・Windows、それぞれamd64・arm64。
 
           OS・CPUに合うarchiveとSHA256SUMS、manifest.jsonを取得し、SHA-256を照合してから空のdirectoryへ展開してください。
-          展開したaidlcのversionと--helpを確認し、aidlc install codex --project-dir ROOTで新規配置します。
-          同梱資材はbinaryと同じ版です。Codex本体の導入は別途必要です。
+          展開したaidlc-installの--versionと--helpを確認し、aidlc-install codex --release-version $AIDLC_RELEASE_VERSION --project-dir ROOTで新規配置します。
+          指定版のruntimeと共通資材を取得します。Codex本体の導入は別途必要です。
           詳しい取得・照合・配置手順: https://github.com/$GH_REPO/blob/$AIDLC_RELEASE_COMMIT/docs/distribution.md
 
           公開前に正式版名、製品ライセンスと表示、初回成果物の内容を確認してください。
           3OSの候補実行検査は全6CPU構成の実行や、実Codex hookの動作成功を意味しません。
           EOF_NOTES
           files=("$RUNNER_TEMP/dist-candidate/"*)
-          [[ ${#files[@]} -eq 8 ]] || { echo '候補ファイルは8個必要です'; exit 1; }
+          [[ ${#files[@]} -eq 43 ]] || { echo '候補ファイルは43個必要です'; exit 1; }
           gh release create "$RELEASE_TAG" --verify-tag --draft \
             --title "AI-DLC $AIDLC_RELEASE_VERSION" --notes-file "$notes" "${files[@]}"

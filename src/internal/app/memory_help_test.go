@@ -27,7 +27,7 @@ func TestMemoryHelpHook(t *testing.T) {
 			}
 			file := filepath.Join(s.Root, "aidlc/.runtime/flow/sessions/session.txt")
 			before, beforeErr := os.ReadFile(file)
-			for _, command := range []string{"/opt/aidlc memory create --help", "/opt/aidlc help memory update", "/opt/aidlc intent reopen --help", "/opt/aidlc --help"} {
+			for _, command := range []string{"/opt/okf create --help", "/opt/okf help update", "/opt/aidlc intent reopen --help", "/opt/aidlc --help"} {
 				if out := hook(t, s, "PreToolUse", "Bash", "help", command, false); deny(out) {
 					t.Fatalf("normal help denied %+v", out)
 				}
@@ -36,7 +36,7 @@ func TestMemoryHelpHook(t *testing.T) {
 			if string(before) != string(after) || os.IsNotExist(beforeErr) != os.IsNotExist(afterErr) {
 				t.Fatal("help changed session")
 			}
-			for _, command := range []string{"/other/aidlc memory create --help", "/opt/aidlc memory create --help > file", "/opt/aidlc memory create --help; touch file", "/opt/aidlc memory create name --help", "/opt/aidlc unknown --help", "/opt/aidlc memory create --help --body-file file"} {
+			for _, command := range []string{"/other/aidlc memory create --help", "/opt/okf create --help > file", "/opt/okf create --help; touch file", "/opt/okf create name --help", "/opt/aidlc unknown --help", "/opt/okf create --help --body-file file"} {
 				if out := hook(t, s, "PreToolUse", "Bash", "bad", command, false); !deny(out) {
 					t.Fatalf("invalid help allowed %s", command)
 				}

@@ -12,6 +12,9 @@ import (
 )
 
 func contentAssets(common, host fs.FS, binary string) ([]harness.Asset, error) {
+	return splitContentAssets(common, host, SiblingBinaries(binary))
+}
+func splitContentAssets(common, host fs.FS, b Binaries) ([]harness.Asset, error) {
 	fragments := make(map[string]string)
 	err := fs.WalkDir(host, "skills", func(name string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -45,7 +48,10 @@ func contentAssets(common, host fs.FS, binary string) ([]harness.Asset, error) {
 		if err != nil {
 			return err
 		}
-		data = []byte(strings.ReplaceAll(string(data), "@@BINARY@@", shellQuote(binary)))
+		data, err = b.replace(data)
+		if err != nil {
+			return err
+		}
 		destination := ".agents/" + strings.TrimSuffix(name, ".tmpl")
 		assets = append(assets, harness.Asset{Path: destination, Data: data})
 		return nil
@@ -64,6 +70,10 @@ func contentAssets(common, host fs.FS, binary string) ([]harness.Asset, error) {
 			return fmt.Errorf("unexpected agent source %q", name)
 		}
 		body, err := core.RenderContent(common, name, fragments)
+		if err != nil {
+			return err
+		}
+		body, err = b.replace(body)
 		if err != nil {
 			return err
 		}
@@ -96,6 +106,10 @@ func contentAssets(common, host fs.FS, binary string) ([]harness.Asset, error) {
 		return nil, err
 	}
 	for name, data := range workflow {
+		data, err = b.replace(data)
+		if err != nil {
+			return nil, err
+		}
 		assets = append(assets, harness.Asset{Path: "aidlc/workflow/" + name, Data: data})
 	}
 	return assets, nil

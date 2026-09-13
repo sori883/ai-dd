@@ -25,10 +25,23 @@ func buildAIDLCBinary(t *testing.T) string {
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build: %v: %s", err, output)
 	}
+	for _, product := range []string{"okf", "natural-japanese-go"} {
+		cmd := exec.CommandContext(ctx, "go", "build", "-o", filepath.Join(filepath.Dir(binary), product), "../"+product)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("build %s: %v: %s", product, err, output)
+		}
+	}
 	return binary
 }
 func runAIDLCCLI(t *testing.T, binary, root string, input []byte, args ...string) []byte {
 	t.Helper()
+	if result, ok := fixtureInstall(binary, root, args); ok {
+		if result.code != 0 {
+			t.Fatalf("fixture install: %s", result.stderr)
+		}
+		return result.out
+	}
+	binary, args = fixtureProduct(binary, args)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, binary, args...)

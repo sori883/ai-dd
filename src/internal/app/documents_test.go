@@ -18,7 +18,7 @@ func TestIntentDocumentsCommands(t *testing.T) {
 	if _, err := install.Codex(root, "/opt/aidlc"); err != nil {
 		t.Fatal(err)
 	}
-	s := Service{Root: root, Binary: "/opt/aidlc"}
+	s := Service{Root: root, Binary: "/opt/aidlc", OKFBinary: "/opt/okf"}
 	store := flow.Store{Root: root, Space: "default"}
 	st, err := store.Create("Work")
 	if err != nil {
@@ -67,7 +67,7 @@ func TestIntentDocumentsHookRepair(t *testing.T) {
 	if _, err := install.Codex(root, "/opt/aidlc"); err != nil {
 		t.Fatal(err)
 	}
-	s := Service{Root: root, Binary: "/opt/aidlc"}
+	s := Service{Root: root, Binary: "/opt/aidlc", OKFBinary: "/opt/okf"}
 	store := flow.Store{Root: root, Space: "default"}
 	st, err := store.Create("Work")
 	if err != nil {
@@ -89,7 +89,7 @@ func TestIntentDocumentsHookRepair(t *testing.T) {
 		t.Fatal("documents read denied")
 	}
 	hook(t, s, "PostToolUse", "Bash", "read", "", false)
-	repair := "/opt/aidlc memory create codekb/custom --space default --body-file " + s.draftPath("session") + " --actor process:a --type Knowledge --title Feature --description Current"
+	repair := "/opt/okf create codekb/custom --space default --body-file " + s.draftPath("session") + " --actor process:a --type Knowledge --title Feature --description Current"
 	if deny(hook(t, s, "PreToolUse", "Bash", "repair", repair, false)) {
 		t.Fatal("declared output repair denied")
 	}
@@ -105,7 +105,7 @@ func TestIntentDocumentsUnregisteredInputRepair(t *testing.T) {
 	if _, err := install.Codex(root, "/opt/aidlc"); err != nil {
 		t.Fatal(err)
 	}
-	s := Service{Root: root, Binary: "/opt/aidlc"}
+	s := Service{Root: root, Binary: "/opt/aidlc", OKFBinary: "/opt/okf"}
 	store := flow.Store{Root: root, Space: "default"}
 	st, err := store.Create("Work")
 	if err != nil {
@@ -117,7 +117,7 @@ func TestIntentDocumentsUnregisteredInputRepair(t *testing.T) {
 		t.Fatal(err)
 	}
 	session := &Session{Space: "default", Intent: st.ID}
-	command := "/opt/aidlc memory create design/recovered --space default --body-file draft --actor process:a --type Requirements --title Req --description Req --intent-id " + st.ID
+	command := "/opt/okf create design/recovered --space default --body-file draft --actor process:a --type Requirements --title Req --description Req --intent-id " + st.ID
 	in := HookInput{Tool: "Bash"}
 	in.Input.Command = command
 	if !s.documentRepair(in, session, st) {

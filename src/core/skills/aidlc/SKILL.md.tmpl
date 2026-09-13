@@ -4,7 +4,7 @@ description: AI-DLCでIntentの計画、段階実行、担当依頼、会話承�
 ---
 # AI-DLCの進め方
 
-実行ファイルは @@BINARY@@（以下A）。Space未指定ならdefault。ID不明なら `A intent list --space SPACE` で確認し、名前を--idへ渡さない。引数は `A intent ACTION --help`。
+実行ファイルは @@AIDLC_BINARY@@（以下A）。Space未指定ならdefault。ID不明なら `A intent list --space SPACE` で確認し、名前を--idへ渡さない。引数は `A intent ACTION --help`。
 {{host "session-event"}}のsession IDを使い、各turnで `A intent switch --id ID --space SPACE --session SESSION` または `A session bind ID --space SPACE --session SESSION` が返すプロジェクトRule全文を読む。このスキルだけではRule読了にならない。
 `A intent procedure ID --space SPACE` で現在のstep_id、手順、担当、入力・文書outputsを取得する。段階変更・再開後は取り直す。操作選択は [aidlc-cli](../aidlc-cli/SKILL.md)、正確な引数・JSONは各CLI helpを読む。
 

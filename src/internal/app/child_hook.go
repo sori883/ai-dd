@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/sori883/ai-dd/src/internal/assignment"
-	"github.com/sori883/ai-dd/src/internal/cli"
 	"github.com/sori883/ai-dd/src/internal/flow"
 )
 
@@ -51,14 +50,14 @@ func (s Service) childPre(in HookInput) error {
 	}
 	if in.Tool == "Bash" {
 		argv, ok := shellWords(in.Input.Command)
-		if ok && len(argv) > 0 && sameBinary(argv[0], s.Binary) {
-			if _, help := cli.Help(argv[1:]); help {
+		if ok && len(argv) > 0 && s.productBinary(argv[0]) {
+			if s.productHelp(argv) {
 				return nil
 			}
 			if len(argv) == 2 && argv[1] == "version" {
 				return nil
 			}
-			r, err := cli.ParseCommand(argv[1:])
+			r, err := s.productCommand(argv)
 			if err != nil {
 				return invalid("unclassified product command must be returned to coordinator")
 			}

@@ -15,8 +15,6 @@ const helpText = `AI-DLC 6段階のIntent実行計画
 initialization → discoveryが必須。architecture-analysis / planning / tdd / integrationは計画で採否と順序を承認する。
 
 Usage:
-  aidlc install codex --project-dir <root>
-  aidlc install codex --relocate --project-dir <new-root> --from-project-dir <old-root> --from-binary <old-binary>
   aidlc space create <name> [--project-dir <path>]
   aidlc space list [--json] [--project-dir <path>]
   aidlc space [--json] [--project-dir <path>]
@@ -39,11 +37,6 @@ Usage:
   aidlc intent wait <id> --space <space> --expect <revision> --reason <text> --resume-condition <text>
   aidlc intent reopen <id> --space <space> --expect <revision> --reason <text> --step <step-id>
   aidlc unit claim|result|integrate|confirm|reassign <id> --space <space> --expect <revision> --file <request.json>
-  aidlc memory create <concept-id> --space <space> --body-file <body> --actor <actor> --type <type> --title <title> --description <description>
-  aidlc memory update <concept-id> --space <space> --body-file <body> --actor <actor> --expect <hash>
-  aidlc memory show <concept-id> --space <space>
-  aidlc memory search [query] --space <space> [--intent-id <id>]
-  aidlc memory rules|check --space <space>
   aidlc session bind <id> --space <space> --session <session> [--recover]
   aidlc session inspect --session <session>
   aidlc help | version

@@ -3,12 +3,13 @@ package cli
 import (
 	"bytes"
 	"github.com/sori883/ai-dd/src/internal/buildinfo"
+	"github.com/sori883/ai-dd/src/internal/okfcli"
 	"strings"
 	"testing"
 )
 
 func TestMemoryHelp(t *testing.T) {
-	for _, args := range [][]string{{"--help"}, {"help"}, {"memory", "--help"}, {"memory", "help"}, {"help", "memory"}, {"help", "memory", "create"}, {"memory", "create", "--help"}, {"memory", "update", "help"}, {"memory", "help", "update"}, {"intent", "review", "--help"}, {"unit", "claim", "--help"}, {"space", "switch", "--help"}, {"session", "bind", "--help"}, {"install", "codex", "--help"}} {
+	for _, args := range [][]string{{"--help"}, {"help"}, {"intent", "review", "--help"}, {"unit", "claim", "--help"}, {"space", "switch", "--help"}, {"session", "bind", "--help"}} {
 		var out, errout bytes.Buffer
 		calls := 0
 		code := Run(args, &out, &errout, buildinfo.Info{}, Dependencies{Execute: func(CommandRequest) ([]byte, error) { calls++; return nil, nil }, PrepareOutput: func() { calls++ }})
@@ -26,7 +27,7 @@ func TestMemoryHelp(t *testing.T) {
 	}
 	for _, action := range []string{"create", "update"} {
 		var out, errout bytes.Buffer
-		Run([]string{"memory", action, "--help"}, &out, &errout, buildinfo.Info{}, Dependencies{})
+		okfcli.Run([]string{action, "--help"}, &out, &errout, buildinfo.Info{}, okfcli.Dependencies{})
 		for _, want := range []string{"--body-file", "--type", "--title", "--description", "--actor", "--tag", "--status", "draft", "stable", "deprecated", "自由", "generated.at", "UTC", "--intent-id", "--sources-json", "--verified-json", "--metadata-json", "producer/version", "human:id", "process:id"} {
 			if !strings.Contains(out.String(), want) {
 				t.Errorf("%s help lacks %s", action, want)
@@ -46,8 +47,8 @@ func TestMemoryHelp(t *testing.T) {
 		}
 	}
 	var out, errout bytes.Buffer
-	Run([]string{"memory", "update"}, &out, &errout, buildinfo.Info{}, Dependencies{})
-	if !strings.Contains(errout.String(), "aidlc memory update --help") {
+	okfcli.Run([]string{"update"}, &out, &errout, buildinfo.Info{}, okfcli.Dependencies{})
+	if !strings.Contains(errout.String(), "okf update --help") {
 		t.Fatalf("parser error lacks help: %s", &errout)
 	}
 }

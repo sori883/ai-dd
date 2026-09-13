@@ -13,7 +13,7 @@ import (
 func TestDistribution(t *testing.T) {
 	t.Parallel()
 	// Pin every deployed asset after the authorized naming and attribution change.
-	raw, err := os.ReadFile("../../internal/install/testdata/upstream-skill-assets-sha256.json")
+	raw, err := os.ReadFile("../../internal/install/testdata/five-cli-assets-sha256.json")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,7 +11,7 @@ AIと対話しながら、ソフトウェアの開発を進めるための道具
 
 - **Codex**：AIと対話する環境。あらかじめ利用できる状態にします。
 - **プロジェクトフォルダ**：開発するアプリや資料を置く場所。新しく作る場合は空のフォルダで構いません。
-- **`aidlc`実行ファイル**：プロジェクトにAI-DLCを設定するためのファイルです。
+- **`aidlc-install`実行ファイル**：プロジェクトにAI-DLCを設定するためのファイルです。
 
 実行ファイルの取得先は[GitHub Releases](https://github.com/sori883/ai-dd/releases)です。お使いのOS・CPUに合う圧縮ファイルを展開して使います。
 
@@ -22,16 +22,16 @@ AIと対話しながら、ソフトウェアの開発を進めるための道具
 macOS・Linuxの場合：
 
 ```sh
-"/path/to/aidlc" install codex --project-dir "/path/to/project"
+"/path/to/aidlc-install" codex --release-version v0.1.1 --project-dir "/path/to/project"
 ```
 
 WindowsのPowerShellの場合：
 
 ```powershell
-& "C:\tools\aidlc.exe" install codex --project-dir "C:\projects\my-app"
+& "C:\tools\aidlc-install.exe" codex --release-version v0.1.1 --project-dir "C:\projects\my-app"
 ```
 
-AI用の手順や設定がプロジェクトに配置されます。設定後も実行ファイルを使うため、`aidlc`は削除・移動せず使い続ける場所に置いてください。
+AI用の手順や設定がプロジェクトに配置されます。三つのruntimeは`aidlc/bin/v0.1.1/`へ入り、設定は各役割の絶対pathを参照します。
 既存のAI-DLC設定と重なって配置できない場合や更新したい場合は、[配置・更新の手順](docs/distribution.md#新形式の候補を配置する前に)を参照してください。
 
 ### 3. Codexで最初の作業を依頼する
@@ -92,9 +92,9 @@ AIに「記録を確認して」と頼めます。文書はMarkdownなので、�
 
 ```sh
 aidlc --help
-aidlc install codex --help
+aidlc-install codex --release-version v0.1.1 --help
 aidlc intent list --help
-aidlc memory search --help
+okf search --help
 ```
 
 - [詳しい利用者ガイド](src/docs/user-guide.md)：工程、記録、再開のしくみ

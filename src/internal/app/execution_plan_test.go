@@ -36,7 +36,7 @@ func executionCLIFixture(t *testing.T) (Service, flow.State) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Service{Root: root, Binary: "/opt/aidlc"}, st
+	return Service{Root: root, Binary: "/opt/aidlc", OKFBinary: "/opt/okf"}, st
 }
 func TestExecutionPlanCLIPlanAndPrompt(t *testing.T) {
 	s, st := executionCLIFixture(t)

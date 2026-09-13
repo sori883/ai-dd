@@ -2,23 +2,23 @@
 
 AI-DLCは、AIと目的を整理し、必要な工程を選び、検査・レビュー・承認を経て開発を進める道具です。
 利用者は目的と判断を伝え、メインAIがCLIを使って進捗と文書を保存します。
-実行ファイルは`aidlc`一つで、工程定義、Codex用のSkill・専門担当・hookを内包します。
+導入用の`aidlc-install`が指定版のruntimeと資材を取得します。工程操作は`aidlc`、知識操作は`okf`、文章検査は`natural-japanese-go`が担当します。
 
 ## 最初に使うとき
 
 1. [配布・導入手順](../../docs/distribution.md)で利用環境に合う実行ファイルを用意します。
    取得先は[GitHub Releases](https://github.com/sori883/ai-dd/releases)です。公開版が用意されたらOS・CPUに合うarchiveを選び、照合後に展開します。
-   現在は候補検証と手動指定時のRelease下書き作成を整備した段階で、正式な公開版は未確定です。
+   現在は候補検証と手動指定時のRelease下書き作成を整備した段階で、公開版の有無はRelease一覧で確認してください。
    リポジトリから自分でbuildする場合は[開発手順](../../docs/development.md)を使います。
 2. 利用する通常のプロジェクトフォルダへ配置します。Gitの初期化や導入は不要です。次はmacOS/Linuxの例です。2つのパスを、用意した実行ファイルと
    対象プロジェクトの実際の絶対パスへ置き換えて実行します。
 
    ```sh
-   "/absolute/path/to/aidlc" install codex --project-dir "/absolute/path/to/project"
+   "/absolute/path/to/aidlc-install" codex --release-version v0.1.1 --project-dir "/absolute/path/to/project"
    ```
 
-   詳しい引数は`aidlc install codex --help`で確認できます。WindowsのPowerShellでは、引用した実行ファイルの
-   パスの前に`&`を置き、実際の`aidlc.exe`とプロジェクトのパスを指定します。
+   詳しい引数は`aidlc-install codex --release-version v0.1.1 --help`で確認できます。WindowsのPowerShellでは、引用した実行ファイルの
+   パスの前に`&`を置き、実際の`aidlc-install.exe`とプロジェクトのパスを指定します。
    既設環境の更新には配布手順の比較・更新・復旧を使います。fresh installは既存ファイルを上書きしません。
 3. Codexで対象プロジェクトを開き、生成されたhookの実行ファイル・対象パスを確認して、通常の信頼確認を行います。
    ファイルが生成されたことだけでは、hookの動作確認は終わっていません。
@@ -143,8 +143,8 @@ frontmatterはCLIが引数から揃え、日時も自動設定します。ADRの
 | 今の進捗を見る | `aidlc intent show --help` |
 | 現在回の手順・入力・出力・許可担当を読む | `aidlc intent procedure --help` |
 | 状態変更の履歴を見る | `aidlc intent history --help` |
-| 文書を作る・更新する | `aidlc memory create --help`、`aidlc memory update --help` |
-| 文書を探す・読む | `aidlc memory search --help`、`aidlc memory show --help` |
+| 文書を作る・更新する | `okf create --help`、`okf update --help` |
+| 文書を探す・読む | `okf search --help`、`okf show --help` |
 | 中断・再開・工程の再実行 | `aidlc intent pause --help`、`aidlc intent resume --help`、`aidlc intent reopen --help` |
 | 担当の割当と解放 | `aidlc assignment --help` |
 

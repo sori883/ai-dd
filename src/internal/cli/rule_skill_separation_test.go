@@ -28,7 +28,7 @@ func TestRuleSkillSeparationHelp(t *testing.T) {
 			t.Errorf("unreachable %v", args)
 		}
 	}
-	for key, wants := range map[string][]string{"intent procedure": {"固定path", "利用者", "Rule"}, "install codex": {"aidlc-cli", "okf-agent-memory", "4ファイル", "Pending"}, "intent documents": {"step_id", "metadata", "outputs"}, "intent review": {"coordinator_session", "target", "summary"}, "intent configure": {"test_results", "output_path", "exit_code"}} {
+	for key, wants := range map[string][]string{"intent procedure": {"固定path", "利用者", "Rule"}, "intent documents": {"step_id", "metadata", "outputs"}, "intent review": {"coordinator_session", "target", "summary"}, "intent configure": {"test_results", "output_path", "exit_code"}} {
 		text, ok := Help(append(strings.Fields(key), "--help"))
 		if !ok {
 			t.Fatal(key)

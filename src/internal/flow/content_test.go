@@ -19,7 +19,7 @@ func TestProcedureBoundaryComposedWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile("../install/testdata/upstream-skill-assets-sha256.json")
+	raw, err := os.ReadFile("../install/testdata/five-cli-assets-sha256.json")
 	if err != nil {
 		t.Fatal(err)
 	}

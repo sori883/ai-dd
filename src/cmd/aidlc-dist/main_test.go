@@ -10,7 +10,7 @@ import (
 )
 
 func commandArgs(o options) []string {
-	return []string{"--input-dir", o.InputDir, "--output-dir", o.OutputDir, "--version", o.Version, "--commit", o.Commit, "--go-version", o.GoVersion}
+	return []string{"--input-dir", o.InputDir, "--output-dir", o.OutputDir, "--version", o.Version, "--commit", o.Commit, "--go-version", o.GoVersion, "--license-dir", o.LicenseDir}
 }
 func TestDistCommand(t *testing.T) {
 	for _, tc := range []struct {
@@ -31,10 +31,10 @@ func TestDistCommand(t *testing.T) {
 		extra []string
 		count int
 	}{
-		{"default six", nil, 8}, {"native subset", []string{"--targets", "linux/arm64,windows/amd64"}, 4},
+		{"default six", nil, 43},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			o := archiveFixture(t)
+			o := releaseFixture(t)
 			var out, errs bytes.Buffer
 			if code := run(append(commandArgs(o), tc.extra...), &out, &errs); code != 0 || errs.Len() != 0 {
 				t.Fatalf("run=%d %s", code, errs.String())
@@ -53,7 +53,7 @@ func TestDistCommand(t *testing.T) {
 		{"missing args", nil, true}, {"unknown flag", []string{"--publish"}, false}, {"positional", []string{"extra"}, false}, {"empty targets", []string{"--targets="}, false}, {"duplicate target", []string{"--targets", "linux/amd64,linux/amd64"}, false}, {"unknown target", []string{"--targets", "plan9/amd64"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			o := archiveFixture(t)
+			o := releaseFixture(t)
 			args := append(commandArgs(o), tc.extra...)
 			if tc.empty {
 				args = nil
@@ -68,7 +68,7 @@ func TestDistCommand(t *testing.T) {
 		})
 	}
 	t.Run("operational failure", func(t *testing.T) {
-		o := archiveFixture(t)
+		o := releaseFixture(t)
 		if err := os.Mkdir(o.OutputDir, 0700); err != nil {
 			t.Fatal(err)
 		}
@@ -87,5 +87,12 @@ func TestProductCLI(t *testing.T) {
 	code := run([]string{"--product", "bad"}, &out, io.Discard)
 	if code != 2 {
 		t.Fatal(code)
+	}
+}
+
+func TestFiveProductVersion(t *testing.T) {
+	var out, errs bytes.Buffer
+	if code := run([]string{"--version"}, &out, &errs); code != 0 || !strings.HasPrefix(out.String(), "aidlc-dist ") || errs.Len() != 0 {
+		t.Fatalf("version: %d %q %q", code, out.String(), errs.String())
 	}
 }

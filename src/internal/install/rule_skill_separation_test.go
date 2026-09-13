@@ -20,7 +20,11 @@ func TestRuleSkillSeparationAssets(t *testing.T) {
 			t.Errorf("missing %s: %v", name, err)
 			continue
 		}
-		if !strings.Contains(string(raw), "/opt/aidlc") || strings.Contains(string(raw), "@@BINARY@@") {
+		wantBinary := "/opt/aidlc"
+		if name == "okf-agent-memory" {
+			wantBinary = "/opt/okf"
+		}
+		if !strings.Contains(string(raw), wantBinary) || strings.Contains(string(raw), "@@BINARY@@") {
 			t.Errorf("unresolved binary in %s", name)
 		}
 		if strings.Contains(string(raw), "WORKFLOW.md") {
@@ -50,7 +54,7 @@ func TestRuleSkillSeparationRelocate(t *testing.T) {
 	for _, mode := range []string{"success", "partial", "missing", "edited", "legacy", "symlink"} {
 		t.Run(mode, func(t *testing.T) {
 			root, oldRoot, oldBinary := relocateFixture(t)
-			paths := []string{".agents/skills/aidlc/SKILL.md", ".agents/skills/aidlc-cli/SKILL.md", ".agents/skills/okf-agent-memory/SKILL.md", ".codex/hooks.json"}
+			paths := []string{".agents/skills/aidlc/SKILL.md", ".agents/skills/aidlc-cli/SKILL.md", ".agents/skills/okf-agent-memory/SKILL.md", ".agents/skills/natural-japanese-go/SKILL.md", ".agents/skills/natural-japanese-go/references/cli.md", ".codex/hooks.json"}
 			p := filepath.Join(root, paths[1])
 			before := map[string]string{}
 			for _, name := range paths {
@@ -113,7 +117,7 @@ func TestRuleSkillSeparationRelocate(t *testing.T) {
 			}
 			for _, name := range paths {
 				raw, err := os.ReadFile(filepath.Join(root, name))
-				if err != nil || strings.Contains(string(raw), oldBinary) || !strings.Contains(string(raw), "/new/aidlc") {
+				if err != nil || strings.Contains(string(raw), oldBinary) || !strings.Contains(string(raw), "/new/") {
 					t.Fatalf("unmoved %s: %s %v", name, raw, err)
 				}
 			}

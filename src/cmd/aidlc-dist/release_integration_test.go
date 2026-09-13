@@ -13,7 +13,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sori883/ai-dd/src/core"
 	"github.com/sori883/ai-dd/src/harness/codex"
+	"github.com/sori883/ai-dd/src/internal/release"
 )
 
 type releaseExpectation struct{ Version, Commit, GoVersion string }
@@ -171,62 +173,144 @@ func verifyReleaseCandidate(t *testing.T, dir string, e releaseExpectation) mani
 	if err := validateReleaseMetadata(m, e); err != nil {
 		t.Fatal(err)
 	}
-	return verifyDistribution(t, dir)
+	for _, product := range release.Products {
+		got := verifyProductDistribution(t, dir, product)
+		if err := validateReleaseMetadata(got, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := release.ValidateData(mustRead(t, filepath.Join(dir, "aidlc-assets-manifest.json")), mustRead(t, filepath.Join(dir, "aidlc-assets-SHA256SUMS")), mustRead(t, filepath.Join(dir, "aidlc-assets_"+e.Version+".tar.gz")), e.Version, e.Commit); err != nil {
+		t.Fatal(err)
+	}
+	files, err := os.ReadDir(dir)
+	if err != nil || len(files) != 43 {
+		t.Fatal("release requires 43 assets", len(files), err)
+	}
+	return m
 }
 
 func TestReleaseCandidateNative(t *testing.T) {
 	dir, e := releaseInputs(t)
-	m := verifyReleaseCandidate(t, dir, e)
+	verifyReleaseCandidate(t, dir, e)
 	target := runtime.GOOS + "/" + runtime.GOARCH
-	a, err := selectReleaseNative(m.Artifacts, target)
-	if err != nil {
-		t.Fatal(err)
-	}
 	base := t.TempDir()
-	binary := filepath.Join(base, a.Binary)
-	payload := distributionPayload(t, a, mustRead(t, filepath.Join(dir, a.Archive)))
-	if err := os.WriteFile(binary, payload, 0755); err != nil {
-		t.Fatal(err)
+	bins := map[string]string{}
+	for _, product := range release.Products {
+		mn, sn := release.MetadataNames(product)
+		_, a, err := release.ValidateManifest(mustRead(t, filepath.Join(dir, mn)), mustRead(t, filepath.Join(dir, sn)), product, e.Version, target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		payload, err := release.ValidateBinary(mustRead(t, filepath.Join(dir, a.Archive)), a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		binary := filepath.Join(base, a.Binary)
+		if err := os.WriteFile(binary, payload, 0755); err != nil {
+			t.Fatal(err)
+		}
+		bins[product] = binary
 	}
-	binary = fixtureBinaryPath(t, binary)
-	// Keep OS environment variables, but make Git unavailable to every candidate command.
 	t.Setenv("PATH", t.TempDir())
-	if got := strings.TrimSpace(string(distributionOK(t, base, binary, "version"))); got != "aidlc "+e.Version+" (commit "+e.Commit+")" {
-		t.Fatalf("candidate version mismatch: %q", got)
-	}
-	if got := distributionOK(t, base, binary, "--help"); !bytes.Contains(got, []byte("Usage:")) {
-		t.Fatal("candidate help missing")
-	}
-	root := releaseProjectDirectory(t, filepath.Join(base, "project"))
-	var installed struct{ Paths []string }
-	if err := json.Unmarshal(distributionOK(t, root, binary, "install", "codex", "--project-dir", root), &installed); err != nil {
-		t.Fatal(err)
-	}
-	expected, err := codex.Distribution(root, binary)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var paths []string
-	for _, asset := range expected {
-		paths = append(paths, asset.Path)
-		if got := mustRead(t, filepath.Join(root, filepath.FromSlash(asset.Path))); !bytes.Equal(got, asset.Data) {
-			t.Fatalf("candidate embedded asset differs from checked-out source: %s", asset.Path)
+	for _, product := range release.Products {
+		out := distributionOK(t, base, bins[product], "--version")
+		if !bytes.Contains(out, []byte(e.Version)) {
+			t.Fatalf("%s version: %s", product, out)
+		}
+		if len(distributionOK(t, base, bins[product], "--help")) == 0 {
+			t.Fatal("missing help", product)
 		}
 	}
-	if !reflect.DeepEqual(installed.Paths, paths) {
-		t.Fatalf("installed paths differ: got %v, want %v", installed.Paths, paths)
+	root := releaseProjectDirectory(t, filepath.Join(base, "project"))
+	var result struct{ Paths []string }
+	installArgs := []string{"codex", "--release-version", e.Version, "--release-dir", dir, "--project-dir", root}
+	if err := json.Unmarshal(distributionOK(t, root, bins["aidlc-install"], installArgs...), &result); err != nil {
+		t.Fatal(err)
 	}
-	before := snapshotFixture(t, root, paths)
-	if _, err := distributionCommand(t, root, binary, "install", "codex", "--project-dir", root); err == nil {
-		t.Fatal("candidate reinstall accepted existing files")
+	suffix := ""
+	if runtime.GOOS == "windows" {
+		suffix = ".exe"
 	}
-	if !reflect.DeepEqual(before, snapshotFixture(t, root, paths)) {
-		t.Fatal("candidate reinstall modified existing files")
+	runtimePath := func(root, product string) string {
+		return filepath.Join(root, "aidlc", "bin", e.Version, product+suffix)
 	}
-	if _, err := os.Lstat(filepath.Join(root, ".git")); !os.IsNotExist(err) {
-		t.Fatalf("candidate installation created .git: %v", err)
+	b := codex.Binaries{AIDLC: runtimePath(root, "aidlc"), OKF: runtimePath(root, "okf"), Natural: runtimePath(root, "natural-japanese-go")}
+	expected, err := codex.DistributionFrom(root, b, core.Files, codex.Files)
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Logf("executed package candidate %s on %s; verified version/help/install/assets/preservation, not live AI hook execution", a.Archive, target)
+	if len(result.Paths) != len(expected)+3 {
+		t.Fatal("installed count", len(result.Paths))
+	}
+	for _, a := range expected {
+		if !bytes.Equal(mustRead(t, filepath.Join(root, a.Path)), a.Data) {
+			t.Fatal("source mismatch", a.Path)
+		}
+	}
+	before := snapshotFixture(t, root, result.Paths)
+	if _, err := distributionCommand(t, root, bins["aidlc-install"], installArgs...); err == nil {
+		t.Fatal("overwrite accepted")
+	}
+	if !reflect.DeepEqual(before, snapshotFixture(t, root, result.Paths)) {
+		t.Fatal("reinstall changed files")
+	}
+	text := filepath.Join(root, "text.md")
+	writeFixture(t, root, "text.md", []byte("非常に重要。\n"))
+	report := distributionOK(t, root, b.Natural, "--json", text)
+	if !bytes.Contains(report, []byte("forbidden_phrase")) {
+		t.Fatal(string(report))
+	}
+	writeFixture(t, root, "previous.json", report)
+	if out := distributionOK(t, root, b.Natural, "--json", "--baseline", filepath.Join(root, "previous.json"), text); !bytes.Contains(out, []byte("persisting")) {
+		t.Fatal(string(out))
+	}
+	distributionOK(t, root, b.OKF, "rules", "--space", "default")
+	distributionOK(t, root, b.AIDLC, "space", "list")
+	distributionOK(t, root, b.AIDLC, "space", "create", "example")
+	writeFixture(t, root, "body.md", []byte("Verified release candidate behavior.\n"))
+	distributionOK(t, root, b.OKF, "create", "codekb/release", "--space", "default", "--body-file", "body.md", "--actor", "process:test", "--type", "Design", "--title", "Release", "--description", "Verified release behavior")
+	if out := distributionOK(t, root, b.OKF, "search", "Release", "--space", "default"); !bytes.Contains(out, []byte("codekb/release")) {
+		t.Fatal(string(out))
+	}
+	users := map[string]string{"AGENTS.md": "user instructions\n", ".codex/config.toml": "# user config\n", ".codex/agents/user.toml": "# user agent\n", "aidlc/spaces/default/knowledge/codekb/user.md": "user knowledge\n", "aidlc/spaces/other/knowledge/user.md": "other Space\n", "aidlc/.runtime/user.txt": "user state\n"}
+	names := []string{}
+	for name, raw := range users {
+		writeFixture(t, root, name, []byte(raw))
+		names = append(names, name)
+	}
+	writeFixture(t, root, ".codex/hooks.json", withCustomHook(t, mustRead(t, filepath.Join(root, ".codex/hooks.json"))))
+	saved := snapshotFixture(t, root, names)
+	moved := filepath.Join(base, "moved")
+	if err := os.Rename(root, moved); err != nil {
+		t.Fatal(err)
+	}
+	relocateArgs := []string{"codex", "--release-version", e.Version, "--release-dir", dir, "--project-dir", moved, "--relocate", "--from-project-dir", root, "--from-binary", b.AIDLC}
+	skill := ".agents/skills/aidlc/SKILL.md"
+	original := mustRead(t, filepath.Join(moved, skill))
+	writeFixture(t, moved, skill, append(append([]byte{}, original...), []byte("unknown edit\n")...))
+	changed := snapshotFixture(t, moved, result.Paths)
+	if _, err := distributionCommand(t, moved, bins["aidlc-install"], relocateArgs...); err == nil {
+		t.Fatal("unknown edit accepted")
+	}
+	if !reflect.DeepEqual(changed, snapshotFixture(t, moved, result.Paths)) {
+		t.Fatal("failed relocation changed files")
+	}
+	writeFixture(t, moved, skill, original)
+	distributionOK(t, moved, bins["aidlc-install"], relocateArgs...)
+	hooks := mustRead(t, filepath.Join(moved, ".codex/hooks.json"))
+	if !bytes.Contains(hooks, []byte(customHook)) || bytes.Contains(hooks, []byte(root)) {
+		t.Fatal("custom hook/root changed")
+	}
+	if !reflect.DeepEqual(saved, snapshotFixture(t, moved, names)) {
+		t.Fatal("user data changed")
+	}
+	if string(mustRead(t, filepath.Join(moved, "text.md"))) != "非常に重要。\n" {
+		t.Fatal("input modified")
+	}
+	if _, err := os.Lstat(filepath.Join(moved, ".git")); !os.IsNotExist(err) {
+		t.Fatal("created Git metadata")
+	}
+	t.Logf("same 43-asset candidate: five native CLIs, fresh install, role references, preservation and same-version relocation on %s; no live Codex execution", target)
 }
 
 func TestReleaseCandidateProjectDirectory(t *testing.T) {

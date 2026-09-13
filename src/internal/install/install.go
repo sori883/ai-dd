@@ -3,6 +3,8 @@ package install
 
 import (
 	"fmt"
+	"github.com/sori883/ai-dd/src/core"
+	"github.com/sori883/ai-dd/src/harness"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -16,17 +18,9 @@ type Result struct{ Paths []string }
 
 // Codex installs initial assets. Existing target files are never replaced.
 func Codex(root, binary string) (result Result, err error) {
-	if !filepath.IsAbs(binary) {
-		return result, fmt.Errorf("binary must be absolute: %w", fs.ErrInvalid)
-	}
-	root, err = filepath.EvalSymlinks(root)
-	if err != nil {
-		return result, err
-	}
-	assets, err := codex.Distribution(root, binary)
-	if err != nil {
-		return result, err
-	}
+	return CodexFrom(root, codex.SiblingBinaries(binary), core.Files, codex.Files)
+}
+func installAssets(root string, assets []harness.Asset) (result Result, err error) {
 	project, err := os.OpenRoot(root)
 	if err != nil {
 		return result, err

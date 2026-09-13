@@ -7,7 +7,7 @@ import (
 
 func TestRelocationCLI(t *testing.T) {
 	valid := []string{"install", "codex", "--relocate", "--project-dir", "/new", "--from-project-dir", "/old/missing", "--from-binary", "/old/aidlc"}
-	if _, err := ParseCommand(valid); err != nil {
+	if _, err := ParseCommand(valid); err == nil {
 		t.Fatal(err)
 	}
 	if _, err := ParseCommand([]string{"unit", "reassign", strings.Repeat("a", 32), "--space", "default", "--expect", "1", "--file", "request.json"}); err != nil {
@@ -26,7 +26,7 @@ func TestRelocationCLI(t *testing.T) {
 	for _, tc := range []struct {
 		action []string
 		words  []string
-	}{{[]string{"install", "codex", "--help"}, []string{"--relocate", "--from-project-dir", "--from-binary", "hooks.json", "trust", "部分", "再試行"}}, {[]string{"unit", "reassign", "--help"}, []string{"previous_run_stopped", "true", "needs_confirmation", "reason", "run_id", "再試行"}}} {
+	}{{[]string{"unit", "reassign", "--help"}, []string{"previous_run_stopped", "true", "needs_confirmation", "reason", "run_id", "再試行"}}} {
 		text, ok := Help(tc.action)
 		if !ok {
 			t.Fatal("missing help")
@@ -41,7 +41,7 @@ func TestRelocationCLI(t *testing.T) {
 
 func TestRelocationCLIRootHelp(t *testing.T) {
 	text, ok := Help([]string{"--help"})
-	if !ok || !strings.Contains(text, "--from-project-dir") || !strings.Contains(text, "confirm|reassign") {
+	if !ok || strings.Contains(text, "--from-project-dir") || !strings.Contains(text, "confirm|reassign") {
 		t.Fatal("root help omits relocation operations")
 	}
 }

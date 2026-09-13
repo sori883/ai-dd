@@ -60,7 +60,7 @@ func TestMemoryMetadataCommand(t *testing.T) {
 		if got := updated.Metadata["generated"].(map[string]any)["by"]; got != "human:editor" {
 			t.Fatal(got)
 		}
-		cmd := exec.Command(binary, "memory", "update", tc.id, "--space", "default", "--project-dir", root, "--body-file", filepath.Join(nested, "body.md"), "--actor", "human:editor", "--expect", before.Hash)
+		cmd := exec.Command(filepath.Join(filepath.Dir(binary), "okf"), "update", tc.id, "--space", "default", "--project-dir", root, "--body-file", filepath.Join(nested, "body.md"), "--actor", "human:editor", "--expect", before.Hash)
 		if err := cmd.Run(); err == nil {
 			t.Fatal("stale hash accepted")
 		}

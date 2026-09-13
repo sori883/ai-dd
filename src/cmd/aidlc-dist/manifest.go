@@ -4,7 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"github.com/sori883/ai-dd/src/internal/release"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -27,18 +29,25 @@ type manifest struct {
 
 func checksum(raw []byte) string { return fmt.Sprintf("%x", sha256.Sum256(raw)) }
 func writeManifest(dir string, m manifest, write func(string, []byte) error) error {
+	return writeProductManifest(dir, "aidlc", m, write)
+}
+func writeProductManifest(dir, product string, m manifest, write func(string, []byte) error) error {
+	manifestName, sumsName := release.MetadataNames(product)
 	raw, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err
 	}
 	raw = append(raw, '\n')
-	if err := write(filepath.Join(dir, "manifest.json"), raw); err != nil {
+	if err := write(filepath.Join(dir, manifestName), raw); err != nil {
 		return err
 	}
 	lines := make([]string, 0, len(m.Artifacts)+1)
 	for _, a := range m.Artifacts {
 		lines = append(lines, a.ArchiveSHA256+"  "+a.Archive)
 	}
-	lines = append(lines, checksum(raw)+"  manifest.json")
-	return write(filepath.Join(dir, "SHA256SUMS"), []byte(strings.Join(lines, "\n")+"\n"))
+	lines = append(lines, checksum(raw)+"  "+manifestName)
+	slices.SortFunc(lines, func(a, b string) int {
+		return strings.Compare(strings.SplitN(a, "  ", 2)[1], strings.SplitN(b, "  ", 2)[1])
+	})
+	return write(filepath.Join(dir, sumsName), []byte(strings.Join(lines, "\n")+"\n"))
 }

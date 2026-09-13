@@ -53,7 +53,7 @@ func TestFlowHookSelectionRulesAndRecovery(t *testing.T) {
 	if _, err := install.Codex(root, "/opt/aidlc"); err != nil {
 		t.Fatal(err)
 	}
-	s := Service{Root: root, Binary: "/opt/aidlc"}
+	s := Service{Root: root, Binary: "/opt/aidlc", OKFBinary: "/opt/okf"}
 	st, err := (flow.Store{Root: root, Space: "default"}).Create("Work")
 	if err != nil {
 		t.Fatal(err)

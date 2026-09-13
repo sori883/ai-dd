@@ -8,9 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/sori883/ai-dd/src/internal/app"
-	"github.com/sori883/ai-dd/src/internal/cli"
 	"github.com/sori883/ai-dd/src/internal/filestore"
 	"github.com/sori883/ai-dd/src/internal/install"
+	"github.com/sori883/ai-dd/src/internal/okfcli"
 	"github.com/sori883/ai-dd/src/internal/okfmemory"
 	"io"
 	"os"
@@ -37,7 +37,7 @@ func memoryLiveArgs(binary, command string) ([]string, bool) {
 	if len(args) == 3 && (args[0] == "/bin/zsh" || args[0] == "/bin/bash") && args[1] == "-lc" {
 		args, ok = flowShellWords(args[2])
 	}
-	return args, ok && (len(args) > 1 && args[0] == binary ||
+	return args, ok && (len(args) > 1 && args[0] == filepath.Join(filepath.Dir(binary), "okf") ||
 		len(args) == 2 && args[0] == "cat" && args[1] == ".agents/skills/okf-agent-memory/SKILL.md")
 }
 func verifyMemoryLive(binary string, transport []byte, records []memoryLiveRecord) error {
@@ -111,7 +111,7 @@ func verifyMemoryLive(binary string, transport []byte, records []memoryLiveRecor
 			if input.ID == "" || decision.Specific.Decision == "deny" {
 				continue
 			}
-			if help, ok := cli.Help(args[1:]); ok && !record.Bound && ran && execution.exit == 0 && strings.TrimSpace(execution.output) == strings.TrimSpace(help) {
+			if help, ok := okfcli.Help(args[1:]); ok && !record.Bound && ran && execution.exit == 0 && strings.TrimSpace(execution.output) == strings.TrimSpace(help) {
 				helped = true
 			}
 			pending[key] = record
@@ -137,8 +137,8 @@ func verifyMemoryLive(binary string, transport []byte, records []memoryLiveRecor
 			skillRead[input.Session] = true
 			continue
 		}
-		r, err := cli.ParseCommand(args[1:])
-		if err != nil || r.Command != "memory" || (r.Action != "create" && r.Action != "update") {
+		r, err := okfcli.ParseCommand(args[1:])
+		if err != nil || (r.Action != "create" && r.Action != "update") {
 			continue
 		}
 		if r.Target != "codekb/live-note" {
@@ -198,15 +198,15 @@ func verifyMemoryLive(binary string, transport []byte, records []memoryLiveRecor
 
 func TestMemoryMetadataCommandEvidence(t *testing.T) {
 	binary := "/bin/aidlc"
-	help := binary + " memory create --help"
+	help := filepath.Join(filepath.Dir(binary), "okf") + " create --help"
 	skillCommand := "cat .agents/skills/okf-agent-memory/SKILL.md"
 	template, err := completedSkill(".agents/skills/okf-agent-memory/SKILL.md", binary)
 	if err != nil {
 		t.Fatal(err)
 	}
 	skill := string(template)
-	create := binary + " memory create codekb/live-note --space default --body-file body.md --actor process:codex --type Design --title Arithmetic --description Current"
-	update := binary + " memory update codekb/live-note --space default --body-file body.md --actor process:codex --expect first"
+	create := filepath.Join(filepath.Dir(binary), "okf") + " create codekb/live-note --space default --body-file body.md --actor process:codex --type Design --title Arithmetic --description Current"
+	update := filepath.Join(filepath.Dir(binary), "okf") + " update codekb/live-note --space default --body-file body.md --actor process:codex --expect first"
 	document := func(body string) []byte {
 		return []byte("---\ntype: Design\ntitle: Arithmetic\ndescription: Current\ntags: [arithmetic]\naudience: maintainers\ngenerated: {by: 'process:codex', at: '2026-09-08T00:00:00Z'}\n---\n" + body)
 	}
@@ -260,7 +260,7 @@ func TestMemoryMetadataCommandEvidence(t *testing.T) {
 			var wire bytes.Buffer
 			write := func(value any) { raw, _ := json.Marshal(value); wire.Write(raw); wire.WriteByte('\n') }
 			write(map[string]any{"type": "thread.started", "thread_id": "session"})
-			expected, _ := cli.Help([]string{"memory", "create", "--help"})
+			expected, _ := okfcli.Help([]string{"create", "--help"})
 			skillOutput := skill
 			if mode == "mismatched skill" {
 				skillOutput = "other skill"
@@ -322,7 +322,7 @@ func TestMemoryMetadataLiveHelper(t *testing.T) {
 	record := memoryLiveRecord{Raw: input, Output: output, Bound: session.Intent != ""}
 	record.Document, _ = filestore.ReadFile(cfg.Root, "aidlc/spaces/default/knowledge/codekb/live-note.md")
 	if args, ok := memoryLiveArgs(cfg.Binary, hook.Input.Command); ok {
-		if request, err := cli.ParseCommand(args[1:]); err == nil && request.BodyFile != "" {
+		if request, err := okfcli.ParseCommand(args[1:]); err == nil && request.BodyFile != "" {
 			name := request.BodyFile
 			if filepath.IsAbs(name) {
 				name, err = filepath.Rel(cfg.Root, name)
@@ -407,7 +407,7 @@ func TestMemoryMetadataLive(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
 	defer cancel()
-	prompt := `Use the installed aidlc skill. Before selecting or creating an Intent, read memory create help through the installed binary. Then follow the skill to select an Intent, read its project Rules, explicitly read .agents/skills/aidlc/SKILL.md and .agents/skills/aidlc-cli/SKILL.md, then run exactly cat .agents/skills/okf-agent-memory/SKILL.md in its own tool call before any memory create/update, and obtain the current deployed procedure. Record the current behavior of arithmetic.go in Concept codekb/live-note: title Arithmetic, type Design, tag arithmetic, extension audience=maintainers. The first body must include FIRST-BODY and describe Add. Then read update help, revise only the body to include SECOND-BODY instead and add a concrete example; preserve its metadata. Use actor process:codex. Inspect the saved document afterward. Use one literal CLI command per tool call so its result can be observed. Do not edit the product hooks or Rules. Stop after the Knowledge update; this task does not require the full implementation journey.`
+	prompt := `Use the installed aidlc skill. Before selecting or creating an Intent, read okf create help through the installed binary. Then follow the skill to select an Intent, read its project Rules, explicitly read .agents/skills/aidlc/SKILL.md and .agents/skills/aidlc-cli/SKILL.md, then run exactly cat .agents/skills/okf-agent-memory/SKILL.md in its own tool call before any okf create/update, and obtain the current deployed procedure. Record the current behavior of arithmetic.go in Concept codekb/live-note: title Arithmetic, type Design, tag arithmetic, extension audience=maintainers. The first body must include FIRST-BODY and describe Add. Then read update help, revise only the body to include SECOND-BODY instead and add a concrete example; preserve its metadata. Use actor process:codex. Inspect the saved document afterward. Use one literal CLI command per tool call so its result can be observed. Do not edit the product hooks or Rules. Stop after the Knowledge update; this task does not require the full implementation journey.`
 	if _, err := flowRunModel(ctx, cfg, root, "memory", prompt, "workspace-write"); err != nil {
 		t.Fatalf("model failed: %v; evidence %s", err, evidence)
 	}

@@ -3,10 +3,10 @@
 同梱の実行ファイルをPATHへ置くと、Python/uvや辞書の追加取得なしで日本語を検査できます。入力はUTF-8通常ファイルです。Unix系では実行権限を保ち、Windowsでは.exeを使います。
 
 ```
-natural-japanese-go --help
-natural-japanese-go --list-rules --json
-natural-japanese-go --json --genre tech text.md
-natural-japanese-go --json --baseline previous.json text.md
+@@NATURAL_BINARY@@ --help
+@@NATURAL_BINARY@@ --list-rules --json
+@@NATURAL_BINARY@@ --json --genre tech text.md
+@@NATURAL_BINARY@@ --json --baseline previous.json text.md
 ```
 
 FILEが `-` なら標準入力です。flagはFILEの前後に置けます。JSONを前回結果として別ファイルへ保存して比較できます。入力を自動編集しません。exit 0は指摘ありを含む正常検査、1は入出力・解析・baseline失敗、2は引数不正です。severityはinfo/warn/criticalです。

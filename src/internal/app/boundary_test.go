@@ -14,7 +14,7 @@ func TestBoundaryHookRepairAndBegin(t *testing.T) {
 	if _, err := install.Codex(root, "/opt/aidlc"); err != nil {
 		t.Fatal(err)
 	}
-	s := Service{Root: root, Binary: "/opt/aidlc"}
+	s := Service{Root: root, Binary: "/opt/aidlc", OKFBinary: "/opt/okf"}
 	store := flow.Store{Root: root, Space: "default"}
 	st, err := store.Create("Work")
 	if err != nil {
@@ -28,12 +28,12 @@ func TestBoundaryHookRepairAndBegin(t *testing.T) {
 	if !deny(hook(t, s, "PreToolUse", "Bash", "unstarted", "touch code.go", false)) {
 		t.Fatal("unstarted ordinary work allowed")
 	}
-	repair := "/opt/aidlc memory create design/" + st.ID + "/requirements --space default --body-file " + s.draftPath("session") + " --actor process:coordinator --type Requirements --title Req --description Req"
+	repair := "/opt/okf create design/" + st.ID + "/requirements --space default --body-file " + s.draftPath("session") + " --actor process:coordinator --type Requirements --title Req --description Req"
 	if deny(hook(t, s, "PreToolUse", "Bash", "repair", repair, false)) {
 		t.Fatal("fixed document repair blocked")
 	}
 	hook(t, s, "PostToolUse", "Bash", "repair", "", false)
-	if !deny(hook(t, s, "PreToolUse", "Bash", "random", "/opt/aidlc memory create codekb/unknown --space default --body-file draft --actor process:a --type Knowledge --title X --description X", false)) {
+	if !deny(hook(t, s, "PreToolUse", "Bash", "random", "/opt/okf create codekb/unknown --space default --body-file draft --actor process:a --type Knowledge --title X --description X", false)) {
 		t.Fatal("arbitrary memory bypassed begin")
 	}
 	if _, err = s.Execute(cli.CommandRequest{Command: "intent", Action: "begin", Target: st.ID, Space: "default", Expect: strconv.FormatUint(st.Revision, 10)}); err != nil {

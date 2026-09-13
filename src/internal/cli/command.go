@@ -13,6 +13,7 @@ import (
 
 // CommandRequest is the strict public request shared with hook command recognition.
 type CommandRequest struct {
+	OKFBinary                                                                string
 	Unit, Root                                                               string
 	Step                                                                     string
 	Relocate                                                                 bool
@@ -80,6 +81,9 @@ func runServiceCommand(args []string, stdout, stderr io.Writer, deps Dependencie
 
 // ParseCommand also constrains the runtime hook's single-command exceptions.
 func ParseCommand(args []string) (r CommandRequest, err error) {
+	if len(args) > 0 && (args[0] == "memory" || args[0] == "install") {
+		return r, fmt.Errorf("command moved to its dedicated CLI: %w", fs.ErrInvalid)
+	}
 	fail := func(message string) (CommandRequest, error) { return r, fmt.Errorf("%s: %w", message, fs.ErrInvalid) }
 	if len(args) < 1 {
 		return fail("missing command")
@@ -171,7 +175,7 @@ func ParseCommand(args []string) (r CommandRequest, err error) {
 		allowed = "--project-dir --session"
 		required = "--session"
 	case "__hook/":
-		allowed = "--project-dir"
+		allowed = "--project-dir --okf-binary"
 		required = "--project-dir"
 	default:
 		return fail("unknown command")
@@ -226,6 +230,10 @@ func ParseCommand(args []string) (r CommandRequest, err error) {
 	r.Unit, r.Root = values["--unit"], values["--root"]
 	if r.Root != "" && r.Unit == "" {
 		return fail("--root requires --unit")
+	}
+	r.OKFBinary = values["--okf-binary"]
+	if r.OKFBinary != "" && !filepath.IsAbs(r.OKFBinary) {
+		return fail("--okf-binary requires an absolute path")
 	}
 	r.Space = values["--space"]
 	r.ProjectDir = values["--project-dir"]

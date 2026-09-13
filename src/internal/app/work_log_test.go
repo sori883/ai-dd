@@ -17,6 +17,9 @@ func TestOKFWorkLogSearchAndShow(t *testing.T) {
 	call := func(args ...string) []byte {
 		t.Helper()
 		request, err := cli.ParseCommand(args)
+		if len(args) > 0 && args[0] == "memory" {
+			request, err = s.productCommand(append([]string{s.OKFBinary}, args[1:]...))
+		}
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -1,4 +1,4 @@
-package cli
+package okfcli
 
 import (
 	"reflect"
@@ -7,15 +7,15 @@ import (
 )
 
 func TestMemoryMetadataCLI(t *testing.T) {
-	base := []string{"memory", "create", "codekb/auth", "--space", "default", "--body-file", "body.md", "--actor", "process:codex", "--type", "Design", "--title", "Auth", "--description", "How"}
+	base := []string{"create", "codekb/auth", "--space", "default", "--body-file", "body.md", "--actor", "process:codex", "--type", "Design", "--title", "Auth", "--description", "How"}
 	r, err := ParseCommand(append(append([]string{}, base...), "--tag", "one", "--tag", "two", "--status", "draft", "--intent-id", strings.Repeat("a", 32), "--resource", "source", "--stale-after", "2026-09-08T00:00:00Z", "--sources-json", "[]", "--verified-json", "[]", "--metadata-json", `{"custom":true}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.BodyFile != "body.md" || r.File != "" || r.Metadata.Type == nil || *r.Metadata.Type != "Design" || !reflect.DeepEqual(r.Metadata.Tags, []string{"one", "two"}) || r.Metadata.IntentID == nil || r.Metadata.ExtraJSON == nil {
+	if r.BodyFile != "body.md" || r.Metadata.Type == nil || *r.Metadata.Type != "Design" || !reflect.DeepEqual(r.Metadata.Tags, []string{"one", "two"}) || r.Metadata.IntentID == nil || r.Metadata.ExtraJSON == nil {
 		t.Fatalf("request %+v", r)
 	}
-	update := []string{"memory", "update", "codekb/auth", "--space", "default", "--body-file", "body.md", "--actor", "human:me", "--expect", "hash"}
+	update := []string{"update", "codekb/auth", "--space", "default", "--body-file", "body.md", "--actor", "human:me", "--expect", "hash"}
 	r, err = ParseCommand(update)
 	if err != nil || r.Metadata.Type != nil || r.Metadata.Tags != nil || r.Metadata.Status != nil {
 		t.Fatalf("omitted metadata lost: %+v %v", r, err)
@@ -42,11 +42,9 @@ func TestMemoryMetadataCLI(t *testing.T) {
 			t.Errorf("missing %s accepted", flag)
 		}
 	}
-	if _, err := ParseCommand([]string{"intent", "configure", "id", "--space", "default", "--expect", "1", "--file", "config.json"}); err != nil {
-		t.Fatalf("Intent JSON flag changed: %v", err)
-	}
-	_, err = ParseCommand([]string{"memory", "create", "x", "--space", "default", "--file", "old.md", "--actor", "process:a"})
-	if err == nil || !strings.Contains(err.Error(), "--body-file") || !strings.Contains(err.Error(), "memory create --help") {
+
+	_, err = ParseCommand([]string{"create", "x", "--space", "default", "--file", "old.md", "--actor", "process:a"})
+	if err == nil || !strings.Contains(err.Error(), "--body-file") || !strings.Contains(err.Error(), "okf create --help") {
 		t.Fatalf("legacy guidance %v", err)
 	}
 }

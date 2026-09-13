@@ -18,6 +18,7 @@ import (
 )
 
 type options struct {
+	LicenseDir                                      string
 	Product                                         string
 	writeFile                                       func(string, []byte) error
 	InputDir, OutputDir, Version, Commit, GoVersion string
@@ -28,6 +29,9 @@ var supportedTargets = []string{"darwin/amd64", "darwin/arm64", "linux/amd64", "
 var errInvalidInput = errors.New("invalid input")
 
 func packageArchives(o options) error {
+	if o.Product == "all" {
+		return packageRelease(o)
+	}
 	if o.Product == "" {
 		o.Product = "aidlc"
 	}
@@ -71,7 +75,7 @@ func validateInputs(o options) ([]binaryInput, error) {
 	if o.Product == "" {
 		o.Product = "aidlc"
 	}
-	if o.Product != "aidlc" && o.Product != "natural-japanese-go" {
+	if !slices.Contains([]string{"aidlc", "aidlc-install", "okf", "natural-japanese-go", "aidlc-dist"}, o.Product) {
 		return nil, fmt.Errorf("%w: unknown product", errInvalidInput)
 	}
 	if o.InputDir == "" || o.OutputDir == "" || !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`).MatchString(o.Version) || strings.Contains(o.Version, "..") {
@@ -140,7 +144,7 @@ func productArchiveBytes(raw []byte, windows bool, product string) ([]byte, erro
 		if err != nil {
 			return nil, err
 		}
-		entries["README.md"] = readme
+		entries["README.md"] = []byte(strings.ReplaceAll(string(readme), "@@NATURAL_BINARY@@", "natural-japanese-go"))
 		names = append(names, "README.md")
 		err = fs.WalkDir(core.Files, "skills/natural-japanese-go/licenses", func(path string, d fs.DirEntry, err error) error {
 			if err != nil {

@@ -1,5 +1,17 @@
 # 開発プロジェクトRAM
 
+- [五CLIのRule照合とPost責務](decisions/2026-09-13-five-cli-hook-evidence-clarification.md): 現行説明の誤記を訂正し、bind時のRule保存・次Pre照合と一致IDのPost解放を維持する。
+
+- [五CLI・指定版導入のloop証拠](decisions/2026-09-13-five-cli-release-011-loop.md): 7sliceのTDD、43資材・許諾・版別導入、既存fixtureと実候補検査の区別、Go 1.26.4固定、末尾検証とfinal残件。
+
+- [五つのCLIと指定版インストーラーを実装する](decisions/2026-09-13-five-cli-release-011-approved.md): 計画と推奨案への実施依頼。指定版取得、プロジェクト内配置、独自MIT・2026 sori883を採用し、単独writerの実装から検証・0.1.1公開まで進める。下記の3点回答待ちを解消。
+
+- [五つのCLIへの分離を0.1.1に含める](decisions/2026-09-13-five-cli-release-011-scope.md): 分離後の構成を0.1.1へ含める直接指定。[具体計画](../design/five-cli-release-011-plan.md)にCodex向け共通手順・hook・配布・許諾表示、TDD・公開手順を整理。版選択、実行ファイルの配置先、独自ライセンスは具体案を提示して確認中。
+
+- [製品を五つのCLIに分ける](decisions/2026-09-13-five-cli-product-layout.md): `aidlc-install`・`aidlc`・`okf`・`natural-japanese-go`・`aidlc-dist`というユーザー指定。OKFも独立CLIにする構成を採用し、現行Go処理から切り出せることを確認。接続・配置・公開の具体計画と実装は未完了。
+
+- [本体と利用者向けインストーラーを別の実行ファイルにする](decisions/2026-09-13-separate-installer-and-runtime.md): 0.1.1公開準備を中断し、現在同じ`aidlc`にある導入操作と日常処理を分離する直接指定。インストーラー名・配置契約は計画で確定する。製品コード・tag・Releaseは未変更。
+
 - [外部由来skillに製品の接頭辞を付けない](decisions/2026-09-13-upstream-skill-names.md): ユーザーの直接修正依頼。11工程skillとOKFを原典名へ変更し、13翻案skillの作者・出典・翻案表示を明確にする。共通配置・承認等は維持し、参照名の変更に伴う工程hash変更は新規配置で扱う。4sliceのloop証拠、71資材の固定fixtureと原典LICENSE照合を記録。
 
 - [共通手順とCodex設定を分離しClaude未完了作業を破棄する](decisions/2026-09-13-common-skills-codex-approved.md): Issue #196の直接承認、共通15skill・5担当の生成、独立review修正、final10項目と固定Codex実機の結果を記録。実読込み・担当拒否・親宛報告・同じ子への追加依頼を確認し、help試験の引数誤りと検証範囲も明記。Claude専用Issue・ローカルbranch・作業treeの削除は完了。下記の回収記録は検討履歴であり、Claude実装の継続許可ではない。

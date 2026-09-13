@@ -1,161 +1,61 @@
-# 配布候補の生成と、新規配置・通常移転
+# 五つのCLIの配布と新規導入
 
-AI-DLCの利用者が実行するファイルは`aidlc`一つです。工程定義、Codex用Skill・agent・hookはbinaryに内包されています。`aidlc-dist`は開発者がbuild済みbinaryを圧縮するためのcommandで、利用先へ追加導入する必要はありません。
-
-共通skill・担当契約は`src/core/skills/`と`src/core/agents/`で編集し、Codexの接続差分は`src/harness/codex/`で編集します。`.tmpl`原稿は新規配置時に同じbinary内で合成され、共通部品や未展開templateは配置されません。完成後の配置pathは従来どおりです。日本語補助CLIのREADMEとライセンスも`src/core/skills/natural-japanese-go/`を原稿として梱包します。
-
-取得先は[GitHub Releases](https://github.com/sori883/ai-dd/releases)です。公開版が用意されたら、必要なversionのOS・CPU別archiveと`manifest.json`、`SHA256SUMS`を取得します。現在は候補検証と手動指定時のRelease下書き作成を整備した段階で、正式version、初回公開物、Go製品のライセンスは未確定です。
-
-Distribution CIは候補8ファイルをActions artifactへ1日保存し、同じ候補を3OSで検査します。検証だけの実行でも、この一時artifactはActionsから取得できます。手動で`create_draft=true`を指定した場合だけ、検証後にGitHub Releaseの下書きを作ります。下書きも一時artifactも一般公開版の完成とは扱いません。
-
-## 配布担当がGitHub Actionsを手動実行する
-
-Distributionをmainから`workflow_dispatch`で起動し、`tag`に既存tagを指定します。tag名は梱包commandと同じ安全なversion文字列に限り、tagのcommitがmainに含まれることを確認します。tagはこの処理では作りません。指定commitに`TestReleaseCandidateMetadata`と`TestReleaseCandidateNative`が存在しない古いtagは検証前に拒否します。
-
-`create_draft`は既定falseです。このままなら検証と候補の一時保存までで終了します。trueを選ぶと、6対象のbuild・照合、3OSの候補実行、従来の手動切替Journeyがすべて成功した後に下書き作成へ進みます。下書き作成jobだけが`contents: write`を使います。初回の実操作前には、版名・対象commit・ライセンスと表示方法・添付する内容を具体化してください。
-
-packageが確定SHAから一度buildし、そのartifact IDをnativeとdraftへ渡します。downloadのdigest不一致、metadataの不一致、remote tagの移動・削除、mainに含まれないcommit、Release一覧APIの失敗では停止します。同じtagのReleaseが下書きを含め既にあれば、新しい下書きは作りません。同じtagの下書きjobは直列に動きます。
-
-添付は6archiveと`manifest.json`、`SHA256SUMS`だけです。日本語補助CLIの候補は従来のbuild・検証を続けますが、このartifactとReleaseへの添付対象ではありません。ソースやruntime、検証ログも候補artifactには含めません。
-
-失敗時はActionsの該当jobを確認し、新しいrunで検証します。下書き作成や添付が途中で失敗すると、部分的な下書きが残ることがあります。既存Releaseや添付を上書きせず、残った内容を確認してから次の扱いを判断してください。tag・下書きの自動削除、自動publishは行いません。下書き作成の実書込みは初回操作で確認する残件です。一般公開は内容確認後の操作です。
-
-## 開発者が候補を生成する
-
-同じsource commitとGo toolchainから6targetをbuildします。未commit差分があれば、source commitだけではbuildした内容を示せません。公開候補に使う前にcheckoutが意図した版であることを確認してください。
-
-次はrepository rootで実行するBashの例です。`DIST_WORK`には新しく作った一時directoryを指定します。output directory自体は梱包commandが作成するため、先に作らないでください。
-
-```sh
-DIST_WORK="$(mktemp -d)"
-dist_input="$DIST_WORK/input"
-dist_output="$DIST_WORK/candidate"
-mkdir "$dist_input"
-source_commit="$(git rev-parse HEAD)"
-candidate_version="dev-${source_commit:0:12}"
-toolchain="$(go env GOVERSION)"
-for os in darwin linux windows; do
-  for arch in amd64 arm64; do
-    extension=""
-    if [[ "$os" == windows ]]; then extension=".exe"; fi
-    CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath \
-      -ldflags "-X github.com/sori883/ai-dd/src/internal/buildinfo.Version=$candidate_version -X github.com/sori883/ai-dd/src/internal/buildinfo.Commit=$source_commit" \
-      -o "$dist_input/aidlc-$os-$arch$extension" ./src/cmd/aidlc
-  done
-done
-go run ./src/cmd/aidlc-dist \
-  --input-dir "$dist_input" --output-dir "$dist_output" \
-  --version "$candidate_version" --commit "$source_commit" --go-version "$toolchain"
-```
-
-単一targetだけを扱う場合は`--targets linux/amd64`のように指定します。対象はdarwin/linux/windowsとamd64/arm64の組です。カンマ区切りの非空subsetを受け付け、重複や未知targetは拒否します。
-
-入力名は`aidlc-OS-ARCH`、Windowsのみ末尾`.exe`です。空file、directory、symlink、欠落fileは使えません。versionは先頭英数字、英数字と`. _ -`のみ、128文字以内、`..`なしです。commitは小文字16進40桁、Go版は`go1.26.4`や`go1.27rc1`のような空白・pathを含まないgo1系の値を指定します。これらと全binaryの読取りを確認するまで出力directoryは作りません。
-
-出力先は未存在である必要があります。既存の候補は上書きしません。保存途中の失敗では終了codeが非zeroになり、部分的なdirectoryが残ることがあります。その候補を完成扱いせず、原因を確認して別の新しい出力先へ再実行してください。終了codeは0が成功/help、2が不正引数、1がfilesystemや出力の失敗です。
-
-## 圧縮fileと照合情報
-
-| 対象 | archive名 | 中身 |
-| --- | --- | --- |
-| darwin / linux | `aidlc_VERSION_OS_ARCH.tar.gz` | 通常file `aidlc`、mode 0755 |
-| windows | `aidlc_VERSION_windows_ARCH.zip` | 通常file `aidlc.exe` |
-
-archiveには上記binary一つだけが入ります。file名、mode、tarの所有者情報・時刻、gzip header、ZIP時刻を固定します。ZIP時刻は1980-01-01 UTCです。build日時や入力fileのmtimeは持ち込みません。同じbinary bytesとmetadataを同じ梱包実装で処理すれば、target指定順にかかわらず同じ出力bytesになります。異なるGo/compiler/圧縮実装まで同一bytesになる保証ではありません。
-
-`manifest.json`のschema_versionは1です。version、source_commit、go_version、およびtarget順のartifactsを持ちます。各artifactのbinaryはarchive内の名前、binary_sha256/binary_sizeは展開後の内容、archive/archive_sha256/archive_sizeは圧縮file名・内容・byte数です。
-`SHA256SUMS`はarchiveとmanifestのSHA-256をfile名順に記録します。SHA256SUMS自体のhashは含めません。
-
-これは入力と実内容の対応表です。署名でも出所の第三者認証でもありません。任意の入力binaryが指定sourceから作られたことを梱包commandだけで証明するものではありません。
-
-全6target候補の照合は、開発checkoutから次で行えます。archive内の名前・mode・payload hash/size、圧縮fileとmanifestのhash/size、checksum一覧を確認します。foreign targetのbinaryは実行しません。
-
-```sh
-AIDLC_DIST_DIR="$dist_output" go test -tags=integration -count=1 -v \
-  ./src/cmd/aidlc-dist -run '^TestDistributionArchives$'
-```
-
-`AIDLC_DIST_DIR`未指定ならこの検査はskipします。それを候補の照合成功に数えないでください。
-
-Release候補は、期待するversion・commit・build時のGo版も照合します。同じcheckoutで、上の生成例に続けて実行できます。
-
-```sh
-AIDLC_DIST_DIR="$dist_output" AIDLC_RELEASE_VERSION="$candidate_version" \
-  AIDLC_RELEASE_COMMIT="$source_commit" AIDLC_RELEASE_GO_VERSION="$toolchain" \
-  go test -tags=integration -count=1 -v ./src/cmd/aidlc-dist \
-  -run '^TestReleaseCandidate(Metadata|Native)$'
-```
-
-Metadataは正確な6対象・8ファイルと版情報、既存のarchive照合を検査します。Nativeは実行中OS・CPUに合う取得済みarchiveを一意に選び、再buildせず展開したbinaryのversion/help、新規配置、同梱原稿と配置の一致、再installの拒否と既存file保全を確認します。4つの環境入力がすべてなければ入口はskipし、一部だけなら失敗します。workflowは必ず全入力と検査名の存在を確認して実行します。
-
-利用するOS/CPUと一致するarchiveを選び、照合後に新しい空directoryへ展開します。Unixなら`tar -xzf ARCHIVE -C NEW_DIR`、Windows PowerShellなら`Expand-Archive -LiteralPath ARCHIVE -DestinationPath NEW_DIR`が使えます。実行前に対応targetと取得元を確認し、展開したbinaryの`version`と`--help`を確認してください。hash照合だけで取得元を信頼できるわけではありません。
+`aidlc-install`はプロジェクトへ導入するCLI、`aidlc`は工程・担当・Sensor・hookを動かすCLI、`okf`は知識を検索・保存するCLI、`natural-japanese-go`は日本語を検査するCLIです。開発者用の`aidlc-dist`は五製品と共通資材を梱包します。通常の利用者にGoは不要です。
 
 ## 新形式の候補を配置する前に
 
-新方式はflow schema 6・assignment schema 2の新規配置と新規Intentで開始します。旧記録の互換読込み・変換・旧配置への切替や復元は提供しません。旧利用環境を自動削除せず、新旧の進行中stateを共有しない隔離環境で候補を確認します。以下の設定保全と移転は新方式内の手順です。
+[GitHub Releases](https://github.com/sori883/ai-dd/releases)で、使用する版のOS・CPUに合う`aidlc-install_VERSION_OS_ARCH.tar.gz`（Windowsは`.zip`）、`aidlc-install-manifest.json`、`aidlc-install-SHA256SUMS`を取得します。checksumにあるarchiveとmanifestのSHA-256を照合してから空の場所へ展開し、`--version`と`--help`を確認してください。macOS・Linux・Windowsのamd64・arm64に対応します。
 
-1. 対象projectのメインAI、worker、既知の背景処理を停止・整理します。予約と保存途中の操作を確認してください。Stop通知や経過時間だけで予約を解放せず、状態が不明なら更新作業を止めます。
-2. 旧binaryを実path・version・hashとともに保管します。配置した製品file、独自hooks/config、全Space、Git管理外の`aidlc/.runtime`も別の場所へbackupし、実際に読めることと元bytesが一致することを確認します。Git commitだけではignored runtimeのbackupになりません。
-3. 新binaryは旧binaryと違うpathへ保存します。別の空の通常フォルダを用意し、そこへ`NEW_BINARY install codex --project-dir STAGING_ROOT`を実行します。実利用先でfresh installを再実行して更新しようとしないでください。既存fileの上書きは拒否されます。
-4. 旧配置・旧版の既知資材・staging候補を比較します。由来不明の編集を製品の古いfileだと決めつけず、そのfileの扱いを確認するまで止めます。
+```sh
+/path/to/aidlc-install codex --release-version v0.1.1 --project-dir /path/to/project
+```
 
-比較対象は次のように分けます。directory全体を無条件コピーしないでください。
+PowerShellでは`& "C:\tools\aidlc-install.exe" codex --release-version v0.1.1 --project-dir "C:\projects\app"`です。版名は取得したReleaseのtagに合わせます。
 
-| 対象 | 扱い |
-| --- | --- |
-| `.agents/skills/aidlc/SKILL.md`、`.agents/skills/aidlc-cli/SKILL.md`、`.agents/skills/okf-agent-memory/SKILL.md` | 既知の製品Skillとして旧新を比較する |
-| `.codex/agents/aidlc-*.toml`の製品5担当 | 既知の5fileを比較する。利用者が作った別agentは保持する |
-| `aidlc/workflow/stage-graph.json`、`aidlc/workflow/stages/*.md`、`aidlc/templates/adr.md` | 対応する定義・templateを組で比較する |
-| `.codex/hooks.json` | 製品handlerを比較し、独自handlerを残して手動mergeする |
-| `aidlc/spaces/**` | Rule、Knowledge、ADR、Intent/state/historyを保持。stagingのseedで置き換えない |
-| `aidlc/.runtime/**` | 会話・予約・保存途中の情報を保持。削除して空きや未実行に見せない |
-| `.codex/config.toml`、利用者の`AGENTS.md`、独自agent/config | 利用者の設定を保持する |
+installerは`sori883/ai-dd`の指定Releaseから、そのOS・CPUの三つのruntimeと同版の共通資材を取得します。manifestとchecksum、version、commit、archiveとbinaryのhashを検査してから、`aidlc/bin/v0.1.1/`へ`aidlc`・`okf`・`natural-japanese-go`を配置します。Windowsでは`.exe`が付きます。生成するskillとhookは各役割の絶対pathを参照します。installer自身を移動しても、配置済みruntimeの参照は変わりません。
+
+取得済みの公開前候補やオフライン資材を使うときは`--release-dir /path/to/candidate`を加えます。この入力も通信時と同じ検査を通します。installerに埋め込んだ別版の資材へ切り替えるfallbackはありません。未知のschema、機能、pathは拒否するため、その場合は対象版に対応するinstallerを用意します。
+
+既存ファイルは上書きしません。予約中の同時導入、欠落、破損、版違い、既存配置との衝突では停止します。失敗時のJSONにある`Paths`は保存済み、`Pending`は残りの対象です。部分配置を成功とせず、出力と利用者ファイルを確認してください。利用者の`AGENTS.md`や既存設定を一律に削除して再試行しないでください。
+
+Codexでプロジェクトを開き、新しい会話を開始します。通常のhook trustで、表示されたruntimeと対象プロジェクトを確認します。Gitの初期化は導入条件ではありません。旧`aidlc install`・`aidlc memory`のaliasや旧版dataの移行はありません。
 
 ## 切替と参照の補正
 
-比較して扱いを決めた製品資材を、新binaryに対応する組で切り替えます。製品handlerはSessionStart/UserPromptSubmit/PreToolUse/PostToolUse/Stopの5イベントにあります。独自hookを消さず、製品のcommand・matcher・timeout等を候補と照合してください。
-
-現行の製品handlerは内部command `__hook` を呼びます。旧名 `__minimal-hook` の別名対応や自動変換はありません。新binaryだけを交換すると旧hook設定は動かないため、対応する製品handlerと組で切り替えてください。旧handlerを残した状態での `--relocate` は版移行になりません。
-
-stagingで生成したSkillにはbinaryの絶対path、hookにはbinaryとstaging rootの絶対pathが入ります。実利用先へそのままコピーしてAIを再開してはいけません。新しい版の資材を選んだ後、既知形式の参照を補正する場合に限り、次を使えます。
-
-```text
-NEW_BINARY install codex --relocate --project-dir REAL_ROOT \
-  --from-project-dir STAGING_ROOT --from-binary NEW_BINARY
-```
-
-すべて実際の絶対pathへ置き換えます。この例は新binaryのままroot参照をstagingから実利用先へ補正します。別pathからの配置移転では、元配置に埋め込まれた旧root/binaryをfromへ渡します。元pathが今も存在する必要はありません。
-
-`--relocate`の対象はaidlc/aidlc-cli/okf-agent-memoryの3Skillとhooks.jsonの4fileだけです。既知の現行Skill bytes、既知の製品handler形状、元/新の参照が成立する場合にだけ補正し、独自hookのbytesを保持します。未知のSkill編集、製品command、matcher等があれば拒否します。エラーを回避するために利用者編集を無断で消さず、比較へ戻ってください。移転は版更新や定義移行ではありません。
-
-部分失敗のPathsは更新済み、Pendingは未完了です。処理終了と原因を確認し、同じ引数で再検査できます。成功後も4fileの実pathと独自hookを確認します。通常のCodex hook trust確認、許可/拒否の対照を経てからAIを再開してください。trustや認証設定は自動変更しません。
-
-定義hashが変わった場合、既存Intentは元の定義に結び付いています。旧版で進めている仕事を整理し、新定義では新Intentを使ってください。元Intentの定義hashだけを書き換えて移行したことにはしません。
-
-## 候補の検証を中断する場合
-
-隔離した新規検証環境で処理を止め、候補binaryとそれに対応する配置を組で扱います。候補の比較では新旧の進行中stateを共有しません。実利用プロジェクトの進捗・Knowledge・履歴・予約を古いseedや空のruntimeへ置き換えないでください。利用者設定と元bytesのbackupは保全します。
-
-## 検証の範囲
-
-Codex CLI 0.153.4の固定sourceでは、linked worktreeのhook探索先は主checkoutの `.codex` です。worktree自身への配置だけでhookが有効になるとは限りません。主checkoutへ製品hookを置くだけでも、command中の絶対project-dirが各worktreeへ切り替わる保証はありません。通常trust、列挙元path、実際の許可・拒否を対象rootで確認してください。PR #172の配置調査はこの条件の確認であり、環境変換やCodex更新は実施していません。
-
-Hookのsession保存競合には最大2秒の再試行がありますが、終了通知が届かなければ自動解除しません。Tool残存時は実処理の終了を確認し、同じSpace・Intent・sessionでメインAIが既存の `session bind ... --recover` を使います。配布検査だけでは、この復旧や子の途中報告が実Codexで成功した証拠にはなりません。
-
-Distribution CIはUbuntuで6targetをbuild・梱包・照合し、`ubuntu-latest`、`macos-latest`、`windows-latest`で同じ候補の展開・version/help・fresh install・既存file拒否を検査します。3OSで動かしても6CPU構成すべての実行確認にはなりません。実行したruntime.GOOS/GOARCHをlogへ出します。別途、従来のnative梱包と手動切替・参照補正Journeyも維持します。
+同じ版のプロジェクトを別directoryへ移した場合は、元のrootと元のruntime pathを明示します。
 
 ```sh
-go test -tags=integration -count=1 -v ./src/cmd/aidlc-dist -run '^TestDistributionJourney$'
+/path/to/aidlc-install codex --release-version v0.1.1 \
+  --project-dir /new/project --relocate \
+  --from-project-dir /old/project \
+  --from-binary /old/project/aidlc/bin/v0.1.1/aidlc
 ```
 
-このfixtureは同一sourceからversion付きの旧/新binaryを別pathへbuildし、隔離projectで独自hookと利用者dataの不変、手動で選んだ製品fileの切替、参照補正、元bytesの復元を確認します。未知版へのupgrade互換、自動updater、実利用環境での切替成功を実証するものではありません。
+同版runtimeのbytesと既知のskill・hookを照合し、役割別参照を含む6ファイルを補正します。利用者のRule、Knowledge、state、runtime記録と独自hookを保持します。未知のskill編集や不足があれば書込み前に停止します。これは異版の互換性・移行を提供する操作ではありません。失敗時は`Paths`・`Pending`と保存した原文を確認し、知らない変更を自動削除しません。
 
-archive展開・配置file生成は実Codex hookの実行成功と別です。macOS/Codex CLI 0.153.4の通常trust実測はPR #164の記録を参照し、Windowsの実hook動作や全ハーネスの互換性は未確認として残します。実機検証の有無は各変更の計画・検証記録で確認してください。
+## 開発者が候補を生成する
 
-## 日本語補助CLIの別配布
+共通原稿は`src/core/`、Codex固有の接続差分は`src/harness/codex/`が正本です。対象commitから五製品を六つのOS・CPU向けにbuildし、`PRODUCT-OS-ARCH[.exe]`として入力directoryへ置きます。公開buildは確認済みのGo 1.26.4に固定します。品質CIのstable検査とは別です。
 
-`aidlc-dist --product natural-japanese-go` は `natural-japanese-go-OS-ARCH[.exe]` を入力として別directoryへ梱包します。既定のaidlc配布は従来どおりです。Go buildは `CGO_ENABLED=0 go build -trimpath -ldflags "-X main.version=VERSION" -o FILE ./src/cmd/natural-japanese-go` を使い、OS/ARCHごとに環境変数を設定します。
+`--license-dir`には同じbuildの許諾入力を用意します。rootの`LICENSE`を`PRODUCT.txt`へコピーし、`go env GOROOT`の`LICENSE`・`PATENTS`を`Go-LICENSE.txt`・`Go-PATENTS.txt`へ、`go env GOVERSION`を`GO_VERSION`へ保存します。`src/distribution/licenses/`の三文書もコピーします。独自LICENSEの正本はrootだけです。
 
-補助archiveには実行ファイル、README.md、LICENSES/のMITとUniDic BSD帰属を含め、manifest schema 1とSHA256SUMSで照合します。本体aidlcへ辞書をリンクしません。新規候補で検証してからbinaryと対応skillを更新し、問題時は旧候補へ戻します。Rule・state・runtimeの初期化を復旧手順にしません。正式release公開や自動アップロードは行いません。
+```sh
+go run ./src/cmd/aidlc-dist --input-dir /tmp/release-input \
+  --output-dir /tmp/new-candidate --version v0.1.1 \
+  --commit FULL_COMMIT_SHA --go-version go1.26.4 \
+  --license-dir /tmp/release-licenses
+```
 
-finalで `AIDLC_NATURAL_DIST_DIR=DIR go test -tags=integration -count=1 ./src/cmd/aidlc-dist -run ^TestNaturalJapaneseDistributionArchives$` とnative journeyを確認します。実Codexの限定fixtureは `AIDLC_STAGE_SKILLS_LIVE=1 AIDLC_NATURAL_JAPANESE_BINARY=/absolute/binary go test -tags=integration -count=1 ./src/cmd/aidlc -run ^TestStageSkillsLive$`。固定Codex 0.153.4と明示的試験用trustを使い、通常利用者trustの全経路を検証したとは報告しません。
+各binaryのbuildには`buildinfo.Version`と`buildinfo.Commit`をlinkerから渡します。日本語CLIだけは既存の`main.version`へ版を渡します。具体的なbuildと入力作成は[Distribution workflow](../.github/workflows/distribution.yml)にあります。`aidlc-dist --version`だけなら梱包器自身の版を表示します。梱包器は公開やアップロードを行いません。
+
+五製品それぞれ6archive・manifest・checksumの8件、計40件に、`aidlc-assets_VERSION.tar.gz`・`aidlc-assets-manifest.json`・`aidlc-assets-SHA256SUMS`の3件を加え、**43件**です。`aidlc`のmetadataは`manifest.json`と`SHA256SUMS`、他製品は製品名を接頭辞にします。schema 1は受取るpathと機能を固定し、新しい資材集合には対応するschemaとinstallerが必要です。
+
+各binary archiveには独自MIT、実GoのLICENSE・PATENTS、該当するYAML等の許諾を含めます。原稿を含む製品には13skillのLICENSEと出典も含め、日本語CLIには従来の5文書をbytesを変えず同梱します。data archive自身にも独自MITと原典表示を含めます。許諾入力のGo版・本文が梱包器の実Goと一致しなければ出力しません。
+
+## GitHub Actionsと公開
+
+Distributionは確定commitから一度buildした43件をActions artifactへ1日保存し、その同じartifact IDを3OSのnative検査へ渡します。各OSでは五つのCLIの版・help、実installer経由の新規導入、既存file保持、自然文検査、同版移転を実行します。再buildした候補を代用しません。全六CPU上での実行や、実Codexでのhook成功はこの検査だけでは証明しません。
+
+手動実行の`tag`にはmainに含まれる既存tagを指定します。`create_draft`は既定falseで、trueならpackage・nativeが成功した後に43件を添付したRelease下書きを作ります。書込み権限はdraft jobだけです。remote tag変更、artifact不一致、API失敗、既存Releaseがあれば停止します。途中失敗で部分的な下書きが残った場合も自動削除・上書きしません。内容を確認してから公開します。
+
+公開候補の最終確認では、実五製品の依存と許諾集合、三OS検査、通常trustの実Codex操作を区別して記録します。独立reviewとfinal検証が終わるまでは、候補を検証済みの一般公開版と扱いません。
