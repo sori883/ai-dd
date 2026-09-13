@@ -38,7 +38,7 @@ func memoryLiveArgs(binary, command string) ([]string, bool) {
 		args, ok = flowShellWords(args[2])
 	}
 	return args, ok && (len(args) > 1 && args[0] == binary ||
-		len(args) == 2 && args[0] == "cat" && args[1] == ".agents/skills/aidlc-okf/SKILL.md")
+		len(args) == 2 && args[0] == "cat" && args[1] == ".agents/skills/okf-agent-memory/SKILL.md")
 }
 func verifyMemoryLive(binary string, transport []byte, records []memoryLiveRecord) error {
 	fail := func() error {
@@ -78,7 +78,7 @@ func verifyMemoryLive(binary string, transport []byte, records []memoryLiveRecor
 		}
 		executions[session+"/"+strings.Join(args, "\x00")] = execution{*event.Item.Exit, event.Item.Output}
 	}
-	template, err := completedSkill(".agents/skills/aidlc-okf/SKILL.md", binary)
+	template, err := completedSkill(".agents/skills/okf-agent-memory/SKILL.md", binary)
 	if err != nil {
 		return err
 	}
@@ -199,8 +199,8 @@ func verifyMemoryLive(binary string, transport []byte, records []memoryLiveRecor
 func TestMemoryMetadataCommandEvidence(t *testing.T) {
 	binary := "/bin/aidlc"
 	help := binary + " memory create --help"
-	skillCommand := "cat .agents/skills/aidlc-okf/SKILL.md"
-	template, err := completedSkill(".agents/skills/aidlc-okf/SKILL.md", binary)
+	skillCommand := "cat .agents/skills/okf-agent-memory/SKILL.md"
+	template, err := completedSkill(".agents/skills/okf-agent-memory/SKILL.md", binary)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +407,7 @@ func TestMemoryMetadataLive(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
 	defer cancel()
-	prompt := `Use the installed aidlc skill. Before selecting or creating an Intent, read memory create help through the installed binary. Then follow the skill to select an Intent, read its project Rules, explicitly read .agents/skills/aidlc/SKILL.md and .agents/skills/aidlc-cli/SKILL.md, then run exactly cat .agents/skills/aidlc-okf/SKILL.md in its own tool call before any memory create/update, and obtain the current deployed procedure. Record the current behavior of arithmetic.go in Concept codekb/live-note: title Arithmetic, type Design, tag arithmetic, extension audience=maintainers. The first body must include FIRST-BODY and describe Add. Then read update help, revise only the body to include SECOND-BODY instead and add a concrete example; preserve its metadata. Use actor process:codex. Inspect the saved document afterward. Use one literal CLI command per tool call so its result can be observed. Do not edit the product hooks or Rules. Stop after the Knowledge update; this task does not require the full implementation journey.`
+	prompt := `Use the installed aidlc skill. Before selecting or creating an Intent, read memory create help through the installed binary. Then follow the skill to select an Intent, read its project Rules, explicitly read .agents/skills/aidlc/SKILL.md and .agents/skills/aidlc-cli/SKILL.md, then run exactly cat .agents/skills/okf-agent-memory/SKILL.md in its own tool call before any memory create/update, and obtain the current deployed procedure. Record the current behavior of arithmetic.go in Concept codekb/live-note: title Arithmetic, type Design, tag arithmetic, extension audience=maintainers. The first body must include FIRST-BODY and describe Add. Then read update help, revise only the body to include SECOND-BODY instead and add a concrete example; preserve its metadata. Use actor process:codex. Inspect the saved document afterward. Use one literal CLI command per tool call so its result can be observed. Do not edit the product hooks or Rules. Stop after the Knowledge update; this task does not require the full implementation journey.`
 	if _, err := flowRunModel(ctx, cfg, root, "memory", prompt, "workspace-write"); err != nil {
 		t.Fatalf("model failed: %v; evidence %s", err, evidence)
 	}

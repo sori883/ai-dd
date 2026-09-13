@@ -14,7 +14,7 @@ func TestRuleSkillSeparationAssets(t *testing.T) {
 	if _, err := Codex(root, "/opt/aidlc"); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"aidlc", "aidlc-cli", "aidlc-okf"} {
+	for _, name := range []string{"aidlc", "aidlc-cli", "okf-agent-memory"} {
 		raw, err := os.ReadFile(filepath.Join(root, ".agents/skills", name, "SKILL.md"))
 		if err != nil {
 			t.Errorf("missing %s: %v", name, err)
@@ -50,7 +50,7 @@ func TestRuleSkillSeparationRelocate(t *testing.T) {
 	for _, mode := range []string{"success", "partial", "missing", "edited", "legacy", "symlink"} {
 		t.Run(mode, func(t *testing.T) {
 			root, oldRoot, oldBinary := relocateFixture(t)
-			paths := []string{".agents/skills/aidlc/SKILL.md", ".agents/skills/aidlc-cli/SKILL.md", ".agents/skills/aidlc-okf/SKILL.md", ".codex/hooks.json"}
+			paths := []string{".agents/skills/aidlc/SKILL.md", ".agents/skills/aidlc-cli/SKILL.md", ".agents/skills/okf-agent-memory/SKILL.md", ".codex/hooks.json"}
 			p := filepath.Join(root, paths[1])
 			before := map[string]string{}
 			for _, name := range paths {

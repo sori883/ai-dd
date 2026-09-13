@@ -41,7 +41,7 @@ stateのrevisionやreview記録だけの更新では対象hashを変えません
 worker以外はread-onlyで本文案や報告を返し、共有Knowledgeの保存はメインAIが行います。
 製品の行動規約は[aidlc Skill](../src/core/skills/aidlc/SKILL.md.tmpl)、操作の選択は
 [aidlc-cli Skill](../src/core/skills/aidlc-cli/SKILL.md.tmpl)、知識の検索・保存は
-[aidlc-okf Skill](../src/core/skills/aidlc-okf/SKILL.md.tmpl)、正確な引数・型はCLI helpにあります。
+[okf-agent-memory Skill](../src/core/skills/okf-agent-memory/SKILL.md.tmpl)、正確な引数・型はCLI helpにあります。
 
 Unitは担当範囲、検証、依存、Bolt（作業のまとまり）を持ち、workerは通常ディレクトリへ割り当てます。同じrootでの順次作業を許可し、同一・親子rootの重複予約を拒否します。
 依存統合前や担当範囲の重複を拒否し、結果は現在のrun/session/rootと実効検証集合のSHAに照合します。反映時は管理元の同じ集合の内容一致を確認します。

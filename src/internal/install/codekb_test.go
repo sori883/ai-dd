@@ -50,7 +50,7 @@ func TestCodeKBGuidance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, link, found := strings.Cut(string(common), "[aidlc-okf](")
+	_, link, found := strings.Cut(string(common), "[okf-agent-memory](")
 	if !found {
 		t.Fatal("common operations lack OKF skill reference")
 	}

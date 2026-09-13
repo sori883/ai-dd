@@ -32,7 +32,7 @@ func relocate(root, binary, fromRoot, fromBinary string, write func(string, stri
 	if err != nil {
 		return result, err
 	}
-	paths := []string{".agents/skills/aidlc/SKILL.md", ".agents/skills/aidlc-cli/SKILL.md", ".agents/skills/aidlc-okf/SKILL.md", ".codex/hooks.json"}
+	paths := []string{".agents/skills/aidlc/SKILL.md", ".agents/skills/aidlc-cli/SKILL.md", ".agents/skills/okf-agent-memory/SKILL.md", ".codex/hooks.json"}
 	before := make([][]byte, len(paths))
 	after := make([][]byte, len(paths))
 	for i, p := range paths {

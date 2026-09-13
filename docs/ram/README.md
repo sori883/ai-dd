@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [外部由来skillに製品の接頭辞を付けない](decisions/2026-09-13-upstream-skill-names.md): ユーザーの直接修正依頼。11工程skillとOKFを原典名へ変更し、13翻案skillの作者・出典・翻案表示を明確にする。共通配置・承認等は維持し、参照名の変更に伴う工程hash変更は新規配置で扱う。4sliceのloop証拠、71資材の固定fixtureと原典LICENSE照合を記録。
+
 - [共通手順とCodex設定を分離しClaude未完了作業を破棄する](decisions/2026-09-13-common-skills-codex-approved.md): Issue #196の直接承認、共通15skill・5担当の生成、独立review修正、final10項目と固定Codex実機の結果を記録。実読込み・担当拒否・親宛報告・同じ子への追加依頼を確認し、help試験の引数誤りと検証範囲も明記。Claude専用Issue・ローカルbranch・作業treeの削除は完了。下記の回収記録は検討履歴であり、Claude実装の継続許可ではない。
 
 Claude専用作業treeから回収した履歴（現在の扱いは上記の後続決定を優先）：

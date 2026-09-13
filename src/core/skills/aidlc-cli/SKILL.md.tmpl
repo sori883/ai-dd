@@ -20,7 +20,7 @@ description: AI-DLC CLIの操作目的からコマンドとhelpを選ぶ。Inten
 | Knowledge/ADRの作成・更新・読取り | `A memory create --help`、`A memory update --help`、`A memory show --help`、`A memory search --help` |
 | session読込み・復旧、配置・移転、Unit移転 | `A session bind --help`、`A {{host "install"}} --help`、`A unit reassign --help` |
 
-知識の検索・保存規約は [aidlc-okf](../aidlc-okf/SKILL.md) を読む。
+知識の検索・保存規約は [okf-agent-memory](../okf-agent-memory/SKILL.md) を読む。
 
 ## 文書と実測
 
@@ -32,7 +32,7 @@ TDD/integrationではverification_pathsへコード・テスト・設定・共�
 ## 承認と復旧
 
 reviewは別session（同root可）へassignし、実報告をacceptする。コードを扱う段階の別reviewer rootは同じverification_pathsの集合SHAにする。plan-approval/approvalは表示されたrequest_id/targetと実回答のsession/turn/quoteを使う。計画整理・読取り・質問回答は承認待ちでもできる。
-reopenは--stepで対象を指定する。保存途中は同じexpect・decisionを再試行する。durable pending後は時刻と前後hashが固定され、log改変時は元版を復元する。記録の存在だけで成功扱いせずstateのrevision確定を確認する。generated.atは更新日時で承認を意味しない。work-logの読取りはaidlc-okfを参照する。
+reopenは--stepで対象を指定する。保存途中は同じexpect・decisionを再試行する。durable pending後は時刻と前後hashが固定され、log改変時は元版を復元する。記録の存在だけで成功扱いせずstateのrevision確定を確認する。generated.atは更新日時で承認を意味しない。work-logの読取りはokf-agent-memoryを参照する。
 移転前に端末から{{host "install"}} --helpを読み、--relocateへ旧root/binaryの配置済み絶対文字列を渡す。3つのskillとhooksの既知参照だけを移し、版更新や未知編集の上書きを兼ねない。利用者が新hooksの絶対pathと{{host "trust"}}を確認する。部分失敗はPaths/Pendingを見て同じ引数で再検査する。
 Unit移転は旧run停止を確認してからreassignする。runningはpause/resumeでneeds_confirmationにし、previous_run_stoppedは確認時だけtrue。保存途中は同じexpect/JSONで再試行する。新runで再検証し、現在verification_sha256と結果を提出する。CLIはworker起動やファイル移送を代行しない。
 
@@ -57,14 +57,14 @@ Gitは利用時に不要。明示--project-dirを優先し、省略時は上方�
 
 | 作業 | 読むskill |
 | --- | --- |
-| discoveryの深掘り | [aidlc-grill-with-docs](../aidlc-grill-with-docs/SKILL.md)。そこからgrillingとdomain-modelingを実際に読む |
-| 一次資料の調査 | researcherが [aidlc-research](../aidlc-research/SKILL.md) |
-| 実装済み構成の説明 | [aidlc-architecture](../aidlc-architecture/SKILL.md) |
-| 確定した要求の統合 | requirementsが [aidlc-to-spec](../aidlc-to-spec/SKILL.md) |
-| planningの実装計画・Unit | メインAIが [aidlc-planning](../aidlc-planning/SKILL.md) |
-| tddの実装・修正 | workerが [aidlc-tdd](../aidlc-tdd/SKILL.md)、不具合時は [aidlc-systematic-debugging](../aidlc-systematic-debugging/SKILL.md) |
-| 独立review | reviewerが [aidlc-code-review](../aidlc-code-review/SKILL.md) |
-| 完了主張の証拠確認 | [aidlc-verification-before-completion](../aidlc-verification-before-completion/SKILL.md) |
+| discoveryの深掘り | [grill-with-docs](../grill-with-docs/SKILL.md)。そこからgrillingとdomain-modelingを実際に読む |
+| 一次資料の調査 | researcherが [research](../research/SKILL.md) |
+| 実装済み構成の説明 | [architecture](../architecture/SKILL.md) |
+| 確定した要求の統合 | requirementsが [to-spec](../to-spec/SKILL.md) |
+| planningの実装計画・Unit | メインAIが [planning](../planning/SKILL.md) |
+| tddの実装・修正 | workerが [tdd](../tdd/SKILL.md)、不具合時は [systematic-debugging](../systematic-debugging/SKILL.md) |
+| 独立review | reviewerが [code-review](../code-review/SKILL.md) |
+| 完了主張の証拠確認 | [verification-before-completion](../verification-before-completion/SKILL.md) |
 | 日本語の本文案の推敲 | [natural-japanese-go](../natural-japanese-go/SKILL.md) |
 
-メインAIはroot相対の既知Markdownを `cat {{host "skill-root"}}/aidlc-planning/SKILL.md` のように最大3fileずつ読む。子へは担当範囲と必要なskill本文または参照先を渡す。子の起動は前述のnative登録を維持する。本文案・根拠はメインAIへ返し、共有保存はaidlc memoryで行う。日本語CLIは開始済み工程の通常toolとして実行し、承認待ちの例外を作らない。stage-plannerの工程採否・順序提案と、メインAIの実装計画を区別する。
+メインAIはroot相対の既知Markdownを `cat {{host "skill-root"}}/planning/SKILL.md` のように最大3fileずつ読む。子へは担当範囲と必要なskill本文または参照先を渡す。子の起動は前述のnative登録を維持する。本文案・根拠はメインAIへ返し、共有保存はaidlc memoryで行う。日本語CLIは開始済み工程の通常toolとして実行し、承認待ちの例外を作らない。stage-plannerの工程採否・順序提案と、メインAIの実装計画を区別する。

@@ -8,7 +8,7 @@ import (
 )
 
 func TestStageSkillsRead(t *testing.T) {
-	for _, mode := range []string{"all", "single", "before begin", "changed Rule", "parent", "glob", "four", "script", "unread", "inflight", "missing", "symlink", "redirect", "compound", "arbitrary", "retired", "shared", "template", "unknown-installed"} {
+	for _, mode := range []string{"all", "single", "before begin", "changed Rule", "parent", "glob", "four", "script", "unread", "inflight", "missing", "symlink", "redirect", "compound", "arbitrary", "retired", "shared", "template", "unknown-installed", "old-installed"} {
 		t.Run(mode, func(t *testing.T) {
 			s, st := setup(t)
 			if mode != "before begin" {
@@ -19,11 +19,11 @@ func TestStageSkillsRead(t *testing.T) {
 			if mode != "unread" {
 				bind(t, s, st.ID)
 			}
-			command := "cat .agents/skills/aidlc/SKILL.md .agents/skills/aidlc-tdd/references/source.md .agents/skills/aidlc-tdd/SKILL.md"
+			command := "cat .agents/skills/aidlc/SKILL.md .agents/skills/tdd/references/source.md .agents/skills/tdd/SKILL.md"
 			if mode == "single" {
-				command = "cat .agents/skills/aidlc-tdd/SKILL.md"
+				command = "cat .agents/skills/tdd/SKILL.md"
 			}
-			p := filepath.Join(s.Root, ".agents/skills/aidlc-tdd/SKILL.md")
+			p := filepath.Join(s.Root, ".agents/skills/tdd/SKILL.md")
 			switch mode {
 			case "inflight":
 				if deny(hook(t, s, "PreToolUse", "Bash", "first", "cat .agents/skills/aidlc/SKILL.md", false)) {
@@ -48,9 +48,9 @@ func TestStageSkillsRead(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "parent":
-				command = "cat .agents/skills/aidlc-tdd/../aidlc-tdd/SKILL.md"
+				command = "cat .agents/skills/tdd/../tdd/SKILL.md"
 			case "glob":
-				command = "cat .agents/skills/aidlc-tdd/*.md"
+				command = "cat .agents/skills/tdd/*.md"
 			case "four":
 				command += " .agents/skills/aidlc/SKILL.md"
 			case "script":
@@ -61,13 +61,16 @@ func TestStageSkillsRead(t *testing.T) {
 				command += " && echo bad"
 			case "arbitrary":
 				command = "cat arbitrary.md"
-			case "shared", "template", "unknown-installed":
+			case "shared", "template", "unknown-installed", "old-installed":
 				name := ".agents/skills/shared/agent-contract.md"
 				if mode == "template" {
-					name = ".agents/skills/aidlc-tdd/SKILL.md.tmpl"
+					name = ".agents/skills/tdd/SKILL.md.tmpl"
 				}
 				if mode == "unknown-installed" {
 					name = ".agents/skills/unknown/SKILL.md"
+				}
+				if mode == "old-installed" {
+					name = ".agents/skills/aidlc-tdd/SKILL.md"
 				}
 				target := filepath.Join(s.Root, name)
 				if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
