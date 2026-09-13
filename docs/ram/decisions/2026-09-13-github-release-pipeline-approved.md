@@ -19,3 +19,6 @@ Claude対応のIssue #185は、残高不足による実機確認中断を受け�
 
 
 Review修復では、実候補の新規導入をGitのないPATH・`.git`のない通常フォルダで検査する。通常フォルダhelperは`.git`不存在のRED→GREENを確認した。これはGit不要の既存導入契約を候補検証へ反映するもので、製品Go・既存Journeyを変更しない。
+
+
+親finalの隔離検証で、macOS Bash 3.2.57の単独`[[ ... ]]`を`set -e`だけに頼るとtag移動を拒否できないことを確認した。workflowの必須guardへ明示的な失敗終了を追加し、同じ18ケースを通した。Ubuntuでの実Draft作成の証拠ではない。拒否契約を維持する修復として[計画](../../design/github-release-pipeline-plan.md#shell-guardの範囲内修復)へ記録した。

@@ -95,7 +95,7 @@ jobs:
           mkdir "$input"
           commit="$AIDLC_RELEASE_COMMIT"
           version="$AIDLC_RELEASE_VERSION"
-          [[ "$(git rev-parse HEAD)" == "$commit" ]]
+          [[ "$(git rev-parse HEAD)" == "$commit" ]] || { echo '検証対象のcommitが一致しません'; exit 1; }
           toolchain="$(go env GOVERSION)"
           echo "go_version=$toolchain" >> "$GITHUB_OUTPUT"
           for os in darwin linux windows; do
@@ -164,7 +164,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "$AIDLC_RELEASE_COMMIT" ]]
+          [[ "$(git rev-parse HEAD)" == "$AIDLC_RELEASE_COMMIT" ]] || { echo '検証対象のcommitが一致しません'; exit 1; }
           tests="$(go test -tags=integration -list '^TestReleaseCandidateNative$' ./src/cmd/aidlc-dist)"
           grep -Fxq TestReleaseCandidateNative <<< "$tests"
           AIDLC_DIST_DIR="$RUNNER_TEMP/dist-candidate" go test -tags=integration -count=1 -v \
@@ -211,7 +211,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "$AIDLC_RELEASE_COMMIT" ]]
+          [[ "$(git rev-parse HEAD)" == "$AIDLC_RELEASE_COMMIT" ]] || { echo '検証対象のcommitが一致しません'; exit 1; }
           tests="$(go test -tags=integration -list '^TestReleaseCandidateMetadata$' ./src/cmd/aidlc-dist)"
           grep -Fxq TestReleaseCandidateMetadata <<< "$tests"
           AIDLC_DIST_DIR="$RUNNER_TEMP/dist-candidate" go test -tags=integration -count=1 -v \
@@ -223,12 +223,12 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          [[ "$RELEASE_TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && ${#RELEASE_TAG} -le 128 && "$RELEASE_TAG" != *..* ]]
-          [[ "$RELEASE_TAG" == "$AIDLC_RELEASE_VERSION" ]]
+          [[ "$RELEASE_TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && ${#RELEASE_TAG} -le 128 && "$RELEASE_TAG" != *..* ]] || { echo '不正なtag名です'; exit 1; }
+          [[ "$RELEASE_TAG" == "$AIDLC_RELEASE_VERSION" ]] || { echo 'tagと候補versionが一致しません'; exit 1; }
           git fetch --no-tags origin \
             +refs/heads/main:refs/remotes/origin/main \
             "refs/tags/$RELEASE_TAG:refs/release/recheck"
-          [[ "$(git rev-parse 'refs/release/recheck^{commit}')" == "$AIDLC_RELEASE_COMMIT" ]]
+          [[ "$(git rev-parse 'refs/release/recheck^{commit}')" == "$AIDLC_RELEASE_COMMIT" ]] || { echo 'remote tagのcommitが変わりました'; exit 1; }
           git merge-base --is-ancestor "$AIDLC_RELEASE_COMMIT" refs/remotes/origin/main
           # API failure must stop the job. The list includes existing drafts with this token.
           gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
@@ -256,6 +256,6 @@ jobs:
           3OSの候補実行検査は全6CPU構成の実行や、実Codex hookの動作成功を意味しません。
           EOF_NOTES
           files=("$RUNNER_TEMP/dist-candidate/"*)
-          [[ ${#files[@]} -eq 8 ]]
+          [[ ${#files[@]} -eq 8 ]] || { echo '候補ファイルは8個必要です'; exit 1; }
           gh release create "$RELEASE_TAG" --verify-tag --draft \
             --title "AI-DLC $AIDLC_RELEASE_VERSION" --notes-file "$notes" "${files[@]}"

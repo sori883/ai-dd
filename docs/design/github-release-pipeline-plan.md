@@ -97,3 +97,10 @@ work unitの順序1・2は`release_integration_test.go`内のmetadata helperとn
 `github-release-distribution-review-repair`は、実候補の導入先をGit repositoryから通常フォルダへ直す範囲内修復である。`TestReleaseCandidateProjectDirectory`を先に追加し、既存のGit初期化helperを呼ぶ状態で`.git`の不存在assertionがRED（exit 1）となった。その後、mkdirと実path解決だけのhelperへ変更してGREEN（exit 0）を確認した。正確なcommandは`go test -tags=integration -count=1 ./src/cmd/aidlc-dist -run '^TestReleaseCandidateProjectDirectory$'`。
 
 実候補のversion/help/install/reinstallは空directoryをPATHに指定して絶対pathから起動し、配置後も`.git`がないことを確認する。通常OS環境変数を保持し、既存Journeyは変更しない。新しい小fixtureはpackage CIでも実行し、実候補の起動はfinalと3OS CIに委ねる。
+
+
+### Shell guardの範囲内修復
+
+`github-release-distribution-shell-guard-repair`では、親のfinalで見つかった拒否漏れを修復する。macOSのBash 3.2.57では、`set -e`下の単独`[[ ... ]]`の不一致後も処理が続き、隔離Gitとstub ghでworkflow本文を実行すると、移動済みtagが下書き作成stubまで到達した。修復前の`ruby /tmp/ai-dd-release-guard-fixtures.rb .github/workflows/distribution.yml`は`tag_moved`でexit 1となった。
+
+package/native/recheckのHEAD一致、draftのtag名・版・remote SHA・8file数の必須guardに明示的な`exit 1`を追加した。同じ18ケースは修復後exit 0となり、`tag_moved`の作成呼出しは0回だった。条件内のif/while、正常系、権限、版仕様は変更しない。Ubuntu上の実Draft作成は未実測で、今回の証拠はmacOS Bash 3と隔離stubの拒否確認である。
