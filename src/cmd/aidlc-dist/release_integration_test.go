@@ -189,13 +189,15 @@ func TestReleaseCandidateNative(t *testing.T) {
 		t.Fatal(err)
 	}
 	binary = fixtureBinaryPath(t, binary)
+	// Keep OS environment variables, but make Git unavailable to every candidate command.
+	t.Setenv("PATH", t.TempDir())
 	if got := strings.TrimSpace(string(distributionOK(t, base, binary, "version"))); got != "aidlc "+e.Version+" (commit "+e.Commit+")" {
 		t.Fatalf("candidate version mismatch: %q", got)
 	}
 	if got := distributionOK(t, base, binary, "--help"); !bytes.Contains(got, []byte("Usage:")) {
 		t.Fatal("candidate help missing")
 	}
-	root := fixtureGitRoot(t, filepath.Join(base, "project"))
+	root := releaseProjectDirectory(t, filepath.Join(base, "project"))
 	var installed struct{ Paths []string }
 	if err := json.Unmarshal(distributionOK(t, root, binary, "install", "codex", "--project-dir", root), &installed); err != nil {
 		t.Fatal(err)
@@ -221,5 +223,32 @@ func TestReleaseCandidateNative(t *testing.T) {
 	if !reflect.DeepEqual(before, snapshotFixture(t, root, paths)) {
 		t.Fatal("candidate reinstall modified existing files")
 	}
+	if _, err := os.Lstat(filepath.Join(root, ".git")); !os.IsNotExist(err) {
+		t.Fatalf("candidate installation created .git: %v", err)
+	}
 	t.Logf("executed package candidate %s on %s; verified version/help/install/assets/preservation, not live AI hook execution", a.Archive, target)
+}
+
+func TestReleaseCandidateProjectDirectory(t *testing.T) {
+	t.Parallel()
+	root := releaseProjectDirectory(t, filepath.Join(t.TempDir(), "project"))
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() || !filepath.IsAbs(root) {
+		t.Fatalf("project must be an absolute directory: %q, %v", root, err)
+	}
+	if _, err := os.Lstat(filepath.Join(root, ".git")); !os.IsNotExist(err) {
+		t.Fatalf("release candidate project must have no .git: %v", err)
+	}
+}
+
+func releaseProjectDirectory(t *testing.T, root string) string {
+	t.Helper()
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	actual, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return actual
 }

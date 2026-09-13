@@ -16,3 +16,6 @@ Claude対応のIssue #185は、残高不足による実機確認中断を受け�
 
 
 実装では、同tagの下書きjobを直列化し、認証済みRelease一覧の全ページを確認して既存Draftも拒否する。再実行で部分Draftや添付を自動再利用しない。候補検証は同じSHAの配置資材と照合し、実Codex hookの成功証拠とは分ける。具体的な検証方法は[計画](../../design/github-release-pipeline-plan.md#実装時の具体化)に記録する。
+
+
+Review修復では、実候補の新規導入をGitのないPATH・`.git`のない通常フォルダで検査する。通常フォルダhelperは`.git`不存在のRED→GREENを確認した。これはGit不要の既存導入契約を候補検証へ反映するもので、製品Go・既存Journeyを変更しない。

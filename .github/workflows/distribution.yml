@@ -113,7 +113,7 @@ jobs:
           go run ./src/cmd/aidlc-dist --input-dir "$input" --output-dir "$output" \
             --version "$version" --commit "$commit" --go-version "$toolchain"
           AIDLC_DIST_DIR="$output" AIDLC_RELEASE_GO_VERSION="$toolchain" go test -tags=integration -count=1 -v \
-            ./src/cmd/aidlc-dist -run '^Test(DistributionArchives|ReleaseCandidateMetadata|ReleaseCandidateMetadataValidation|ReleaseCandidateNativeSelection)$'
+            ./src/cmd/aidlc-dist -run '^Test(DistributionArchives|ReleaseCandidateMetadata|ReleaseCandidateMetadataValidation|ReleaseCandidateNativeSelection|ReleaseCandidateProjectDirectory)$'
           go run ./src/cmd/aidlc-dist --product natural-japanese-go --input-dir "$input" --output-dir "$natural_output" \
             --version "$version" --commit "$commit" --go-version "$toolchain"
           AIDLC_NATURAL_DIST_DIR="$natural_output" go test -tags=integration -count=1 -v \

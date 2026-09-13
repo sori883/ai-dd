@@ -90,3 +90,10 @@ work unitの順序1・2は`release_integration_test.go`内のmetadata helperとn
 同tagの下書き作成jobをconcurrencyで直列化する。既存Releaseの確認は認証済み`gh api --paginate`で全ページのtagとIDを取得し、下書きも含めて比較する。API失敗を空一覧へ変えない。下書きの添付失敗後に残ったReleaseは次回の既存検査で拒否し、自動再利用しない。これは既存Releaseを上書きしない契約の具体化である。
 
 両helperのnegative fixtureもpackage jobで実行する。integrationタグを使うため、通常のタグなしGo testだけに検証を委ねない。local loopは小fixtureと入口列挙・構文検査まで、実candidate build/runとremote拒否分岐の隔離fixtureは親のfinalに残す。
+
+
+### Review修復: Gitを必要としない候補導入
+
+`github-release-distribution-review-repair`は、実候補の導入先をGit repositoryから通常フォルダへ直す範囲内修復である。`TestReleaseCandidateProjectDirectory`を先に追加し、既存のGit初期化helperを呼ぶ状態で`.git`の不存在assertionがRED（exit 1）となった。その後、mkdirと実path解決だけのhelperへ変更してGREEN（exit 0）を確認した。正確なcommandは`go test -tags=integration -count=1 ./src/cmd/aidlc-dist -run '^TestReleaseCandidateProjectDirectory$'`。
+
+実候補のversion/help/install/reinstallは空directoryをPATHに指定して絶対pathから起動し、配置後も`.git`がないことを確認する。通常OS環境変数を保持し、既存Journeyは変更しない。新しい小fixtureはpackage CIでも実行し、実候補の起動はfinalと3OS CIに委ねる。
