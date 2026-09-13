@@ -104,3 +104,12 @@ work unitの順序1・2は`release_integration_test.go`内のmetadata helperとn
 `github-release-distribution-shell-guard-repair`では、親のfinalで見つかった拒否漏れを修復する。macOSのBash 3.2.57では、`set -e`下の単独`[[ ... ]]`の不一致後も処理が続き、隔離Gitとstub ghでworkflow本文を実行すると、移動済みtagが下書き作成stubまで到達した。修復前の`ruby /tmp/ai-dd-release-guard-fixtures.rb .github/workflows/distribution.yml`は`tag_moved`でexit 1となった。
 
 package/native/recheckのHEAD一致、draftのtag名・版・remote SHA・8file数の必須guardに明示的な`exit 1`を追加した。同じ18ケースは修復後exit 0となり、`tag_moved`の作成呼出しは0回だった。条件内のif/while、正常系、権限、版仕様は変更しない。Ubuntu上の実Draft作成は未実測で、今回の証拠はmacOS Bash 3と隔離stubの拒否確認である。
+
+
+### Windows checkoutの改行修復
+
+`github-release-windows-checkout-repair`はPR #187のWindows候補検証失敗への範囲内修復である。Linuxでbuildした同梱LICENSEとWindows checkoutから読むLICENSEのbytesが一致しなかった。隔離Git fixtureで`core.autocrlf=true`を設定し、workflowのcheckout stepのenvを適用して取り出すと、修復前はLFがCRLFになって比較assertionが失敗した（exit 1）。
+
+4つのcheckout stepだけに`GIT_CONFIG_COUNT/KEY_n/VALUE_n`で`core.autocrlf=false`と`core.eol=lf`を渡す。同じfixtureは全4stepでcanonical LF bytesを保持し、永続configのtrueも変わらないことを確認した（exit 0）。core.eolも指定するのは、text属性のあるfileでもOS既定の改行を使わないためである。[Git公式config仕様](https://git-scm.com/docs/git-config#Documentation/git-config.txt-GIT_CONFIG_COUNT)のプロセス限定上書きを使用する。比較時の正規化、製品資材、global Git configは変更しない。
+
+正確な再現commandは`ruby /tmp/ai-dd-release-checkout-fixture.rb .github/workflows/distribution.yml`。repo外の小fixtureがworkflow envを読んで実Gitを動かす。Windows runnerでの実候補の再検証は親finalとCIへ残す。

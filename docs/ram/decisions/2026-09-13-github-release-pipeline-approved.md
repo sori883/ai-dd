@@ -22,3 +22,6 @@ Review修復では、実候補の新規導入をGitのないPATH・`.git`のな�
 
 
 親finalの隔離検証で、macOS Bash 3.2.57の単独`[[ ... ]]`を`set -e`だけに頼るとtag移動を拒否できないことを確認した。workflowの必須guardへ明示的な失敗終了を追加し、同じ18ケースを通した。Ubuntuでの実Draft作成の証拠ではない。拒否契約を維持する修復として[計画](../../design/github-release-pipeline-plan.md#shell-guardの範囲内修復)へ記録した。
+
+
+PR #187のWindows候補検証で改行差が見つかり、隔離Gitでautocrlf=trueによるLF→CRLFの比較失敗を再現した。checkout step限定のGit環境configでautocrlf=false/eol=lfにし、4stepのbytes一致と永続config不変を確認した。製品資材と比較assertionは維持し、Windows実候補の再検証はCIへ委ねる。
