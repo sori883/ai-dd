@@ -1,0 +1,26 @@
+---
+stage_id: initialization
+agents:
+  - role: execution_planning
+    agent: aidlc-stage-planner
+  - role: independent_review
+    agent: aidlc-reviewer
+inputs:
+  - path: ${knowledge_root}/rules/rule.md
+    metadata: {type: Rule}
+    version: current
+  - declared: intent_documents
+outputs:
+  - declared: intent_documents
+sensors:
+  start: initialization-start
+  end: initialization-end
+---
+
+# Space等の初期化
+
+選択Space、必須Rule、workflow、CLI配置を確認する。既存Spaceを再作成せず、ダミー成果文書を作らない。
+
+## 現在回の操作
+
+{{include "skills/shared/workflow-operations.md"}}

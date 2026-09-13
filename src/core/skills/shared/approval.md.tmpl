@@ -1,0 +1,2 @@
+initialization→discoveryが初回必須。他4段階の採否・順序・省略理由はユーザーが計画を承認する。bootstrapを承認済みと扱わない。変更ごとに承認し、計画承認と成果承認を別requestで記録する。提示後の実際の{{host "answer-event"}}回答だけを引用する。両requestを提示していた場合だけ同じ回答を使え、後で生成したrequestや過去turnに転用しない。
+各回は開始Sensorとbegin後に一般作業を行い、終了Sensor・独立review・成果承認を確認してfinishする。未実施・skip・fail・対象変更後の古いpassを成功扱いしない。省略段階の成果を一律要求しない。

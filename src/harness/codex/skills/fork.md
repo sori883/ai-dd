@@ -1,0 +1,1 @@
+fork_turnsが提供される場合はnone

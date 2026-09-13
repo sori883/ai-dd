@@ -265,6 +265,9 @@ func TestProductArchive(t *testing.T) {
 					t.Errorf("missing %s", path)
 				}
 			}
+			if len(entries) != 7 || !bytes.Contains(entries["README.md"], []byte("natural-japanese-go --json --genre tech text.md")) {
+				t.Fatal("missing standalone common-source CLI instructions or unexpected archive entries")
+			}
 			if string(entries["natural-japanese-go"+suffix]) != "natural binary" {
 				t.Fatal("wrong binary")
 			}

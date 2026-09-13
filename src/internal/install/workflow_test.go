@@ -2,12 +2,12 @@ package install
 
 import (
 	"bytes"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/sori883/ai-dd/src/core"
 	coreworkflow "github.com/sori883/ai-dd/src/core/workflow"
 	"github.com/sori883/ai-dd/src/internal/workflow"
 )
@@ -20,23 +20,19 @@ func TestWorkflowDefinitionFresh(t *testing.T) {
 	if _, err := workflow.Load(root); err != nil {
 		t.Fatal("fresh definition unavailable", err)
 	}
-	err := fs.WalkDir(coreworkflow.Files, ".", func(name string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		want, _ := coreworkflow.Files.ReadFile(name)
+	completed, err := coreworkflow.Render(core.Files, map[string]string{"skill-root": ".agents/skills"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range completed {
 		got, err := os.ReadFile(filepath.Join(root, "aidlc/workflow", name))
 		if err != nil {
-			return err
+			t.Fatal(err)
 		}
 		if !bytes.Equal(got, want) {
 			t.Errorf("asset mismatch %s", name)
 		}
-		return nil
-	})
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

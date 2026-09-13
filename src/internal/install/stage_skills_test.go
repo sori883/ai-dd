@@ -3,6 +3,8 @@ package install
 import (
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -84,6 +86,37 @@ func TestNaturalJapaneseSkill(t *testing.T) {
 		raw, err := os.ReadFile(filepath.Join(root, ".agents/skills/natural-japanese-go", name))
 		if err != nil || len(raw) == 0 {
 			t.Fatal(name, err)
+		}
+	}
+}
+
+func TestStageSkillsReferencesResolve(t *testing.T) {
+	root := t.TempDir()
+	result, err := Codex(root, "/opt/aidlc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range result.Paths {
+		if !strings.HasPrefix(name, ".agents/skills/") || !strings.HasSuffix(name, ".md") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, match := range regexp.MustCompile(`\[[^\]]+\]\(([^)]+)\)`).FindAllStringSubmatch(string(raw), -1) {
+			link := match[1]
+			if strings.Contains(link, "://") || strings.HasPrefix(link, "#") {
+				continue
+			}
+			target := filepath.Clean(filepath.Join(filepath.Dir(name), strings.Split(link, "#")[0]))
+			if !strings.HasPrefix(filepath.ToSlash(target), ".agents/skills/") {
+				t.Fatalf("skill link leaves deployed skills: %s -> %s", name, link)
+			}
+			info, err := os.Stat(filepath.Join(root, target))
+			if err != nil || !info.Mode().IsRegular() {
+				t.Fatalf("unresolved skill link: %s -> %s: %v", name, link, err)
+			}
 		}
 	}
 }

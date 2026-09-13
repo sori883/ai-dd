@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	codex "github.com/sori883/ai-dd/src/harness/codex"
 	"github.com/sori883/ai-dd/src/internal/app"
 	"github.com/sori883/ai-dd/src/internal/cli"
 	"github.com/sori883/ai-dd/src/internal/filestore"
@@ -79,11 +78,11 @@ func verifyMemoryLive(binary string, transport []byte, records []memoryLiveRecor
 		}
 		executions[session+"/"+strings.Join(args, "\x00")] = execution{*event.Item.Exit, event.Item.Output}
 	}
-	template, err := codex.Files.ReadFile("aidlc-okf/SKILL.md")
+	template, err := completedSkill(".agents/skills/aidlc-okf/SKILL.md", binary)
 	if err != nil {
 		return err
 	}
-	expectedSkill := strings.ReplaceAll(string(template), "@@BINARY@@", "'"+strings.ReplaceAll(binary, "'", "'\"'\"'")+"'")
+	expectedSkill := string(template)
 	skillRead := map[string]bool{}
 	pending := map[string]memoryLiveRecord{}
 	helped, created, updated := false, false, false
@@ -201,11 +200,11 @@ func TestMemoryMetadataCommandEvidence(t *testing.T) {
 	binary := "/bin/aidlc"
 	help := binary + " memory create --help"
 	skillCommand := "cat .agents/skills/aidlc-okf/SKILL.md"
-	template, err := codex.Files.ReadFile("aidlc-okf/SKILL.md")
+	template, err := completedSkill(".agents/skills/aidlc-okf/SKILL.md", binary)
 	if err != nil {
 		t.Fatal(err)
 	}
-	skill := strings.ReplaceAll(string(template), "@@BINARY@@", "'/bin/aidlc'")
+	skill := string(template)
 	create := binary + " memory create codekb/live-note --space default --body-file body.md --actor process:codex --type Design --title Arithmetic --description Current"
 	update := binary + " memory update codekb/live-note --space default --body-file body.md --actor process:codex --expect first"
 	document := func(body string) []byte {

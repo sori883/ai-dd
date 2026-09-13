@@ -1,0 +1,48 @@
+---
+stage_id: architecture-analysis
+agents:
+  - role: execution_planning
+    agent: aidlc-stage-planner
+  - role: research
+    agent: aidlc-researcher
+  - role: independent_review
+    agent: aidlc-reviewer
+inputs:
+  - path: ${knowledge_root}/rules/rule.md
+    metadata: {type: Rule}
+    version: current
+  - match: {type: Requirements, intent_id: "${intent_id}"}
+    count: one
+    version: accepted
+    accepted_at: discovery
+  - match: {type: CurrentAnalysis}
+    count: optional
+    version: current
+  - match: {type: Architecture}
+    count: optional
+    version: current
+  - declared: intent_documents
+outputs:
+  - path: "${knowledge_root}/codekb/current-analysis.md"
+    role: result
+    metadata: {type: CurrentAnalysis}
+  - path: "${knowledge_root}/codekb/architecture.md"
+    role: result
+    metadata: {type: Architecture}
+  - declared: intent_documents
+sensors:
+  start: architecture-analysis-start
+  end: architecture-analysis-end
+---
+
+# 現状の構成分析
+
+共有current-analysis.mdに現状・構成動作・根拠・未確認事項を、architecture.mdにMermaid構成図・構成要素・データフローを記す。
+
+## 現在回の操作
+
+{{include "skills/shared/workflow-operations.md"}}
+
+## 工程skill
+
+実装済み構成の説明にはaidlc-architectureを使い、正本・依存方向・処理順を実装根拠で確認する。 配布先は `{{host "skill-root"}}/<skill名>/SKILL.md`。必要な本文だけを読む。日本語の本文案はnatural-japanese-goで推敲できる。担当は案と根拠をメインAIへ返し、共有保存は既存のaidlc memory経路を使う。既存の許可担当・Sensor・承認・単独writerに従い、skill読込み自体を工程合格条件にしない。

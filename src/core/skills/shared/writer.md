@@ -1,0 +1,1 @@
+メインAIが共有stateの単独writerとなり、Ruleと入力を担当へ渡す。worker以外はread-only。

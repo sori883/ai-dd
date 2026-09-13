@@ -1,0 +1,1 @@
+coordinator専用hook操作を代行しない。

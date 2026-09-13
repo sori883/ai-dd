@@ -9,7 +9,7 @@ AI-DLCは、一つの目的をIntentとして管理する単一Go実行ファイ
 [stage-graph.json](../src/core/workflow/stage-graph.json)は6種類のstageと手順Markdownの対応を定義します。
 必須の先頭は`initialization`、`discovery`です。`architecture-analysis`、`planning`、`tdd`、
 `integration`の採否・順序・省略理由をIntentの計画として保存します。計画変更にも承認を要求します。
-各[stage Markdown](../src/core/workflow/stages/discovery.md)のfrontmatterには許可担当、入力条件、
+各[stage Markdown](../src/core/workflow/stages/discovery.md.tmpl)のfrontmatterには許可担当、入力条件、
 文書outputs、開始・終了Sensorを定義し、本文にはその段階の手順を記述します。
 `intent procedure`は現在の実行回の定義と、metadata条件から解決した文書path・版を返します。
 
@@ -39,9 +39,9 @@ stateのrevisionやreview記録だけの更新では対象hashを変えません
 メインAIがユーザーとの対話、共有stateと文書の保存、標準ツールによる担当の起動と結果回収を行います。
 製品CLIはエージェントを起動しません。5種類の専門担当は要件整理、調査、ステージ計画、worker、reviewerです。
 worker以外はread-onlyで本文案や報告を返し、共有Knowledgeの保存はメインAIが行います。
-製品の行動規約は[aidlc Skill](../src/harness/codex/SKILL.md)、操作の選択は
-[aidlc-cli Skill](../src/harness/codex/aidlc-cli/SKILL.md)、知識の検索・保存は
-[aidlc-okf Skill](../src/harness/codex/aidlc-okf/SKILL.md)、正確な引数・型はCLI helpにあります。
+製品の行動規約は[aidlc Skill](../src/core/skills/aidlc/SKILL.md.tmpl)、操作の選択は
+[aidlc-cli Skill](../src/core/skills/aidlc-cli/SKILL.md.tmpl)、知識の検索・保存は
+[aidlc-okf Skill](../src/core/skills/aidlc-okf/SKILL.md.tmpl)、正確な引数・型はCLI helpにあります。
 
 Unitは担当範囲、検証、依存、Bolt（作業のまとまり）を持ち、workerは通常ディレクトリへ割り当てます。同じrootでの順次作業を許可し、同一・親子rootの重複予約を拒否します。
 依存統合前や担当範囲の重複を拒否し、結果は現在のrun/session/rootと実効検証集合のSHAに照合します。反映時は管理元の同じ集合の内容一致を確認します。
@@ -74,7 +74,13 @@ hookは通常のAI操作の飛ばし防止で、OS権限による全書込み経
 `okf`と`okfmemory`は固定OKF v0.2のmetadataを検査・保持・検索します。日時とfrontmatterはmemory CLIで生成します。
 外部依存は承認済み`go.yaml.in/yaml/v3 v3.0.5`です。
 
-配置原稿は`src/core`、`src/core/workflow`、`src/harness/codex`です。
+15 skillの共通原稿は`src/core/skills/`、5担当の役割・入力・返却契約は`src/core/agents/`にあります。
+`src/core/skills/shared/`は承認・共有writer・担当入力・工程操作を展開する共通部品です。
+`.tmpl`付き原稿は`include`で共通部品、`host`でCodexの接続文を差し込みます。
+Codex固有のevent・tool名・配置pathとsandbox設定は`src/harness/codex/`で管理します。
+通常のbuildが原稿を内蔵し、installが完成Markdownと安全に引用したagent TOMLをManifest.Generatedへ渡します。
+生成物のcommitや別の生成commandは不要です。部品欠落・循環参照・未展開は保存前に失敗します。
+`src/core/workflow/stages/`も共通操作を展開しますが、今回の整理では完成工程のbytesとdefinition hashを維持します。
 installがfresh projectへ配置し、実行時は配置済みの定義・Rule・Skillを読みます。原稿へのfallbackはありません。
 入口Skillは4 KiB以内、必須Rule本文は16 KiB以内とし、超過時に切り捨てません。
 
