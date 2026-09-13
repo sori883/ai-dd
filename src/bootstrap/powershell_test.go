@@ -31,16 +31,21 @@ func TestBootstrapPowerShell(t *testing.T) {
 				t.Fatal("required Windows verification shell missing", err)
 			}
 			for _, invocation := range []string{"file", "scriptblock"} {
-				for _, mode := range []string{"valid", "exit", "checksum", "missing", "version", "duplicate", "symlink"} {
+				for _, mode := range []string{"valid", "exit", "checksum", "missing", "version", "duplicate", "symlink", "start failure"} {
 					t.Run(invocation+"/"+mode, func(t *testing.T) {
 						base := t.TempDir()
 						fixture := filepath.Join(base, "fixture")
 						bin := filepath.Join(base, "bin")
+						second := filepath.Join(base, "second")
 						project := filepath.Join(base, "project space 日本語")
-						for _, p := range []string{fixture, bin, project} {
+						for _, p := range []string{fixture, bin, second, project} {
 							os.Mkdir(p, 0700)
 						}
 						os.WriteFile(filepath.Join(bin, "curl.exe"), binary, 0700)
+						os.WriteFile(filepath.Join(second, "curl.exe"), []byte("invalid second exe"), 0700)
+						if mode == "start failure" {
+							os.WriteFile(filepath.Join(bin, "curl.exe"), []byte("invalid first exe"), 0700)
+						}
 						raw, err := release.Archive(map[string][]byte{"aidlc-install.exe": binary}, "aidlc-install.exe", true)
 						if err != nil {
 							t.Fatal(err)
@@ -99,7 +104,7 @@ func TestBootstrapPowerShell(t *testing.T) {
 						if cmd.Env == nil {
 							cmd.Env = os.Environ()
 						}
-						cmd.Env = append(cmd.Env, "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "BOOTSTRAP_HELPER=1", "BOOTSTRAP_FIXTURE="+fixture, "BOOTSTRAP_RESULT="+result, "BOOTSTRAP_CALLS="+calls)
+						cmd.Env = append(cmd.Env, "PATH="+bin+string(os.PathListSeparator)+second+string(os.PathListSeparator)+os.Getenv("PATH"), "BOOTSTRAP_HELPER=1", "BOOTSTRAP_FIXTURE="+fixture, "BOOTSTRAP_RESULT="+result, "BOOTSTRAP_CALLS="+calls)
 						want := 0
 						if mode == "exit" {
 							want = 17
@@ -123,6 +128,12 @@ func TestBootstrapPowerShell(t *testing.T) {
 							got, err := os.ReadFile(sentinel)
 							if err != nil || string(got) != strconv.Itoa(want) {
 								t.Fatalf("caller did not resume with LASTEXITCODE=%d: %q %v", want, got, err)
+							}
+						}
+						if mode == "start failure" {
+							message := string(out)
+							if !strings.Contains(message, "Cannot start curl.exe:") || strings.Contains(message, "calling \"Kill\"") || strings.Contains(message, "No process is associated") {
+								t.Fatal("Start diagnosis was lost", message)
 							}
 						}
 						if mode != "valid" && mode != "exit" {

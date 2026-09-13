@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [Windows初回取得の修復03](decisions/2026-09-14-consolidated-release-bootstrap-repair-03.md): 先頭curlの選択、Start失敗診断の保持、候補testのstdout/stderr分離。Windows GREENは新HEADのCI待ち。
+
 - [Go trimpathと候補検証の修復02](decisions/2026-09-14-consolidated-release-bootstrap-repair-02.md): 実際のBuildInfo項目の厳密照合とnative版表示の完全一致。全30構成の静的確認と3OS実行を区別する。
 
 - [初回取得のreview修復01](decisions/2026-09-14-consolidated-release-bootstrap-repair-01.md): PowerShell公開呼出しの復帰・終了値と、manifestに依存しないarchive拒否検査。Windows動的検証は必須の未完gate。

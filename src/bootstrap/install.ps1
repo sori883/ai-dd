@@ -10,7 +10,7 @@ try {
     $project = Get-Item -LiteralPath $ProjectDirectory
     if (-not $project.PSIsContainer -or $project.PSProvider.Name -ne 'FileSystem') { throw 'Project must be an existing filesystem directory' }
     $projectPath = $project.FullName
-    $curl = Get-Command curl.exe -CommandType Application -ErrorAction Stop
+    $curl = Get-Command curl.exe -CommandType Application -TotalCount 1 -ErrorAction Stop
     $architecture = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
     switch ($architecture) {
         'X64' { $target = 'windows_amd64' }
@@ -24,7 +24,7 @@ try {
         $destination = Join-Path $tempDirectory $Name
         $url = 'https://github.com/sori883/ai-dd/releases/download/' + $Version + '/' + $Name
         $start = New-Object System.Diagnostics.ProcessStartInfo
-        $start.FileName = $curl.Source
+        $start.FileName = $curl.Path
         # All arguments here are fixed ASCII or the validated release version.
         $start.Arguments = '--disable --proto =https --proto-redir =https --location --fail --silent --show-error --connect-timeout 30 --max-time 120 --max-filesize ' + $Limit + ' --output - ' + $url
         $start.UseShellExecute = $false
@@ -32,8 +32,10 @@ try {
         $process = New-Object System.Diagnostics.Process
         $process.StartInfo = $start
         $output = $null
+        $started = $false
         try {
-            if (-not $process.Start()) { throw 'Cannot start curl.exe' }
+            try { $started = $process.Start() } catch { throw ('Cannot start curl.exe: ' + $_.Exception.Message) }
+            if (-not $started) { throw 'Cannot start curl.exe: Process.Start returned false' }
             $output = [System.IO.File]::Open($destination, [System.IO.FileMode]::CreateNew)
             $buffer = New-Object byte[] 65536
             [long]$total = 0
@@ -48,7 +50,7 @@ try {
             if ($process.ExitCode -ne 0) { throw "Download failed: $Name" }
         } finally {
             if ($null -ne $output) { $output.Dispose() }
-            if (-not $process.HasExited) { $process.Kill(); $process.WaitForExit() }
+            if ($started -and -not $process.HasExited) { $process.Kill(); $process.WaitForExit() }
             $process.Dispose()
         }
     }

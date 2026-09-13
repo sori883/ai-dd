@@ -59,3 +59,12 @@ exit $code`
 	cmd.Env = append(os.Environ(), "AI_DD_TEST_SCRIPT="+script, "AI_DD_TEST_VERSION="+version, "AI_DD_TEST_PROJECT="+project, "AI_DD_TEST_SENTINEL="+sentinel)
 	return cmd
 }
+
+// Capture host diagnostics separately from the installer's JSON output.
+func bootstrapCommandOutput(cmd *exec.Cmd) ([]byte, []byte, error) {
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	return stdout.Bytes(), stderr.Bytes(), err
+}

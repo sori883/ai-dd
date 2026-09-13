@@ -78,9 +78,9 @@ func TestBootstrapCandidateNative(t *testing.T) {
 				cmd.Env = os.Environ()
 			}
 			cmd.Env = append(cmd.Env, "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "BOOTSTRAP_HELPER=1", "BOOTSTRAP_FIXTURE="+dir, "BOOTSTRAP_CALLS="+calls, "BOOTSTRAP_VERSION="+version)
-			out, err := cmd.CombinedOutput()
+			out, diagnostics, err := bootstrapCommandOutput(cmd)
 			if err != nil {
-				t.Fatalf("native bootstrap failed: %v %s", err, out)
+				t.Fatalf("native bootstrap failed: %v\nstdout: %s\nstderr: %s", err, out, diagnostics)
 			}
 			if runtime.GOOS == "windows" {
 				got, err := os.ReadFile(sentinel)
@@ -90,7 +90,7 @@ func TestBootstrapCandidateNative(t *testing.T) {
 			}
 			var result struct{ Paths []string }
 			if err := json.Unmarshal(out, &result); err != nil {
-				t.Fatal("installer output", err, string(out))
+				t.Fatal("installer output", err, string(out), "stderr:", string(diagnostics))
 			}
 			name := release.BundleName(version, runtime.GOOS+"/"+runtime.GOARCH)
 			got, err := os.ReadFile(calls)

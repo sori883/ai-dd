@@ -13,6 +13,12 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if os.Getenv("BOOTSTRAP_STREAM_HELPER") == "1" {
+		fmt.Fprintln(os.Stdout, `{"Paths":[]}`)
+		fmt.Fprintln(os.Stderr, "#< CLIXML progress")
+		code, _ := strconv.Atoi(os.Getenv("BOOTSTRAP_EXIT"))
+		os.Exit(code)
+	}
 	if os.Getenv("BOOTSTRAP_HELPER") == "1" {
 		name := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe")
 		switch name {
@@ -181,6 +187,30 @@ func TestBootstrap(t *testing.T) {
 			got, _ = os.ReadFile(calls)
 			if string(got) != "SHA256SUMS\n"+name+"\n" {
 				t.Fatal("downloads repeated", string(got))
+			}
+		})
+	}
+}
+
+func TestBootstrapOutputStreams(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, code := range []int{0, 17} {
+		t.Run(strconv.Itoa(code), func(t *testing.T) {
+			cmd := exec.Command(exe)
+			cmd.Env = append(os.Environ(), "BOOTSTRAP_STREAM_HELPER=1", "BOOTSTRAP_EXIT="+strconv.Itoa(code))
+			stdout, stderr, err := bootstrapCommandOutput(cmd)
+			if string(stdout) != "{\"Paths\":[]}\n" || string(stderr) != "#< CLIXML progress\n" {
+				t.Fatalf("output streams mixed: stdout=%q stderr=%q", stdout, stderr)
+			}
+			if code == 0 {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if e, ok := err.(*exec.ExitError); !ok || e.ExitCode() != code {
+				t.Fatal("failure status lost", err)
 			}
 		})
 	}

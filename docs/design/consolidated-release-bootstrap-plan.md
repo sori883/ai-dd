@@ -217,3 +217,13 @@ V2ではnative版表示の完全一致helperとtestを先に追加し、4CLIのp
 日本語CLIのproduct/versionと改行だけを受理する。誤値や追加dataを拒否する。
 両項目のtargetedは`go test -tags=integration -count=1 ./src/cmd/aidlc-dist -run '^TestReleaseCandidate(MetadataValidation|NativeSelection|ProjectDirectory)$'`。
 末尾はこれと影響package通常test、gofmt、diff-check。実候補・crossbuild・全体gateは親finalへ残す。
+
+## Windows CI修復03
+
+Issue #202 / PR #203、work_unit `consolidated-release-bootstrap-repair-03`、単独writer・loop。
+R3aは複数curl.exeのPATH先頭選択と、最初のexeのStart失敗で元診断・code1を保持するtestを先に追加する。
+Get-CommandのTotalCount 1とApplicationInfo.Pathを使い、開始成功前のHasExited/Killを防ぐ。
+既存0/17/取得失敗、ScriptBlock後続到達と-File契約を維持する。
+R3bは候補testのstdout/stderrを分離し、成功codeを確認した上でstdoutだけをJSON解析する。
+末尾はbootstrap targeted・通常test、候補integrationの-list、gofmt/diff-check。
+Windows動的GREENと実候補E2Eは新HEADのCI/finalへ残し、旧final-02のWindows失敗を成功扱いしない。
