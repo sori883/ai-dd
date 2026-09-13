@@ -74,3 +74,19 @@ workflowを配置する`graph_test.go`、`procedure_test.go`、`declaration_test
 loop末尾で表の8 commandをすべて再実行しexit 0を確認した。変更Go file 26件へgofmtを適用し、
 `git diff --check`はexit 0。共通15 skill・5 role、未使用host fragmentが0件であることを確認した。
 開始時の作業treeに未commit差分はなく、終了HEADも開始HEADと同じである。実装担当はcommitしていない。
+
+## 独立review指摘の修正
+
+repair work unit `common-skills-codex-review-repair`、開始HEAD `a7ab10ec13748cb7fbe8ca68f06198cb90e61180`。
+共通workflow rendererでraw原稿と同名の`.tmpl`が同じ完成pathへ投影されると、map内で後者が上書きされ、
+Manifestの重複検査へ届かない指摘を修正した。`TestRenderRejectsDuplicateCompletedPaths`を先に追加し、
+`stages/discovery.md`と`stage-graph.json`の各raw/template組でerr=nilとなる意図したRED（exit 1）を確認した。
+完成pathの代入前に重複を確認し、`fs.ErrInvalid`で返す最小実装で同じtestをGREEN（exit 0）にした。
+exact commandは`go test -count=1 ./src/core/workflow -run '^TestRender'`。
+
+`docs/architecture.md`のdiscovery原稿リンクを`.md.tmpl`へ修正した。今回変更した現行文書6件の
+ローカルリンク41件を確認し、リンク切れは0件。過去RAMの本文は変更していない。文書修正には人工REDを作っていない。
+末尾でTestRender、`go test -count=1 ./src/internal/flow -run '^TestProcedureBoundary'`、
+`go test -count=1 ./src/harness/codex -run '^Test(Distribution|Content)'`を確認する。
+3 commandはすべてexit 0。変更Go 2 fileへgofmtを適用し、`git diff --check`もexit 0。
+修正開始時のtreeはclean、終了HEADは開始HEADと同じ。commit・GitHub操作・全体検証は行っていない。

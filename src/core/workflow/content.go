@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"fmt"
 	"io/fs"
 	"strings"
 
@@ -22,7 +23,11 @@ func Render(files fs.FS, host map[string]string) (map[string][]byte, error) {
 		if err != nil {
 			return err
 		}
-		result[strings.TrimSuffix(strings.TrimPrefix(name, "workflow/"), ".tmpl")] = data
+		destination := strings.TrimSuffix(strings.TrimPrefix(name, "workflow/"), ".tmpl")
+		if _, exists := result[destination]; exists {
+			return fmt.Errorf("duplicate workflow destination %q: %w", destination, fs.ErrInvalid)
+		}
+		result[destination] = data
 		return nil
 	})
 	return result, err

@@ -9,7 +9,7 @@ AI-DLCは、一つの目的をIntentとして管理する単一Go実行ファイ
 [stage-graph.json](../src/core/workflow/stage-graph.json)は6種類のstageと手順Markdownの対応を定義します。
 必須の先頭は`initialization`、`discovery`です。`architecture-analysis`、`planning`、`tdd`、
 `integration`の採否・順序・省略理由をIntentの計画として保存します。計画変更にも承認を要求します。
-各[stage Markdown](../src/core/workflow/stages/discovery.md)のfrontmatterには許可担当、入力条件、
+各[stage Markdown](../src/core/workflow/stages/discovery.md.tmpl)のfrontmatterには許可担当、入力条件、
 文書outputs、開始・終了Sensorを定義し、本文にはその段階の手順を記述します。
 `intent procedure`は現在の実行回の定義と、metadata条件から解決した文書path・版を返します。
 

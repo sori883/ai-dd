@@ -1,6 +1,6 @@
 # 開発プロジェクトRAM
 
-- [共通手順とCodex設定を分離しClaude未完了作業を破棄する](decisions/2026-09-13-common-skills-codex-approved.md): 具体計画への直接承認。Issue #196の共通原稿・Codex合成loopと対象検査を完了。Claude専用Issue・ローカルbranch・作業treeの削除も完了し、独立review・finalを待つ。下記の回収記録は検討履歴であり、Claude実装の継続許可ではない。
+- [共通手順とCodex設定を分離しClaude未完了作業を破棄する](decisions/2026-09-13-common-skills-codex-approved.md): 具体計画への直接承認。Issue #196の共通原稿・Codex合成loopと対象検査を完了。独立reviewの完成path重複拒否・原稿リンクの指摘を修正。Claude専用Issue・ローカルbranch・作業treeの削除も完了し、独立review・finalを待つ。下記の回収記録は検討履歴であり、Claude実装の継続許可ではない。
 
 Claude専用作業treeから回収した履歴（現在の扱いは上記の後続決定を優先）：
 - [Claude接続の承認記録・故障時拒否・担当toolを補修する](decisions/2026-09-12-claude-adapter-boundary-repair.md)
