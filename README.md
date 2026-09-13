@@ -13,7 +13,8 @@ Go 1.26以降が必要なのは、ソースからbuildする場合です。
 2. [利用者ガイド](src/docs/user-guide.md)に沿ってCodexから初回の作業を依頼する。
 3. AIが提示する実行計画と、各工程の成果を確認して承認する。
 
-現在は配布候補の生成・検証を整備した段階で、正式な公開版は未確定です。
+取得先は[GitHub Releases](https://github.com/sori883/ai-dd/releases)です。公開版が用意されたら、OS・CPUに合うarchiveを選びます。
+現在は候補検証と手動指定時のRelease下書き作成を整備した段階で、正式版名・ライセンス・初回公開物は未確定です。
 手元でbuildする場合は[開発手順](docs/development.md)を参照してください。
 実際のCodex hook動作を確認した環境とOS別の配布検証は、[検証範囲](docs/distribution.md#検証の範囲)に記載しています。
 

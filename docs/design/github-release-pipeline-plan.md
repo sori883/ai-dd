@@ -82,3 +82,11 @@ blocking findingの修正とreviewが完了して差分が安定した後、親�
 - [GitHub CLI v2.94.0のcreate処理](https://github.com/cli/cli/blob/v2.94.0/pkg/cmd/release/create/create.go): Draft指定では既存Releaseの事前拒否を別途設ける必要があり、添付失敗で部分Draftが残り得る。
 - [upload-artifact v7.0.1](https://github.com/actions/upload-artifact/tree/v7.0.1): 固定SHA `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a`。IDによる受渡しと1日保持を使用する。
 - [download-artifact v8.0.1](https://github.com/actions/download-artifact/tree/v8.0.1): 固定SHA `3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c`。同じrunのID指定と `digest-mismatch: error` を使用する。
+
+## 実装時の具体化
+
+work unitの順序1・2は`release_integration_test.go`内のmetadata helperとnative選択helperを小fixtureでtest-first実装する。順序3は既存`verifyDistribution`と`distributionPayload`を再利用し、配置先の全Paths/bytesを同じSHAの`codex.Distribution`による資材と照合する。製品Goや既存Journeyは変更しない。
+
+同tagの下書き作成jobをconcurrencyで直列化する。既存Releaseの確認は認証済み`gh api --paginate`で全ページのtagとIDを取得し、下書きも含めて比較する。API失敗を空一覧へ変えない。下書きの添付失敗後に残ったReleaseは次回の既存検査で拒否し、自動再利用しない。これは既存Releaseを上書きしない契約の具体化である。
+
+両helperのnegative fixtureもpackage jobで実行する。integrationタグを使うため、通常のタグなしGo testだけに検証を委ねない。local loopは小fixtureと入口列挙・構文検査まで、実candidate build/runとremote拒否分岐の隔離fixtureは親のfinalに残す。

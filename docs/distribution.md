@@ -2,7 +2,21 @@
 
 AI-DLCの利用者が実行するファイルは`aidlc`一つです。工程定義、Codex用Skill・agent・hookはbinaryに内包されています。`aidlc-dist`は開発者がbuild済みbinaryを圧縮するためのcommandで、利用先へ追加導入する必要はありません。
 
-このリポジトリではlocal/CI内で配布候補を検査します。正式version、公開範囲、Go製品のライセンスは未確定です。ここに示す生成処理はtag、GitHub Release、artifact uploadを行いません。候補が生成できたことを一般公開済みとは扱わないでください。
+取得先は[GitHub Releases](https://github.com/sori883/ai-dd/releases)です。公開版が用意されたら、必要なversionのOS・CPU別archiveと`manifest.json`、`SHA256SUMS`を取得します。現在は候補検証と手動指定時のRelease下書き作成を整備した段階で、正式version、初回公開物、Go製品のライセンスは未確定です。
+
+Distribution CIは候補8ファイルをActions artifactへ1日保存し、同じ候補を3OSで検査します。検証だけの実行でも、この一時artifactはActionsから取得できます。手動で`create_draft=true`を指定した場合だけ、検証後にGitHub Releaseの下書きを作ります。下書きも一時artifactも一般公開版の完成とは扱いません。
+
+## 配布担当がGitHub Actionsを手動実行する
+
+Distributionをmainから`workflow_dispatch`で起動し、`tag`に既存tagを指定します。tag名は梱包commandと同じ安全なversion文字列に限り、tagのcommitがmainに含まれることを確認します。tagはこの処理では作りません。指定commitに`TestReleaseCandidateMetadata`と`TestReleaseCandidateNative`が存在しない古いtagは検証前に拒否します。
+
+`create_draft`は既定falseです。このままなら検証と候補の一時保存までで終了します。trueを選ぶと、6対象のbuild・照合、3OSの候補実行、従来の手動切替Journeyがすべて成功した後に下書き作成へ進みます。下書き作成jobだけが`contents: write`を使います。初回の実操作前には、版名・対象commit・ライセンスと表示方法・添付する内容を具体化してください。
+
+packageが確定SHAから一度buildし、そのartifact IDをnativeとdraftへ渡します。downloadのdigest不一致、metadataの不一致、remote tagの移動・削除、mainに含まれないcommit、Release一覧APIの失敗では停止します。同じtagのReleaseが下書きを含め既にあれば、新しい下書きは作りません。同じtagの下書きjobは直列に動きます。
+
+添付は6archiveと`manifest.json`、`SHA256SUMS`だけです。日本語補助CLIの候補は従来のbuild・検証を続けますが、このartifactとReleaseへの添付対象ではありません。ソースやruntime、検証ログも候補artifactには含めません。
+
+失敗時はActionsの該当jobを確認し、新しいrunで検証します。下書き作成や添付が途中で失敗すると、部分的な下書きが残ることがあります。既存Releaseや添付を上書きせず、残った内容を確認してから次の扱いを判断してください。tag・下書きの自動削除、自動publishは行いません。下書き作成の実書込みは初回操作で確認する残件です。一般公開は内容確認後の操作です。
 
 ## 開発者が候補を生成する
 
@@ -59,7 +73,18 @@ AIDLC_DIST_DIR="$dist_output" go test -tags=integration -count=1 -v \
   ./src/cmd/aidlc-dist -run '^TestDistributionArchives$'
 ```
 
-`AIDLC_DIST_DIR`未指定ならこの検査はskipします。それを候補の照合成功に数えないでください。subsetのnative梱包・展開・実行は別の`TestDistributionJourney`が確認します。
+`AIDLC_DIST_DIR`未指定ならこの検査はskipします。それを候補の照合成功に数えないでください。
+
+Release候補は、期待するversion・commit・build時のGo版も照合します。同じcheckoutで、上の生成例に続けて実行できます。
+
+```sh
+AIDLC_DIST_DIR="$dist_output" AIDLC_RELEASE_VERSION="$candidate_version" \
+  AIDLC_RELEASE_COMMIT="$source_commit" AIDLC_RELEASE_GO_VERSION="$toolchain" \
+  go test -tags=integration -count=1 -v ./src/cmd/aidlc-dist \
+  -run '^TestReleaseCandidate(Metadata|Native)$'
+```
+
+Metadataは正確な6対象・8ファイルと版情報、既存のarchive照合を検査します。Nativeは実行中OS・CPUに合う取得済みarchiveを一意に選び、再buildせず展開したbinaryのversion/help、新規配置、同梱原稿と配置の一致、再installの拒否と既存file保全を確認します。4つの環境入力がすべてなければ入口はskipし、一部だけなら失敗します。workflowは必ず全入力と検査名の存在を確認して実行します。
 
 利用するOS/CPUと一致するarchiveを選び、照合後に新しい空directoryへ展開します。Unixなら`tar -xzf ARCHIVE -C NEW_DIR`、Windows PowerShellなら`Expand-Archive -LiteralPath ARCHIVE -DestinationPath NEW_DIR`が使えます。実行前に対応targetと取得元を確認し、展開したbinaryの`version`と`--help`を確認してください。hash照合だけで取得元を信頼できるわけではありません。
 
@@ -115,7 +140,7 @@ Codex CLI 0.153.4の固定sourceでは、linked worktreeのhook探索先は主ch
 
 Hookのsession保存競合には最大2秒の再試行がありますが、終了通知が届かなければ自動解除しません。Tool残存時は実処理の終了を確認し、同じSpace・Intent・sessionでメインAIが既存の `session bind ... --recover` を使います。配布検査だけでは、この復旧や子の途中報告が実Codexで成功した証拠にはなりません。
 
-Distribution CIはUbuntuで6targetをbuild・梱包・照合し、`ubuntu-latest`、`macos-latest`、`windows-latest`でnativeの梱包・展開・version/help・fresh install・既存file拒否・参照補正を検査します。実行したruntime.GOOS/GOARCHをlogへ出します。
+Distribution CIはUbuntuで6targetをbuild・梱包・照合し、`ubuntu-latest`、`macos-latest`、`windows-latest`で同じ候補の展開・version/help・fresh install・既存file拒否を検査します。3OSで動かしても6CPU構成すべての実行確認にはなりません。実行したruntime.GOOS/GOARCHをlogへ出します。別途、従来のnative梱包と手動切替・参照補正Journeyも維持します。
 
 ```sh
 go test -tags=integration -count=1 -v ./src/cmd/aidlc-dist -run '^TestDistributionJourney$'
