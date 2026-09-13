@@ -89,12 +89,12 @@ macOS・Linux・Windowsのamd64/arm64、合計6対象について、`go list -de
 
 | moduleと固定版 | 用途 | 入る実行ファイル | 原典のライセンス |
 | --- | --- | --- | --- |
-| [go.yaml.in/yaml/v3 v3.0.5](https://github.com/yaml/go-yaml/tree/v3.0.5) | YAML形式のfrontmatterや工程定義の読込み・書込み | `aidlc` | [ファイルによりMITとApache-2.0](https://github.com/yaml/go-yaml/blob/v3.0.5/LICENSE)。どちらか一方を自由選択するという記載ではない |
+| [go.yaml.in/yaml/v3 v3.0.5](https://github.com/yaml/go-yaml/tree/v3.0.5) | YAML形式のfrontmatterや工程定義の読込み・書込み | `aidlc`、`okf` | [ファイルによりMITとApache-2.0](https://github.com/yaml/go-yaml/blob/v3.0.5/LICENSE)。どちらか一方を自由選択するという記載ではない |
 | [github.com/ikawaha/kagome/v2 v2.11.0](https://github.com/ikawaha/kagome/tree/v2.11.0) | 日本語を単語へ分け、品詞・原形・読みを得る形態素解析 | `natural-japanese-go` | [MIT](https://github.com/ikawaha/kagome/blob/v2.11.0/LICENSE) |
 | [github.com/ikawaha/kagome-dict/uni v1.2.6](https://github.com/ikawaha/kagome-dict/tree/uni/v1.2.6/uni) | Kagomeから使うUniDic辞書を内蔵する | `natural-japanese-go` | moduleはMIT。辞書データは別途BSDのNOTICEを保持 |
 | [github.com/ikawaha/kagome-dict v1.1.7](https://github.com/ikawaha/kagome-dict/tree/v1.1.7) | 解析器と辞書が使う共通処理。上記を介して使う間接依存 | `natural-japanese-go` | MIT |
 
-つまり、`aidlc`本体の外部Go依存はYAMLライブラリ一つです。Kagomeと辞書は別の補助CLIに分けています。installerと梱包器も共通原稿処理でYAMLを使います。これらはインターネット上のAPIを毎回呼ぶ部品ではなく、build時に実行ファイルへ組み込む部品です。
+`aidlc`と`okf`の外部Go module依存はYAMLです。Kagomeと辞書は日本語補助CLIに分けています。`aidlc-install`と`aidlc-dist`には外部Go module依存がありません。installerはGo標準側のvendorを利用します。共通原稿の描画だけではYAML parserは取り込まれません。配布archiveには実依存より多めの許諾文も同梱しており、同梱表示の集合と実行用importの集合は区別します。これらはインターネット上のAPIを毎回呼ぶ部品ではなく、build時に実行ファイルへ組み込む部品です。
 
 UniDicの**module版`v1.2.6`と辞書データ版は別**です。内蔵データは`unidic-mecab-2.1.2`で、[UniDic ConsortiumのBSD通知](https://github.com/ikawaha/kagome-dict/blob/uni/v1.2.6/uni/NOTICE.txt)を保持します。解析器・辞書が内蔵されるため、補助CLIの利用時にPython、uv、別の辞書ファイルを取得する必要はありません。
 
@@ -113,7 +113,7 @@ Go標準ライブラリ・runtimeも実行ファイルを構成します。[Go�
 | [GitHub Actions](https://docs.github.com/en/actions) | 自動テスト、6対象のbuild、候補ファイルの受渡し | runnerは`ubuntu-latest`・`macos-latest`・`windows-latest`。OSイメージ自体は更新される |
 | Bashなどのshell | 開発・CIのコマンド実行 | Distributionのrun処理はBash。Go版AI-DLCを利用するために本家のBun/TypeScript runtimeを導入する必要はない。AI実行環境自身の導入要件とは別 |
 
-通常の利用者は、OS・CPUに合う`aidlc`を取得し、たとえば`aidlc-install codex --release-version v0.1.1 --project-dir /path/to/project`で配置します。Goが必要なのはソースから自分でbuildする場合です。参考リポジトリは調査用で、本製品の通常のbuildにも取得は不要です。[導入・配布手順](distribution.md)にコマンドの詳細があります。
+通常の利用者は、OS・CPUに合う`aidlc-install`を取得し、たとえば`aidlc-install codex --release-version v0.1.1 --project-dir /path/to/project`で配置します。Goが必要なのはソースから自分でbuildする場合です。参考リポジトリは調査用で、本製品の通常のbuildにも取得は不要です。[導入・配布手順](distribution.md)にコマンドの詳細があります。
 
 ### GitHub Actionsの固定部品
 

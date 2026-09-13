@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [実候補Nativeの祖先root探索修復](decisions/2026-09-14-five-cli-native-root-fix.md): 祖先の通常aidlc/workflow fileでENOTDIRになる共有探索を修復し、複数root・IOエラー・明示rootの境界を維持。実測依存表も訂正。
+
 - [五CLIの独立review修復](decisions/2026-09-14-five-cli-release-011-review-fixes.md): runtime許諾保存、公開候補の正本・mode照合、observer転送、installer案内と役割別helpの5findingを修正。
 
 - [五CLIのRule照合とPost責務](decisions/2026-09-13-five-cli-hook-evidence-clarification.md): 現行説明の誤記を訂正し、bind時のRule保存・次Pre照合と一致IDのPost解放を維持する。

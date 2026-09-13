@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-// resolveProjectRoot locates the installed manager independently of Git layout.
+// Resolve locates the installed manager independently of Git layout.
 func Resolve(explicit, cwd string, install bool) (string, error) {
 	canonical := func(p string) (string, error) {
 		p, err := filepath.Abs(p)
@@ -35,12 +35,14 @@ func Resolve(explicit, cwd string, install bool) (string, error) {
 	}
 	var candidates []string
 	for p := root; ; p = filepath.Dir(p) {
-		info, err := os.Stat(filepath.Join(p, "aidlc/workflow/stage-graph.json"))
-		if err == nil && info.Mode().IsRegular() {
-			candidates = append(candidates, p)
-		} else if err != nil && !os.IsNotExist(err) {
+		installed, err := installedRoot(p)
+		if err != nil {
 			return "", err
 		}
+		if installed {
+			candidates = append(candidates, p)
+		}
+
 		if filepath.Dir(p) == p {
 			break
 		}
@@ -55,4 +57,28 @@ func Resolve(explicit, cwd string, install bool) (string, error) {
 		return root, nil
 	}
 	return "", fmt.Errorf("project is not installed; run aidlc-install codex or specify --project-dir")
+}
+
+// Check path components before descending: an ancestor may legitimately contain
+// a standalone aidlc binary. Only missing paths and non-directory components
+// are non-candidates; permission and other filesystem errors remain visible.
+func installedRoot(root string) (bool, error) {
+	path := root
+	for _, component := range []string{"aidlc", "workflow", "stage-graph.json"} {
+		path = filepath.Join(path, component)
+		info, err := os.Stat(path)
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if component == "stage-graph.json" {
+			return info.Mode().IsRegular(), nil
+		}
+		if !info.IsDir() {
+			return false, nil
+		}
+	}
+	return false, nil
 }

@@ -258,3 +258,7 @@ Issue #200は実装とv0.1.1公開を含む。PRは`Refs #200`で関連付け、
 ## 独立reviewの修復単位
 
 work_unit_id `five-cli-release-011-review-fixes`として、runtime許諾の保存と移転照合、同commit正本による公開候補の許諾集合・bytes・mode照合、observerのOKF絶対path転送、draft取得案内、日常操作の役割別helpを順に修復する。既存承認内の欠落修復であり、schema・旧互換・Rule出力認証は拡張しない。所有file・exact targeted command・RED/GREENは[修復RAM](../ram/decisions/2026-09-14-five-cli-release-011-review-fixes.md)に記録する。
+
+## 実候補Nativeのroot探索修復
+
+final-01で祖先の通常aidlc binaryによるENOTDIRを確認したため、親がfinalを終了し、共有projectroot.Resolveと回帰testの修復を単独writerへ委譲した。aidlc／workflowが通常fileなら候補外とし、本当の複数root拒否、permission/IOエラー、明示root挙動を維持する。実測された五CLIの依存説明も訂正し、許諾実装は縮小しない。所有・exact targeted command・RED/GREENは[修復RAM](../ram/decisions/2026-09-14-five-cli-native-root-fix.md)に記録する。
