@@ -28,7 +28,7 @@ func executeCommand(request cli.CommandRequest) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	service := app.Service{Root: root, Binary: binary}
+	service := app.Service{Root: root, Binary: binary, OKFBinary: request.OKFBinary}
 	if request.Command == "__hook" {
 		raw, err := io.ReadAll(io.LimitReader(os.Stdin, 1024*1024+1))
 		if err != nil {

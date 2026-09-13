@@ -3,17 +3,13 @@
 package main
 
 import (
-	"archive/tar"
-	"archive/zip"
 	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
-	"io"
+	"github.com/sori883/ai-dd/src/internal/release"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -38,114 +34,36 @@ func verifyDistribution(t *testing.T, dir string) manifest {
 }
 func verifyProductDistribution(t *testing.T, dir, product string) manifest {
 	t.Helper()
-	raw := mustRead(t, filepath.Join(dir, "manifest.json"))
-	var m manifest
-	if err := json.Unmarshal(raw, &m); err != nil {
+	name, sums := release.MetadataNames(product)
+	raw := mustRead(t, filepath.Join(dir, name))
+	var old manifest
+	if err := json.Unmarshal(raw, &old); err != nil {
 		t.Fatal(err)
 	}
-	if m.SchemaVersion != 1 || len(m.Artifacts) == 0 {
-		t.Fatalf("invalid manifest: %+v", m)
+	m, _, err := release.ValidateManifest(raw, mustRead(t, filepath.Join(dir, sums)), product, old.Version, "linux/amd64")
+	if err != nil {
+		t.Fatal(err)
 	}
-	sums := map[string]string{}
-	for _, line := range strings.Split(strings.TrimSuffix(string(mustRead(t, filepath.Join(dir, "SHA256SUMS"))), "\n"), "\n") {
-		hash, name, ok := strings.Cut(line, "  ")
-		if !ok || filepath.Base(name) != name || sums[name] != "" {
-			t.Fatalf("invalid checksum line %q", line)
-		}
-		if hash != digest(mustRead(t, filepath.Join(dir, name))) {
-			t.Fatalf("checksum mismatch: %s", name)
-		}
-		sums[name] = hash
-	}
-	if sums["manifest.json"] != digest(raw) || len(sums) != len(m.Artifacts)+1 {
-		t.Fatal("checksum list does not match manifest")
-	}
-	seen := map[string]bool{}
 	for _, a := range m.Artifacts {
-		if seen[a.Target] {
-			t.Fatal("duplicate target", a.Target)
+		if err := validateCandidateLicenses(product, mustRead(t, filepath.Join(dir, a.Archive)), strings.HasSuffix(a.Archive, ".zip")); err != nil {
+			t.Fatal(err)
 		}
-		seen[a.Target] = true
-		valid := false
-		for _, target := range fixtureTargets {
-			if a.Target == target {
-				valid = true
-			}
-		}
-		if !valid {
-			t.Fatal("unknown target", a.Target)
-		}
-		binary, suffix := product, ".tar.gz"
-		if strings.HasPrefix(a.Target, "windows/") {
-			binary, suffix = product+".exe", ".zip"
-		}
-		expected := product + "_" + m.Version + "_" + strings.ReplaceAll(a.Target, "/", "_") + suffix
-		if a.Binary != binary || a.Archive != expected || filepath.Base(expected) != expected {
-			t.Fatalf("unexpected archive names: %+v", a)
-		}
-		compressed := mustRead(t, filepath.Join(dir, a.Archive))
-		if a.ArchiveSize != int64(len(compressed)) || a.ArchiveSHA256 != digest(compressed) || sums[a.Archive] != a.ArchiveSHA256 {
-			t.Fatal("archive metadata mismatch", a.Target)
-		}
-		var payload []byte
-		if product == "natural-japanese-go" {
-			payload = naturalDistributionPayload(t, a, compressed)
-		} else {
-			payload = distributionPayload(t, a, compressed)
-		}
-		if a.BinarySize != int64(len(payload)) || a.BinarySHA256 != digest(payload) || len(payload) == 0 {
-			t.Fatal("binary metadata mismatch", a.Target)
+		if _, err := release.ValidateBinary(mustRead(t, filepath.Join(dir, a.Archive)), a); err != nil {
+			t.Fatal(err)
 		}
 	}
-	files, err := os.ReadDir(dir)
-	if err != nil || len(files) != len(m.Artifacts)+2 {
-		t.Fatalf("unexpected output files: %v %v", files, err)
-	}
-	return m
+	return old
 }
+
 func distributionPayload(t *testing.T, a artifact, raw []byte) []byte {
 	t.Helper()
-	if strings.HasSuffix(a.Archive, ".zip") {
-		z, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(z.File) != 1 || z.File[0].Name != a.Binary || !z.File[0].Mode().IsRegular() {
-			t.Fatal("unexpected zip content")
-		}
-		r, err := z.File[0].Open()
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer r.Close()
-		payload, err := io.ReadAll(r)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return payload
-	}
-	gz, err := gzip.NewReader(bytes.NewReader(raw))
+	entries, err := release.Unpack(raw, strings.HasSuffix(a.Archive, ".zip"), release.MaxArchiveBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer gz.Close()
-	tr := tar.NewReader(gz)
-	h, err := tr.Next()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if h.Name != a.Binary || h.Typeflag != tar.TypeReg || h.Mode != 0755 {
-		t.Fatal("unexpected tar content", h)
-	}
-	payload, err := io.ReadAll(tr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tr.Next(); err != io.EOF {
-		t.Fatal("extra tar content", err)
-	}
-	return payload
+	return entries[a.Binary]
 }
+
 func distributionCommand(t *testing.T, dir, command string, args ...string) ([]byte, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
@@ -280,128 +198,8 @@ func withCustomHook(t *testing.T, raw []byte) []byte {
 
 // TestDistributionJourney validates a manual procedure, not an automatic updater
 // or compatibility with an unknown future version. Both builds use this source.
-func TestDistributionJourney(t *testing.T) {
-	t.Logf("native distribution journey: %s/%s %s", runtime.GOOS, runtime.GOARCH, runtime.Version())
-	source, err := filepath.Abs("../../..")
-	if err != nil {
-		t.Fatal(err)
-	}
-	commit := strings.TrimSpace(string(distributionOK(t, source, "git", "rev-parse", "HEAD")))
-	base := t.TempDir()
-	oldBinary := candidateBinary(t, source, filepath.Join(base, "old"), "dev-fixture-old", commit)
-	newBinary := candidateBinary(t, source, filepath.Join(base, "new"), "dev-fixture-new", commit)
-	root := fixtureGitRoot(t, filepath.Join(base, "project"))
-	var installed struct{ Paths []string }
-	if err := json.Unmarshal(distributionOK(t, root, oldBinary, "install", "codex", "--project-dir", root), &installed); err != nil {
-		t.Fatal(err)
-	}
-	beforeInstall := snapshotFixture(t, root, installed.Paths)
-	if _, err := distributionCommand(t, root, oldBinary, "install", "codex", "--project-dir", root); err == nil {
-		t.Fatal("reinstall replaced existing files")
-	}
-	if !reflect.DeepEqual(beforeInstall, snapshotFixture(t, root, installed.Paths)) {
-		t.Fatal("failed reinstall modified files")
-	}
-	users := map[string]string{
-		"AGENTS.md": "User-owned instructions\n", ".codex/config.toml": "# user config\n", ".codex/agents/user.toml": "# user agent\n",
-		"aidlc/spaces/default/knowledge/codekb/user.md": "User knowledge\n", "aidlc/spaces/default/knowledge/adr/user.md": "User decision\n",
-		"aidlc/spaces/other/knowledge/user.md": "Other Space\n", "aidlc/spaces/default/intents/fixture/state.json": "{\"fixture_state\":true}\n",
-		"aidlc/spaces/default/intents/fixture/history.jsonl": "{\"fixture_history\":true}\n", "aidlc/.runtime/assignments/registry.json": "{\"fixture_runtime\":true}\n",
-	}
-	rule := "aidlc/spaces/default/knowledge/rules/rule.md"
-	users[rule] = string(mustRead(t, filepath.Join(root, rule))) + "\nUser-specific Rule\n"
-	names := []string{}
-	for name, raw := range users {
-		writeFixture(t, root, name, []byte(raw))
-		names = append(names, name)
-	}
-	writeFixture(t, root, ".codex/hooks.json", withCustomHook(t, mustRead(t, filepath.Join(root, ".codex/hooks.json"))))
-	preserved := snapshotFixture(t, root, names)
-	original := snapshotFixture(t, root, installed.Paths)
-	backup := filepath.Join(base, "backup")
-	for name, raw := range original {
-		writeFixture(t, backup, name, []byte(raw))
-	}
-	if !reflect.DeepEqual(original, snapshotFixture(t, backup, installed.Paths)) {
-		t.Fatal("backup not verified")
-	}
-	// Unknown skill edits require a decision; the fixture explicitly restores its saved bytes.
-	skill := ".agents/skills/aidlc/SKILL.md"
-	writeFixture(t, root, skill, []byte(original[skill]+"\nUnknown local edit\n"))
-	changed := snapshotFixture(t, root, installed.Paths)
-	if _, err := distributionCommand(t, root, newBinary, "install", "codex", "--relocate", "--project-dir", root, "--from-project-dir", root, "--from-binary", oldBinary); err == nil {
-		t.Fatal("unknown skill edit was accepted")
-	}
-	if !reflect.DeepEqual(changed, snapshotFixture(t, root, installed.Paths)) {
-		t.Fatal("rejected relocation changed files")
-	}
-	writeFixture(t, root, skill, []byte(original[skill]))
-	stage := fixtureGitRoot(t, filepath.Join(base, "stage"))
-	var candidate struct{ Paths []string }
-	if err := json.Unmarshal(distributionOK(t, stage, newBinary, "install", "codex", "--project-dir", stage), &candidate); err != nil {
-		t.Fatal(err)
-	}
-	// Explicitly selected product files only; seed Space data is never applied to an existing project.
-	for _, name := range candidate.Paths {
-		if strings.HasPrefix(name, "aidlc/spaces/") {
-			continue
-		}
-		raw := mustRead(t, filepath.Join(stage, filepath.FromSlash(name)))
-		if name == ".codex/hooks.json" {
-			raw = withCustomHook(t, raw)
-		}
-		writeFixture(t, root, name, raw)
-	}
-	distributionOK(t, root, newBinary, "install", "codex", "--relocate", "--project-dir", root, "--from-project-dir", stage, "--from-binary", newBinary)
-	hooks := mustRead(t, filepath.Join(root, ".codex/hooks.json"))
-	if !bytes.Contains(hooks, []byte(customHook)) || bytes.Contains(hooks, []byte(stage)) {
-		t.Fatal("custom hook or staging reference not preserved/corrected")
-	}
-	var parsed struct {
-		Hooks map[string][]struct {
-			Hooks []struct {
-				Command string `json:"command"`
-			} `json:"hooks"`
-		} `json:"hooks"`
-	}
-	if err := json.Unmarshal(hooks, &parsed); err != nil {
-		t.Fatal(err)
-	}
-	quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
-	expectedCommand := quote(newBinary) + " __hook --project-dir " + quote(root)
-	for event, groups := range parsed.Hooks {
-		if event == "Notification" {
-			continue
-		}
-		for _, group := range groups {
-			for _, handler := range group.Hooks {
-				if handler.Command != expectedCommand {
-					t.Fatalf("incorrect product reference: %q want %q", handler.Command, expectedCommand)
-				}
-			}
-		}
-	}
-	if !reflect.DeepEqual(preserved, snapshotFixture(t, root, names)) {
-		t.Fatal("manual switch changed user data")
-	}
-	if string(mustRead(t, filepath.Join(root, skill))) == original[skill] {
-		t.Fatal("versioned binary reference did not change")
-	}
-	for name := range original {
-		if strings.HasPrefix(name, "aidlc/spaces/") {
-			continue
-		}
-		writeFixture(t, root, name, mustRead(t, filepath.Join(backup, filepath.FromSlash(name))))
-	}
-	if !reflect.DeepEqual(original, snapshotFixture(t, root, installed.Paths)) || !reflect.DeepEqual(preserved, snapshotFixture(t, root, names)) {
-		t.Fatal("rollback did not restore exact bytes")
-	}
-	got := string(distributionOK(t, root, oldBinary, "version"))
-	if !strings.Contains(got, "dev-fixture-old") {
-		t.Fatal("old binary unavailable after rollback")
-	}
-	t.Log("manual reference switch and byte restoration passed; no Codex hook execution or unknown-version upgrade compatibility claimed")
-}
+// Same-version relocation is exercised against the one verified release candidate.
+func TestDistributionJourney(t *testing.T) { TestReleaseCandidateNative(t) }
 
 func TestNaturalJapaneseDistributionArchives(t *testing.T) {
 	dir := os.Getenv("AIDLC_NATURAL_DIST_DIR")
@@ -414,127 +212,7 @@ func TestNaturalJapaneseDistributionArchives(t *testing.T) {
 	}
 }
 func naturalDistributionPayload(t *testing.T, a artifact, raw []byte) []byte {
-	t.Helper()
-	entries := map[string][]byte{}
-	save := func(name string, r io.Reader) {
-		if _, exists := entries[name]; exists {
-			t.Fatal("duplicate entry", name)
-		}
-		b, err := io.ReadAll(r)
-		if err != nil {
-			t.Fatal(err)
-		}
-		entries[name] = b
-	}
-	if strings.HasSuffix(a.Archive, ".zip") {
-		z, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, f := range z.File {
-			if !f.Mode().IsRegular() {
-				t.Fatal("nonregular entry")
-			}
-			r, err := f.Open()
-			if err != nil {
-				t.Fatal(err)
-			}
-			save(f.Name, r)
-			if err := r.Close(); err != nil {
-				t.Fatal(err)
-			}
-		}
-	} else {
-		gz, err := gzip.NewReader(bytes.NewReader(raw))
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer gz.Close()
-		tr := tar.NewReader(gz)
-		for {
-			h, err := tr.Next()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if h.Typeflag != tar.TypeReg {
-				t.Fatal("nonregular entry")
-			}
-			if h.Name == a.Binary && h.Mode != 0755 {
-				t.Fatal("binary is not executable")
-			}
-			save(h.Name, tr)
-		}
-	}
-	expected := []string{a.Binary, "README.md", "LICENSES/natural-japanese.txt", "LICENSES/kagome.txt", "LICENSES/kagome-dict.txt", "LICENSES/uni.txt", "LICENSES/UniDic-NOTICE.txt"}
-	if len(entries) != len(expected) {
-		t.Fatal("unexpected archive entries", entries)
-	}
-	for _, name := range expected {
-		if len(entries[name]) == 0 {
-			t.Fatal("missing", name)
-		}
-	}
-	return entries[a.Binary]
+	return distributionPayload(t, a, raw)
 }
-func TestNaturalJapaneseDistributionJourney(t *testing.T) {
-	source, err := filepath.Abs("../../..")
-	if err != nil {
-		t.Fatal(err)
-	}
-	base := t.TempDir()
-	input := filepath.Join(base, "input")
-	if err := os.Mkdir(input, 0700); err != nil {
-		t.Fatal(err)
-	}
-	target := runtime.GOOS + "/" + runtime.GOARCH
-	name := "natural-japanese-go-" + runtime.GOOS + "-" + runtime.GOARCH
-	if runtime.GOOS == "windows" {
-		name += ".exe"
-	}
-	distributionOK(t, source, "go", "build", "-trimpath", "-o", filepath.Join(input, name), "./src/cmd/natural-japanese-go")
-	o := options{Product: "natural-japanese-go", InputDir: input, OutputDir: filepath.Join(base, "candidate"), Version: "test", Commit: strings.Repeat("a", 40), GoVersion: "go1.26.4", Targets: []string{target}}
-	if err := packageArchives(o); err != nil {
-		t.Fatal(err)
-	}
-	m := verifyProductDistribution(t, o.OutputDir, o.Product)
-	a := m.Artifacts[0]
-	binary := filepath.Join(base, a.Binary)
-	payload := naturalDistributionPayload(t, a, mustRead(t, filepath.Join(o.OutputDir, a.Archive)))
-	if err := os.WriteFile(binary, payload, 0700); err != nil {
-		t.Fatal(err)
-	}
-	text := filepath.Join(base, "text.md")
-	if err := os.WriteFile(text, []byte("非常に重要。\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	run := func(args ...string) []byte {
-		ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
-		defer cancel()
-		cmd := exec.CommandContext(ctx, binary, args...)
-		cmd.Dir = base
-		cmd.Env = append(os.Environ(), "PATH="+filepath.Join(base, "no-runtime"))
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatal(err, string(out))
-		}
-		return out
-	}
-	run("--help")
-	report := run("--json", text)
-	if !bytes.Contains(report, []byte("forbidden_phrase")) {
-		t.Fatal(string(report))
-	}
-	baseline := filepath.Join(base, "previous.json")
-	if err := os.WriteFile(baseline, report, 0600); err != nil {
-		t.Fatal(err)
-	}
-	if out := run("--json", "--baseline", baseline, text); !bytes.Contains(out, []byte("persisting")) {
-		t.Fatal(string(out))
-	}
-	if string(mustRead(t, text)) != "非常に重要。\n" {
-		t.Fatal("input modified")
-	}
-}
+
+func TestNaturalJapaneseDistributionJourney(t *testing.T) { TestReleaseCandidateNative(t) }

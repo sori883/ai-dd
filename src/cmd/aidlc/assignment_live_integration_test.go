@@ -56,7 +56,7 @@ func TestAssignmentLiveHook(t *testing.T) {
 	observeOnly := input.Event == "SubagentStart" || input.Event == "SubagentStop"
 	if !skip && !observeOnly {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-		cmd := exec.CommandContext(ctx, binary, "__hook", "--project-dir", root)
+		cmd := observerHookCommand(ctx, binary, root)
 		cmd.Dir = root
 		cmd.Stdin = bytes.NewReader(raw)
 		cmd.Stdout = &out

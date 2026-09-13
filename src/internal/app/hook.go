@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/sori883/ai-dd/src/internal/assignment"
-	"github.com/sori883/ai-dd/src/internal/cli"
 	"github.com/sori883/ai-dd/src/internal/flow"
 	"github.com/sori883/ai-dd/src/internal/okfmemory"
 )
@@ -22,8 +21,8 @@ func (s Service) Hook(input HookInput) (map[string]any, error) {
 	if input.Event == "PreToolUse" && input.Tool == "Bash" && input.ID != "" && input.Turn != "" {
 		if _, err := sessionPath(input.Session); err == nil {
 			argv, ok := shellWords(input.Input.Command)
-			if ok && len(argv) > 1 && sameBinary(argv[0], s.Binary) {
-				if _, help := cli.Help(argv[1:]); help {
+			if ok && len(argv) > 1 && s.productBinary(argv[0]) {
+				if s.productHelp(argv) {
 					return out, nil
 				}
 			}
@@ -168,10 +167,10 @@ func (s Service) assignmentCommand(input HookInput, state *Session) error {
 		return nil
 	}
 	argv, ok := shellWords(input.Input.Command)
-	if !ok || len(argv) < 2 || !sameBinary(argv[0], s.Binary) {
+	if !ok || len(argv) < 2 || !s.productBinary(argv[0]) {
 		return nil
 	}
-	r, err := cli.ParseCommand(argv[1:])
+	r, err := s.productCommand(argv)
 	if err != nil {
 		return nil
 	}
@@ -224,10 +223,10 @@ func (s Service) exception(input HookInput, state *Session) bool {
 		return false
 	}
 	argv, ok := shellWords(input.Input.Command)
-	if !ok || len(argv) < 2 || !sameBinary(argv[0], s.Binary) {
+	if !ok || len(argv) < 2 || !s.productBinary(argv[0]) {
 		return false
 	}
-	r, err := cli.ParseCommand(argv[1:])
+	r, err := s.productCommand(argv)
 	if err != nil {
 		return false
 	}
@@ -404,10 +403,10 @@ func (s Service) documentRepair(input HookInput, session *Session, st flow.State
 		return false
 	}
 	argv, ok := shellWords(input.Input.Command)
-	if !ok || len(argv) < 2 || !sameBinary(argv[0], s.Binary) {
+	if !ok || len(argv) < 2 || !s.productBinary(argv[0]) {
 		return false
 	}
-	r, err := cli.ParseCommand(argv[1:])
+	r, err := s.productCommand(argv)
 	if err != nil || r.Command != "memory" || (r.Action != "create" && r.Action != "update") || r.Space != session.Space {
 		return false
 	}

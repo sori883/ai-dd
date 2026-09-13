@@ -112,3 +112,5 @@ func TestMetadataInputExistingOptionalFields(t *testing.T) {
 		t.Fatal("lost extension")
 	}
 }
+
+func TestOKFMemoryContract(t *testing.T) { TestMetadataInputBuildAndPreserve(t); TestSearchIntentID(t) }

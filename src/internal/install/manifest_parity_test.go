@@ -94,7 +94,7 @@ func TestCodexManifestParity(t *testing.T) {
 	if !reflect.DeepEqual(paths, result.Paths) {
 		t.Fatalf("returned paths differ from saved files: %v", result.Paths)
 	}
-	raw, err := os.ReadFile("testdata/upstream-skill-assets-sha256.json")
+	raw, err := os.ReadFile("testdata/five-cli-assets-sha256.json")
 	if err != nil {
 		t.Fatal(err)
 	}

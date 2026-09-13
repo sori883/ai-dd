@@ -150,16 +150,13 @@ jobs:
         with:
           go-version: 1.26.x
           cache: false
-      - name: Build
+      - name: Build five CLIs
+        shell: bash
         env:
           CGO_ENABLED: "0"
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-        run: go build -trimpath -o "${{ runner.temp }}/aidlc-${GOOS}-${GOARCH}${{ matrix.extension }}" ./src/cmd/aidlc
-
-      - name: Build Japanese helper
-        env:
-          CGO_ENABLED: "0"
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: go build -trimpath -o "${{ runner.temp }}/natural-japanese-go-${GOOS}-${GOARCH}${{ matrix.extension }}" ./src/cmd/natural-japanese-go
+        run: |
+          for product in aidlc-install aidlc okf natural-japanese-go aidlc-dist; do
+            go build -trimpath -o "${{ runner.temp }}/$product-${GOOS}-${GOARCH}${{ matrix.extension }}" "./src/cmd/$product"
+          done

@@ -47,7 +47,11 @@ func (f operationsFixture) run(args ...string) operationsResult {
 	f.t.Helper()
 	ctx, cancel := context.WithTimeout(f.t.Context(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, f.binary, args...)
+	if result, ok := fixtureInstall(f.binary, f.root, args); ok {
+		return result
+	}
+	binary, args := fixtureProduct(f.binary, args)
+	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Dir = f.root
 	if productPath := os.Getenv("AIDLC_TEST_PRODUCT_PATH"); productPath != "" {
 		cmd.Env = gitIndependentEnvironment(os.Environ(), productPath)

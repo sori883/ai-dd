@@ -6,9 +6,9 @@ description: AI-DLCのSpaceにあるKnowledgeとADRを検索・読み取り・�
 原典: [okf-memory/okf-agent-memory](https://github.com/okf-memory/okf-agent-memory)（作者: 2026 sknr and the OKF Memory Contributors）。本skillはAI-DLC向けの翻案です。固定版と調整内容は[出典](references/source.md)、許諾は[LICENSE](LICENSE)を参照してください。
 # 知識を探し、残す
 
-実行ファイルは @@BINARY@@（以下A）。この製品では `A memory` を使う。
+実行ファイルは @@OKF_BINARY@@（以下M）。この製品では `M` を使う。
 進行と承認は [aidlc](../aidlc/SKILL.md)、文書宣言と実測登録は [aidlc-cli](../aidlc-cli/SKILL.md)。
-OKFは本文とmetadataをMarkdownに保持する形式。本家の `okf` CLIやMCPの導入は不要。
+OKFは本文とmetadataをMarkdownに保持する形式。この`okf`は本製品のGo実装で、本家CLIやMCPの追加導入は不要。
 Space未指定はdefault。対象のSpaceとIntent IDを確認し、名前をIDとして渡さない。
 
 ## 必要な知識を読む
@@ -17,9 +17,9 @@ Space未指定はdefault。対象のSpaceとIntent IDを確認し、名前をID�
 Conceptは1件の知識文書で、IDはknowledgeからの相対path、拡張子なし。
 
 ```sh
-A memory search QUERY --space SPACE
-A memory search QUERY --space SPACE --intent-id ID
-A memory show CONCEPT-ID --space SPACE
+M search QUERY --space SPACE
+M search QUERY --space SPACE --intent-id ID
+M show CONCEPT-ID --space SPACE
 ```
 
 現行検索はtitle・description・tagsの語句照合で、複数語はAND条件。
@@ -58,11 +58,11 @@ Ruleは利用プロジェクト共通ルール。工程検査を合格させる�
 frontmatterやindex/logを手書きで置き換えない。正確な引数・値・型・JSON例はhelpを読む。
 
 ```sh
-A memory create --help
-A memory update --help
-A memory show --help
-A memory search --help
-A memory check --help
+M create --help
+M update --help
+M show --help
+M search --help
+M check --help
 ```
 
 createではConcept ID、`--body-file`、`--actor`、`--type`、`--title`、`--description`などを指定する。
@@ -71,14 +71,14 @@ generatedの日時はCLIが自動生成する。日時は承認や検証の証�
 sourcesは実際に参照した根拠を記録し、verifiedを含め、人間の確認や未実施の検証を捏造しない。
 
 更新前にshowで現行contentとhashを読み、変更理由と既存metadataを確認する。
-`A memory update CONCEPT-ID` に本文draftと `--expect HASH` を渡し、競合を検知する。
+`M update CONCEPT-ID` に本文draftと `--expect HASH` を渡し、競合を検知する。
 競合したら現行文書を読み直して判断する。同じ内容で日時だけを更新しない。
 変更のない更新は日時を更新しないため、再実行で記録が修復されるとは考えない。
 
 ## 保存結果を確認する
 
 成功後はshowで本文・metadataを確認し、必要に応じてsearchで再発見できるか確認する。
-`A memory check --space SPACE` はmetadata等の整合検査。工程の合格や人間承認ではない。
+`M check --space SPACE` はmetadata等の整合検査。工程の合格や人間承認ではない。
 本文リンクの解決や根拠の正しさをすべて保証する検査でもない。
 
 エラー時にはConcept本体だけ保存され、後続の記録処理が残る場合がある。
@@ -89,8 +89,8 @@ create/updateを盲目的に再試行せず、保存済み内容と未完了処�
 `aidlc/spaces/<space>/knowledge/log/<intent_id>-work-log.md` とindex/logはCLI管理で、直接追記しない。
 
 ```sh
-A memory search work-log --space SPACE --intent-id ID
-A memory show log/ID-work-log --space SPACE
+M search work-log --space SPACE --intent-id ID
+M show log/ID-work-log --space SPACE
 ```
 
 終了時は変更した機能のKnowledgeと必要なADRが現状と一致するか確認する。

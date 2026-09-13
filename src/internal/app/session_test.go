@@ -21,7 +21,7 @@ func setup(t *testing.T) (Service, flow.State) {
 		t.Fatal(err)
 	}
 	deployProcedureFixture(t, root)
-	s := Service{Root: root, Binary: "/opt/aidlc"}
+	s := Service{Root: root, Binary: "/opt/aidlc", OKFBinary: "/opt/okf"}
 	store := flow.Store{Root: root, Space: "default"}
 	saved, err := store.Create("Work")
 	if err != nil {

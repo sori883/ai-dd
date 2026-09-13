@@ -36,7 +36,7 @@ func reliabilityCapture(ctx context.Context, binary, root string, raw []byte) re
 	var input hookProbeInput
 	_ = json.Unmarshal(raw, &input)
 	r.Before = reliabilityReadSession(root, input.Session)
-	cmd := exec.CommandContext(ctx, binary, "__hook", "--project-dir", root)
+	cmd := observerHookCommand(ctx, binary, root)
 	cmd.Dir = root
 	cmd.Stdin = bytes.NewReader(raw)
 	var out, errout bytes.Buffer
@@ -135,7 +135,7 @@ func TestHookReliabilityProbeProtocol(t *testing.T) {
 				}
 			}
 			// The independent product invocation supplies the expected wire result.
-			cmd := exec.CommandContext(t.Context(), binary, "__hook", "--project-dir", root)
+			cmd := observerHookCommand(t.Context(), binary, root)
 			cmd.Stdin = bytes.NewBufferString(tc.raw)
 			var stdout, stderr bytes.Buffer
 			cmd.Stdout, cmd.Stderr = &stdout, &stderr

@@ -6,9 +6,12 @@ import (
 )
 
 func hookConfiguration(root, binary string) ([]byte, error) {
+	return splitHookConfiguration(root, SiblingBinaries(binary))
+}
+func splitHookConfiguration(root string, b Binaries) ([]byte, error) {
 	hooks := map[string]any{}
 	for _, event := range []string{"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"} {
-		group := map[string]any{"hooks": []any{map[string]any{"type": "command", "command": shellQuote(binary) + " __hook --project-dir " + shellQuote(root), "timeout": 10}}}
+		group := map[string]any{"hooks": []any{map[string]any{"type": "command", "command": HookCommand(root, b), "timeout": 10}}}
 		if event == "SessionStart" {
 			group["hooks"].([]any)[0].(map[string]any)["additionalContextLimit"] = 8192
 		}

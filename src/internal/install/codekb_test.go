@@ -72,7 +72,7 @@ func TestCodeKBGuidance(t *testing.T) {
 		}
 		raw = append(raw, common...)
 		raw = append(raw, knowledge...)
-		if (!strings.Contains(string(raw), "codekb/NAME") || !strings.Contains(string(raw), "memory create --help")) || strings.Contains(string(raw), "memory create knowledge/") {
+		if (!strings.Contains(string(raw), "codekb/NAME") || !strings.Contains(string(raw), "M create --help")) || strings.Contains(string(raw), "M create knowledge/") {
 			t.Errorf("%s uses old Concept guidance", stage)
 		}
 	}

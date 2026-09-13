@@ -1,8 +1,8 @@
-# AI-DLC 0.1.0 開発者向け：参考元と依存関係
+# AI-DLC 0.1.1 開発者向け：参考元と依存関係
 
 この文書は、`sori883/ai-dd`を開発・配布する人が、何を参考に作った製品で、どの外部部品を使い、公開前に何を確認する必要があるかを把握するための一覧です。過去の会話を読む必要はありません。
 
-初回バージョンはユーザー指定の **`0.1.0`** です。**この文書をユーザーが確認した後にリリースへ進みます。現時点ではtagもReleaseも作成していません。** バージョンの決定は、製品ライセンスの決定や公開済みであることを意味しません。
+五つのCLIを組み込む版はユーザー承認済みの **v0.1.1** です。実装・検証・公開は別の完了条件で、公開状態はRelease一覧で確認します。
 
 調査日：2026-09-13。製品コードの基準は[PR #187](https://github.com/sori883/ai-dd/pull/187)を取り込んだmain、commit `0889ff5a8023e53f3c781fa180f4afe0d5897c47`です。今回のライセンス追記は、文書追加の[PR #189](https://github.com/sori883/ai-dd/pull/189)まで反映した`742da9457b7d836a144ac3c77bb16d91e0677312`を照合しました。製品コードや依存バージョンは変更していません。
 
@@ -10,7 +10,7 @@
 
 本リポジトリのAI-DLCは、AIと目的を整理し、必要な工程を計画し、検査・レビュー・人間の承認を経て開発を進めるためのGo製CLIです。CLIは、ターミナルからコマンドで操作するプログラムを指します。本家AI-DLCの考え方を参考にしていますが、本家の全機能をそのまま配布する製品ではありません。
 
-利用者向けの本体は`aidlc`一つです。工程の定義、AIへの手順であるskill、担当AIの定義、操作前後に検査を挟むhook、初期文書を実行ファイルに同梱します。AI自体は別途用意したCodexで動きます。
+導入用の`aidlc-install`、工程実行の`aidlc`、知識操作の`okf`、文章検査の`natural-japanese-go`、開発者用の梱包器`aidlc-dist`を配布します。installerは指定版の三runtimeと共通資材を取得し、Codex用の設定を生成します。AIは別途用意したCodexで動きます。
 
 | 作る実行ファイル | 役割 | 誰が使うか |
 | --- | --- | --- |
@@ -46,7 +46,7 @@ Spaceは関連する作業と知識をまとめる場所、Intentは一つの目
 | [AWS Labs AI-DLC Workflows](https://github.com/awslabs/aidlc-workflows/tree/v2) | ローカルsnapshotの製品版`2.6.123`。上流commitは未確認 | 工程、担当AI、Sensor、承認、Space、共通coreからAI環境別資材を配置する考え方 | 不要。本家のTypeScript/Bun製runtimeを起動しない |
 | [Google Open Knowledge Format](https://github.com/GoogleCloudPlatform/open-knowledge-format/tree/ad30107c31c06aec8a7d5636e0d1058118604e6f) | 仕様v0.2、`ad30107c31c06aec8a7d5636e0d1058118604e6f` | Markdownに本文とmetadataを持たせる知識形式、Bundle・Concept・来歴の考え方 | 不要。形式の仕様を参考にする |
 | [OKF Agent Memory：初期実装の比較基準](https://github.com/okf-memory/okf-agent-memory/tree/d4c523ed5ce916fa207fe314851b98721421c891) | v0.1.2、`d4c523ed5ce916fa207fe314851b98721421c891` | 単一CLIで知識を作成・検索・更新する方式の検討 | 不要。外部`okf`実行ファイルやGo moduleを組み込んでいない |
-| [OKF Agent Memory：後発skillの参考](https://github.com/okf-memory/okf-agent-memory/tree/a09e04918aa84d275b784374b5236d9eeac56c9e) | `a09e04918aa84d275b784374b5236d9eeac56c9e` | `okf-agent-memory`の「検索して読み、必要な知識を残す」手順 | 不要。既存の`aidlc memory`操作に合わせている |
+| [OKF Agent Memory：後発skillの参考](https://github.com/okf-memory/okf-agent-memory/tree/a09e04918aa84d275b784374b5236d9eeac56c9e) | `a09e04918aa84d275b784374b5236d9eeac56c9e` | `okf-agent-memory`の「検索して読み、必要な知識を残す」手順 | 不要。既存の`okf`操作に合わせている |
 
 OKFは文書の**形式**、OKF Agent Memoryはその形式を使う**別プロジェクトの実装・手順**です。本製品の知識操作は[自前のGo実装](../src/internal/okfmemory/)です。Agent Memoryの二つのcommitは用途別の参照であり、後発skillのcommitへ製品全体を更新したという意味ではありません。
 
@@ -69,7 +69,7 @@ skillはAIに渡す作業手順のMarkdownです。外部由来の13skillは本�
 | [mblode/agent-skills](https://github.com/mblode/agent-skills/tree/f05d2de8cbd88f11a4e3c99f2880f32491c61393) | `planning` | 実装範囲・順序・検証を計画する |
 | [obra/superpowers](https://github.com/obra/superpowers/tree/b36e0829c6d0140e93cfef2ca599b1b07d4a7797) | `systematic-debugging`、`verification-before-completion` | 原因を調べて修正する、完了前に証拠を確認する |
 | [coji/natural-japanese](https://github.com/coji/natural-japanese/tree/9a78a42964096da509b8f3e011f0085a5f080151)（v1.5.0） | `natural-japanese-go` | 日本語文章の設計・執筆・推敲と、別CLIによる検査 |
-| [okf-memory/okf-agent-memory](https://github.com/okf-memory/okf-agent-memory/tree/a09e04918aa84d275b784374b5236d9eeac56c9e) | `okf-agent-memory` | 知識の検索・保存手順を`aidlc memory`へ翻案 |
+| [okf-memory/okf-agent-memory](https://github.com/okf-memory/okf-agent-memory/tree/a09e04918aa84d275b784374b5236d9eeac56c9e) | `okf-agent-memory` | 知識の検索・保存手順を`okf`へ翻案 |
 
 この13個に、進行全体の`aidlc`、操作案内の`aidlc-cli`を加えた**15個が標準配置のskill**です。共通原稿は[src/core/skills/](../src/core/skills/)にあり、Codexの接続差分を配置時に合成し、利用先では`.agents/skills/`へ配置されます。表の13個はそれぞれ`references/source.md`と`LICENSE`を保持し、原典はいずれもMITです。[採用・翻案の計画](design/stage-skills-natural-japanese-go-plan.md)に固定元を記録しています。
 
@@ -89,16 +89,16 @@ macOS・Linux・Windowsのamd64/arm64、合計6対象について、`go list -de
 
 | moduleと固定版 | 用途 | 入る実行ファイル | 原典のライセンス |
 | --- | --- | --- | --- |
-| [go.yaml.in/yaml/v3 v3.0.5](https://github.com/yaml/go-yaml/tree/v3.0.5) | YAML形式のfrontmatterや工程定義の読込み・書込み | `aidlc` | [ファイルによりMITとApache-2.0](https://github.com/yaml/go-yaml/blob/v3.0.5/LICENSE)。どちらか一方を自由選択するという記載ではない |
+| [go.yaml.in/yaml/v3 v3.0.5](https://github.com/yaml/go-yaml/tree/v3.0.5) | YAML形式のfrontmatterや工程定義の読込み・書込み | `aidlc`、`okf` | [ファイルによりMITとApache-2.0](https://github.com/yaml/go-yaml/blob/v3.0.5/LICENSE)。どちらか一方を自由選択するという記載ではない |
 | [github.com/ikawaha/kagome/v2 v2.11.0](https://github.com/ikawaha/kagome/tree/v2.11.0) | 日本語を単語へ分け、品詞・原形・読みを得る形態素解析 | `natural-japanese-go` | [MIT](https://github.com/ikawaha/kagome/blob/v2.11.0/LICENSE) |
 | [github.com/ikawaha/kagome-dict/uni v1.2.6](https://github.com/ikawaha/kagome-dict/tree/uni/v1.2.6/uni) | Kagomeから使うUniDic辞書を内蔵する | `natural-japanese-go` | moduleはMIT。辞書データは別途BSDのNOTICEを保持 |
 | [github.com/ikawaha/kagome-dict v1.1.7](https://github.com/ikawaha/kagome-dict/tree/v1.1.7) | 解析器と辞書が使う共通処理。上記を介して使う間接依存 | `natural-japanese-go` | MIT |
 
-つまり、`aidlc`本体の外部Go依存はYAMLライブラリ一つです。Kagomeと辞書は別の補助CLIに分けています。`aidlc-dist`の実行用packageには外部Go moduleへの依存がなく、Go標準ライブラリを使います。これらはインターネット上のAPIを毎回呼ぶ部品ではなく、build時に実行ファイルへ組み込む部品です。
+`aidlc`と`okf`の外部Go module依存はYAMLです。Kagomeと辞書は日本語補助CLIに分けています。`aidlc-install`と`aidlc-dist`には外部Go module依存がありません。installerはGo標準側のvendorを利用します。共通原稿の描画だけではYAML parserは取り込まれません。配布archiveには実依存より多めの許諾文も同梱しており、同梱表示の集合と実行用importの集合は区別します。これらはインターネット上のAPIを毎回呼ぶ部品ではなく、build時に実行ファイルへ組み込む部品です。
 
 UniDicの**module版`v1.2.6`と辞書データ版は別**です。内蔵データは`unidic-mecab-2.1.2`で、[UniDic ConsortiumのBSD通知](https://github.com/ikawaha/kagome-dict/blob/uni/v1.2.6/uni/NOTICE.txt)を保持します。解析器・辞書が内蔵されるため、補助CLIの利用時にPython、uv、別の辞書ファイルを取得する必要はありません。
 
-`go list -m all`には、さらに`github.com/ikawaha/kagome-dict/ipa v1.2.6`と`golang.org/x/text v0.32.0`が現れます。前者はKagome、後者は辞書共通moduleの要求に含まれますが、今回確認した3つのCLIの実行用import経路にはありません。IPADICやx/textを、現在の実行ファイルに入る部品として数えないようにします。
+`go list -m all`には、さらに`github.com/ikawaha/kagome-dict/ipa v1.2.6`と`golang.org/x/text v0.32.0`が現れます。前者はKagome、後者は辞書共通moduleの要求に含まれますが、五製品の最終確認対象のCLIの実行用import経路にはありません。IPADICやx/textを、現在の実行ファイルに入る部品として数えないようにします。
 
 Go標準ライブラリ・runtimeも実行ファイルを構成します。[Goのライセンス](https://go.dev/LICENSE)はBSD形式です。「外部moduleが少ない」ことと、「配布時に確認する許諾文が一つだけ」ということは同じではありません。
 
@@ -113,7 +113,7 @@ Go標準ライブラリ・runtimeも実行ファイルを構成します。[Go�
 | [GitHub Actions](https://docs.github.com/en/actions) | 自動テスト、6対象のbuild、候補ファイルの受渡し | runnerは`ubuntu-latest`・`macos-latest`・`windows-latest`。OSイメージ自体は更新される |
 | Bashなどのshell | 開発・CIのコマンド実行 | Distributionのrun処理はBash。Go版AI-DLCを利用するために本家のBun/TypeScript runtimeを導入する必要はない。AI実行環境自身の導入要件とは別 |
 
-通常の利用者は、OS・CPUに合う`aidlc`を取得し、たとえば`aidlc install codex --project-dir /path/to/project`で配置します。Goが必要なのはソースから自分でbuildする場合です。参考リポジトリは調査用で、本製品の通常のbuildにも取得は不要です。[導入・配布手順](distribution.md)にコマンドの詳細があります。
+通常の利用者は、OS・CPUに合う`aidlc-install`を取得し、たとえば`aidlc-install codex --release-version v0.1.1 --project-dir /path/to/project`で配置します。Goが必要なのはソースから自分でbuildする場合です。参考リポジトリは調査用で、本製品の通常のbuildにも取得は不要です。[導入・配布手順](distribution.md)にコマンドの詳細があります。
 
 ### GitHub Actionsの固定部品
 
@@ -138,7 +138,7 @@ Go標準ライブラリ・runtimeも実行ファイルを構成します。[Go�
 
 ## 6. ライセンスと公開前に残る整備
 
-**参考元には利用・改変・再配布を認めるライセンスがありますが、本製品独自のコード・文書のライセンスはまだ決めていません。** また、許諾文をソース内に保存していることと、実行ファイルの受取人へ必要な表示を届けられることは別です。後者には公開前の整備が残っています。
+本製品独自部分は[MIT](../LICENSE)、Copyright 2026 sori883です。原典のLICENSE・NOTICEは別に保持します。五製品とdataに独立した許諾文を含め、実公開候補との照合はfinalで行います。
 
 ここでいう参考元には、設計の参照だけでなく、文章の翻案、日本語化、コードのGo移植も含めています。これらを一律に「引用だから表示不要」とは扱いません。以下は固定版の原文と現在の取り込み方を照合した一覧で、法令上の引用要件や製品全体の権利関係を審査したものではありません。
 
@@ -177,40 +177,32 @@ MITの原典表示・出典を各フォルダに保持しているのは、第3�
 
 | 部品・確認版 | ライセンスと原典の表示 | 配布で扱う原文・注意点 |
 | --- | --- | --- |
-| go-yaml v3.0.5 | [LICENSE](https://github.com/yaml/go-yaml/blob/v3.0.5/LICENSE)：ファイル別にMITとApache-2.0。MIT側は2006–2010／2006–2011 Kirill Simonov、Apache側は2011–2019 Canonical Ltd | **[NOTICE](https://raw.githubusercontent.com/yaml/go-yaml/v3.0.5/NOTICE)も存在**し、2011–2016 Canonical Ltdの表示がある。moduleのLICENSE、Apache-2.0全文、NOTICEを配布物で引き継ぐ整備が残る |
+| go-yaml v3.0.5 | [LICENSE](https://github.com/yaml/go-yaml/blob/v3.0.5/LICENSE)：ファイル別にMITとApache-2.0。MIT側は2006–2010／2006–2011 Kirill Simonov、Apache側は2011–2019 Canonical Ltd | **[NOTICE](https://raw.githubusercontent.com/yaml/go-yaml/v3.0.5/NOTICE)も存在**し、2011–2016 Canonical Ltdの表示がある。moduleのLICENSE、Apache-2.0全文、NOTICEを該当archiveへ同梱する |
 | Kagome v2.11.0 | [LICENSE](https://github.com/ikawaha/kagome/blob/v2.11.0/LICENSE)：MIT。2020 ikawaha | 日本語補助CLIの[licenses/kagome.txt](../src/core/skills/natural-japanese-go/licenses/kagome.txt)に原文を保持 |
 | kagome-dict v1.1.7／uni module v1.2.6 | [共通moduleのLICENSE](https://github.com/ikawaha/kagome-dict/blob/v1.1.7/LICENSE)・[uniのLICENSE](https://github.com/ikawaha/kagome-dict/blob/uni/v1.2.6/uni/LICENSE)：ともにMIT。前者は2021 ikawaha、後者は2020 ikawaha | 補助CLIの`licenses/kagome-dict.txt`と`licenses/uni.txt`に原文を保持。辞書データの条件は次行 |
 | UniDicデータ `unidic-mecab-2.1.2` | [NOTICE.txt](https://raw.githubusercontent.com/ikawaha/kagome-dict/uni/v1.2.6/uni/NOTICE.txt)：BSD-3-Clause。2011–2013 The UniDic Consortium | 補助CLIの[licenses/UniDic-NOTICE.txt](../src/core/skills/natural-japanese-go/licenses/UniDic-NOTICE.txt)に著作権・条件・免責を保持 |
-| Goのruntime・標準ライブラリ、調査時`go1.26.4` | [Go LICENSE](https://github.com/golang/go/blob/go1.26.4/LICENSE)：BSD-3-Clause。2009 The Go Authors。別に[PATENTS](https://raw.githubusercontent.com/golang/go/go1.26.4/PATENTS)もある | 3つのCLIに関係する。実際に配布するbuild版の許諾文と、含まれるコードの追加表示を確認する。独立したGoの許諾文は現archiveに未同梱 |
+| Goのruntime・標準ライブラリ、調査時`go1.26.4` | [Go LICENSE](https://github.com/golang/go/blob/go1.26.4/LICENSE)：BSD-3-Clause。2009 The Go Authors。別に[PATENTS](https://raw.githubusercontent.com/golang/go/go1.26.4/PATENTS)もある | 5つのCLIに関係する。公開buildをGo 1.26.4に固定し、実GOROOTのLICENSE・PATENTS・版を梱包入力と照合して同梱する |
 
 YAMLのMIT対象は`apic.go`、`emitterc.go`、`parserc.go`、`readerc.go`、`scannerc.go`、`writerc.go`、`yamlh.go`、`yamlprivateh.go`で、LICENSEは残りのファイルをApache-2.0としています。**MITかApacheを自由に選べるという意味ではありません。** また、OKF仕様にはNOTICEがなく、YAMLにはあるため、Apache-2.0という名前だけで表示内容を同じにしないようにします。
 
-GoのPATENTSは、Googleが対象となるGo実装の特許利用を追加で許可する文書です。対象や終了条件があり、あらゆる改変に及ぶ無条件の保証ではありません。公開準備ではLICENSEと一緒に確認・参照できるようにする案ですが、BSDの条文がPATENTSの同梱を直接要求しているという説明はしません。Go全ファイルの追加表示を網羅した監査も、この一覧では未実施です。
+GoのPATENTSは、Googleが対象となるGo実装の特許利用を追加で許可する文書です。対象や終了条件があり、あらゆる改変に及ぶ無条件の保証ではありません。LICENSEと一緒に配布しますが、BSDの条文がPATENTSの同梱を直接要求しているという説明はしません。Go全ファイルの追加表示を網羅した監査も、この一覧では未実施です。
 
 ### 受取人へ表示を届けるための残対応
 
-ソースをcloneした人は`docs/`や`src/`の許諾文を読めます。一方、圧縮ファイルだけを取得した人に届く内容は梱包処理で決まります。現行の`aidlc` archive内の独立ファイルはbinaryだけで、13skillのLICENSEはbinaryに埋め込まれ、installerによる配置後に読める構成です。原典の記録があるだけで、配布全体の表示が完了したとは扱いません。
+五製品のbinary archiveには独自MITとGo LICENSE・PATENTSを含めます。YAMLを使う製品にはYAML LICENSE・NOTICE・Apache-2.0全文、原稿を含む製品には13skillの原典LICENSE・source、日本語CLIには従来の5文書も同梱します。data archiveにも独自MITと原典表示を含めます。正本と梱包入力の照合は[licenses.go](../src/cmd/aidlc-dist/licenses.go)で行います。
 
-`okf-agent-memory`の原典MIT全文・著作権・固定commit・翻案内容は配布資材に追加済みで、installerの配置先から読めます。
-
-| 残対応 | 現在の状態と、公開準備で行うこと |
+| 残対応 | 公開候補で確認すること |
 | --- | --- |
-| 本製品独自のライセンス | rootの製品用LICENSEはない。ユーザーと対象範囲・ライセンスを決める。他者の原典表示は維持する |
-| `aidlc` archiveの許諾文 | YAMLのLICENSE・NOTICE・Apache-2.0全文、GoのLICENSE、同梱する翻案skillの原典表示を受取人が読める構成にする。archive内に`LICENSES/`などを置く方法を公開準備で具体化する |
-| 日本語補助CLIの許諾文 | 専用archiveにはREADMEと`LICENSES/`を追加する実装があり、coji、Kagome、辞書共通、uni、UniDic通知の5文書が入る。Goを含む表示と実際の公開方法の確認が残る |
-| 参照版不明の資料・開発用skill | 本家AI-DLC snapshotと開発用Go skillの未記録commitを明示して扱う。再取得や同梱範囲の拡張時は、取り込む版の出典・許諾を記録する |
-| 公開候補そのものの照合 | 選んだcommit・Go版から作ったarchiveと、配置後の資材に、必要な許諾文・著作権・NOTICEが入ることを確認する。製品LICENSEや参照URL一つでまとめて代用しない |
+| 参照版不明の資料・開発用skill | 本家AI-DLC snapshotと開発用Go skillの未記録commitを明示する。再取得や同梱拡張時は版と許諾を記録する |
+| 実公開候補 | 五製品の実依存、build Go版、archiveと配置後の許諾bytesをfinalで照合する |
 
 第5節のCodex、Git、gh、Actions、Bash、MCPは別途使う開発・実行ツールで、上表のライブラリのように本製品へ同梱していません。この節ではそれらのツール自体の全依存・利用規約の監査までは行っていません。将来ツール本体やそのコードをコピーして配布する場合は、その配布内容に応じた確認が必要です。
 
-現在のRelease機構が添付するのは、**aidlcの6種類の圧縮ファイルと`manifest.json`・`SHA256SUMS`の計8ファイル**です。`natural-japanese-go`の専用archiveは生成・検証できますが、このRelease添付には入っていません。梱包内容の根拠は[archive.go](../src/cmd/aidlc-dist/archive.go)です。上の整備案は公開前の残対応であり、この文書の追記で製品ライセンスを採用したり、許諾文の同梱処理を変更したりはしていません。
+Releaseは五製品各8件と共通data3件、計43件を添付します。Go 1.26.4のvendorにあるx/crypto・net・text・sysのLICENSE/PATENTSはGo rootと同一bytesであることを確認済みです。この確認を別Go版へ一般化しません。
 
-## 7. 文書確認から0.1.0公開まで
+## 7. 0.1.1の公開確認
 
-1. **ユーザーがこの文書を確認する。** 参考元・採用範囲・必要な部品・残対応に認識違いがないかを確認します。
-2. 製品ライセンス、許諾文の配布方法、補助CLIの公開範囲を決め、必要な整備を行います。この文書の作成ではそれらを決定・実装していません。
-3. 公開するソースのcommitと`0.1.0`のtagを確定し、その内容から候補を作って検証します。現時点ではtagを作成していません。通常の開発buildは引き続き`dev`表記で、ここで版を決めただけでは書き換わりません。
-4. 検証済みの候補・許諾文・導入手順を確認してReleaseの下書きを作り、内容確認後に一般公開します。文書のPRをmergeする操作と、製品を公開する操作は別です。
+五製品の組込み、独自MIT、同版data取得、版別runtime配置は[承認計画](design/five-cli-release-011-plan.md)で決定しています。独立reviewとfinal、GitHub checksを通したcommitから候補を生成し、三OSと通常trustの実Codex検証を区別して確認します。PR mergeと一般公開は別の操作です。Issue #200はRelease公開と確認後に閉じます。
 
 PR #187では、macOS・Linux・Windowsで同じ配布候補集合を使う導入検査が成功しています。ただし、これを6種類のCPU構成すべてでの実行確認や、すべてのOSでの実Codex hook検証へ読み替えません。Claude Codeは未完了実装を破棄済みであり、対応を再開する場合はCodex確認後に新しい計画を作成します。
 

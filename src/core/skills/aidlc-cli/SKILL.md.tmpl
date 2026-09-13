@@ -4,7 +4,7 @@ description: AI-DLC CLIの操作目的からコマンドとhelpを選ぶ。Inten
 ---
 # 操作を選ぶ
 
-実行ファイルは @@BINARY@@（以下A）。進行と承認の規約は [aidlc](../aidlc/SKILL.md)、現在工程は `A intent procedure ID --space SPACE`。以下から目的を選び、変更前に該当helpで引数・型・値・JSON例を確認する。実際のID/Space/sessionとshowのrevisionを使い、競合時は再読込する。
+実行ファイルは @@AIDLC_BINARY@@（以下A）。知識操作は @@OKF_BINARY@@（以下M）。進行と承認の規約は [aidlc](../aidlc/SKILL.md)、現在工程は `A intent procedure ID --space SPACE`。以下から目的を選び、変更前に該当helpで引数・型・値・JSON例を確認する。実際のID/Space/sessionとshowのrevisionを使い、競合時は再読込する。
 
 | 目的 | help |
 | --- | --- |
@@ -17,8 +17,8 @@ description: AI-DLC CLIの操作目的からコマンドとhelpを選ぶ。Inten
 | 質問待ち・中断・再開・差戻し・履歴 | `A intent wait --help`、`A intent pause --help`、`A intent resume --help`、`A intent reopen --help`、`A intent history --help` |
 | worker場所の登録・起動前照合・解放・復旧 | `A assignment --help`、`A assignment init --help`、`A assignment reserve --help`、`A assignment check --help`、`A assignment release --help`、`A assignment reset --help` |
 | Unit割当・回収・統合・中断確認 | `A unit claim --help`、`A unit result --help`、`A unit integrate --help`、`A unit confirm --help` |
-| Knowledge/ADRの作成・更新・読取り | `A memory create --help`、`A memory update --help`、`A memory show --help`、`A memory search --help` |
-| session読込み・復旧、配置・移転、Unit移転 | `A session bind --help`、`A {{host "install"}} --help`、`A unit reassign --help` |
+| Knowledge/ADRの作成・更新・読取り | `M create --help`、`M update --help`、`M show --help`、`M search --help` |
+| session読込み・復旧、配置・移転、Unit移転 | `A session bind --help`、`aidlc-install codex --help`、`A unit reassign --help` |
 
 知識の検索・保存規約は [okf-agent-memory](../okf-agent-memory/SKILL.md) を読む。
 
@@ -33,7 +33,7 @@ TDD/integrationではverification_pathsへコード・テスト・設定・共�
 
 reviewは別session（同root可）へassignし、実報告をacceptする。コードを扱う段階の別reviewer rootは同じverification_pathsの集合SHAにする。plan-approval/approvalは表示されたrequest_id/targetと実回答のsession/turn/quoteを使う。計画整理・読取り・質問回答は承認待ちでもできる。
 reopenは--stepで対象を指定する。保存途中は同じexpect・decisionを再試行する。durable pending後は時刻と前後hashが固定され、log改変時は元版を復元する。記録の存在だけで成功扱いせずstateのrevision確定を確認する。generated.atは更新日時で承認を意味しない。work-logの読取りはokf-agent-memoryを参照する。
-移転前に端末から{{host "install"}} --helpを読み、--relocateへ旧root/binaryの配置済み絶対文字列を渡す。3つのskillとhooksの既知参照だけを移し、版更新や未知編集の上書きを兼ねない。利用者が新hooksの絶対pathと{{host "trust"}}を確認する。部分失敗はPaths/Pendingを見て同じ引数で再検査する。
+移転前に端末からaidlc-install codex --helpを読み、--relocateへ旧root/binaryの配置済み絶対文字列を渡す。3つのskillとhooksの既知参照だけを移し、版更新や未知編集の上書きを兼ねない。利用者が新hooksの絶対pathと{{host "trust"}}を確認する。部分失敗はPaths/Pendingを見て同じ引数で再検査する。
 Unit移転は旧run停止を確認してからreassignする。runningはpause/resumeでneeds_confirmationにし、previous_run_stoppedは確認時だけtrue。保存途中は同じexpect/JSONで再試行する。新runで再検証し、現在verification_sha256と結果を提出する。CLIはworker起動やファイル移送を代行しない。
 
 ## native担当の登録
@@ -67,4 +67,4 @@ Gitは利用時に不要。明示--project-dirを優先し、省略時は上方�
 | 完了主張の証拠確認 | [verification-before-completion](../verification-before-completion/SKILL.md) |
 | 日本語の本文案の推敲 | [natural-japanese-go](../natural-japanese-go/SKILL.md) |
 
-メインAIはroot相対の既知Markdownを `cat {{host "skill-root"}}/planning/SKILL.md` のように最大3fileずつ読む。子へは担当範囲と必要なskill本文または参照先を渡す。子の起動は前述のnative登録を維持する。本文案・根拠はメインAIへ返し、共有保存はaidlc memoryで行う。日本語CLIは開始済み工程の通常toolとして実行し、承認待ちの例外を作らない。stage-plannerの工程採否・順序提案と、メインAIの実装計画を区別する。
+メインAIはroot相対の既知Markdownを `cat {{host "skill-root"}}/planning/SKILL.md` のように最大3fileずつ読む。子へは担当範囲と必要なskill本文または参照先を渡す。子の起動は前述のnative登録を維持する。本文案・根拠はメインAIへ返し、共有保存はokfで行う。日本語CLIは開始済み工程の通常toolとして実行し、承認待ちの例外を作らない。stage-plannerの工程採否・順序提案と、メインAIの実装計画を区別する。

@@ -34,7 +34,7 @@ func TestCodeKBBeginRepair(t *testing.T) {
 			if !deny(hook(t, s, "PreToolUse", "Bash", "ordinary", "touch code.go", false)) {
 				t.Fatal("unstarted ordinary work allowed")
 			}
-			command := strings.Join([]string{"/opt/aidlc memory create", tc.name, "--space default --body-file", s.draftPath("session"), "--actor process:test --type", tc.kind, "--title Shared --description Shared"}, " ")
+			command := strings.Join([]string{"/opt/okf create", tc.name, "--space default --body-file", s.draftPath("session"), "--actor process:test --type", tc.kind, "--title Shared --description Shared"}, " ")
 			out := hook(t, s, "PreToolUse", "Bash", "repair", command, false)
 			if deny(out) == tc.allowed {
 				t.Fatalf("repair allowed=%v want %v: %+v", !deny(out), tc.allowed, out)

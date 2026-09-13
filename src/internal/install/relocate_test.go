@@ -49,10 +49,10 @@ func TestRelocateReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old, _ := json.Marshal(shellQuote(oldBinary) + " __hook --project-dir " + shellQuote(oldRoot))
-	new, _ := json.Marshal(shellQuote("/new/aidlc") + " __hook --project-dir " + shellQuote(root))
+	old, _ := json.Marshal(shellQuote(oldBinary) + " __hook --project-dir " + shellQuote(oldRoot) + " --okf-binary " + shellQuote(filepath.Join(filepath.Dir(oldBinary), "okf")))
+	new, _ := json.Marshal(shellQuote("/new/aidlc") + " __hook --project-dir " + shellQuote(root) + " --okf-binary '/new/okf'")
 	want := bytes.ReplaceAll(raw, old, new)
-	if !bytes.Equal(got, want) || len(result.Paths) != 4 {
+	if !bytes.Equal(got, want) || len(result.Paths) != 6 {
 		t.Fatalf("references not relocated: paths=%v\n%s", result.Paths, got)
 	}
 	skill, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/SKILL.md"))
@@ -120,7 +120,7 @@ func TestRelocatePartialAndConcurrentRetry(t *testing.T) {
 				}
 				return nil
 			})
-			if err == nil || len(result.Paths) != 3 || len(result.Pending) != 1 || result.Pending[0] != ".codex/hooks.json" {
+			if err == nil || len(result.Paths) != 5 || len(result.Pending) != 1 || result.Pending[0] != ".codex/hooks.json" {
 				t.Fatalf("partial result %+v %v", result, err)
 			}
 			if conflict && !strings.Contains(err.Error(), "concurrent asset change") {
@@ -220,7 +220,7 @@ func TestOKFSkillRelocate(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := bytes.ReplaceAll(before, []byte(shellQuote(oldBinary)), []byte(shellQuote("/new/aidlc")))
+			want := bytes.ReplaceAll(before, []byte(shellQuote(filepath.Join(filepath.Dir(oldBinary), "okf"))), []byte(shellQuote("/new/okf")))
 			if !bytes.Equal(after, want) {
 				t.Fatal("OKF skill binary reference was not relocated")
 			}

@@ -6,6 +6,8 @@ import (
 	"github.com/sori883/ai-dd/src/internal/app"
 	"github.com/sori883/ai-dd/src/internal/cli"
 	"github.com/sori883/ai-dd/src/internal/flow"
+	"github.com/sori883/ai-dd/src/internal/okfcli"
+	"path/filepath"
 
 	"testing"
 )
@@ -85,10 +87,15 @@ func verifyBoundaryEvidence(binary string, records []boundaryObservation, execut
 			continue
 		}
 		argv, ok := flowShellWords(h.Input.Command)
-		if !ok || len(argv) < 2 || argv[0] != binary {
+		if !ok || len(argv) < 2 || (argv[0] != binary && argv[0] != filepath.Join(filepath.Dir(binary), "okf")) {
 			continue
 		}
 		r, err := cli.ParseCommand(argv[1:])
+		if argv[0] == filepath.Join(filepath.Dir(binary), "okf") {
+			var q okfcli.CommandRequest
+			q, err = okfcli.ParseCommand(argv[1:])
+			r = cli.CommandRequest{Command: "memory", Action: q.Action, Target: q.Target, Space: q.Space}
+		}
 		if err != nil {
 			continue
 		}
@@ -132,7 +139,7 @@ func TestBoundaryEvidenceSequence(t *testing.T) {
 		execs["session/"+command] = 0
 	}
 	add("PreToolUse", "deny", "touch boundary-before.txt", "deny", false)
-	for i, command := range []string{"/aidlc memory update codekb/current-analysis --space default --body-file draft --actor process:a --expect hash", "/aidlc intent begin " + st.ID + " --space default --expect 2", "touch boundary-after.txt"} {
+	for i, command := range []string{"/okf update codekb/current-analysis --space default --body-file draft --actor process:a --expect hash", "/aidlc intent begin " + st.ID + " --space default --expect 2", "touch boundary-after.txt"} {
 		add("PreToolUse", fmt.Sprint(i), command, "", i == 2)
 		add("PostToolUse", fmt.Sprint(i), command, "", i >= 1)
 	}

@@ -81,7 +81,7 @@ func TestChildHookNotifications(t *testing.T) {
 // and CheckWork gates can be exercised without synthesizing entry state.
 func childWorkerFixture(t *testing.T, begun bool) (Service, flow.State) {
 	t.Helper()
-	s := Service{Root: t.TempDir(), Binary: "/opt/aidlc"}
+	s := Service{Root: t.TempDir(), Binary: "/opt/aidlc", OKFBinary: "/opt/okf"}
 	if _, err := install.Codex(s.Root, s.Binary); err != nil {
 		t.Fatal(err)
 	}
@@ -169,13 +169,13 @@ func TestChildHookCommandBoundary(t *testing.T) {
 	}{
 		{"help", "Bash", "/opt/aidlc unit claim --help", false},
 		{"state read", "Bash", "/opt/aidlc intent show " + st.ID + " --space default", false},
-		{"rules read", "Bash", "/opt/aidlc memory rules --space default", false},
+		{"rules read", "Bash", "/opt/okf rules --space default", false},
 		{"diagnostics", "Bash", "/opt/aidlc assignment list", false},
 		{"plan read", "Bash", "/opt/aidlc intent plan " + st.ID + " --space default", false},
 		{"parent bind", "Bash", "/opt/aidlc session bind " + st.ID + " --space default --session session", true},
 		{"reservation release", "Bash", "/opt/aidlc assignment release id --session session --expect 1 --file r.json", true},
 		{"unit claim", "Bash", "/opt/aidlc unit claim " + st.ID + " --space default --expect 1 --file r.json", true},
-		{"knowledge update", "Bash", "/opt/aidlc memory update codekb/x --space default --body-file r.md --actor process:x --expect hash", true},
+		{"knowledge update", "Bash", "/opt/okf update codekb/x --space default --body-file r.md --actor process:x --expect hash", true},
 		{"approval", "Bash", "/opt/aidlc intent approval " + st.ID + " --space default --expect 1 --file r.json", true},
 		{"plan change", "Bash", "/opt/aidlc intent plan " + st.ID + " --space default --expect 1 --file r.json", true},
 		{"space outside parser", "Bash", "/opt/aidlc space create other", true},

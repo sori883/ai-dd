@@ -4,7 +4,7 @@ import "strings"
 
 var publicActions = map[string]string{
 	"assignment": "init list show reserve check release reset",
-	"install":    "codex", "space": "create list switch", "intent": "create list switch show hash procedure documents configure check begin review plan plan-approval approval finish history advance pause resume reopen wait cancel", "unit": "claim result integrate confirm reassign", "memory": "create update show search rules check", "session": "bind inspect",
+	"space":      "create list switch", "intent": "create list switch show hash procedure documents configure check begin review plan plan-approval approval finish history advance pause resume reopen wait cancel", "unit": "claim result integrate confirm reassign", "session": "bind inspect",
 }
 
 // Help recognizes only complete public help requests, without execution arguments.
@@ -99,10 +99,10 @@ func Help(args []string) (string, bool) {
 		text += "DECISIONはrequest_id,target,decision(approve/reject),session,turn,quoteの文字列。提示後の実際のUserPromptSubmit回答から引用する。例: {\"request_id\":\"表示されたID\",\"target\":\"表示されたhash\",\"decision\":\"approve\",\"session\":\"session ID\",\"turn\":\"turn ID\",\"quote\":\"承認します\"}。AI自身が回答を作らない。\n"
 	}
 	if key == "intent/reopen" {
-		text += "既知step_idを指定して再実行の変更案を作り、plan-approvalで承認して適用する。完了実績を保持し、未完了の現在回も新IDへ置換する。理由はUTC日時・元/先・要求revisionとaidlc/spaces/<space>/knowledge/log/<intent_id>-work-log.mdへOKF（type: work-log）で記録し、新回へ過去合格を流用しない。承認途中の保存失敗は同じexpectと承認JSONだけretryできる。異なる操作は停止する。記録の改変・欠落は元版を復元する。成功後の古いexpectはrevision conflict。stateのrevisionが要求revisionを超えて確定するまで、記録の存在だけで成功扱いしない。generated.atはCLIが生成する内容更新時のUTC日時であり、承認や検証済みを意味しない。\n検索: aidlc memory search work-log --space SPACE --intent-id ID\n本文: aidlc memory show log/ID-work-log --space SPACE\n"
+		text += "既知step_idを指定して再実行の変更案を作り、plan-approvalで承認して適用する。完了実績を保持し、未完了の現在回も新IDへ置換する。理由はUTC日時・元/先・要求revisionとaidlc/spaces/<space>/knowledge/log/<intent_id>-work-log.mdへOKF（type: work-log）で記録し、新回へ過去合格を流用しない。承認途中の保存失敗は同じexpectと承認JSONだけretryできる。異なる操作は停止する。記録の改変・欠落は元版を復元する。成功後の古いexpectはrevision conflict。stateのrevisionが要求revisionを超えて確定するまで、記録の存在だけで成功扱いしない。generated.atはCLIが生成する内容更新時のUTC日時であり、承認や検証済みを意味しない。\n検索: okf search work-log --space SPACE --intent-id ID\n本文: okf show log/ID-work-log --space SPACE\n"
 	}
 	if key == "intent/documents" {
-		text += "DOCUMENTS.json例: {\"inputs\":[],\"outputs\":[{\"step_id\":\"s05\",\"stage\":\"integration\",\"path\":\"aidlc/spaces/default/knowledge/codekb/feature.md\",\"metadata\":{\"type\":\"Knowledge\",\"title\":\"Feature\",\"description\":\"Current behavior\"}}]}\nstatusはdraft/stable/deprecated、tagsは文字列配列、intent_idは32桁小文字16進数。Requirements/ImplementationPlanと新規adrの登録結果のintent_idをmemory create --intent-idへ渡す。generated日時はmemory CLIが生成する。\n"
+		text += "DOCUMENTS.json例: {\"inputs\":[],\"outputs\":[{\"step_id\":\"s05\",\"stage\":\"integration\",\"path\":\"aidlc/spaces/default/knowledge/codekb/feature.md\",\"metadata\":{\"type\":\"Knowledge\",\"title\":\"Feature\",\"description\":\"Current behavior\"}}]}\nstatusはdraft/stable/deprecated、tagsは文字列配列、intent_idは32桁小文字16進数。Requirements/ImplementationPlanと新規adrの登録結果のintent_idをokf create --intent-idへ渡す。generated日時はokf CLIが生成する。日常の知識操作にはproject/aidlc/bin/VERSION/okf（Windowsはokf.exe）を使う。\n"
 
 		text += "inputs/outputs配列を一括置換。各要素はstage、Space内Markdownのpath、metadata(type/title/description必須、status/tags/intent_id任意)。outputsは未存在pathも宣言できる。test_resultsは実行後に存在する結果だけをconfigureへ登録する。受入済み段階の変更はreopenが必要。metadataは完全一致、tagsは順序なし集合。新規adrはknowledge/adr/へ作り現在Intent IDを保持する。\n"
 	}
@@ -233,7 +233,7 @@ adr:
 }
 
 func memoryWriteHelp(action string) string {
-	text := "Knowledge・ADR・Ruleの本文とmetadataを保存する。\n使い方: aidlc memory " + action + " CONCEPT-ID --space SPACE --body-file BODY.md --actor ACTOR"
+	text := "Knowledge・ADR・Ruleの本文とmetadataを保存する。\n使い方: okf " + action + " CONCEPT-ID --space SPACE --body-file BODY.md --actor ACTOR"
 	if action == "create" {
 		text += " --type TYPE --title TITLE --description DESCRIPTION\n作成時はtype/title/descriptionの非空文字列が必須。"
 	} else {
@@ -264,9 +264,6 @@ generated.atは内容または明示metadataを変更した保存時の現在UTC
 旧--fileは使用不可。Intent/UnitのJSON入力用--fileとは別。helpには書込み引数を混ぜない。
 
 例:
-  aidlc memory create codekb/authentication --space default --type Design --title '認証の仕様' --description '現行の方式' --tag authentication --status stable --actor process:codex --body-file body.md
-  aidlc memory show codekb/authentication --space default
-  aidlc memory update codekb/authentication --space default --body-file body.md --actor process:codex --expect HASH
 `
 }
 

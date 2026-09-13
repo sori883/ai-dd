@@ -3,6 +3,7 @@ package install
 import (
 	"encoding/json"
 	"github.com/sori883/ai-dd/src/internal/cli"
+	"github.com/sori883/ai-dd/src/internal/okfcli"
 	"os"
 	"path/filepath"
 	"strings"
@@ -136,15 +137,15 @@ func TestInstallMemoryCommandGuidance(t *testing.T) {
 	raw = append(raw, okf...)
 	raw = append(raw, procedure...)
 	for _, action := range []string{"create", "update", "show", "search"} {
-		h, ok := cli.Help([]string{"memory", action, "--help"})
+		h, ok := okfcli.Help([]string{action, "--help"})
 		if !ok {
 			t.Fatal(action)
 		}
 		raw = append(raw, []byte(h)...)
 	}
 	for _, want := range []string{
-		"memory create CONCEPT-ID", "memory update CONCEPT-ID", "memory show CONCEPT-ID", "memory search [QUERY]", "--body-file", "--actor", "--type", "--title", "--description", "--expect", "--intent-id",
-		"拡張子なし", "adr/NAME", "hash", "content", "memory create --help", "memory update --help", "本文",
+		"okf create CONCEPT-ID", "okf update CONCEPT-ID", "okf show CONCEPT-ID", "okf search [QUERY]", "--body-file", "--actor", "--type", "--title", "--description", "--expect", "--intent-id",
+		"拡張子なし", "adr/NAME", "hash", "content", "M create --help", "M update --help", "本文",
 	} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("deployed skill lacks %q", want)
@@ -217,7 +218,7 @@ func TestOKFWorkLogInstalledGuidance(t *testing.T) {
 				t.Fatal("reopen help")
 			}
 			raw = append(raw, []byte(h)...)
-			for _, want := range []string{"knowledge/log/<intent_id>-work-log.md", "memory search work-log --space SPACE --intent-id ID", "memory show log/ID-work-log --space SPACE", "revision"} {
+			for _, want := range []string{"knowledge/log/<intent_id>-work-log.md", "okf search work-log --space SPACE --intent-id ID", "okf show log/ID-work-log --space SPACE", "revision"} {
 				if !strings.Contains(string(raw), want) {
 					t.Errorf("missing %q", want)
 				}
@@ -255,7 +256,7 @@ func TestInstallHookCommands(t *testing.T) {
 	if len(config.Hooks) != len(events) {
 		t.Fatalf("events = %v", config.Hooks)
 	}
-	want := shellQuote(binary) + " __hook --project-dir " + shellQuote(root)
+	want := shellQuote(binary) + " __hook --project-dir " + shellQuote(root) + " --okf-binary " + shellQuote(filepath.Join(filepath.Dir(binary), "okf"))
 	for _, event := range events {
 		t.Run(event, func(t *testing.T) {
 			groups := config.Hooks[event]
@@ -306,7 +307,7 @@ func TestOKFSkillInstall(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(string(raw), "'/opt/aidlc binary'") || strings.Contains(string(raw), "@@BINARY@@") {
+			if !strings.Contains(string(raw), "'/opt/okf'") || strings.Contains(string(raw), "@@BINARY@@") {
 				t.Fatalf("binary reference not resolved: %s", raw)
 			}
 			for _, skill := range []string{"aidlc", "aidlc-cli"} {

@@ -1,24 +1,24 @@
-# AI-DLC 利用者ガイド
+# AI-DD 利用者ガイド
 
-AI-DLCは、AIと目的を整理し、必要な工程を選び、検査・レビュー・承認を経て開発を進める道具です。
+AI-DDは、AIと目的を整理し、必要な工程を選び、検査・レビュー・承認を経て開発を進める道具です。
 利用者は目的と判断を伝え、メインAIがCLIを使って進捗と文書を保存します。
-実行ファイルは`aidlc`一つで、工程定義、Codex用のSkill・専門担当・hookを内包します。
+導入用の`aidlc-install`が指定版のruntimeと資材を取得します。工程操作は`aidlc`、知識操作は`okf`、文章検査は`natural-japanese-go`が担当します。
 
 ## 最初に使うとき
 
 1. [配布・導入手順](../../docs/distribution.md)で利用環境に合う実行ファイルを用意します。
    取得先は[GitHub Releases](https://github.com/sori883/ai-dd/releases)です。公開版が用意されたらOS・CPUに合うarchiveを選び、照合後に展開します。
-   現在は候補検証と手動指定時のRelease下書き作成を整備した段階で、正式な公開版は未確定です。
+   現在は候補検証と手動指定時のRelease下書き作成を整備した段階で、公開版の有無はRelease一覧で確認してください。
    リポジトリから自分でbuildする場合は[開発手順](../../docs/development.md)を使います。
 2. 利用する通常のプロジェクトフォルダへ配置します。Gitの初期化や導入は不要です。次はmacOS/Linuxの例です。2つのパスを、用意した実行ファイルと
    対象プロジェクトの実際の絶対パスへ置き換えて実行します。
 
    ```sh
-   "/absolute/path/to/aidlc" install codex --project-dir "/absolute/path/to/project"
+   "/absolute/path/to/aidlc-install" codex --release-version v0.1.1 --project-dir "/absolute/path/to/project"
    ```
 
-   詳しい引数は`aidlc install codex --help`で確認できます。WindowsのPowerShellでは、引用した実行ファイルの
-   パスの前に`&`を置き、実際の`aidlc.exe`とプロジェクトのパスを指定します。
+   詳しい引数は`aidlc-install codex --release-version v0.1.1 --help`で確認できます。WindowsのPowerShellでは、引用した実行ファイルの
+   パスの前に`&`を置き、実際の`aidlc-install.exe`とプロジェクトのパスを指定します。
    既設環境の更新には配布手順の比較・更新・復旧を使います。fresh installは既存ファイルを上書きしません。
 3. Codexで対象プロジェクトを開き、生成されたhookの実行ファイル・対象パスを確認して、通常の信頼確認を行います。
    ファイルが生成されたことだけでは、hookの動作確認は終わっていません。
@@ -121,13 +121,15 @@ aidlc/
 Knowledgeには「現在、何をどう行うか」、ADRにはアーキテクチャの判断について「なぜそうしたか」を残します。
 ADRは必要な判断ごとに作り、`intent_id`でIntentへ対応付けます。操作ごとの日誌や、Intentごとの一律ADRは要求しません。
 進捗はstateと状態変更履歴に保存し、工程を戻す理由はwork-logに記録します。
-`rule.md`は利用プロジェクトの共通ルールです。AI-DLC自体の操作手順は、配置された`aidlc`が進行と承認、`aidlc-cli`が操作選択と文書宣言、`okf-agent-memory`が知識の検索・保存を案内します。
+`rule.md`は利用プロジェクトの共通ルールです。AI-DD自体の操作手順は、配置された`aidlc`が進行と承認、`aidlc-cli`が操作選択と文書宣言、`okf-agent-memory`が知識の検索・保存を案内します。
 このリポジトリの`docs/ram/`は製品開発側の意思決定記録で、利用プロジェクトのKnowledgeとは別です。
 
-文書はOKFのmetadataを持つMarkdownです。AIが本文を用意し、`memory create`／`memory update`で保存します。
+工程操作には`project/aidlc/bin/VERSION/aidlc`、知識操作には`project/aidlc/bin/VERSION/okf`を使います。VERSIONは導入したRelease名です。Windowsでは`.exe`を付けます。
+
+文書はOKFのmetadataを持つMarkdownです。AIが本文を用意し、`okf create`／`okf update`で保存します。
 frontmatterはCLIが引数から揃え、日時も自動設定します。ADRのtypeは小文字の`adr`です。
 検索対象は選択SpaceのKnowledge配下です。title・description・tagsを検索語で探し、
-`--intent-id`で関連するIntentに完全一致で絞れます。共有知識を探すときはこの条件を外します。本文は`memory show`で読みます。
+`--intent-id`で関連するIntentに完全一致で絞れます。共有知識を探すときはこの条件を外します。本文は`okf show`で読みます。
 保存前に既存知識を検索し、現行Knowledgeを更新します。新しい設計判断は現在Intentの新規ADRへ残し、過去の判断理由を消しません。
 共有文書の日付やIntent IDは、Sensorを通すためだけに書き換えません。
 
@@ -143,8 +145,8 @@ frontmatterはCLIが引数から揃え、日時も自動設定します。ADRの
 | 今の進捗を見る | `aidlc intent show --help` |
 | 現在回の手順・入力・出力・許可担当を読む | `aidlc intent procedure --help` |
 | 状態変更の履歴を見る | `aidlc intent history --help` |
-| 文書を作る・更新する | `aidlc memory create --help`、`aidlc memory update --help` |
-| 文書を探す・読む | `aidlc memory search --help`、`aidlc memory show --help` |
+| 文書を作る・更新する | `okf create --help`、`okf update --help` |
+| 文書を探す・読む | `okf search --help`、`okf show --help` |
 | 中断・再開・工程の再実行 | `aidlc intent pause --help`、`aidlc intent resume --help`、`aidlc intent reopen --help` |
 | 担当の割当と解放 | `aidlc assignment --help` |
 

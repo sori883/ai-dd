@@ -2,15 +2,12 @@ package app
 
 import (
 	"encoding/json"
-	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
-	"time"
 
 	"github.com/sori883/ai-dd/src/internal/cli"
-	"github.com/sori883/ai-dd/src/internal/filestore"
 	"github.com/sori883/ai-dd/src/internal/install"
+	"github.com/sori883/ai-dd/src/internal/okfapp"
+	"github.com/sori883/ai-dd/src/internal/okfcli"
 	"github.com/sori883/ai-dd/src/internal/okfmemory"
 )
 
@@ -40,7 +37,6 @@ func (s Service) Execute(r cli.CommandRequest) ([]byte, error) {
 	if r.Command == "intent" || r.Command == "unit" {
 		return s.executeFlow(r)
 	}
-	store := s.store(r.Space)
 	switch r.Command + "/" + r.Action {
 	case "install/codex":
 		if r.Relocate {
@@ -57,113 +53,8 @@ func (s Service) Execute(r cli.CommandRequest) ([]byte, error) {
 			return nil, err
 		}
 		return encode(state)
-	case "memory/rules":
-		text, hash, err := s.rules(r.Space)
-		if err != nil {
-			return nil, err
-		}
-		return []byte("Rules SHA-256: " + hash + "\n" + text), nil
-	case "memory/search":
-		if err := store.ValidateRoot(); err != nil {
-			return nil, err
-		}
-		docs, err := okfmemory.Search(store.Bundle, r.Target, r.IntentID)
-		if err != nil {
-			return nil, err
-		}
-		rows := []map[string]string{}
-		for _, doc := range docs {
-			rows = append(rows, map[string]string{"concept_id": doc.ID, "intent_id": doc.String("intent_id"), "title": doc.String("title"), "description": doc.String("description"), "path": doc.ID + ".md"})
-		}
-		return encode(rows)
-	case "memory/show":
-		if err := store.ValidateRoot(); err != nil {
-			return nil, err
-		}
-		doc, err := okfmemory.Read(store.Bundle, r.Target)
-		if err != nil {
-			return nil, err
-		}
-		raw, err := okfmemory.ReadFile(store.Bundle, doc.ID+".md")
-		if err != nil {
-			return nil, err
-		}
-		return encode(map[string]string{"concept_id": doc.ID, "content": string(raw), "hash": filestore.Hash(raw)})
-	case "memory/check":
-		if err := store.ValidateRoot(); err != nil {
-			return nil, err
-		}
-		if err := okfmemory.Validate(store.Bundle); err != nil {
-			return nil, err
-		}
-		return []byte("OKF validation passed\n"), nil
-	case "memory/create", "memory/update":
-		return s.memoryWrite(r)
+	case "memory/rules", "memory/search", "memory/show", "memory/check", "memory/create", "memory/update":
+		return (okfapp.Service{Root: s.Root}).Execute(okfcli.CommandRequest{Action: r.Action, Target: r.Target, Space: r.Space, ProjectDir: r.ProjectDir, BodyFile: r.BodyFile, Actor: r.Actor, Expect: r.Expect, IntentID: r.IntentID, Metadata: r.Metadata})
 	}
 	return nil, invalid("unsupported operation")
-}
-func (s Service) memoryWrite(r cli.CommandRequest) ([]byte, error) {
-	store := s.store(r.Space)
-	if err := store.ValidateRoot(); err != nil {
-		return nil, err
-	}
-	name, err := okfmemory.ConceptPath(r.Target)
-	if err != nil {
-		return nil, err
-	}
-	raw, err := s.readDraft(r.BodyFile)
-	if err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(r.Actor) == "" {
-		return nil, invalid("actor required")
-	}
-	release, err := filestore.Lock(s.Root, "bundle-"+r.Space)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	var previous *okfmemory.Document
-	current, readErr := okfmemory.ReadFile(store.Bundle, name)
-	if r.Action == "create" {
-		if readErr == nil {
-			return nil, invalid("Concept exists")
-		}
-		if !os.IsNotExist(readErr) {
-			return nil, readErr
-		}
-	} else {
-		if readErr != nil {
-			return nil, readErr
-		}
-		if filestore.Hash(current) != r.Expect {
-			return nil, invalid("Concept hash conflict")
-		}
-		old, err := okfmemory.Parse(current)
-		if err != nil {
-			return nil, err
-		}
-		previous = &old
-	}
-	metadata := r.Metadata
-	metadata.Actor = r.Actor
-	now := time.Now().UTC()
-	doc, err := okfmemory.BuildMetadata(previous, raw, metadata, now)
-	if err != nil {
-		return nil, err
-	}
-	doc.ID = r.Target
-
-	encoded, err := doc.Bytes()
-	if err != nil {
-		return nil, err
-	}
-	if err := okfmemory.WriteFile(store.Bundle, name, encoded); err != nil {
-		return nil, err
-	}
-	out, _ := encode(map[string]string{"concept_id": doc.ID, "hash": filestore.Hash(encoded), "path": name})
-	if err := okfmemory.Bookkeeping(store.Bundle, doc, strings.Title(r.Action), now); err != nil {
-		return out, fmt.Errorf("Concept saved; bookkeeping failed: %w", err)
-	}
-	return out, nil
 }

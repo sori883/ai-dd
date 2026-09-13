@@ -69,7 +69,7 @@ func TestFlowInstallJapaneseProcedure(t *testing.T) {
 	}
 	procedure = append(procedure, common...)
 	procedure = append(procedure, okf...)
-	for _, word := range []string{"実装計画", "独立review", "intent review", "unit claim", "memory update"} {
+	for _, word := range []string{"実装計画", "独立review", "intent review", "unit claim", "M update"} {
 		if !strings.Contains(string(procedure), word) {
 			t.Errorf("missing %s", word)
 		}

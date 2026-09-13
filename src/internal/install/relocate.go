@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/sori883/ai-dd/src/core"
 	codex "github.com/sori883/ai-dd/src/harness/codex"
 	"github.com/sori883/ai-dd/src/internal/filestore"
 )
@@ -22,8 +23,18 @@ type RelocationResult struct{ Paths, Pending []string }
 func Relocate(root, binary, fromRoot, fromBinary string) (RelocationResult, error) {
 	return relocate(root, binary, fromRoot, fromBinary, filestore.WriteFile)
 }
-func relocate(root, binary, fromRoot, fromBinary string, write func(string, string, []byte) error) (result RelocationResult, err error) {
-	for _, p := range []string{root, binary, fromRoot, fromBinary} {
+func relocate(root, binary, fromRoot, fromBinary string, write func(string, string, []byte) error) (RelocationResult, error) {
+	return relocateFrom(root, fromRoot, codex.SiblingBinaries(binary), codex.SiblingBinaries(fromBinary), core.Files, codex.Files, write)
+}
+func relocateFrom(root, fromRoot string, b, from codex.Binaries, common, host fs.FS, write func(string, string, []byte) error) (result RelocationResult, err error) {
+	if err := b.Validate(); err != nil {
+		return result, err
+	}
+	if err := from.Validate(); err != nil {
+		return result, err
+	}
+
+	for _, p := range []string{root, fromRoot} {
 		if !filepath.IsAbs(p) || strings.ContainsRune(p, 0) {
 			return result, fmt.Errorf("absolute paths required: %w", fs.ErrInvalid)
 		}
@@ -32,7 +43,7 @@ func relocate(root, binary, fromRoot, fromBinary string, write func(string, stri
 	if err != nil {
 		return result, err
 	}
-	paths := []string{".agents/skills/aidlc/SKILL.md", ".agents/skills/aidlc-cli/SKILL.md", ".agents/skills/okf-agent-memory/SKILL.md", ".codex/hooks.json"}
+	paths := []string{".agents/skills/aidlc/SKILL.md", ".agents/skills/aidlc-cli/SKILL.md", ".agents/skills/okf-agent-memory/SKILL.md", ".agents/skills/natural-japanese-go/SKILL.md", ".agents/skills/natural-japanese-go/references/cli.md", ".codex/hooks.json"}
 	before := make([][]byte, len(paths))
 	after := make([][]byte, len(paths))
 	for i, p := range paths {
@@ -41,11 +52,11 @@ func relocate(root, binary, fromRoot, fromBinary string, write func(string, stri
 			return result, fmt.Errorf("%s: %w", p, err)
 		}
 	}
-	oldAssets, err := codex.Distribution(fromRoot, fromBinary)
+	oldAssets, err := codex.DistributionFrom(fromRoot, from, common, host)
 	if err != nil {
 		return result, err
 	}
-	newAssets, err := codex.Distribution(root, binary)
+	newAssets, err := codex.DistributionFrom(root, b, common, host)
 	if err != nil {
 		return result, err
 	}
@@ -68,7 +79,7 @@ func relocate(root, binary, fromRoot, fromBinary string, write func(string, stri
 		after[i] = newSkill
 	}
 	hookIndex := len(paths) - 1
-	after[hookIndex], err = relocateHooks(before[hookIndex], shellQuote(fromBinary)+" __hook --project-dir "+shellQuote(fromRoot), shellQuote(binary)+" __hook --project-dir "+shellQuote(root))
+	after[hookIndex], err = relocateHooks(before[hookIndex], codex.HookCommand(fromRoot, from), codex.HookCommand(root, b))
 	if err != nil {
 		return result, fmt.Errorf("%s: %w", paths[hookIndex], err)
 	}

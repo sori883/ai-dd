@@ -1,6 +1,6 @@
 # アーキテクチャ
 
-AI-DLCは、一つの目的をIntentとして管理する単一Go実行ファイルです。
+AI-DLCは、一つの目的をIntentとして管理するGo製品です。五つのCLIが導入・工程実行・知識操作・文章検査・梱包を分担します。
 初期化と目的整理を必須とし、その他の工程はユーザーが承認したIntentごとの実行計画で選びます。
 利用者の操作は[利用者ガイド](../src/docs/user-guide.md)、配布・更新は[配布手順](distribution.md)を参照してください。
 
@@ -92,3 +92,9 @@ installがfresh projectへ配置し、実行時は配置済みの定義・Rule�
 検証集合はIntentの `verification_paths` と任意のUnit範囲で宣言し、Unit範囲はIntent範囲へ含めます。`scope` は編集担当の宣言です。集合の正規化したパス・種類・内容を二回読み、SHAの一致を確認します。Git呼出しは行いません。同じ相対配置と内容の別rootは同じSHAになります。
 
 flow schema 6、assignment schema 2のみを新規保存します。旧commit fieldの互換読込みや移行は行いません。Knowledgeと結果は管理ディレクトリ内で別にhash化し、集合SHAとの循環を避けます。独立reviewerは別会話で同じrootを使え、別rootでは全体SHAを照合します。現在全体SHAの結果が終了条件であり、古いUnit成果だけでfinishできません。
+
+## 五つの実行入口
+
+`aidlc-install`は指定Releaseの三runtimeと同版dataを検査して配置し、`aidlc`は工程・担当・Sensor・hook、`okf`はKnowledge操作、`natural-japanese-go`は文章検査を担当する。`aidlc-dist`は開発者用の五製品とdataの梱包器である。OKFの共有Go処理はSensor等から直接呼び出し、CLI processの連鎖にしない。共通原稿の正本はcoreに一つあり、Codexの差分を配置時に合成する。installer自身の埋込原稿を指定版の代用にしない。
+
+hookは設定された役割別の絶対binaryと解析したcommandを識別する。bindFlowで返したRuleのhashとturnを次のPreで照合し、通常toolのPostは一致した実行IDを解放する。読取り例外は実行slotを消費しない。新たなRule出力認証や全操作の永続auditは追加しない。
