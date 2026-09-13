@@ -1,5 +1,7 @@
 # 開発プロジェクトRAM
 
+- [READMEを初心者向けの利用マニュアルにする](decisions/2026-09-13-beginner-readme-request.md): Issue #192。会話の経緯や内部実装を知らない人向けに、概要・導入・初回依頼・承認・中断と再開を整理する直接依頼。日常操作は会話例、詳細は既存文書へ案内し、初回`0.1.0`は公開準備中と明記する。
+
 - [参考プロジェクトのライセンスを同じ文書へ整理する](decisions/2026-09-13-upstream-license-inventory-request.md): Issue #190。原典のMIT-0／MIT／Apache-2.0／BSD、翻案と実依存、保持済み表示と配布の残対応を[開発者向け本文](../developer-references-and-dependencies.md)へ追記する直接依頼。YAMLのNOTICEとOKF skill・Goの表示不足を明記。ライセンス選択と実リリースは行わず、文書確認後の公開を維持する。
 
 - [初回版0.1.0と開発者向け参考元・依存関係の整理](decisions/2026-09-13-v0-1-0-developer-inventory-request.md): 初回版を`0.1.0`に確定。[初心者向け本文一枚](../developer-references-and-dependencies.md)へ出典・固定版・実依存・許諾表示の残対応を整理する直接依頼。ユーザーの文書確認まで実tag・Release作成/公開を待ち、Claude対応は保留を維持する。
