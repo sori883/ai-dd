@@ -24,34 +24,76 @@ import (
 type releaseExpectation struct{ Version, Commit, GoVersion string }
 
 func TestReleaseCandidateMetadataValidation(t *testing.T) {
+	t.Run("native version output", func(t *testing.T) {
+		e := releaseExpectation{"v0.1.2", strings.Repeat("a", 40), "go1.26.4"}
+		for _, product := range release.Products {
+			for _, change := range []string{"valid", "product", "version", "commit", "prefix", "suffix", "missing newline"} {
+				if product == "natural-japanese-go" && change == "commit" {
+					continue
+				}
+				t.Run(product+"/"+change, func(t *testing.T) {
+					output := product + " v0.1.2 (commit " + strings.Repeat("a", 40) + ")\n"
+					if product == "natural-japanese-go" {
+						output = "natural-japanese-go v0.1.2\n"
+					}
+					switch change {
+					case "product":
+						output = strings.Replace(output, product, "wrong-product", 1)
+					case "version":
+						output = strings.Replace(output, "v0.1.2", "v0.1.20", 1)
+					case "commit":
+						output = strings.Replace(output, strings.Repeat("a", 40), strings.Repeat("b", 40), 1)
+					case "prefix":
+						output = "extra\n" + output
+					case "suffix":
+						output += "extra\n"
+					case "missing newline":
+						output = strings.TrimSuffix(output, "\n")
+					}
+					err := validateNativeVersion([]byte(output), product, e)
+					if change == "valid" {
+						if err != nil {
+							t.Fatal(err)
+						}
+					} else if err == nil {
+						t.Fatal("incorrect native output accepted", change)
+					}
+				})
+			}
+		}
+	})
 	t.Run("binary build identity", func(t *testing.T) {
 		e := releaseExpectation{"v0.1.2", strings.Repeat("a", 40), "go1.26.4"}
-		for _, change := range []string{"valid", "go", "os", "arch", "version", "commit"} {
-			flags := "-X github.com/sori883/ai-dd/src/internal/buildinfo.Version=" + e.Version + " -X github.com/sori883/ai-dd/src/internal/buildinfo.Commit=" + e.Commit
-			if change == "version" {
-				flags = strings.ReplaceAll(flags, e.Version, "v9")
-			}
-			if change == "commit" {
-				flags = strings.ReplaceAll(flags, e.Commit, strings.Repeat("b", 40))
-			}
-			info := debug.BuildInfo{GoVersion: e.GoVersion, Settings: []debug.BuildSetting{{Key: "GOOS", Value: "linux"}, {Key: "GOARCH", Value: "amd64"}, {Key: "-ldflags", Value: flags}}}
-			if change == "go" {
-				info.GoVersion = "go1.26.5"
-			}
-			if change == "os" {
-				info.Settings[0].Value = "windows"
-			}
-			if change == "arch" {
-				info.Settings[1].Value = "arm64"
-			}
-			err := validateBinaryBuild(&info, "aidlc", "linux/amd64", e)
-			if change == "valid" {
-				if err != nil {
-					t.Fatal(err)
+		for _, change := range []string{"valid", "path", "go", "os", "arch", "cgo", "trimpath", "missing cgo", "missing trimpath"} {
+			t.Run(change, func(t *testing.T) {
+				info := debug.BuildInfo{Path: "github.com/sori883/ai-dd/src/cmd/aidlc", GoVersion: e.GoVersion, Settings: []debug.BuildSetting{{Key: "GOOS", Value: "linux"}, {Key: "GOARCH", Value: "amd64"}, {Key: "CGO_ENABLED", Value: "0"}, {Key: "-trimpath", Value: "true"}}}
+				switch change {
+				case "path":
+					info.Path = "github.com/sori883/ai-dd/src/cmd/okf"
+				case "go":
+					info.GoVersion = "go1.26.5"
+				case "os":
+					info.Settings[0].Value = "windows"
+				case "arch":
+					info.Settings[1].Value = "arm64"
+				case "cgo":
+					info.Settings[2].Value = "1"
+				case "trimpath":
+					info.Settings[3].Value = "false"
+				case "missing cgo":
+					info.Settings = append(info.Settings[:2], info.Settings[3])
+				case "missing trimpath":
+					info.Settings = info.Settings[:3]
 				}
-			} else if err == nil {
-				t.Fatal("invalid binary identity accepted", change)
-			}
+				err := validateBinaryBuild(&info, "aidlc", "linux/amd64", e)
+				if change == "valid" {
+					if err != nil {
+						t.Fatal("valid trimpath binary without ldflags rejected", err)
+					}
+				} else if err == nil {
+					t.Fatal("invalid build accepted", change)
+				}
+			})
 		}
 	})
 	o := releaseFixture(t)
@@ -270,7 +312,7 @@ func TestReleaseCandidateNative(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	for _, product := range release.Products {
 		out := distributionOK(t, base, bins[product], "--version")
-		if !bytes.Contains(out, []byte(e.Version)) {
+		if err := validateNativeVersion(out, product, e); err != nil {
 			t.Fatalf("%s version: %s", product, out)
 		}
 		if len(distributionOK(t, base, bins[product], "--help")) == 0 {
@@ -411,17 +453,19 @@ func validateBinaryBuild(info *debug.BuildInfo, product, target string, e releas
 	if info.GoVersion != e.GoVersion || settings["GOOS"]+"/"+settings["GOARCH"] != target {
 		return fmt.Errorf("binary toolchain/target differs")
 	}
-	fields := strings.Fields(settings["-ldflags"])
-	if product == "natural-japanese-go" {
-		if !slices.Contains(fields, "main.version="+e.Version) {
-			return fmt.Errorf("binary version differs")
-		}
-	} else {
-		for _, want := range []string{"github.com/sori883/ai-dd/src/internal/buildinfo.Version=" + e.Version, "github.com/sori883/ai-dd/src/internal/buildinfo.Commit=" + e.Commit} {
-			if !slices.Contains(fields, want) {
-				return fmt.Errorf("binary identity differs")
-			}
-		}
+	if info.Path != "github.com/sori883/ai-dd/src/cmd/"+product || settings["CGO_ENABLED"] != "0" || settings["-trimpath"] != "true" {
+		return fmt.Errorf("binary product/build settings differ")
+	}
+	return nil
+}
+
+func validateNativeVersion(raw []byte, product string, e releaseExpectation) error {
+	want := product + " " + e.Version
+	if product != "natural-japanese-go" {
+		want += " (commit " + e.Commit + ")"
+	}
+	if string(raw) != want+"\n" {
+		return fmt.Errorf("native version output differs for %s", product)
 	}
 	return nil
 }

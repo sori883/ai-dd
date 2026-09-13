@@ -207,3 +207,13 @@ R2はarchiveの重複・link・path・mode拒否を、正常対照付きunpackBu
 `go test -count=1 ./src/internal/release -run '^TestBundleArchive'`、影響2package通常test、gofmt、diff-check。
 実候補bootstrapはintegrationの-listまで。PowerShellはローカル未導入のため動的RED/GREENを主張せず、
 旧HEADと公式実装の根拠を残し、Windows CIの5.1/7実行を必須gateへ残す。
+
+## Final修復02の検証分担
+
+Issue #202、work_unit `consolidated-release-bootstrap-repair-02`をloopで実施する。
+Go 1.26.4は-trimpath時に-ldflagsをBuildInfoへ保存しない。V1では実測に合うfixtureを先に追加し、
+正しいbinaryの誤拒否REDから、Path・GoVersion・GOOS/GOARCH・CGO_ENABLED=0・-trimpath=trueの厳密照合へ直す。
+V2ではnative版表示の完全一致helperとtestを先に追加し、4CLIのproduct/version/commit、
+日本語CLIのproduct/versionと改行だけを受理する。誤値や追加dataを拒否する。
+両項目のtargetedは`go test -tags=integration -count=1 ./src/cmd/aidlc-dist -run '^TestReleaseCandidate(MetadataValidation|NativeSelection|ProjectDirectory)$'`。
+末尾はこれと影響package通常test、gofmt、diff-check。実候補・crossbuild・全体gateは親finalへ残す。
