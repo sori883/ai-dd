@@ -20,8 +20,8 @@ type deployedAsset struct {
 	Mode   fs.FileMode `json:"mode"`
 }
 
-// The fixture was captured from the installer at f8d9eb0d83143144bbcb2fc5b6a9dc5db80acf94,
-// before introducing Manifest.Render. Only the temporary root in hooks is normalized.
+// This fixture pins the renamed and attributed distribution for Issue #198.
+// The historical 69-asset fixture remains unchanged. Only the hook root is normalized.
 func TestCodexManifestParity(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "project's root")
 	if err := os.Mkdir(root, 0755); err != nil {
@@ -94,7 +94,7 @@ func TestCodexManifestParity(t *testing.T) {
 	if !reflect.DeepEqual(paths, result.Paths) {
 		t.Fatalf("returned paths differ from saved files: %v", result.Paths)
 	}
-	raw, err := os.ReadFile("testdata/codex-assets-sha256.json")
+	raw, err := os.ReadFile("testdata/upstream-skill-assets-sha256.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,16 +107,6 @@ func TestCodexManifestParity(t *testing.T) {
 	}
 	if len(got) != len(want) {
 		t.Fatalf("asset count = %d, want %d", len(got), len(want))
-	}
-	for i := range got {
-		// These six instruction texts are deliberately composed differently. ProductAgentAssets
-		// checks their decoded contracts; all other bytes retain the pre-refactor baseline.
-		if got[i].Path == want[i].Path && (strings.HasPrefix(got[i].Path, ".codex/agents/") || got[i].Path == ".agents/skills/aidlc-cli/SKILL.md") {
-			if got[i].Mode != want[i].Mode {
-				t.Errorf("mode changed for %s", got[i].Path)
-			}
-			got[i].SHA256 = want[i].SHA256
-		}
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Codex deployment changed\ngot: %+v\nwant: %+v", got, want)

@@ -66,7 +66,7 @@ func verifyStageSkillsEvidence(binary string, transport []byte, records []memory
 			runs[session+"/"+normalize(ev.Item.Command)] = execution{*ev.Item.Exit, ev.Item.Output}
 		}
 	}
-	commands := []string{"cat\x00.agents/skills/aidlc-grilling/SKILL.md", "cat\x00.agents/skills/natural-japanese-go/SKILL.md", binary + "\x00--json\x00text.md"}
+	commands := []string{"cat\x00.agents/skills/grilling/SKILL.md", "cat\x00.agents/skills/natural-japanese-go/SKILL.md", binary + "\x00--json\x00text.md"}
 	pending := map[string]string{}
 	seen := map[string]map[string]bool{}
 	for _, record := range records {
@@ -114,7 +114,7 @@ func verifyStageSkillsEvidence(binary string, transport []byte, records []memory
 			seen[input.Session] = map[string]bool{}
 		}
 		if index < 2 {
-			name := ".agents/skills/aidlc-grilling/SKILL.md"
+			name := ".agents/skills/grilling/SKILL.md"
 			if index == 1 {
 				name = ".agents/skills/natural-japanese-go/SKILL.md"
 			}
@@ -149,7 +149,7 @@ func TestStageSkillsEvidence(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			var records []memoryLiveRecord
 			transport := []byte("{\"type\":\"thread.started\",\"thread_id\":\"s\"}\n")
-			commands := []string{"cat .agents/skills/aidlc-grilling/SKILL.md", "cat .agents/skills/natural-japanese-go/SKILL.md", "/opt/natural-japanese-go --json text.md"}
+			commands := []string{"cat .agents/skills/grilling/SKILL.md", "cat .agents/skills/natural-japanese-go/SKILL.md", "/opt/natural-japanese-go --json text.md"}
 			for i, cmd := range commands {
 				out := stageEvidenceOutput(t, i)
 				if mode == "wrong stdout" {
@@ -192,7 +192,7 @@ func stageEvidenceOutput(t *testing.T, i int) string {
 	if i == 2 {
 		return `{"schema_version":1,"engine":"Kagome v2.11.0","dictionary":"UniDic v1.2.6","file":"text.md","stats":{},"findings":[{"line":1,"category":"forbidden_phrase","excerpt":"非常に重要","severity":"warn","detail":"test"}]}`
 	}
-	name := ".agents/skills/aidlc-grilling/SKILL.md"
+	name := ".agents/skills/grilling/SKILL.md"
 	if i == 1 {
 		name = ".agents/skills/natural-japanese-go/SKILL.md"
 	}
@@ -276,7 +276,7 @@ func TestStageSkillsLive(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
 	defer cancel()
-	prompt := `Use the installed aidlc skill and existing hooks. Select/create an Intent, read its project Rules, and follow the required initialization so a normal tool command is permitted in a begun stage. Do not alter hooks or Rules. Then run these three commands in separate tool calls, in this order: cat .agents/skills/aidlc-grilling/SKILL.md ; cat .agents/skills/natural-japanese-go/SKILL.md ; ` + quote(naturalBinary) + ` --json text.md . Do not combine the commands with semicolons. Inspect their output. Stop after this limited fixture, without claiming the full Intent completed.`
+	prompt := `Use the installed aidlc skill and existing hooks. Select/create an Intent, read its project Rules, and follow the required initialization so a normal tool command is permitted in a begun stage. Do not alter hooks or Rules. Then run these three commands in separate tool calls, in this order: cat .agents/skills/grilling/SKILL.md ; cat .agents/skills/natural-japanese-go/SKILL.md ; ` + quote(naturalBinary) + ` --json text.md . Do not combine the commands with semicolons. Inspect their output. Stop after this limited fixture, without claiming the full Intent completed.`
 
 	if _, err := flowRunModel(ctx, cfg, root, "memory", prompt, "workspace-write"); err != nil {
 		t.Fatalf("model failed: %v; evidence %s", err, evidence)

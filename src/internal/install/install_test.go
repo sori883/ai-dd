@@ -128,7 +128,7 @@ func TestInstallMemoryCommandGuidance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	okf, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc-okf/SKILL.md"))
+	okf, err := os.ReadFile(filepath.Join(root, ".agents/skills/okf-agent-memory/SKILL.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +271,7 @@ func TestInstallHookCommands(t *testing.T) {
 
 func TestOKFSkillInstall(t *testing.T) {
 	t.Parallel()
-	const path = ".agents/skills/aidlc-okf/SKILL.md"
+	const path = ".agents/skills/okf-agent-memory/SKILL.md"
 	for _, existing := range []bool{false, true} {
 		name := "fresh"
 		if existing {
@@ -314,7 +314,7 @@ func TestOKFSkillInstall(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if !strings.Contains(string(entry), "../aidlc-okf/SKILL.md") {
+				if !strings.Contains(string(entry), "../okf-agent-memory/SKILL.md") {
 					t.Errorf("%s lacks OKF skill link", skill)
 				}
 			}

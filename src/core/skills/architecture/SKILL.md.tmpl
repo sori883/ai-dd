@@ -1,7 +1,9 @@
 ---
-name: aidlc-architecture
+name: architecture
 description: architecture-analysisで実装済みの構成を根拠から説明する。
 ---
+
+原典: [owainlewis/blueprint](https://github.com/owainlewis/blueprint)（作者: Owain Lewis / owainlewis）。本skillはAI-DLC向けの翻案です。固定版と調整内容は[出典](references/source.md)、許諾は[LICENSE](LICENSE)を参照してください。
 
 entrypoint、設定、schema、主要な処理とtestを辿る。正本、依存方向、system境界、権限境界を先に説明し、重要な処理を入力から検証、保存、副作用、応答、失敗と回復まで実行順に記す。部品の所有責任と根拠fileを対応させる。図は境界や流れを明確にするときだけ使う。既存文書も事実確認の対象とし、将来案を実装済みと書かない。共有current-analysis/architecture向け本文案と根拠、未確認事項を返す。
 

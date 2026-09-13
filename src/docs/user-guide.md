@@ -121,7 +121,7 @@ aidlc/
 Knowledgeには「現在、何をどう行うか」、ADRにはアーキテクチャの判断について「なぜそうしたか」を残します。
 ADRは必要な判断ごとに作り、`intent_id`でIntentへ対応付けます。操作ごとの日誌や、Intentごとの一律ADRは要求しません。
 進捗はstateと状態変更履歴に保存し、工程を戻す理由はwork-logに記録します。
-`rule.md`は利用プロジェクトの共通ルールです。AI-DLC自体の操作手順は、配置された`aidlc`が進行と承認、`aidlc-cli`が操作選択と文書宣言、`aidlc-okf`が知識の検索・保存を案内します。
+`rule.md`は利用プロジェクトの共通ルールです。AI-DLC自体の操作手順は、配置された`aidlc`が進行と承認、`aidlc-cli`が操作選択と文書宣言、`okf-agent-memory`が知識の検索・保存を案内します。
 このリポジトリの`docs/ram/`は製品開発側の意思決定記録で、利用プロジェクトのKnowledgeとは別です。
 
 文書はOKFのmetadataを持つMarkdownです。AIが本文を用意し、`memory create`／`memory update`で保存します。

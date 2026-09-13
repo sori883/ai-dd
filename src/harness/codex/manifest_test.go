@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/sori883/ai-dd/src/harness/codex"
@@ -13,8 +12,8 @@ import (
 
 func TestDistribution(t *testing.T) {
 	t.Parallel()
-	// This is the old installer's independently captured baseline, not renderer output.
-	raw, err := os.ReadFile("../../internal/install/testdata/codex-assets-sha256.json")
+	// Pin every deployed asset after the authorized naming and attribution change.
+	raw, err := os.ReadFile("../../internal/install/testdata/upstream-skill-assets-sha256.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,9 +33,8 @@ func TestDistribution(t *testing.T) {
 	}
 	for i, asset := range assets {
 		sum := sha256.Sum256(asset.Data)
-		changedText := strings.HasPrefix(asset.Path, ".codex/agents/") || asset.Path == ".agents/skills/aidlc-cli/SKILL.md"
-		if asset.Path != want[i].Path || (!changedText && hex.EncodeToString(sum[:]) != want[i].SHA256) {
-			t.Errorf("asset %d (%s) differs from old installer", i, asset.Path)
+		if asset.Path != want[i].Path || hex.EncodeToString(sum[:]) != want[i].SHA256 {
+			t.Errorf("asset %d (%s) differs from pinned distribution", i, asset.Path)
 		}
 	}
 }

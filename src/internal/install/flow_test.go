@@ -63,7 +63,7 @@ func TestFlowInstallJapaneseProcedure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	okf, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc-okf/SKILL.md"))
+	okf, err := os.ReadFile(filepath.Join(root, ".agents/skills/okf-agent-memory/SKILL.md"))
 	if err != nil {
 		t.Fatal(err)
 	}

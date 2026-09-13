@@ -46,7 +46,7 @@ Spaceは関連する作業と知識をまとめる場所、Intentは一つの目
 | [AWS Labs AI-DLC Workflows](https://github.com/awslabs/aidlc-workflows/tree/v2) | ローカルsnapshotの製品版`2.6.123`。上流commitは未確認 | 工程、担当AI、Sensor、承認、Space、共通coreからAI環境別資材を配置する考え方 | 不要。本家のTypeScript/Bun製runtimeを起動しない |
 | [Google Open Knowledge Format](https://github.com/GoogleCloudPlatform/open-knowledge-format/tree/ad30107c31c06aec8a7d5636e0d1058118604e6f) | 仕様v0.2、`ad30107c31c06aec8a7d5636e0d1058118604e6f` | Markdownに本文とmetadataを持たせる知識形式、Bundle・Concept・来歴の考え方 | 不要。形式の仕様を参考にする |
 | [OKF Agent Memory：初期実装の比較基準](https://github.com/okf-memory/okf-agent-memory/tree/d4c523ed5ce916fa207fe314851b98721421c891) | v0.1.2、`d4c523ed5ce916fa207fe314851b98721421c891` | 単一CLIで知識を作成・検索・更新する方式の検討 | 不要。外部`okf`実行ファイルやGo moduleを組み込んでいない |
-| [OKF Agent Memory：後発skillの参考](https://github.com/okf-memory/okf-agent-memory/tree/a09e04918aa84d275b784374b5236d9eeac56c9e) | `a09e04918aa84d275b784374b5236d9eeac56c9e` | `aidlc-okf`の「検索して読み、必要な知識を残す」手順 | 不要。既存の`aidlc memory`操作に合わせている |
+| [OKF Agent Memory：後発skillの参考](https://github.com/okf-memory/okf-agent-memory/tree/a09e04918aa84d275b784374b5236d9eeac56c9e) | `a09e04918aa84d275b784374b5236d9eeac56c9e` | `okf-agent-memory`の「検索して読み、必要な知識を残す」手順 | 不要。既存の`aidlc memory`操作に合わせている |
 
 OKFは文書の**形式**、OKF Agent Memoryはその形式を使う**別プロジェクトの実装・手順**です。本製品の知識操作は[自前のGo実装](../src/internal/okfmemory/)です。Agent Memoryの二つのcommitは用途別の参照であり、後発skillのcommitへ製品全体を更新したという意味ではありません。
 
@@ -58,19 +58,20 @@ OKFは文書の**形式**、OKF Agent Memoryはその形式を使う**別プロ�
 
 ## 3. 同梱するskillの参考元
 
-skillはAIに渡す作業手順のMarkdownです。元プロジェクトの作業方法を日本語化し、この製品の担当、承認、知識保存の役割に合わせています。原典に出てくる追加ツールや独自の保存先を、そのまま製品の必須条件にしているわけではありません。
+skillはAIに渡す作業手順のMarkdownです。外部由来の13skillは本文冒頭に原典・作者・翻案を明示し、製品の接頭辞を付けません。原典作者の公式配布や動作保証を示すものではありません。元プロジェクトの作業方法を日本語化し、この製品の担当、承認、知識保存の役割に合わせています。原典に出てくる追加ツールや独自の保存先を、そのまま製品の必須条件にしているわけではありません。
 
 | 参考リポジトリと固定commit | 製品内のskill | 用途 |
 | --- | --- | --- |
-| [mattpocock/skills](https://github.com/mattpocock/skills/tree/3cca18b368ae95cdbdebbff572ccafa662551015) | `aidlc-grill-with-docs`、`aidlc-grilling`、`aidlc-domain-modeling` | 根拠を使う深掘り、質問の整理、用語と業務の構造化 |
-| 同上 | `aidlc-research`、`aidlc-to-spec` | 調査、要件を仕様へまとめる |
-| 同上 | `aidlc-tdd`、`aidlc-code-review` | テストを先に書く開発、変更のレビュー |
-| [owainlewis/blueprint](https://github.com/owainlewis/blueprint/tree/2aeb882f06bc4b307015ea962b73aa60ac0c8ea7) | `aidlc-architecture` | 現在の構成や構成図を整理する |
-| [mblode/agent-skills](https://github.com/mblode/agent-skills/tree/f05d2de8cbd88f11a4e3c99f2880f32491c61393) | `aidlc-planning` | 実装範囲・順序・検証を計画する |
-| [obra/superpowers](https://github.com/obra/superpowers/tree/b36e0829c6d0140e93cfef2ca599b1b07d4a7797) | `aidlc-systematic-debugging`、`aidlc-verification-before-completion` | 原因を調べて修正する、完了前に証拠を確認する |
+| [mattpocock/skills](https://github.com/mattpocock/skills/tree/3cca18b368ae95cdbdebbff572ccafa662551015) | `grill-with-docs`、`grilling`、`domain-modeling` | 根拠を使う深掘り、質問の整理、用語と業務の構造化 |
+| 同上 | `research`、`to-spec` | 調査、要件を仕様へまとめる |
+| 同上 | `tdd`、`code-review` | テストを先に書く開発、変更のレビュー |
+| [owainlewis/blueprint](https://github.com/owainlewis/blueprint/tree/2aeb882f06bc4b307015ea962b73aa60ac0c8ea7) | `architecture` | 現在の構成や構成図を整理する |
+| [mblode/agent-skills](https://github.com/mblode/agent-skills/tree/f05d2de8cbd88f11a4e3c99f2880f32491c61393) | `planning` | 実装範囲・順序・検証を計画する |
+| [obra/superpowers](https://github.com/obra/superpowers/tree/b36e0829c6d0140e93cfef2ca599b1b07d4a7797) | `systematic-debugging`、`verification-before-completion` | 原因を調べて修正する、完了前に証拠を確認する |
 | [coji/natural-japanese](https://github.com/coji/natural-japanese/tree/9a78a42964096da509b8f3e011f0085a5f080151)（v1.5.0） | `natural-japanese-go` | 日本語文章の設計・執筆・推敲と、別CLIによる検査 |
+| [okf-memory/okf-agent-memory](https://github.com/okf-memory/okf-agent-memory/tree/a09e04918aa84d275b784374b5236d9eeac56c9e) | `okf-agent-memory` | 知識の検索・保存手順を`aidlc memory`へ翻案 |
 
-この12個に、進行全体の`aidlc`、操作案内の`aidlc-cli`、知識操作の`aidlc-okf`を加えた**15個が標準配置のskill**です。共通原稿は[src/core/skills/](../src/core/skills/)にあり、Codexの接続差分を配置時に合成し、利用先では`.agents/skills/`へ配置されます。表の12個はそれぞれ`references/source.md`と`LICENSE`を保持し、原典はいずれもMITです。[採用・翻案の計画](design/stage-skills-natural-japanese-go-plan.md)に固定元を記録しています。
+この13個に、進行全体の`aidlc`、操作案内の`aidlc-cli`を加えた**15個が標準配置のskill**です。共通原稿は[src/core/skills/](../src/core/skills/)にあり、Codexの接続差分を配置時に合成し、利用先では`.agents/skills/`へ配置されます。表の13個はそれぞれ`references/source.md`と`LICENSE`を保持し、原典はいずれもMITです。[採用・翻案の計画](design/stage-skills-natural-japanese-go-plan.md)に固定元を記録しています。
 
 `natural-japanese-go`のプログラムは、原典の通常14分類の検査をGoへ移植したものです。原典のPython/SudachiからKagome/UniDicへ解析器を変えているため、同じ文章でも結果が完全一致するとは限りません。skill自体は標準配置されますが、検査を実行する場合は別の`natural-japanese-go`実行ファイルが必要です。詳しい対応範囲は[日本語補助CLIの説明](../src/docs/natural-japanese-go.md)にあります。
 
@@ -162,15 +163,15 @@ LICENSEは利用・再配布の条件を記した許諾文です。NOTICEは原�
 | --- | --- | --- |
 | AWS Labs AI-DLC Workflows `2.6.123` | [保存版LICENSE](aidlc-content/LICENSE)：MIT-0。Amazon.com, Inc. or its affiliates | 工程・配布などの設計参照。旧原稿の取得記録とLICENSEは`docs/aidlc-content/`に残る。元commitは未確認で、現行上流の版まで確認したとは扱わない |
 | Open Knowledge Format v0.2、`ad30107…` | [固定版LICENSE.md](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/ad30107c31c06aec8a7d5636e0d1058118604e6f/LICENSE.md)：Apache-2.0 | 仕様と許諾文を[upstream資料](okf-analysis/upstream/)に保存。固定版のリポジトリにはNOTICEファイルがないことを確認。仕様の保存・参照と本製品独自実装を区別する |
-| OKF Agent Memory v0.1.2、`d4c523…`／後発skill参考`a09e049…` | [初期参照版LICENSE](https://raw.githubusercontent.com/okf-memory/okf-agent-memory/d4c523ed5ce916fa207fe314851b98721421c891/LICENSE)・[skill参考版LICENSE](https://raw.githubusercontent.com/okf-memory/okf-agent-memory/a09e04918aa84d275b784374b5236d9eeac56c9e/LICENSE)：MIT。2026 sknr and the OKF Memory Contributors | 初期設計の比較と`aidlc-okf`の手順の翻案。元CLIは同梱しない。RAMに出典はあるが、製品の`aidlc-okf/`には上流LICENSE・出典文書がなく、配布表示の整備が残る |
+| OKF Agent Memory v0.1.2、`d4c523…`／後発skill参考`a09e049…` | [初期参照版LICENSE](https://raw.githubusercontent.com/okf-memory/okf-agent-memory/d4c523ed5ce916fa207fe314851b98721421c891/LICENSE)・[skill参考版LICENSE](https://raw.githubusercontent.com/okf-memory/okf-agent-memory/a09e04918aa84d275b784374b5236d9eeac56c9e/LICENSE)：MIT。2026 sknr and the OKF Memory Contributors | 初期設計の比較と`okf-agent-memory`の手順の翻案。元CLIは同梱しない。製品の`okf-agent-memory/`に固定版の`LICENSE`と`references/source.md`を保持する |
 | mattpocock/skills `3cca18…` | [固定版LICENSE](https://raw.githubusercontent.com/mattpocock/skills/3cca18b368ae95cdbdebbff572ccafa662551015/LICENSE)：MIT。2026 Matt Pocock | 7skillを翻案。各skillの`LICENSE`に原典表示、`references/source.md`に出典と翻案内容を保持 |
-| owainlewis/blueprint `2aeb882…` | [固定版LICENSE](https://raw.githubusercontent.com/owainlewis/blueprint/2aeb882f06bc4b307015ea962b73aa60ac0c8ea7/LICENSE)：MIT。2026 Owain Lewis | `aidlc-architecture`を翻案。原典LICENSEと出典を保持 |
-| mblode/agent-skills `f05d2de…` | [固定版LICENSE.md](https://raw.githubusercontent.com/mblode/agent-skills/f05d2de8cbd88f11a4e3c99f2880f32491c61393/LICENSE.md)：MIT。2026 Matthew Blode | `aidlc-planning`を翻案。原典LICENSEと出典を保持 |
+| owainlewis/blueprint `2aeb882…` | [固定版LICENSE](https://raw.githubusercontent.com/owainlewis/blueprint/2aeb882f06bc4b307015ea962b73aa60ac0c8ea7/LICENSE)：MIT。2026 Owain Lewis | `architecture`を翻案。原典LICENSEと出典を保持 |
+| mblode/agent-skills `f05d2de…` | [固定版LICENSE.md](https://raw.githubusercontent.com/mblode/agent-skills/f05d2de8cbd88f11a4e3c99f2880f32491c61393/LICENSE.md)：MIT。2026 Matthew Blode | `planning`を翻案。原典LICENSEと出典を保持 |
 | obra/superpowers `b36e082…` | [固定版LICENSE](https://raw.githubusercontent.com/obra/superpowers/b36e0829c6d0140e93cfef2ca599b1b07d4a7797/LICENSE)：MIT。2025 Jesse Vincent | デバッグ・完了前検証の2skillを翻案。原典LICENSEと出典を保持 |
 | coji/natural-japanese v1.5.0、`9a78a42…` | [固定版LICENSE](https://raw.githubusercontent.com/coji/natural-japanese/9a78a42964096da509b8f3e011f0085a5f080151/LICENSE)：MIT。2026 coji | skillの翻案と検査のGo移植。skill側と[移植コード側](../src/internal/naturaljapanese/source.md)に出典・LICENSEを保持。補助CLI用の許諾文にも原典表示を収録 |
 | samber/cc-skills-golang（開発用） | [調査時のmainのLICENSE](https://github.com/samber/cc-skills-golang/blob/main/LICENSE)：MIT。2026 Samuel Berthe | `.agents/skills/golang-*`で使用し、製品には同梱しない。取り込み時のrepo commitは未記録。現行上流のLICENSEを、取得当時の原文を検証できた証拠にはしない |
 
-MITの原典表示・出典を各フォルダに保持しているのは、第3節の**12skill**です。標準15skillすべてについて整備済みという意味ではありません。独自原稿の`aidlc`・`aidlc-cli`、任意の`aidlc-github`は製品側のライセンスを別に定める必要があります。
+MITの原典表示・出典を各フォルダに保持しているのは、第3節の**13skill**です。標準15skillすべてについて整備済みという意味ではありません。独自原稿の`aidlc`・`aidlc-cli`、任意の`aidlc-github`は製品側のライセンスを別に定める必要があります。
 
 ### 実行ファイルへ入るコード・辞書の確認結果
 
@@ -188,12 +189,13 @@ GoのPATENTSは、Googleが対象となるGo実装の特許利用を追加で許
 
 ### 受取人へ表示を届けるための残対応
 
-ソースをcloneした人は`docs/`や`src/`の許諾文を読めます。一方、圧縮ファイルだけを取得した人に届く内容は梱包処理で決まります。現行の`aidlc` archive内の独立ファイルはbinaryだけで、12skillのLICENSEはbinaryに埋め込まれ、installerによる配置後に読める構成です。原典の記録があるだけで、配布全体の表示が完了したとは扱いません。
+ソースをcloneした人は`docs/`や`src/`の許諾文を読めます。一方、圧縮ファイルだけを取得した人に届く内容は梱包処理で決まります。現行の`aidlc` archive内の独立ファイルはbinaryだけで、13skillのLICENSEはbinaryに埋め込まれ、installerによる配置後に読める構成です。原典の記録があるだけで、配布全体の表示が完了したとは扱いません。
+
+`okf-agent-memory`の原典MIT全文・著作権・固定commit・翻案内容は配布資材に追加済みで、installerの配置先から読めます。
 
 | 残対応 | 現在の状態と、公開準備で行うこと |
 | --- | --- |
 | 本製品独自のライセンス | rootの製品用LICENSEはない。ユーザーと対象範囲・ライセンスを決める。他者の原典表示は維持する |
-| `aidlc-okf`の表示 | 上流MIT原文・著作権・固定commit・翻案内容を配布資材へ揃え、installerの配置先からも読めるようにする案。今回は文書への整理まで |
 | `aidlc` archiveの許諾文 | YAMLのLICENSE・NOTICE・Apache-2.0全文、GoのLICENSE、同梱する翻案skillの原典表示を受取人が読める構成にする。archive内に`LICENSES/`などを置く方法を公開準備で具体化する |
 | 日本語補助CLIの許諾文 | 専用archiveにはREADMEと`LICENSES/`を追加する実装があり、coji、Kagome、辞書共通、uni、UniDic通知の5文書が入る。Goを含む表示と実際の公開方法の確認が残る |
 | 参照版不明の資料・開発用skill | 本家AI-DLC snapshotと開発用Go skillの未記録commitを明示して扱う。再取得や同梱範囲の拡張時は、取り込む版の出典・許諾を記録する |

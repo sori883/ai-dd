@@ -191,7 +191,7 @@ func TestOKFSkillRelocate(t *testing.T) {
 	for _, state := range []string{"known", "edited", "missing"} {
 		t.Run(state, func(t *testing.T) {
 			root, oldRoot, oldBinary := relocateFixture(t)
-			path := filepath.Join(root, ".agents/skills/aidlc-okf/SKILL.md")
+			path := filepath.Join(root, ".agents/skills/okf-agent-memory/SKILL.md")
 			before, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)

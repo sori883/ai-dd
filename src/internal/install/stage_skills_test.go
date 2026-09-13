@@ -18,7 +18,7 @@ func TestStageSkillsInstall(t *testing.T) {
 	for _, name := range stageSkillNames {
 		t.Run(name, func(t *testing.T) {
 			for _, file := range []string{"SKILL.md", "LICENSE", "references/source.md"} {
-				data, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc-"+name, file))
+				data, err := os.ReadFile(filepath.Join(root, ".agents/skills/"+name, file))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -34,7 +34,7 @@ func TestStageSkillsCollision(t *testing.T) {
 	for _, name := range stageSkillNames {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
-			path := filepath.Join(root, ".agents/skills/aidlc-"+name, "SKILL.md")
+			path := filepath.Join(root, ".agents/skills/"+name, "SKILL.md")
 			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 				t.Fatal(err)
 			}
@@ -63,7 +63,7 @@ func TestStageSkillsSymlink(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, ".agents/skills"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(outside, filepath.Join(root, ".agents/skills/aidlc-tdd")); err != nil {
+	if err := os.Symlink(outside, filepath.Join(root, ".agents/skills/tdd")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Codex(root, "/opt/aidlc"); err == nil {
@@ -116,6 +116,68 @@ func TestStageSkillsReferencesResolve(t *testing.T) {
 			info, err := os.Stat(filepath.Join(root, target))
 			if err != nil || !info.Mode().IsRegular() {
 				t.Fatalf("unresolved skill link: %s -> %s: %v", name, link, err)
+			}
+		}
+	}
+}
+
+func TestUpstreamSkillNames(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Codex(root, "/opt/aidlc"); err != nil {
+		t.Fatal(err)
+	}
+	names := append(append([]string{}, stageSkillNames...), "okf-agent-memory", "natural-japanese-go")
+	entries, err := os.ReadDir(filepath.Join(root, ".agents/skills"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 15 {
+		t.Fatalf("skills = %d, want 15", len(entries))
+	}
+	for _, name := range names {
+		t.Run(name, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join(root, ".agents/skills", name, "SKILL.md"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(raw), "name: "+name+"\n") {
+				t.Fatal("frontmatter name differs from directory")
+			}
+			for _, file := range []string{"LICENSE", "references/source.md"} {
+				data, err := os.ReadFile(filepath.Join(root, ".agents/skills", name, file))
+				if err != nil || len(data) == 0 {
+					t.Fatalf("missing attribution resource %s: %v", file, err)
+				}
+			}
+			old := "aidlc-" + name
+			if name == "okf-agent-memory" {
+				old = "aidlc-okf"
+			}
+			if _, err := os.Lstat(filepath.Join(root, ".agents/skills", old)); !os.IsNotExist(err) {
+				t.Fatal("old skill deployed")
+			}
+		})
+	}
+}
+
+func TestUpstreamSkillReferences(t *testing.T) {
+	root := t.TempDir()
+	result, err := Codex(root, "/opt/aidlc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldNames := append(append([]string{}, stageSkillNames...), "okf")
+	for _, path := range result.Paths {
+		if !strings.HasSuffix(path, ".md") && !strings.HasSuffix(path, ".toml") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(root, path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range oldNames {
+			if regexp.MustCompile("aidlc-" + regexp.QuoteMeta(name) + `([^a-zA-Z0-9-]|$)`).Match(raw) {
+				t.Errorf("old skill reference in %s: %s", path, name)
 			}
 		}
 	}

@@ -58,14 +58,14 @@ func TestAssignmentContractDocumentRules(t *testing.T) {
 	if len(bootstrap) > 4096 {
 		t.Fatalf("bootstrap %d bytes exceeds 4 KiB", len(bootstrap))
 	}
-	if !bytes.Contains(bootstrap, []byte("文書記録規約は [aidlc-okf](../aidlc-okf/SKILL.md)")) {
+	if !bytes.Contains(bootstrap, []byte("文書記録規約は [okf-agent-memory](../okf-agent-memory/SKILL.md)")) {
 		t.Fatal("bootstrap does not direct readers to document recording rules")
 	}
 	detail, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc-cli/SKILL.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	okf, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc-okf/SKILL.md"))
+	okf, err := os.ReadFile(filepath.Join(root, ".agents/skills/okf-agent-memory/SKILL.md"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -79,7 +79,7 @@ func TestRuleSkillSeparationHook(t *testing.T) {
 func TestRuleSkillSeparationHookApprovalPending(t *testing.T) { TestExecutionPlanCLIPendingHook(t) }
 
 func TestOKFSkillRead(t *testing.T) {
-	for _, mode := range []string{"all", "single", "before begin", "unread", "inflight", "missing", "symlink", "redirect", "compound", "arbitrary", "retired"} {
+	for _, mode := range []string{"all", "single", "before begin", "unread", "inflight", "missing", "symlink", "redirect", "compound", "arbitrary", "retired", "old-installed"} {
 		t.Run(mode, func(t *testing.T) {
 			s, st := setup(t)
 			if mode != "before begin" {
@@ -90,11 +90,11 @@ func TestOKFSkillRead(t *testing.T) {
 			if mode != "unread" {
 				bind(t, s, st.ID)
 			}
-			command := "cat .agents/skills/aidlc/SKILL.md .agents/skills/aidlc-cli/SKILL.md .agents/skills/aidlc-okf/SKILL.md"
+			command := "cat .agents/skills/aidlc/SKILL.md .agents/skills/aidlc-cli/SKILL.md .agents/skills/okf-agent-memory/SKILL.md"
 			if mode == "single" {
-				command = "cat .agents/skills/aidlc-okf/SKILL.md"
+				command = "cat .agents/skills/okf-agent-memory/SKILL.md"
 			}
-			p := filepath.Join(s.Root, ".agents/skills/aidlc-okf/SKILL.md")
+			p := filepath.Join(s.Root, ".agents/skills/okf-agent-memory/SKILL.md")
 			switch mode {
 			case "inflight":
 				if deny(hook(t, s, "PreToolUse", "Bash", "first", "cat .agents/skills/aidlc/SKILL.md", false)) {
@@ -115,6 +115,15 @@ func TestOKFSkillRead(t *testing.T) {
 				command += " && echo bad"
 			case "arbitrary":
 				command = "cat arbitrary.md"
+			case "old-installed":
+				name := filepath.Join(s.Root, ".agents/skills/aidlc-okf/SKILL.md")
+				if err := os.MkdirAll(filepath.Dir(name), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(name, []byte("old instructions"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				command = "cat .agents/skills/aidlc-okf/SKILL.md"
 			case "retired":
 				command = "cat .agents/skills/aidlc/WORKFLOW.md"
 			}

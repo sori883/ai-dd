@@ -80,10 +80,21 @@ func TestOKFSkillInitialization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(filepath.Join(s.Root, ".agents/skills/aidlc-okf/SKILL.md")); err != nil {
+	if err := os.Remove(filepath.Join(s.Root, ".agents/skills/okf-agent-memory/SKILL.md")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Begin(st.ID, st.Revision); err == nil {
 		t.Fatal("missing OKF skill accepted")
+	}
+}
+
+func TestUpstreamSkillInitialization(t *testing.T) {
+	s := executionFixture(t)
+	st, err := s.Create("new skill names")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Begin(st.ID, st.Revision); err != nil {
+		t.Fatalf("new installation must begin: %v", err)
 	}
 }
