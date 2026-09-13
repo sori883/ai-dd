@@ -202,7 +202,7 @@ func TestBootstrapOutputStreams(t *testing.T) {
 			cmd := exec.Command(exe)
 			cmd.Env = append(os.Environ(), "BOOTSTRAP_STREAM_HELPER=1", "BOOTSTRAP_EXIT="+strconv.Itoa(code))
 			stdout, stderr, err := bootstrapCommandOutput(cmd)
-			if string(stdout) != "{\"Paths\":[]}\n" || string(stderr) != "#< CLIXML progress\n" {
+			if string(stdout) != "{\"Paths\":[]}\n" || !strings.HasPrefix(string(stderr), "#< CLIXML progress\n") || strings.Contains(string(stderr), `{"Paths":[]}`) {
 				t.Fatalf("output streams mixed: stdout=%q stderr=%q", stdout, stderr)
 			}
 			if code == 0 {

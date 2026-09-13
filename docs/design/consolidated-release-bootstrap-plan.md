@@ -227,3 +227,11 @@ Get-CommandのTotalCount 1とApplicationInfo.Pathを使い、開始成功前のH
 R3bは候補testのstdout/stderrを分離し、成功codeを確認した上でstdoutだけをJSON解析する。
 末尾はbootstrap targeted・通常test、候補integrationの-list、gofmt/diff-check。
 Windows動的GREENと実候補E2Eは新HEADのCI/finalへ残し、旧final-02のWindows失敗を成功扱いしない。
+
+## Coverage検査修復04
+
+Issue #202 / PR #203の承認枠内、work_unit consolidated-release-bootstrap-repair-04、loop。
+coverage付きtest binaryの子プロセスがstderrへ追加するGo診断を許容するtest修復のみを行う。
+先にtargetedの-coverprofile付き実行でREDを確認し、stdout完全一致、stderr先頭sentinel、
+JSONのstderr非混在、終了値0/17を維持する。末尾は通常bootstrapとcoverage付きbootstrap、gofmt/diff-check。
+CIと同じ全package coverageは親finalへ追加する。production・実候補には変更/実行を加えない。
