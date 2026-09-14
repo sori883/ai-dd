@@ -9,3 +9,7 @@
 PR [CI](https://github.com/sori883/ai-dd/actions/runs/34799883441)・[Distribution](https://github.com/sori883/ai-dd/actions/runs/34799883384)と作業branch側は初回成功。26検証checkが成功し、公開用2jobは条件により非対象。6環境build、3OSのNative・bootstrap、Windowsのpowershell.exe/pwsh.exeを確認した。Releaseやtagは公開していない。過去のWindows移動失敗の原因が解決したという意味ではない。
 
 [承認](2026-09-14-test-reduction-approved.md)に従い、M4のCLI・Space・OKF整理を別Issue/PRで続ける。
+
+## main反映後の検証
+
+main `b958199018563f24178106f0ec365bb2cfbedd8b` の [CI 34800433182](https://github.com/sori883/ai-dd/actions/runs/34800433182) と [Distribution 34800433190](https://github.com/sori883/ai-dd/actions/runs/34800433190) は、親の確認により両方とも初回で成功した。

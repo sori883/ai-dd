@@ -6,27 +6,13 @@ import (
 )
 
 func TestRelocationCLI(t *testing.T) {
-	valid := []string{"install", "codex", "--relocate", "--project-dir", "/new", "--from-project-dir", "/old/missing", "--from-binary", "/old/aidlc"}
-	if _, err := ParseCommand(valid); err == nil {
-		t.Fatal(err)
-	}
 	if _, err := ParseCommand([]string{"unit", "reassign", strings.Repeat("a", 32), "--space", "default", "--expect", "1", "--file", "request.json"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
-		name string
-		args []string
-	}{{"old without relocate", []string{"install", "codex", "--project-dir", "/new", "--from-project-dir", "/old", "--from-binary", "/binary"}}, {"missing old binary", valid[:len(valid)-2]}, {"duplicate", append(append([]string{}, valid...), "--relocate")}, {"relative", []string{"install", "codex", "--relocate", "--project-dir", "/new", "--from-project-dir", "relative", "--from-binary", "/binary"}}} {
-		t.Run(tc.name, func(t *testing.T) {
-			if _, err := ParseCommand(tc.args); err == nil {
-				t.Fatal("accepted invalid relocate")
-			}
-		})
-	}
-	for _, tc := range []struct {
 		action []string
 		words  []string
-	}{{[]string{"unit", "reassign", "--help"}, []string{"previous_run_stopped", "true", "needs_confirmation", "reason", "run_id", "再試行"}}} {
+	}{{[]string{"unit", "reassign", "--help"}, []string{"previous_run_stopped", "true", "reason", "run_id"}}} {
 		text, ok := Help(tc.action)
 		if !ok {
 			t.Fatal("missing help")
@@ -36,22 +22,5 @@ func TestRelocationCLI(t *testing.T) {
 				t.Errorf("help lacks %s", word)
 			}
 		}
-	}
-}
-
-func TestRelocationCLIRootHelp(t *testing.T) {
-	text, ok := Help([]string{"--help"})
-	if !ok || strings.Contains(text, "--from-project-dir") || !strings.Contains(text, "confirm|reassign") {
-		t.Fatal("root help omits relocation operations")
-	}
-}
-
-func TestRelocationCLIEmptySourceFlags(t *testing.T) {
-	for _, flag := range []string{"--from-project-dir", "--from-binary"} {
-		t.Run(flag, func(t *testing.T) {
-			if _, err := ParseCommand([]string{"install", "codex", "--project-dir", "/new", flag, ""}); err == nil {
-				t.Fatal("source flag mixed into normal install")
-			}
-		})
 	}
 }

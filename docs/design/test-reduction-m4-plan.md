@@ -203,3 +203,7 @@ gofmt -lは空を要求し、finalでは適用しない。M3でstress等のtag�
 ## この計画の確認範囲
 
 AGENTS.md、implementation-planning/golang-how-to/golang-testing、docs/agent-workflow.md、docs/tdd-handoff.md、承認RAM、上位milestones、既存監査を読んだ。監査を全file再実施せず、旧reader/current Rule、app→okfapp実転送とCRUD/session、pending hook、共通workspace parser、条件付きhelp、Unicode/lock、cursor failure、usage window/Scan/rootの必要箇所を追加確認した。plannerはrepo編集・test・build・依存追加・GitHub操作を行っていない。本fileだけが今回の成果物である。
+
+## 実装時に一意に確定した詳細
+
+A07のcreate/updateは現行Serviceの `Metadata.IntentID` を保存し、searchは `CommandRequest.IntentID` を使う。新転送例の初回誤期待をこの入力へ修復し、ALREADY_GREENを確認後に旧CRUDを削除する。製品の転送対象は変更しない。A36の `err=nil` 後の死んだblockは実fileで3箇所あり、同じ根拠で3箇所を除去した。実施結果は[M4結果](test-reduction-m4-result.md)を参照。

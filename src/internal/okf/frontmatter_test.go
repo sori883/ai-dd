@@ -114,6 +114,9 @@ func TestParseConceptUsageWindow(t *testing.T) {
 				{name: "from without offset", window: "{from: '2026-01-01T00:00:00', to: 2026-02-01T00:00:00Z}"},
 				{name: "to without offset", window: "{from: 2026-01-01T00:00:00Z, to: '2026-02-01T00:00:00'}"},
 			} {
+				if location == "source override" && tt.name != "valid without usage count" && tt.name != "not mapping" {
+					continue
+				}
 				t.Run(tt.name, func(t *testing.T) {
 					metadata := "usage_window: " + tt.window + "\n"
 					if location == "source override" {

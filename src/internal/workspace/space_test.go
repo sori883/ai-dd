@@ -1,7 +1,6 @@
 package workspace
 
 import (
-	"errors"
 	"io/fs"
 	"slices"
 	"testing"
@@ -108,20 +107,6 @@ func TestActiveSpaceFallback(t *testing.T) {
 			name: "cursor is a directory",
 			projectFS: fstest.MapFS{
 				"aidlc/active-space": {Mode: fs.ModeDir},
-			},
-		},
-		{
-			name: "permission error",
-			projectFS: readFileErrorFS{
-				FS:  fstest.MapFS{},
-				err: fs.ErrPermission,
-			},
-		},
-		{
-			name: "arbitrary read error",
-			projectFS: readFileErrorFS{
-				FS:  fstest.MapFS{},
-				err: errors.New("injected read failure"),
 			},
 		},
 		{
@@ -304,14 +289,6 @@ func TestListSpacesUnique(t *testing.T) {
 		"aidlc/spaces/default":  {Mode: fs.ModeDir},
 		"aidlc/spaces/research": {Mode: fs.ModeDir},
 	}
-	entries, err := fs.ReadDir(projectFS, "aidlc/spaces")
-	if err != nil {
-		t.Fatal(err)
-	}
-	duplicates := make([]fs.DirEntry, 0, len(entries)*2)
-	for _, entry := range entries {
-		duplicates = append(duplicates, entry, entry)
-	}
 	tests := []struct {
 		name      string
 		projectFS fs.FS
@@ -319,13 +296,6 @@ func TestListSpacesUnique(t *testing.T) {
 		{
 			name:      "existing default is not repeated",
 			projectFS: projectFS,
-		},
-		{
-			name: "repeated entries are not repeated",
-			projectFS: readDirResultFS{
-				FS:      projectFS,
-				entries: duplicates,
-			},
 		},
 	}
 	for _, tt := range tests {
@@ -402,16 +372,6 @@ func TestListSpacesReadDirError(t *testing.T) {
 		err     error
 	}{
 		{
-			name:    "permission error",
-			entries: []fs.DirEntry{},
-			err:     fs.ErrPermission,
-		},
-		{
-			name:    "arbitrary directory read error",
-			entries: []fs.DirEntry{},
-			err:     errors.New("injected directory read failure"),
-		},
-		{
 			name:    "partial entries with error are discarded",
 			entries: entries,
 			err:     fs.ErrPermission,
@@ -439,19 +399,9 @@ func TestListSpacesStopsOnStatError(t *testing.T) {
 		expected   []Space
 	}{
 		{
-			name:       "first entry fails",
-			failedPath: "aidlc/spaces/alpha",
-			expected:   []Space{{Name: "default", Active: true}},
-		},
-		{
 			name:       "middle entry fails",
 			failedPath: "aidlc/spaces/research",
 			expected:   []Space{{Name: "alpha"}, {Name: "default", Active: true}},
-		},
-		{
-			name:       "last entry fails",
-			failedPath: "aidlc/spaces/zeta",
-			expected:   []Space{{Name: "alpha"}, {Name: "default", Active: true}, {Name: "research"}},
 		},
 	}
 	for _, tt := range tests {

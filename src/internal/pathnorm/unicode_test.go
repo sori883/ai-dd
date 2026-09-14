@@ -43,3 +43,29 @@ func TestNormalizeForPlatformOnlyWindowsFoldsCase(t *testing.T) {
 		t.Errorf("non-Windows normalization = %q, want unchanged", got)
 	}
 }
+
+func TestECMAScriptDefaultLowerUsesUnicode15FinalSigmaContext(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "AΣᲉ", want: "aςᲉ"},
+		{input: "ᲉΣ", want: "Ᲊσ"},
+		{input: "AΣʕ", want: "aσʕ"},
+		{input: "ʕΣ", want: "ʕς"},
+		{input: "AΣ\u0897B", want: "aς\u0897b"},
+		{input: "AΣ\U0001171eB", want: "aσ\U0001171eb"},
+		{input: "AΣ\uA7F1B", want: "aς\uA7F1b"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+
+			if got := ECMAScriptDefaultLower(tt.input); got != tt.want {
+				t.Errorf("ECMAScriptDefaultLower(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

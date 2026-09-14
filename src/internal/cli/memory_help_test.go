@@ -17,7 +17,7 @@ func TestMemoryHelp(t *testing.T) {
 			t.Errorf("help %v exit=%d calls=%d out=%s err=%s", args, code, calls, &out, &errout)
 		}
 	}
-	for _, args := range [][]string{{"help", "unknown"}, {"memory", "unknown", "--help"}, {"memory", "create", "name", "--help"}, {"memory", "create", "--help", "--body-file", "secret"}, {"__hook", "--help"}} {
+	for _, args := range [][]string{{"help", "unknown"}, {"__hook", "--help"}} {
 		var out, errout bytes.Buffer
 		calls := 0
 		code := Run(args, &out, &errout, buildinfo.Info{}, Dependencies{Execute: func(CommandRequest) ([]byte, error) { calls++; return nil, nil }})
@@ -28,21 +28,9 @@ func TestMemoryHelp(t *testing.T) {
 	for _, action := range []string{"create", "update"} {
 		var out, errout bytes.Buffer
 		okfcli.Run([]string{action, "--help"}, &out, &errout, buildinfo.Info{}, okfcli.Dependencies{})
-		for _, want := range []string{"--body-file", "--type", "--title", "--description", "--actor", "--tag", "--status", "draft", "stable", "deprecated", "自由", "generated.at", "UTC", "--intent-id", "--sources-json", "--verified-json", "--metadata-json", "producer/version", "human:id", "process:id"} {
+		for _, want := range []string{"--body-file", "--type", "--title", "--description", "--actor", "--tag", "--status", "--intent-id", "--sources-json", "--verified-json", "--metadata-json", "producer/version", "human:id", "process:id"} {
 			if !strings.Contains(out.String(), want) {
 				t.Errorf("%s help lacks %s", action, want)
-			}
-		}
-	}
-	for _, tc := range []struct {
-		group, action string
-		words         []string
-	}{{"intent", "reopen", []string{"discovery", "planning", "tdd", "integration", "completed", "waiting", "paused"}}, {"intent", "review", []string{"pass", "fail", "assign", "accept"}}, {"unit", "claim", []string{"pending", "running", "needs_confirmation", "reported", "integrated"}}} {
-		var out, errout bytes.Buffer
-		Run([]string{tc.group, tc.action, "--help"}, &out, &errout, buildinfo.Info{}, Dependencies{})
-		for _, want := range tc.words {
-			if !strings.Contains(out.String(), want) {
-				t.Errorf("help lacks %s", want)
 			}
 		}
 	}
@@ -59,7 +47,7 @@ func TestMemoryHelpUnitConfirmVerification(t *testing.T) {
 	if code != 0 || errout.Len() != 0 {
 		t.Fatalf("exit=%d stderr=%s", code, &errout)
 	}
-	for _, want := range []string{"confirmはunit/session/root/run_id/verification_sha256", "登録run", "現在のroot内容", "64桁"} {
+	for _, want := range []string{"confirmはunit/session/root/run_id/verification_sha256", "登録run", "現在のroot内容"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("confirm help lacks %q: %s", want, &out)
 		}

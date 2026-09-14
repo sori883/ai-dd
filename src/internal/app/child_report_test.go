@@ -3,7 +3,6 @@ package app
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -57,9 +56,6 @@ func TestChildReportBoundary(t *testing.T) {
 				t.Fatal(err)
 			}
 			workerRoot := t.TempDir()
-			if out, err := exec.CommandContext(t.Context(), "git", "init", "--quiet", workerRoot).CombinedOutput(); err != nil {
-				t.Fatalf("worker git init: %v %s", err, out)
-			}
 			v, err := store.Reserve(assignment.ReserveRequest{RegistryEpoch: r.Epoch, RequestID: "reserve", CoordinatorSession: "session", Session: "worker-session", Space: "default", IntentID: st.ID, StepID: st.CurrentStepID, DefinitionHash: st.DefinitionHash, Root: workerRoot, Agent: "aidlc-worker", SourceRevision: st.Revision})
 			if err != nil {
 				t.Fatal(err)

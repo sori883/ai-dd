@@ -1,6 +1,7 @@
 # 開発プロジェクトRAM
 
 - [テスト削減M3完了](decisions/2026-09-14-test-reduction-m3-completed.md): 39候補を整理しIssue #208・PR #209を完了。独立レビュー・final・3OS配布検査が成功。
+- [テスト削減M4結果](../design/test-reduction-m4-result.md): 36候補の削減・移動・理由付き保持とtargeted成功。独立review/final待ち。
 - [テスト削減M4計画](../design/test-reduction-m4-plan.md): Issue #210。CLI・Space・OKFの36候補を8項目で整理する。
 
 - [テスト削減M2完了](decisions/2026-09-14-test-reduction-m2-completed.md): 配布・配置・自然日本語の26候補を整理。Issue #206・PR #207を完了。Windowsの一時的な移動失敗の再発と同SHA再実行成功を記録。

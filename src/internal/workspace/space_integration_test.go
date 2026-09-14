@@ -25,18 +25,6 @@ func TestSpaceReadersFilesystem(t *testing.T) {
 		expectedSpaces []Space
 	}{
 		{
-			name:           "uninitialized project",
-			expectedActive: "default",
-			expectedSpaces: []Space{{Name: "default", Active: true}},
-		},
-		{
-			name:           "empty cursor and spaces",
-			dirs:           []string{"aidlc/spaces"},
-			files:          map[string]string{"aidlc/active-space": ""},
-			expectedActive: "default",
-			expectedSpaces: []Space{{Name: "default", Active: true}},
-		},
-		{
 			name: "normal cursor and immediate directories",
 			dirs: []string{
 				"aidlc/spaces/default",
@@ -58,44 +46,6 @@ func TestSpaceReadersFilesystem(t *testing.T) {
 				{Name: "research", Active: true},
 				{Name: "zeta"},
 			},
-		},
-		{
-			name:           "missing cursor does not select the sole directory",
-			dirs:           []string{"aidlc/spaces/research"},
-			expectedActive: "default",
-			expectedSpaces: []Space{{Name: "default", Active: true}, {Name: "research"}},
-		},
-		{
-			name:           "cursor path is a directory",
-			dirs:           []string{"aidlc/active-space", "aidlc/spaces/research"},
-			expectedActive: "default",
-			expectedSpaces: []Space{{Name: "default", Active: true}, {Name: "research"}},
-		},
-		{
-			name: "spaces path is a regular file",
-			files: map[string]string{
-				"aidlc/active-space": "unknown",
-				"aidlc/spaces":       "not a directory",
-			},
-			expectedActive: "unknown",
-			expectedSpaces: []Space{{Name: "default"}},
-		},
-		{
-			name: "regular files are not spaces",
-			files: map[string]string{
-				"aidlc/active-space":    "research",
-				"aidlc/spaces/default":  "not a directory",
-				"aidlc/spaces/research": "not a directory",
-			},
-			expectedActive: "research",
-			expectedSpaces: []Space{{Name: "default"}},
-		},
-		{
-			name:           "unknown path like cursor is preserved",
-			dirs:           []string{"aidlc/spaces/research"},
-			files:          map[string]string{"aidlc/active-space": "../outside"},
-			expectedActive: "../outside",
-			expectedSpaces: []Space{{Name: "default"}, {Name: "research"}},
 		},
 	}
 	for _, tt := range tests {

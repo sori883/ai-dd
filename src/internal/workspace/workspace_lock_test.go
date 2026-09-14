@@ -3,20 +3,16 @@ package workspace
 import (
 	"bytes"
 	"context"
-	"crypto/md5"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-	"unicode"
 )
 
 func TestWorkspaceLockPathUsesCanonicalWorkspaceIdentity(t *testing.T) {
@@ -35,14 +31,10 @@ func TestWorkspaceLockPathUsesCanonicalWorkspaceIdentity(t *testing.T) {
 			return canonical, nil
 		},
 	)
-	wantCanonical := canonical
-	if runtime.GOOS == "windows" {
-		wantCanonical = filepath.Join(string(filepath.Separator), "projects", "canonical")
-	}
-	digest := md5.Sum([]byte(wantCanonical + "\x00" + workspaceLockSentinel)) //nolint:gosec // Compatibility identity, not security.
-	want := filepath.Join(tempDir, fmt.Sprintf(".aidlc-audit-%x.lock", digest[:4]))
-	if got != want {
-		t.Errorf("workspaceLockPath() = %q, want %q", got, want)
+	want := workspaceLockPath(filepath.Join(string(filepath.Separator), "other-link"), tempDir,
+		func(string) (string, error) { return canonical, nil })
+	if got != want || filepath.Dir(got) != tempDir {
+		t.Errorf("canonical lock = %q, other alias = %q, temp = %q", got, want, tempDir)
 	}
 }
 
@@ -56,42 +48,10 @@ func TestWorkspaceLockPathFallsBackToLexicalAbsolutePath(t *testing.T) {
 		tempDir,
 		func(string) (string, error) { return "", errors.New("missing") },
 	)
-	canonical := filepath.Clean(lexical)
-	digest := md5.Sum([]byte(canonical + "\x00" + workspaceLockSentinel)) //nolint:gosec // Compatibility identity, not security.
-	want := filepath.Join(tempDir, fmt.Sprintf(".aidlc-audit-%x.lock", digest[:4]))
-	if got != want {
-		t.Errorf("workspaceLockPath() = %q, want lexical fallback %q", got, want)
-	}
-}
-
-func TestNormalizeWorkspaceLockCanonicalMatchesECMAScriptDefaultLower(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{input: "İ", want: "i\u0307"},
-		{input: "AİB", want: "ai\u0307b"},
-		{input: "Σ", want: "σ"},
-		{input: "ΟΣ", want: "ος"},
-		{input: "ΟΣΑ", want: "οσα"},
-		{input: "AΣ\u0301", want: "aς\u0301"},
-		{input: "AΣ\u0301B", want: "aσ\u0301b"},
-		{input: "AΣ'B", want: "aσ'b"},
-		{input: "AΣ-B", want: "aς-b"},
-		{input: "AΣʰ", want: "aςʰ"},
-		{input: "AΣⅠ", want: "aσⅰ"},
-		{input: "K", want: "k"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			t.Parallel()
-
-			if got := normalizeWorkspaceLockCanonical(tt.input, "windows"); got != tt.want {
-				t.Errorf("normalizeWorkspaceLockCanonical(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
+	want := workspaceLockPath(lexical, tempDir,
+		func(string) (string, error) { return filepath.Clean(lexical), nil })
+	if got != want || filepath.Dir(got) != tempDir {
+		t.Errorf("fallback lock = %q, lexical lock = %q, temp = %q", got, want, tempDir)
 	}
 }
 
@@ -99,15 +59,6 @@ func TestWorkspaceLockPathMatchesKnownWindowsUnicodeIdentity(t *testing.T) {
 	t.Parallel()
 
 	canonical := `C:\Projects\AİB\ΟΣ`
-	wantLower := "c:\\projects\\ai\u0307b\\ος"
-	identity := workspaceLockIdentity(canonical, "windows")
-	if want := wantLower + "\x00" + workspaceLockSentinel; identity != want {
-		t.Errorf("workspaceLockIdentity() = %q, want %q", identity, want)
-	}
-	digest := md5.Sum([]byte(identity)) //nolint:gosec // Compatibility identity, not security.
-	if got := fmt.Sprintf("%x", digest[:4]); got != "211f1998" {
-		t.Errorf("workspace lock digest = %q, want %q", got, "211f1998")
-	}
 	path := workspaceLockPathForPlatform(
 		canonical,
 		t.TempDir(),
@@ -123,15 +74,6 @@ func TestWorkspaceLockPathKeepsBunWindowsUnicode15Identity(t *testing.T) {
 	t.Parallel()
 
 	canonical := `C:\Projects\AᲉB`
-	wantLower := `c:\projects\aᲉb`
-	identity := workspaceLockIdentity(canonical, "windows")
-	if want := wantLower + "\x00" + workspaceLockSentinel; identity != want {
-		t.Errorf("workspaceLockIdentity() = %q, want Bun Windows Unicode 15 value %q", identity, want)
-	}
-	digest := md5.Sum([]byte(identity)) //nolint:gosec // Compatibility identity, not security.
-	if got := fmt.Sprintf("%x", digest[:4]); got != "a3f33a77" {
-		t.Errorf("workspace lock digest = %q, want %q", got, "a3f33a77")
-	}
 	path := workspaceLockPathForPlatform(
 		canonical,
 		t.TempDir(),
@@ -152,9 +94,7 @@ func TestECMAScriptDefaultLowerKeepsUnicode15IdentityRunes(t *testing.T) {
 	}
 	identityRunes = appendRuneRange(identityRunes, '\U00010d50', '\U00010d65')
 	identityRunes = appendRuneRange(identityRunes, '\U00016ea0', '\U00016eb8')
-	if len(identityRunes) != 55 {
-		t.Fatalf("Unicode 15 lowercase identity set has %d runes, want 55", len(identityRunes))
-	}
+
 	for _, char := range identityRunes {
 		if got := ecmaScriptDefaultLower(string(char)); got != string(char) {
 			t.Errorf("ecmaScriptDefaultLower(U+%04X) = %U, want identity", char, []rune(got))
@@ -176,9 +116,7 @@ func TestIsCasedUsesUnicode15Overlay(t *testing.T) {
 	notCased = appendRuneRange(notCased, '\U00010d70', '\U00010d85')
 	notCased = appendRuneRange(notCased, '\U00016ea0', '\U00016eb8')
 	notCased = appendRuneRange(notCased, '\U00016ebb', '\U00016ed3')
-	if len(notCased) != 107 {
-		t.Fatalf("Unicode 15 non-Cased overlay has %d runes, want 107", len(notCased))
-	}
+
 	for _, char := range notCased {
 		if isCased(char) {
 			t.Errorf("isCased(U+%04X) = true, want Unicode 15 false", char)
@@ -212,51 +150,13 @@ func TestIsCaseIgnorableUsesUnicode15Overlay(t *testing.T) {
 	notIgnorable = appendRuneRange(notIgnorable, '\U00016ff2', '\U00016ff3')
 	notIgnorable = appendRuneRange(notIgnorable, '\U0001e5ee', '\U0001e5ef')
 	notIgnorable = appendRuneRange(notIgnorable, '\U0001e6ee', '\U0001e6ef')
-	if len(notIgnorable) != 88 {
-		t.Fatalf("Unicode 15 non-Case_Ignorable overlay has %d runes, want 88", len(notIgnorable))
-	}
+
 	for _, char := range notIgnorable {
 		if isCaseIgnorable(char) {
 			t.Errorf("isCaseIgnorable(U+%04X) = true, want Unicode 15 false", char)
 		}
 	}
-	if isCased('\U0000a7f1') || isCaseIgnorable('\U0000a7f1') {
-		t.Error("U+A7F1 must be neither Cased nor Case_Ignorable in Unicode 15")
-	}
-}
 
-func TestECMAScriptDefaultLowerUsesUnicode15FinalSigmaContext(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{input: "AΣᲉ", want: "aςᲉ"},
-		{input: "ᲉΣ", want: "Ᲊσ"},
-		{input: "AΣʕ", want: "aσʕ"},
-		{input: "ʕΣ", want: "ʕς"},
-		{input: "AΣ\u0897B", want: "aς\u0897b"},
-		{input: "AΣ\U0001171eB", want: "aσ\U0001171eb"},
-		{input: "AΣ\uA7F1B", want: "aς\uA7F1b"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			t.Parallel()
-
-			if got := ecmaScriptDefaultLower(tt.input); got != tt.want {
-				t.Errorf("ecmaScriptDefaultLower(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestUnicodeVersionIsAuditedForBunWindowsCompatibility(t *testing.T) {
-	t.Parallel()
-
-	if unicode.Version != "15.0.0" && unicode.Version != "17.0.0" {
-		t.Fatalf("unicode.Version = %q; audit the Bun Windows Unicode 15 overlay", unicode.Version)
-	}
 }
 
 func appendRuneRange(target []rune, first, last rune) []rune {
