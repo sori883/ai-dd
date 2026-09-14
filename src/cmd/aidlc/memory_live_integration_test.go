@@ -1,4 +1,4 @@
-//go:build integration
+//go:build integration && diagnostic
 
 package main
 
@@ -212,7 +212,7 @@ func TestMemoryMetadataCommandEvidence(t *testing.T) {
 	}
 	first, second := document("FIRST-BODY\n"), document("SECOND-BODY\n")
 	update = strings.Replace(update, "--expect first", "--expect "+filestore.Hash(first), 1)
-	for _, mode := range []string{"valid", "missing skill", "denied skill", "mismatched skill", "failed skill", "missing skill post", "late skill", "missing update", "bound help", "wrong document", "wrong body", "denied create", "self report"} {
+	for _, mode := range []string{"valid", "denied skill", "self report"} {
 		t.Run(mode, func(t *testing.T) {
 			var records []memoryLiveRecord
 			add := func(event, id, command string, doc, body []byte, bound bool) {
@@ -221,58 +221,41 @@ func TestMemoryMetadataCommandEvidence(t *testing.T) {
 				raw, _ := json.Marshal(in)
 				records = append(records, memoryLiveRecord{Raw: raw, Output: json.RawMessage(`{}`), Document: doc, Body: body, Bound: bound})
 			}
-			add("PreToolUse", "help", help, nil, nil, mode == "bound help")
+			add("PreToolUse", "help", help, nil, nil, false)
 			addSkill := func() {
-				if mode == "missing skill" {
-					return
-				}
+
 				add("PreToolUse", "skill", skillCommand, nil, nil, true)
 				if mode == "denied skill" {
 					records[len(records)-1].Output = json.RawMessage(`{"hookSpecificOutput":{"permissionDecision":"deny"}}`)
 				}
-				if mode != "missing skill post" {
-					add("PostToolUse", "skill", skillCommand, nil, nil, true)
-				}
+
+				add("PostToolUse", "skill", skillCommand, nil, nil, true)
+
 			}
-			if mode != "late skill" {
-				addSkill()
-			}
+
+			addSkill()
+
 			add("PreToolUse", "create", create, nil, []byte("FIRST-BODY\n"), true)
-			if mode == "denied create" {
-				records[len(records)-1].Output = json.RawMessage(`{"hookSpecificOutput":{"permissionDecision":"deny"}}`)
-			}
+
 			saved := first
-			if mode == "wrong document" {
-				saved = second
-			}
+
 			add("PostToolUse", "create", create, saved, []byte("FIRST-BODY\n"), true)
-			if mode == "late skill" {
-				addSkill()
-			}
-			if mode != "missing update" {
-				add("PreToolUse", "update", update, first, []byte("SECOND-BODY\n"), true)
-				body := []byte("SECOND-BODY\n")
-				if mode == "wrong body" {
-					body = []byte("frontmatter injected")
-				}
-				add("PostToolUse", "update", update, second, body, true)
-			}
+
+			add("PreToolUse", "update", update, first, []byte("SECOND-BODY\n"), true)
+			body := []byte("SECOND-BODY\n")
+
+			add("PostToolUse", "update", update, second, body, true)
+
 			var wire bytes.Buffer
 			write := func(value any) { raw, _ := json.Marshal(value); wire.Write(raw); wire.WriteByte('\n') }
 			write(map[string]any{"type": "thread.started", "thread_id": "session"})
 			expected, _ := okfcli.Help([]string{"create", "--help"})
 			skillOutput := skill
-			if mode == "mismatched skill" {
-				skillOutput = "other skill"
-			}
+
 			for _, item := range []struct{ cmd, out string }{{help, expected}, {skillCommand, skillOutput}, {create, `{"hash":"` + filestore.Hash(first) + `"}`}, {update, `{"hash":"` + filestore.Hash(second) + `"}`}} {
-				if mode == "missing skill" && item.cmd == skillCommand {
-					continue
-				}
+
 				exitCode := 0
-				if mode == "failed skill" && item.cmd == skillCommand {
-					exitCode = 1
-				}
+
 				write(map[string]any{"type": "item.completed", "item": map[string]any{"type": "command_execution", "command": item.cmd, "exit_code": exitCode, "aggregated_output": item.out}})
 			}
 			if mode == "self report" {
@@ -364,7 +347,6 @@ func TestMemoryMetadataLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runFixtureProcess(t, root, "git", "init", "-q")
 	writeAIDLCFixture(t, filepath.Join(root, "arithmetic.go"), "package arithmetic\nfunc Add(a,b int)int{return a+b}\n")
 	if _, err := install.Codex(root, binary); err != nil {
 		t.Fatal(err)

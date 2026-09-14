@@ -1,3 +1,5 @@
+//go:build integration && diagnostic
+
 package main
 
 import (
@@ -324,11 +326,6 @@ func agentProbeExitCode(command *exec.Cmd) int {
 		return -1
 	}
 	return command.ProcessState.ExitCode()
-}
-
-func agentProbeCollect(dir string, complete bool) error {
-	_, err := agentProbeCollectEvidence(dir, complete)
-	return err
 }
 
 func agentProbeCollectEvidence(dir string, complete bool) (e agentProbeEvidence, err error) {

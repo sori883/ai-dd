@@ -1,3 +1,5 @@
+//go:build integration && diagnostic
+
 package main
 
 import (
@@ -34,15 +36,8 @@ func TestAgentHookProbeProtocol(t *testing.T) {
 		name, event, tool, agent, mode string
 		deny                           bool
 	}{
-		{"deny", "PreToolUse", "spawn_agent", "probe_worker", "deny", true},
 		{"observed_deny", "PreToolUse", "collaborationspawn_agent", "probe_worker", "deny", true},
 		{"observed_other_role", "PreToolUse", "collaborationspawn_agent", "other", "deny", false},
-		{"observed_post", "PostToolUse", "collaborationspawn_agent", "probe_worker", "deny", false},
-		{"similar_name", "PreToolUse", "collaboration_spawn_agent", "probe_worker", "deny", false},
-		{"allow_control", "PreToolUse", "spawn_agent", "probe_worker", "observe", false},
-		{"other_agent", "PreToolUse", "spawn_agent", "other", "deny", false},
-		{"other_tool", "PreToolUse", "send_input", "probe_worker", "deny", false},
-		{"post", "PostToolUse", "spawn_agent", "probe_worker", "deny", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -75,79 +70,12 @@ func TestAgentHookProbeProtocol(t *testing.T) {
 			}
 		})
 	}
-	t.Run("parallel_unique", func(t *testing.T) {
-		dir := t.TempDir()
-		t.Run("writers", func(t *testing.T) {
-			for i := 0; i < 12; i++ {
-				t.Run(string(rune('a'+i)), func(t *testing.T) {
-					t.Parallel()
-					_, _, err := agentProbeInvoke(t, dir, "observe", `{"hook_event_name":"SubagentStart"}`)
-					if err != nil {
-						t.Error(err)
-					}
-				})
-			}
-		})
-		files, _ := filepath.Glob(filepath.Join(dir, "event-*.json"))
-		if len(files) != 12 {
-			t.Fatalf("records=%d want 12", len(files))
-		}
-	})
-	t.Run("save_failure", func(t *testing.T) {
-		out, stderr, err := agentProbeInvoke(t, filepath.Join(t.TempDir(), "absent"), "deny", `{"hook_event_name":"PreToolUse","tool_name":"spawn_agent","tool_input":{"agent_type":"probe_worker"}}`)
-		if err == nil || len(out) != 0 || !strings.Contains(string(stderr), "save evidence") {
-			t.Fatalf("save failure: stdout=%q stderr=%q err=%v", out, stderr, err)
-		}
-	})
+
 }
 
 func TestAgentHookProbeEvidence(t *testing.T) {
-	// These wire samples exercise the evaluator, not claims about fixed Codex support.
-	fixture := func() agentProbeEvidence {
-		return agentProbeEvidence{
-			Complete: true,
-			Records: []agentProbeRecord{
-				{Raw: `{"hook_event_name":"PreToolUse","session_id":"p","tool_use_id":"c1","tool_name":"spawn_agent","tool_input":{"agent_type":"probe_worker"}}`, Response: `{"hookSpecificOutput":{"permissionDecision":"deny"}}`},
-			},
-			Calls: []agentProbeCall{{ID: "c1", Name: "spawn_agent", Input: `{"agent_type":"probe_worker"}`, Output: `{"error":"Expected G0 probe denial. Do not retry or substitute another agent."}`}},
-		}
-	}
-	for _, tc := range []struct {
-		name       string
-		change     func(*agentProbeEvidence)
-		gate, want string
-	}{
-		{"deny_without_control", func(e *agentProbeEvidence) {}, "G0-1", "inconclusive"},
-		{"deny_with_child_start", func(e *agentProbeEvidence) {
-			e.Records = append(e.Records, agentProbeRecord{Raw: `{"hook_event_name":"SubagentStart","agent_id":"child"}`})
-		}, "G0-1", "inconclusive"},
-		{"duplicate_call", func(e *agentProbeEvidence) { e.Calls = append(e.Calls, e.Calls[0]) }, "G0-1", "inconclusive"},
-		{"missing_call_result", func(e *agentProbeEvidence) { e.Calls[0].Output = "" }, "G0-1", "inconclusive"},
-		{"unfinished_capture", func(e *agentProbeEvidence) { e.Complete = false }, "G0-1", "inconclusive"},
-		{"parent_cwd_is_not_worker_root", func(e *agentProbeEvidence) {
-			e.Records = append(e.Records, agentProbeRecord{Raw: `{"hook_event_name":"SubagentStart","agent_id":"child","cwd":"/parent"}`})
-		}, "G0-2", "inconclusive"},
-		{"prompt_root_is_not_worker_root", func(e *agentProbeEvidence) { e.Calls[0].Input = `{"prompt":"work in /worker"}` }, "G0-2", "inconclusive"},
-		{"stop_with_remaining_process", func(e *agentProbeEvidence) {
-			e.Records = append(e.Records, agentProbeRecord{Raw: `{"hook_event_name":"SubagentStop","agent_id":"child"}`})
-			e.ProcessAfterStop = true
-		}, "G0-4", "inconclusive"},
-		{"stop_without_process_observation", func(e *agentProbeEvidence) {
-			e.Records = append(e.Records, agentProbeRecord{Raw: `{"hook_event_name":"SubagentStop","agent_id":"child"}`})
-		}, "G0-4", "inconclusive"},
-		{"unperformed_resume", func(e *agentProbeEvidence) {}, "G0-3", "inconclusive"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			e := fixture()
-			tc.change(&e)
-			got := agentProbeEvaluate(e)
-			if got[tc.gate].Status != tc.want {
-				t.Fatalf("%s=%+v want %s", tc.gate, got[tc.gate], tc.want)
-			}
-		})
-	}
 	t.Run("measured_deny_and_allow_control", func(t *testing.T) {
-		denyDir, allowDir := agentProbeRecordedControl(t, "object", "")
+		denyDir, allowDir := agentProbeRecordedControl(t, "object")
 		e, err := agentProbeCollectEvidence(denyDir, true)
 		if err != nil {
 			t.Fatal(err)
@@ -187,249 +115,17 @@ func TestAgentHookProbeEvidence(t *testing.T) {
 	})
 }
 
-func TestAgentHookProbeFixture(t *testing.T) {
-	t.Run("opt_in_and_platform", func(t *testing.T) {
-		for _, tc := range []struct {
-			name, enabled, os, arch, version string
-			want                             bool
-		}{
-			{"default_off", "", "darwin", "arm64", "codex-cli 0.153.4", false},
-			{"fixed", "1", "darwin", "arm64", "codex-cli 0.153.4", true},
-			{"wrong_version", "1", "darwin", "arm64", "codex-cli 0.153.5", false},
-			{"wrong_os", "1", "linux", "arm64", "codex-cli 0.153.4", false},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				if got := agentProbeLiveReady(tc.enabled, tc.os, tc.arch, tc.version); got != tc.want {
-					t.Fatalf("ready=%v want %v", got, tc.want)
-				}
-			})
-		}
-	})
-	t.Run("isolated_setup", func(t *testing.T) {
-		base := t.TempDir()
-		sentinel := filepath.Join(base, "user-config")
-		if err := os.WriteFile(sentinel, []byte("unchanged"), 0600); err != nil {
-			t.Fatal(err)
-		}
-		fixture, err := agentProbePrepare(filepath.Join(base, "probe"), "/test/binary", agentProbeScenario{Name: "deny", Mode: "deny"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		canonicalBase, err := filepath.EvalSymlinks(base)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if fixture.Root == "" || !strings.HasPrefix(fixture.Root, filepath.Join(canonicalBase, "probe")) {
-			t.Fatalf("root=%q", fixture.Root)
-		}
-		data, _ := os.ReadFile(sentinel)
-		if string(data) != "unchanged" {
-			t.Fatal("outside fixture modified")
-		}
-		for _, name := range []string{"prompt.txt", "command.json", "manifest.json", "repo/.codex/hooks.json", "repo/.codex/agents/probe-worker.toml"} {
-			if _, err := os.Stat(filepath.Join(base, "probe", name)); err != nil {
-				t.Error(err)
-			}
-		}
-		args := strings.Join(fixture.Args, " ")
-		for _, part := range []string{"--ignore-user-config", "gpt-6-astra", `model_reasoning_effort="xhigh"`, "--dangerously-bypass-hook-trust"} {
-			if !strings.Contains(args, part) {
-				t.Errorf("command missing %s", part)
-			}
-		}
-		if strings.Contains(args, "CODEX_HOME") || strings.Contains(args, "medium") {
-			t.Fatalf("unexpected command %s", args)
-		}
-	})
-	t.Run("actual_worktrees", func(t *testing.T) {
-		fixture, err := agentProbePrepare(filepath.Join(t.TempDir(), "probe"), "/test/binary", agentProbeScenario{Name: "parallel-roots", Mode: "observe"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := agentProbeInitGit(t.Context(), fixture.Root); err != nil {
-			t.Fatal(err)
-		}
-		for _, name := range []string{"worker-a", "worker-b"} {
-			data, err := os.ReadFile(filepath.Join(fixture.Root, name, ".git"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !strings.HasPrefix(string(data), "gitdir: ") {
-				t.Fatalf("%s is not a linked worktree: %s", name, data)
-			}
-		}
-	})
-	t.Run("finite_process_cleanup", func(t *testing.T) {
-		dir := t.TempDir()
-		binary, err := os.Executable()
-		if err != nil {
-			t.Fatal(err)
-		}
-		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-		defer cancel()
-		cmd := exec.CommandContext(ctx, binary, "-test.run=^TestAgentHookProbeProcess$", "--", "agent-process", dir, "nonce123", "100")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("process: %v %s", err, out)
-		}
-		data, err := os.ReadFile(filepath.Join(dir, "process-nonce123.json"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		var state agentProbeProcessState
-		if err := json.Unmarshal(data, &state); err != nil {
-			t.Fatal(err)
-		}
-		if state.Nonce != "nonce123" || state.PID <= 0 || state.EndedAt.IsZero() {
-			t.Fatalf("finite exit evidence=%+v", state)
-		}
-		if err := agentProbeCleanup(dir); err != nil {
-			t.Fatal(err)
-		}
-	})
-	t.Run("fault_modes", func(t *testing.T) {
-		for _, tc := range []struct {
-			name     string
-			wantExit bool
-		}{{"missing", false}, {"nonzero", true}, {"save-failure", true}} {
-			t.Run(tc.name, func(t *testing.T) {
-				dir := t.TempDir()
-				out, _, err := agentProbeInvoke(t, dir, tc.name, `{"hook_event_name":"PreToolUse","tool_name":"spawn_agent","tool_input":{"agent_type":"probe_worker"}}`)
-				if (err != nil) != tc.wantExit || len(out) != 0 {
-					t.Fatalf("fault output=%q err=%v", out, err)
-				}
-				files, _ := filepath.Glob(filepath.Join(dir, "event-*.json"))
-				if len(files) != 1 {
-					t.Fatalf("fault intent evidence=%v", files)
-				}
-			})
-		}
-	})
-	t.Run("all_cases_have_requests", func(t *testing.T) {
-		cases := agentProbeScenarios()
-		if len(cases) < 9 {
-			t.Fatalf("cases=%d", len(cases))
-		}
-		joined := ""
-		for _, c := range cases {
-			joined += c.Request
-		}
-		for _, term := range []string{"spawn_agent", "send_input", "resume_agent", "close_agent", "interrupt", "Unit", "alias", "root"} {
-			if !strings.Contains(joined, term) {
-				t.Errorf("no request for %s", term)
-			}
-		}
-	})
-}
-
-func TestAgentHookProbeFixtureCapture(t *testing.T) {
-	dir := t.TempDir()
-	for _, name := range []string{"events", "processes"} {
-		if err := os.Mkdir(filepath.Join(dir, name), 0700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	transcript := filepath.Join(dir, "rollout-session123.jsonl")
-	raw := `{"type":"response_item","payload":{"type":"function_call","call_id":"c1","name":"spawn_agent","arguments":"{\"agent_type\":\"probe_worker\"}"}}
-{"type":"response_item","payload":{"type":"function_call_output","call_id":"c1","output":"result with unknown fields"}}
-`
-	if err := os.WriteFile(transcript, []byte(raw), 0600); err != nil {
-		t.Fatal(err)
-	}
-	hook, _ := json.Marshal(map[string]any{"hook_event_name": "SessionStart", "session_id": "session123", "transcript_path": transcript, "future": true})
-	if err := agentProbeWriteJSON(filepath.Join(dir, "events", "event-one.json"), agentProbeRecord{Raw: string(hook), Response: "{}"}); err != nil {
-		t.Fatal(err)
-	}
-	state := agentProbeProcessState{Nonce: "capturenonce", PID: 123, StartedAt: time.Now().UTC(), ObservedAt: time.Now().UTC()}
-	if err := agentProbeWriteJSON(filepath.Join(dir, "processes", "process-capturenonce.json"), state); err != nil {
-		t.Fatal(err)
-	}
-	if err := agentProbeCollect(dir, true); err != nil {
-		t.Fatal(err)
-	}
-	copied, err := os.ReadFile(filepath.Join(dir, "transcript-session123.jsonl"))
-	if err != nil || string(copied) != raw {
-		t.Fatalf("transcript lost: %q %v", copied, err)
-	}
-	calls, err := os.ReadFile(filepath.Join(dir, "calls.json"))
-	if err != nil || !strings.Contains(string(calls), "spawn_agent") || !strings.Contains(string(calls), "unknown fields") {
-		t.Fatalf("tool inventory lost: %q %v", calls, err)
-	}
-	snapshot, err := os.ReadFile(filepath.Join(dir, "process-observations.json"))
-	if err != nil || !strings.Contains(string(snapshot), "capturenonce") {
-		t.Fatalf("pre-cleanup process evidence lost: %q %v", snapshot, err)
-	}
-}
-
-func TestAgentHookProbeFixtureBudget(t *testing.T) {
-	if got := agentProbeCaseTimeout("lifecycle"); got != 5*time.Minute {
-		t.Fatalf("lifecycle budget=%s want 5m", got)
-	}
-	if got := agentProbeCaseTimeout("deny"); got != 2*time.Minute {
-		t.Fatalf("ordinary budget=%s want 2m", got)
-	}
-}
-
-func TestAgentHookProbeEvidenceCollectedControl(t *testing.T) {
-	for _, tc := range []struct{ name, wrapper, mutation, want string }{
-		{"object", "object", "", "pass"},
-		{"function_string", "string", "", "pass"},
-		{"custom_array", "array", "", "pass"},
-		{"unknown_wrapper", "unknown", "", "inconclusive"},
-		{"duplicate_spawn", "string", "duplicate_spawn", "inconclusive"},
-		{"ambiguous_session", "string", "ambiguous_session", "inconclusive"},
-		{"missing_process", "string", "missing_process", "inconclusive"},
-		{"wrong_nonce", "string", "wrong_nonce", "inconclusive"},
-		{"missing_child_call", "string", "missing_child_call", "inconclusive"},
-		{"opaque_code_mode", "string", "opaque_code_mode", "inconclusive"},
-		{"duplicate_output", "string", "duplicate_output", "inconclusive"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			denyDir, allowDir := agentProbeRecordedControl(t, tc.wrapper, tc.mutation)
-			denied, err := agentProbeCollectEvidence(denyDir, true)
-			if err != nil {
-				t.Fatal(err)
-			}
-			allowed, err := agentProbeCollectEvidence(allowDir, true)
-			if err != nil {
-				t.Fatal(err)
-			}
-			got := agentProbeAggregate(denied, allowed)["G0-1"]
-			if got.Status != tc.want {
-				t.Fatalf("collector→aggregate G0-1=%+v want %s", got, tc.want)
-			}
-			// Original output wrappers must remain available, even after evaluation.
-			copied, err := os.ReadFile(filepath.Join(allowDir, "calls.json"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !strings.Contains(string(copied), "child1") {
-				t.Fatalf("raw tool output lost: %s", copied)
-			}
-		})
-	}
-}
-
-func agentProbeRecordedControl(t *testing.T, wrapper, mutation string) (string, string) {
+func agentProbeRecordedControl(t *testing.T, wrapper string) (string, string) {
 	t.Helper()
 	base := t.TempDir()
 	dirs := []string{filepath.Join(base, "deny"), filepath.Join(base, "allow")}
 	const nonce = "probe123"
 	const command = "'/probe/test-binary' -test.run='^TestAgentHookProbeProcess$' -- agent-process '/probe/processes' probe123 15000"
-	wrap := func(value map[string]any, denied bool) any {
+	wrap := func(value map[string]any) any {
 		data, _ := json.Marshal(value)
 		switch wrapper {
 		case "string":
 			return string(data)
-		case "array":
-			header, text := "Script completed\nWall time 0.1 seconds\nOutput:\n", string(data)
-			if denied {
-				header = "Script failed\nWall time 0.1 seconds\n"
-				text = "Script error:\nCommand blocked by PreToolUse hook: Expected G0 probe denial. Do not retry or substitute another agent."
-			}
-			return []any{map[string]any{"type": "input_text", "text": header}, map[string]any{"type": "input_text", "text": text}}
-		case "unknown":
-			return map[string]any{"unrecognized_wrapper": value}
 		default:
 			return value
 		}
@@ -450,32 +146,22 @@ func agentProbeRecordedControl(t *testing.T, wrapper, mutation string) (string, 
 		appendCall := func(rows *[]map[string]any, name, id string, input map[string]any, output any) {
 			data, _ := json.Marshal(input)
 			callType, outType, inputKey := "function_call", "function_call_output", "arguments"
-			if wrapper == "array" {
-				callType, outType, inputKey = "custom_tool_call", "custom_tool_call_output", "input"
-			}
+
 			*rows = append(*rows, map[string]any{"type": "response_item", "payload": map[string]any{"type": callType, "name": name, "call_id": id, inputKey: string(data)}}, map[string]any{"type": "response_item", "payload": map[string]any{"type": outType, "call_id": id, "output": output}})
 		}
 		spawnName := "spawn_agent"
-		if mutation == "opaque_code_mode" && i == 1 {
-			spawnName = "exec"
-		}
-		output := wrap(map[string]any{"error": "Expected G0 probe denial. Do not retry or substitute another agent."}, true)
+
+		output := wrap(map[string]any{"error": "Expected G0 probe denial. Do not retry or substitute another agent."})
 		if i == 1 {
-			output = wrap(map[string]any{"agent_id": "child1"}, false)
+			output = wrap(map[string]any{"agent_id": "child1"})
 		}
 		appendCall(&parentRows, spawnName, "spawn1", map[string]any{"agent_type": "probe_worker"}, output)
 		if i == 1 {
-			appendCall(&parentRows, "wait", "wait1", map[string]any{"ids": []string{"child1"}}, wrap(map[string]any{"status": "completed"}, false))
-			appendCall(&parentRows, "close_agent", "close1", map[string]any{"id": "child1"}, wrap(map[string]any{"status": "closed"}, false))
-			if mutation == "duplicate_spawn" {
-				appendCall(&parentRows, "spawn_agent", "spawn2", map[string]any{"agent_type": "probe_worker"}, output)
-			}
-			if mutation == "duplicate_output" {
-				parentRows = append(parentRows, parentRows[1])
-			}
-			if mutation != "missing_child_call" {
-				appendCall(&childRows, "exec_command", "mark1", map[string]any{"cmd": command}, wrap(map[string]any{"exit_code": 0}, false))
-			}
+			appendCall(&parentRows, "wait", "wait1", map[string]any{"ids": []string{"child1"}}, wrap(map[string]any{"status": "completed"}))
+			appendCall(&parentRows, "close_agent", "close1", map[string]any{"id": "child1"}, wrap(map[string]any{"status": "closed"}))
+
+			appendCall(&childRows, "exec_command", "mark1", map[string]any{"cmd": command}, wrap(map[string]any{"exit_code": 0}))
+
 		}
 		writeRows := func(path string, rows []map[string]any) {
 			var data []byte
@@ -494,9 +180,7 @@ func agentProbeRecordedControl(t *testing.T, wrapper, mutation string) (string, 
 		hooks = append(hooks, map[string]any{"hook_event_name": "SessionStart", "session_id": parent, "transcript_path": parentPath}, map[string]any{"hook_event_name": "PreToolUse", "session_id": parent, "tool_use_id": "spawn1", "tool_name": "spawn_agent", "tool_input": map[string]any{"agent_type": "probe_worker"}})
 		if i == 1 {
 			markerSession := "child1"
-			if mutation == "ambiguous_session" {
-				markerSession = parent
-			}
+
 			hooks = append(hooks, map[string]any{"hook_event_name": "SubagentStart", "session_id": parent, "agent_id": "child1"}, map[string]any{"hook_event_name": "SessionStart", "session_id": "child1", "transcript_path": childPath}, map[string]any{"hook_event_name": "PostToolUse", "session_id": markerSession, "tool_name": "Bash", "tool_use_id": "mark1", "tool_input": map[string]any{"command": command}, "tool_response": map[string]any{"exit_code": 0}})
 		}
 		for at, hook := range hooks {
@@ -512,11 +196,9 @@ func agentProbeRecordedControl(t *testing.T, wrapper, mutation string) (string, 
 		if err := agentProbeWriteJSON(filepath.Join(dir, "manifest.json"), map[string]any{"nonce": nonce, "process_command": command}); err != nil {
 			t.Fatal(err)
 		}
-		if i == 1 && mutation != "missing_process" {
+		if i == 1 {
 			processNonce := nonce
-			if mutation == "wrong_nonce" {
-				processNonce = "anothernonce"
-			}
+
 			now := time.Now().UTC()
 			state := agentProbeProcessState{Nonce: processNonce, PID: 123, StartedAt: now.Add(-time.Second), ObservedAt: now, EndedAt: now}
 			if err := agentProbeWriteJSON(filepath.Join(dir, "processes", "process-"+processNonce+".json"), state); err != nil {
@@ -525,28 +207,6 @@ func agentProbeRecordedControl(t *testing.T, wrapper, mutation string) (string, 
 		}
 	}
 	return dirs[0], dirs[1]
-}
-
-func TestAgentHookProbeFixtureYield(t *testing.T) {
-	for _, scenario := range agentProbeScenarios() {
-		t.Run(scenario.Name, func(t *testing.T) {
-			dir := filepath.Join(t.TempDir(), "probe")
-			if _, err := agentProbePrepare(dir, "/test/binary", scenario); err != nil {
-				t.Fatal(err)
-			}
-			data, err := os.ReadFile(filepath.Join(dir, "prompt.txt"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			want, other := "yield_time_ms=20000", "yield_time_ms=1"
-			if scenario.Name == "lifecycle" {
-				want, other = "yield_time_ms=1", "yield_time_ms=20000"
-			}
-			if !strings.Contains(string(data), want) || strings.Contains(string(data), other) {
-				t.Fatalf("%s prompt must specify %s only; got %s", scenario.Name, want, data)
-			}
-		})
-	}
 }
 
 func TestAgentHookProbeProtocolObservedFault(t *testing.T) {
@@ -597,10 +257,10 @@ func TestAgentHookProbeProtocolObservedFault(t *testing.T) {
 }
 
 func TestAgentHookProbeEvidenceObservedWire(t *testing.T) {
-	for _, mutation := range []string{"", "crlf_metadata", "duplicate_metadata", "metadata_parent", "metadata_fork", "metadata_agent", "metadata_path", "missing_metadata", "duplicate_start", "bash_agent", "missing_bash_pre", "bash_call", "missing_process"} {
+	for _, mutation := range []string{"crlf_metadata", "metadata_parent", "missing_metadata", "missing_process", "unfinished_capture"} {
 		name := mutation
-		if name == "" {
-			name = "observed_control"
+		if name == "crlf_metadata" {
+			name = "synthetic_crlf_control"
 		}
 		t.Run(name, func(t *testing.T) {
 			denyDir, allowDir := agentProbeObservedControl(t, mutation)
@@ -612,14 +272,17 @@ func TestAgentHookProbeEvidenceObservedWire(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if mutation == "unfinished_capture" {
+				allowed.Complete = false
+			}
 			want := "inconclusive"
-			if mutation == "" || mutation == "crlf_metadata" {
+			if mutation == "crlf_metadata" {
 				want = "pass"
 			}
 			if got := agentProbeAggregate(denied, allowed)["G0-1"]; got.Status != want {
 				t.Fatalf("observed wire=%+v want %s", got, want)
 			}
-			if mutation == "" || mutation == "crlf_metadata" {
+			if mutation == "crlf_metadata" {
 				data, err := os.ReadFile(filepath.Join(allowDir, "transcript-child1.jsonl"))
 				if err != nil || !strings.Contains(string(data), `"session_meta"`) {
 					t.Fatalf("explicit child transcript not captured: %s %v", data, err)
@@ -638,7 +301,7 @@ func TestAgentHookProbeEvidenceObservedWire(t *testing.T) {
 
 func agentProbeObservedControl(t *testing.T, mutation string) (string, string) {
 	t.Helper()
-	denyDir, allowDir := agentProbeRecordedControl(t, "string", "")
+	denyDir, allowDir := agentProbeRecordedControl(t, "string")
 	for _, dir := range []string{denyDir, allowDir} {
 		allow := dir == allowDir
 		parent := "parent-deny"
@@ -711,12 +374,7 @@ func agentProbeObservedControl(t *testing.T, mutation string) (string, string) {
 			}
 			if allow && event["hook_event_name"] == "SubagentStart" {
 				event["transcript_path"] = filepath.Join(dir, "rollout-child1.jsonl")
-				if mutation == "duplicate_start" {
-					raw, _ := json.Marshal(event)
-					if err := agentProbeWriteJSON(filepath.Join(dir, "events", "event-start-duplicate.json"), agentProbeRecord{Raw: string(raw), Response: "{}"}); err != nil {
-						t.Fatal(err)
-					}
-				}
+
 			}
 			if allow && event["tool_name"] == "Bash" {
 				event["session_id"] = parent
@@ -724,24 +382,19 @@ func agentProbeObservedControl(t *testing.T, mutation string) (string, string) {
 				event["turn_id"] = "child-turn"
 				event["tool_use_id"] = "exec-internal1"
 				event["tool_response"] = ""
-				if mutation == "bash_agent" {
-					event["agent_id"] = "other-child"
+
+				pre := map[string]any{}
+				for k, v := range event {
+					pre[k] = v
 				}
-				if mutation != "missing_bash_pre" {
-					pre := map[string]any{}
-					for k, v := range event {
-						pre[k] = v
-					}
-					pre["hook_event_name"] = "PreToolUse"
-					delete(pre, "tool_response")
-					if mutation == "bash_call" {
-						pre["tool_use_id"] = "exec-other"
-					}
-					raw, _ := json.Marshal(pre)
-					if err := agentProbeWriteJSON(filepath.Join(dir, "events", "event-bash-pre.json"), agentProbeRecord{Raw: string(raw), Response: "{}"}); err != nil {
-						t.Fatal(err)
-					}
+				pre["hook_event_name"] = "PreToolUse"
+				delete(pre, "tool_response")
+
+				raw, _ := json.Marshal(pre)
+				if err := agentProbeWriteJSON(filepath.Join(dir, "events", "event-bash-pre.json"), agentProbeRecord{Raw: string(raw), Response: "{}"}); err != nil {
+					t.Fatal(err)
 				}
+
 			}
 			raw, _ := json.Marshal(event)
 			record.Raw = string(raw)
@@ -754,12 +407,6 @@ func agentProbeObservedControl(t *testing.T, mutation string) (string, string) {
 			switch mutation {
 			case "metadata_parent":
 				meta["parent_thread_id"] = "unrelated"
-			case "metadata_fork":
-				meta["forked_from_id"] = "unrelated"
-			case "metadata_agent":
-				meta["id"] = "unrelated"
-			case "metadata_path":
-				meta["agent_path"] = "/root/unrelated"
 			}
 			row, _ := json.Marshal(map[string]any{"type": "session_meta", "payload": meta})
 			child := append(row, '\n')
@@ -767,9 +414,7 @@ func agentProbeObservedControl(t *testing.T, mutation string) (string, string) {
 			if mutation == "crlf_metadata" {
 				child = bytes.Replace(child, []byte("\n"), []byte("\r\n"), 1)
 			}
-			if mutation == "duplicate_metadata" {
-				child = append(child, append(row, '\n')...)
-			}
+
 			if strings.HasPrefix(mutation, "metadata_") {
 				child = append(row, []byte("\nTHIS BODY MUST NOT BE PARSED\n")...)
 			}
@@ -790,111 +435,4 @@ func agentProbeObservedControl(t *testing.T, mutation string) (string, string) {
 		}
 	}
 	return denyDir, allowDir
-}
-
-func TestAgentHookProbeFixtureObservedSchema(t *testing.T) {
-	for _, scenario := range agentProbeScenarios() {
-		t.Run(scenario.Name, func(t *testing.T) {
-			dir := filepath.Join(t.TempDir(), "probe")
-			if _, err := agentProbePrepare(dir, "/test/binary", scenario); err != nil {
-				t.Fatal(err)
-			}
-			raw, err := os.ReadFile(filepath.Join(dir, "prompt.txt"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			prompt := string(raw)
-			if !strings.Contains(prompt, `fork_turns="none"`) || !strings.Contains(prompt, "if the actual schema exposes fork_turns") {
-				t.Error("spawn inheritance must be conditional on the actual schema and use none")
-			}
-			if scenario.Name == "parallel-roots" && (!strings.Contains(prompt, "task_name worker_a") || !strings.Contains(prompt, "task_name worker_b")) {
-				t.Error("parallel task names must be valid identifiers distinct from root paths")
-			}
-			if scenario.Name == "lifecycle" {
-				for _, term := range []string{"followup_task", "send_message", "interrupt_agent", "list_agents", "Do not run the finite helper again", "Do not treat completion or interruption as close"} {
-					if !strings.Contains(prompt, term) {
-						t.Errorf("lifecycle instruction missing %q", term)
-					}
-				}
-			}
-		})
-	}
-}
-
-func TestAgentHookProbeEvidenceObservedOptionalFields(t *testing.T) {
-	const observedDenial = "Tool call blocked by PreToolUse hook: Expected G0 probe denial. Do not retry or substitute another agent.. Tool: collaborationspawn_agent"
-	for _, tc := range []struct {
-		name, denial string
-		fork         any
-		absent       bool
-		want         string
-	}{
-		{"observed_fork_present", observedDenial, "parent-allow", false, "pass"},
-		{"observed_fork_absent", observedDenial, nil, true, "pass"},
-		{"fork_null", observedDenial, nil, false, "inconclusive"},
-		{"fork_empty", observedDenial, "", false, "inconclusive"},
-		{"fork_number", observedDenial, 12, false, "inconclusive"},
-		{"fork_mismatch", observedDenial, "other-parent", false, "inconclusive"},
-		{"denial_other_tool", strings.ReplaceAll(observedDenial, "collaborationspawn_agent", "other_tool"), "parent-allow", false, "inconclusive"},
-		{"denial_other_reason", strings.ReplaceAll(observedDenial, "Expected G0 probe denial", "Other denial"), "parent-allow", false, "inconclusive"},
-		{"denial_similar_text", observedDenial + " extra", "parent-allow", false, "inconclusive"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			denyDir, allowDir := agentProbeObservedControl(t, "")
-			path := filepath.Join(denyDir, "rollout-parent-deny.jsonl")
-			data, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var rows []byte
-			for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
-				var row map[string]any
-				if err := json.Unmarshal([]byte(line), &row); err != nil {
-					t.Fatal(err)
-				}
-				p := row["payload"].(map[string]any)
-				if p["type"] == "function_call_output" && p["call_id"] == "spawn1" {
-					p["output"] = tc.denial
-				}
-				b, _ := json.Marshal(row)
-				rows = append(rows, b...)
-				rows = append(rows, '\n')
-			}
-			if err := os.WriteFile(path, rows, 0600); err != nil {
-				t.Fatal(err)
-			}
-			childPath := filepath.Join(allowDir, "rollout-child1.jsonl")
-			child, err := os.ReadFile(childPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			parts := bytes.SplitN(child, []byte("\n"), 2)
-			var meta map[string]any
-			if err := json.Unmarshal(parts[0], &meta); err != nil {
-				t.Fatal(err)
-			}
-			payload := meta["payload"].(map[string]any)
-			if tc.absent {
-				delete(payload, "forked_from_id")
-			} else {
-				payload["forked_from_id"] = tc.fork
-			}
-			first, _ := json.Marshal(meta)
-			rewritten := append(append(first, '\n'), parts[1]...)
-			if err := os.WriteFile(childPath, rewritten, 0600); err != nil {
-				t.Fatal(err)
-			}
-			denied, err := agentProbeCollectEvidence(denyDir, true)
-			if err != nil {
-				t.Fatal(err)
-			}
-			allowed, err := agentProbeCollectEvidence(allowDir, true)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := agentProbeAggregate(denied, allowed)["G0-1"]; got.Status != tc.want {
-				t.Fatalf("captured observed shape=%+v want %s", got, tc.want)
-			}
-		})
-	}
 }

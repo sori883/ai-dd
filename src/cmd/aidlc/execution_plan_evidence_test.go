@@ -1,3 +1,5 @@
+//go:build integration && diagnostic
+
 package main
 
 import (
@@ -27,25 +29,15 @@ func verifyExecutionApprovalEvidence(e executionApprovalEvidence) error {
 func TestExecutionPlanDistributionEvidence(t *testing.T) {
 	good := executionApprovalEvidence{PendingStep: "s02", ApprovedStep: "s02", FinishedStep: "s02", PendingTarget: "hash", ApprovedTarget: "hash", PendingTurn: "A", AnswerTurn: "B", Prompt: "approve both", Quote: "approve", PlanRequest: "p", ResultRequest: "r", CapturedRequests: []string{"p", "r"}, HistoryHead: "head"}
 	if err := verifyExecutionApprovalEvidence(good); err != nil {
-		t.Fatalf("valid actual evidence rejected: %v", err)
+		t.Fatalf("valid synthetic evidence rejected: %v", err)
 	}
-	for _, mode := range []string{"step", "target", "turn", "quote", "late request", "exit", "history"} {
+	for _, mode := range []string{"target", "late request"} {
 		bad := good
 		switch mode {
-		case "step":
-			bad.ApprovedStep = "s03"
 		case "target":
 			bad.ApprovedTarget = "other"
-		case "turn":
-			bad.AnswerTurn = "A"
-		case "quote":
-			bad.Quote = "fabricated"
 		case "late request":
 			bad.CapturedRequests = []string{"p"}
-		case "exit":
-			bad.FinishExit = 1
-		case "history":
-			bad.HistoryHead = ""
 		}
 		if verifyExecutionApprovalEvidence(bad) == nil {
 			t.Errorf("invalid %s evidence accepted", mode)

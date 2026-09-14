@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -22,22 +21,12 @@ func TestFlowCommandFailureOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	git := func(args ...string) {
-		t.Helper()
-		if out, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
-			t.Fatalf("git: %s: %v", out, err)
-		}
-	}
-	git("init", "-q")
-	git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--allow-empty", "-qm", "fixture")
 	if err := os.MkdirAll(filepath.Join(root, "aidlc/spaces/default"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := install.Codex(root, "/opt/aidlc"); err != nil {
 		t.Fatal(err)
 	}
-	git("add", ".agents", ".codex")
-	git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "installed fixture assets")
 	store := flow.Store{Root: root, Space: "default"}
 	st, err := store.Create("Work")
 	if err != nil {
@@ -56,10 +45,6 @@ func TestFlowCommandFailureOutput(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_, err = exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
 	st.Config = flow.Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, VerificationPaths: []string{"."}, ADR: flow.ADR{Reason: "none"}}
 	st, err = store.Save(st, st.Revision)
 	if err != nil {
@@ -69,8 +54,12 @@ func TestFlowCommandFailureOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reviewRoot := filepath.Join(t.TempDir(), "review")
-	git("worktree", "add", "--detach", reviewRoot, "HEAD")
+	reviewRoot := t.TempDir()
+	for _, name := range []string{".agents", ".codex"} {
+		if err := os.CopyFS(filepath.Join(reviewRoot, name), os.DirFS(filepath.Join(root, name))); err != nil {
+			t.Fatal(err)
+		}
+	}
 	reviewRoot, err = filepath.EvalSymlinks(reviewRoot)
 	if err != nil {
 		t.Fatal(err)

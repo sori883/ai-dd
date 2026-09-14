@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -273,6 +274,13 @@ func TestReleaseCandidateNative(t *testing.T) {
 	}
 	text := filepath.Join(root, "text.md")
 	writeFixture(t, root, "text.md", []byte("非常に重要。\n"))
+	stdin := exec.CommandContext(t.Context(), b.Natural, "--json", "-")
+	stdin.Dir = root
+	stdin.Stdin = strings.NewReader("非常に重要。")
+	stdinReport, err := stdin.Output()
+	if err != nil || !json.Valid(stdinReport) || !bytes.Contains(stdinReport, []byte("forbidden_phrase")) {
+		t.Fatalf("candidate stdin JSON: %s %v", stdinReport, err)
+	}
 	report := distributionOK(t, root, b.Natural, "--json", text)
 	if !bytes.Contains(report, []byte("forbidden_phrase")) {
 		t.Fatal(string(report))

@@ -47,8 +47,6 @@ jobs:
       - name: Test fresh four-stage distribution journey
         run: go test -tags=integration -count=1 ./src/cmd/aidlc -run '^Test(FlowJourney|GitIndependentJourney)$'
 
-      - name: Test standalone Japanese binary
-        run: go test -tags=integration -count=1 ./src/cmd/natural-japanese-go -run '^TestCommandBinary$'
       - name: Check module metadata
         run: go mod tidy -diff
       - name: Smoke test native binary
