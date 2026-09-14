@@ -74,6 +74,27 @@ go test -count=1 ./src/internal/workspace ./src/internal/okfmemory -run '^TestFl
 go test -count=1 ./src/cmd/aidlc -run '^TestFlowCommand'
 ```
 
+### CIの検証責任
+
+CIはPRとmainへのpushで起動します。PRのない作業branchへのpushでは起動しません。Distributionの手動起動は維持します。PRはmerge ref、main pushは反映後のcommitを検査するため、両者のSHAは同じとは限りません。
+
+| 検査 | 実行場所とGo版 |
+|---|---|
+| 通常test・filesystem test | Qualityの `1.26.x` と `stable` の両方 |
+| format・明示的full vet・race・module・代表journey・dev smoke | Qualityの `1.26.x` のみ |
+| 5CLI×6targetの候補生成・metadata | Distribution/Packageの固定 `1.26.4` |
+| 同候補の5CLI注入情報・stdin/空PATH・bootstrap | Distribution/NativeのLinux・macOS・Windows。WindowsはPS5.1/7両engine |
+
+`1.26.x` は1.26系の可用patch版で、厳密な最小patch版ではありません。`stable` と同じ実版になる場合もmatrixを維持し、実版は各runのsetup/Goログで確認します。
+
+Qualityでは `go list ./...` が成功した非空一覧から、exact import `github.com/sori883/ai-dd/src/internal/workspace` と `github.com/sori883/ai-dd/src/internal/okf` を各1件だけ分離します。残るpackageは通常tag、2packageはintegration tagで通常testと追加filesystem testを各Go版1回実行します。`okfmemory`・`okfapp`・`cmd/okf` は通常側です。selection shellとfail-closed検査の正本は [ci.yml](../.github/workflows/ci.yml) です。
+
+coverageは `coverage-normal.out` と `coverage-filesystem.out` の別集合です。現時点でuploadや閾値の消費者はなく、前者だけを全package coverageとは扱いません。raceは異なる計測目的のため、主要版で `go test -count=1 -race -shuffle=on ./...` を保持します。go test標準の限定vetも残し、明示的な `go vet ./...` は主要版だけで実行します。
+
+Dev smokeは未注入aidlcを1回buildし、help・dev/unknown版表示・未知引数のexit2とstdout/stderrを確認します。注入版はDistributionの実候補が担当します。Distributionは同run artifact ID、source SHA、remote tagとmainの照合、draft直前検査を維持します。6target buildは6CPU/OSすべての実起動を意味せず、Nativeは3OSで確認します。
+
+非live診断は `integration,diagnostic` と選択した入口で明示実行します。例えば `go test -tags=integration,diagnostic -count=1 ./src/cmd/aidlc -run '^TestAgentHookProbeEvidence$'` は小さいsynthetic証拠の検査です。M3の容量2testは通常suiteへ理由付き保持され、stress tagは採用していません。新しいstress入口や外部Codex liveの自動実行は追加していません。
+
 以下は親のfinalで実行するfresh配布の一周です。非live fixtureと実AIの証拠を区別します。
 
 ```sh

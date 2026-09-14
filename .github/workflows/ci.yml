@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
@@ -16,8 +17,8 @@ jobs:
       fail-fast: false
       matrix:
         go-version:
-          - 1.26.x
-          - stable
+          - '1.26.x'
+          - 'stable'
     steps:
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -27,6 +28,7 @@ jobs:
           go-version: ${{ matrix.go-version }}
           cache: false
       - name: Check formatting
+        if: ${{ matrix.go-version == '1.26.x' }}
         shell: bash
         run: |
           unformatted="$(gofmt -l src)"
@@ -35,21 +37,46 @@ jobs:
             exit 1
           fi
       - name: Vet
+        if: ${{ matrix.go-version == '1.26.x' }}
         run: go vet ./...
-      - name: Test with shuffled order and coverage
-        run: go test -shuffle=on -coverprofile=coverage.out ./...
+      - name: Test normal and filesystem packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace_pkg='github.com/sori883/ai-dd/src/internal/workspace'
+          okf_pkg='github.com/sori883/ai-dd/src/internal/okf'
+          all_packages="$(go list ./...)"
+          [[ -n "$all_packages" ]] || { echo 'package一覧が空です'; exit 1; }
+          normal_packages=()
+          workspace_count=0
+          okf_count=0
+          while IFS= read -r package; do
+            case "$package" in
+              "$workspace_pkg") workspace_count=$((workspace_count + 1)) ;;
+              "$okf_pkg") okf_count=$((okf_count + 1)) ;;
+              '') echo '空のpackage名です'; exit 1 ;;
+              *) normal_packages+=("$package") ;;
+            esac
+          done <<< "$all_packages"
+          [[ "$workspace_count" -eq 1 && "$okf_count" -eq 1 && ${#normal_packages[@]} -gt 0 ]] || {
+            echo '通常packageとfilesystem対象の分割が成立しません'; exit 1;
+          }
+          printf 'normal packages: %s; filesystem packages: 2\n' "${#normal_packages[@]}"
+          go test -count=1 -shuffle=on -coverprofile=coverage-normal.out "${normal_packages[@]}"
+          go test -tags=integration -count=1 -shuffle=on -coverprofile=coverage-filesystem.out \
+            "$workspace_pkg" "$okf_pkg"
       - name: Test with race detector
-        run: go test -race -shuffle=on ./...
-      - name: Test workspace filesystem integration
-        run: go test -tags=integration -count=1 ./src/internal/workspace
-      - name: Test OKF filesystem integration
-        run: go test -tags=integration -count=1 ./src/internal/okf
-      - name: Test fresh four-stage distribution journey
+        if: ${{ matrix.go-version == '1.26.x' }}
+        run: go test -count=1 -race -shuffle=on ./...
+      - name: Test representative distribution journeys
+        if: ${{ matrix.go-version == '1.26.x' }}
         run: go test -tags=integration -count=1 ./src/cmd/aidlc -run '^Test(FlowJourney|GitIndependentJourney)$'
 
       - name: Check module metadata
+        if: ${{ matrix.go-version == '1.26.x' }}
         run: go mod tidy -diff
       - name: Smoke test native binary
+        if: ${{ matrix.go-version == '1.26.x' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -78,23 +105,6 @@ jobs:
             exit 1
           fi
 
-          injected_binary="${RUNNER_TEMP}/aidlc-injected"
-          go build -trimpath \
-            -ldflags '-X github.com/sori883/ai-dd/src/internal/buildinfo.Version=v0.1.0 -X github.com/sori883/ai-dd/src/internal/buildinfo.Commit=abcdef0' \
-            -o "$injected_binary" \
-            ./src/cmd/aidlc
-          injected_stdout="${RUNNER_TEMP}/injected-version.stdout"
-          injected_stderr="${RUNNER_TEMP}/injected-version.stderr"
-          "$injected_binary" --version >"$injected_stdout" 2>"$injected_stderr"
-          if [[ "$(<"$injected_stdout")" != 'aidlc v0.1.0 (commit abcdef0)' ]]; then
-            printf '%s\n' 'unexpected injected version output'
-            exit 1
-          fi
-          if [[ -s "$injected_stderr" ]]; then
-            printf '%s\n' 'expected injected --version stderr to be empty'
-            exit 1
-          fi
-
           unknown_stdout="${RUNNER_TEMP}/unknown.stdout"
           unknown_stderr="${RUNNER_TEMP}/unknown.stderr"
           if "$binary" unknown >"$unknown_stdout" 2>"$unknown_stderr"; then
@@ -113,48 +123,3 @@ jobs:
           fi
           grep -Fqx 'aidlc: unknown arguments: "unknown"' "$unknown_stderr"
           grep -Fqx 'Usage:' "$unknown_stderr"
-
-  cross-build:
-    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goos: darwin
-            goarch: amd64
-            extension: ""
-          - goos: darwin
-            goarch: arm64
-            extension: ""
-          - goos: linux
-            goarch: amd64
-            extension: ""
-          - goos: linux
-            goarch: arm64
-            extension: ""
-          - goos: windows
-            goarch: amd64
-            extension: .exe
-          - goos: windows
-            goarch: arm64
-            extension: .exe
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version: 1.26.x
-          cache: false
-      - name: Build five CLIs
-        shell: bash
-        env:
-          CGO_ENABLED: "0"
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: |
-          for product in aidlc-install aidlc okf natural-japanese-go aidlc-dist; do
-            go build -trimpath -o "${{ runner.temp }}/$product-${GOOS}-${GOARCH}${{ matrix.extension }}" "./src/cmd/$product"
-          done
