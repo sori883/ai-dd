@@ -13,7 +13,7 @@ func TestWorkspaceArguments(t *testing.T) {
 		dir       string
 		json      bool
 	}{
-		{"first split", []string{"--project-dir", "path", "space", "list"}, true, "path", false},
+		{"first split literal", []string{"--project-dir", " path ", "space", "list"}, true, " path ", false},
 		{"middle equals", []string{"space", "--project-dir=path", "list"}, true, "path", false},
 		{"end split", []string{"space", "list", "--project-dir", "path"}, true, "path", false},
 		{"JSON before", []string{"--json", "--project-dir=path", "space", "list"}, true, "path", true},

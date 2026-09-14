@@ -29,8 +29,8 @@ func TestParseRoundTrip(t *testing.T) {
 	}
 }
 func TestParseRejectsInvalid(t *testing.T) {
-	if _, err := Parse([]byte("body")); err == nil {
-		t.Fatal("accepted document without frontmatter")
+	if _, err := Parse([]byte("---\ntype: ''\n---\n")); err == nil {
+		t.Fatal("accepted document with empty type")
 	}
 }
 

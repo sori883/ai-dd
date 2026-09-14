@@ -41,7 +41,7 @@ Issue [#210](https://github.com/sori883/ai-dd/issues/210)、work_unit_id `test-r
 | A29 | nonregularを3種へ縮小、cursor失敗の全steps一致を除去。 | cause・早期失敗後rename禁止・own temp cleanup、permission/close後rename。CompleteCursorNoReplaceFailuresは既にobservableなので維持。 | S7/Q13–14 | 
 | A30 | 注入Close後の標準Root.Stat再検査を削除。 | Close回数/cause/zero result/保存bytes。SwitchSpaceSavesNormalizedNameのdefault Close検査は独自なので保持。 | S7/Q14 | 
 | A31 | 2field表をInfoの直接比較へ簡略化。 | dev/unknownの既定値。 | S7/Q15 | 
-| A32 | wrapper invalid4例をfrontmatterなし1例へ縮小。 | 正本ParseConceptInvalidとwrapper失敗伝播、RoundTripのunknown metadata/body。 | S8/Q16–17 | 
+| A32 | wrapper invalid4例をempty type拒否1例へ縮小。 | 正本ParseConceptInvalidとinvalid type拒否のwrapper伝播、RoundTripのunknown metadata/body。 | S8/Q16–17 |
 | A33 | usage windowの8×2をtop8＋source2へ縮小。 | top levelの形式/offset/from/to、source overrideの正常/拒否配線。 | S8/Q17 | 
 | A34 | Scan末尾Tags改変後再Scanを除去。 | selection/warning/path/UTF-16順序、SearchLifecycleAndOwnershipの現実的な所有権。 | S8/Q17 | 
 | A35 | session testから汎用stale CAS/update metadata反復を除去。 | create/update/search後選択不変、他Space検索空、index directory時error+JSONと保存Concept、raw hash。 | S2/Q4 | 
@@ -169,3 +169,15 @@ go test -count=1 ./src/internal/pathnorm -run '^TestECMAScriptDefaultLowerUsesUn
 ```
 
 変更fileの一覧とSHA-256は `/tmp/m4-files-sha256.txt`、差分hashは `/tmp/m4-diff-sha256.txt` に保存する。未追跡の新parser testと結果docもfile hash一覧へ含める。
+
+## 独立review修復（同work unit）
+
+HEAD `1b120a3c19db6e7e6b28e59d02c3338cb586aacc` 上で3件を修復した。A16/A17の正常表1行を ` path ` の入力と同じ期待値へ変更し、旧ListProjectDirLiteralの無加工転送保証を保持。A21の無参照checkHelpFailingWriter型/Writeと専用errors importは、src内の参照が定義だけであることを確認して削除した。A32は終端のないbodyではwrapper自身でも拒否されるため、下位ParseConceptの不正type拒否が必要な `---\ntype: ''\n---\n` へ代表入力を置換した。テスト件数・製品Goは変更していない。
+
+次の3commandを変更前ALREADY_GREEN・変更後GREENとして各1回実行し、全6実行がexit 0。履歴は `/tmp/m4-review-fixes.json`。gofmt・git diff --checkも成功。再review/finalは親が行う。
+
+```sh
+go test -count=1 ./src/internal/cli -run '^TestWorkspaceArguments$'
+go test -count=1 ./src/internal/cli -run '^TestCheckHelpForms$'
+go test -count=1 ./src/internal/okfmemory -run '^TestParseRejectsInvalid$'
+```

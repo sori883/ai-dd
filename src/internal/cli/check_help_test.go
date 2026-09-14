@@ -2,7 +2,6 @@ package cli_test
 
 import (
 	"bytes"
-	"errors"
 	"regexp"
 	"slices"
 	"strings"
@@ -158,12 +157,6 @@ func TestCheckHelpPreservesBeginHelp(t *testing.T) {
 		"beginは開始入力版を保存し同段階の再試行では差し替えない",
 		"一般作業/Unit claim前にbeginが必要",
 	)
-}
-
-type checkHelpFailingWriter struct{}
-
-func (checkHelpFailingWriter) Write([]byte) (int, error) {
-	return 0, errors.New("check help write failure")
 }
 
 func runCheckHelp(t *testing.T, args []string) string {

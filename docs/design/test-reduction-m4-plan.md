@@ -160,7 +160,7 @@ FinalSigmaContextは移動前にはworkspace側で同名を実行し、移動後
 
 | 候補 | 正確な処置 | 生存する保証・削除理由 |
 |---|---|---|
-| A32 | src/internal/okfmemory/document_test.goのTestParseRejectsInvalidの4例をfrontmatterなし1例へ縮小。 | src/internal/okf/frontmatter_test.goのTestParseConceptInvalidが正本parserのinvalid表を維持。okfmemory側はwrapperが失敗を成功扱いしないことだけを検査し、TestParseRoundTripのunknown metadataとbody保持は維持。 |
+| A32 | src/internal/okfmemory/document_test.goのTestParseRejectsInvalidの4例をempty type拒否1例へ縮小。 | src/internal/okf/frontmatter_test.goのTestParseConceptInvalidが正本parserのinvalid表を維持。okfmemory側は正本parserのinvalid type拒否がwrapperへ伝わることを検査し、TestParseRoundTripのunknown metadataとbody保持は維持。 |
 | A33 | src/internal/okf/frontmatter_test.goのTestParseConceptUsageWindowのtop level8×source override8を、top level8＋source override valid without usage count / not mappingの2行へ縮小。 | 同じusage window validatorの形式/offset/from/to拒否をtop levelで所有。source overrideは正常と拒否各1行で配線を確認し、同じ8行を掛け合わせない。 |
 | A34 | src/internal/okf/scan_test.goのTestScanBundleSelection末尾のTagsをmutatedへ変え再Scanするblockを削除。 | 同関数のselection・warning・path・UTF-16順序を維持。search_test.goのTestSearchLifecycleAndOwnershipが、結果を利用者が変えても次のSearchへ影響しない現実的なalias防止を引き続き検査する。毎回再parseするScanの所有権再検査を除く。 |
 
@@ -207,3 +207,7 @@ AGENTS.md、implementation-planning/golang-how-to/golang-testing、docs/agent-wo
 ## 実装時に一意に確定した詳細
 
 A07のcreate/updateは現行Serviceの `Metadata.IntentID` を保存し、searchは `CommandRequest.IntentID` を使う。新転送例の初回誤期待をこの入力へ修復し、ALREADY_GREENを確認後に旧CRUDを削除する。製品の転送対象は変更しない。A36の `err=nil` 後の死んだblockは実fileで3箇所あり、同じ根拠で3箇所を除去した。実施結果は[M4結果](test-reduction-m4-result.md)を参照。
+
+## 独立reviewの修復
+
+既存WorkspaceArgumentsの正常1行を前後空白付きpathへ置換し、入力bytesを無加工で返す保証を保つ。無参照checkHelpFailingWriterと専用errors importを削除する。A32の代表をfrontmatterなしからempty typeへ置換する。前者はwrapperの終端検査だけでも拒否できるため、下位ParseConceptの拒否を必要とする旧empty_typeを使う。件数・製品仕様は変更しない。
