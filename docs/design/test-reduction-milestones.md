@@ -198,6 +198,6 @@ rollbackは問題のあるPRだけをrevertする別PRで行い、他者の変�
 | M3 | 完了・main反映済み（[結果](test-reduction-m3-result.md)） | [#208](https://github.com/sori883/ai-dd/issues/208) / [#209](https://github.com/sori883/ai-dd/pull/209) |
 | M4 | 完了・main反映済み（[結果](test-reduction-m4-result.md)） | [#210](https://github.com/sori883/ai-dd/issues/210) / [#211](https://github.com/sori883/ai-dd/pull/211) |
 | M5 | 完了・main反映済み（[結果](test-reduction-m5-result.md)） | [#212](https://github.com/sori883/ai-dd/issues/212) / [#213](https://github.com/sori883/ai-dd/pull/213) |
-| M6 | 6候補の処置完了（[結果](test-reduction-m6-result.md)）。検証・merge結果はIssueに紐づくPRを参照 | [#214](https://github.com/sori883/ai-dd/issues/214) |
+| M6 | 6候補の処置完了（[結果](test-reduction-m6-result.md)）。検証・merge結果はPRを参照 | [#214](https://github.com/sori883/ai-dd/issues/214) / [#215](https://github.com/sori883/ai-dd/pull/215) |
 
 候補ごとの削除・統合・維持の結果は、各区切りの結果記録に追記する。維持は独自の不具合検出と負担を説明できるものに限る。

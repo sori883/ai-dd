@@ -3,7 +3,7 @@
 ユーザーの「削除」「区切って対応」「Issue作ってmrでマージ」という直接依頼に従い、[全体計画](../../design/test-reduction-milestones.md)の151候補を6区切りで処置した。候補はテスト件数ではなく、削除・統合・準備の共有・理由付き保持を判断する単位である。各候補の実害、残る保証、検証入口はM1〜M6の結果表へ記録した。
 
 - M1〜M5はIssue #204/#206/#208/#210/#212とPR #205/#207/#209/#211/#213を完了し、main反映後の検査を確認した。
-- M6はIssue #214でCIの重複実行を整理した。単独writerの結果は[M6結果](../../design/test-reduction-m6-result.md)。独立レビュー・親final・同headのGitHub実行・mergeの証拠は、Issueに紐づくPR本文と状態へ記録する。
+- M6はIssue #214でCIの重複実行を整理した。単独writerの結果は[M6結果](../../design/test-reduction-m6-result.md)。独立レビュー・親final・同headのGitHub実行・mergeの証拠は、[PR #215](https://github.com/sori883/ai-dd/pull/215)本文と状態へ記録する。
 
 基準commit `adc4682ca265c9bda4434a94d9d99cff1f4b9394` とM5 merge `d8aa6cf3415e3cfe984dc2f530bd9da398cdddc2` の `src/**/*_test.go` を比較すると、216ファイル・35,850行から192ファイル・29,464行になった。差は24ファイル・6,386行。M6はGo/testを変更しない。この数字は作業量の説明であり、削減目標や速度のbenchmarkではない。
 

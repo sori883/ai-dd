@@ -42,4 +42,4 @@ localは `go version go1.26.4 darwin/arm64`。Qualityの設定値は文字列 `1
 
 ## 最終検証とマージ結果の保存先
 
-この文書は単独writerの実装結果とloopの証拠を記録する。親はこの後、独立review、read-only final、現在headのCI/Distributionを確認し、結果と実行リンクを[Issue #214](https://github.com/sori883/ai-dd/issues/214)に紐づくPR本文へ追記する。mainへのmergeとIssue closeは、そのPRの状態・merge commitで確認できる。古いheadや入口確認だけを最終成功として扱わない。
+この文書は単独writerの実装結果とloopの証拠を記録する。親はこの後、独立review、read-only final、現在headのCI/Distributionを確認し、結果と実行リンクを[PR #215](https://github.com/sori883/ai-dd/pull/215)本文へ追記する。mainへのmergeとIssue closeは、そのPRの状態・merge commitで確認できる。古いheadや入口確認だけを最終成功として扱わない。
