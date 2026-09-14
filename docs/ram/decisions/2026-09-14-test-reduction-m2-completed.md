@@ -14,4 +14,6 @@ M1の[移動失敗](../research/2026-09-14-windows-native-rename-observation.md)
 
 ## 次の区切り
 
+M2のmain反映後も[CI](https://github.com/sori883/ai-dd/actions/runs/34798262811)と[Distribution](https://github.com/sori883/ai-dd/actions/runs/34798262807)が初回で成功した。上記の一時失敗の原因が解決したという意味ではない。
+
 [全6区切りの承認](2026-09-14-test-reduction-approved.md)に従い、M3の工程・担当管理テストを別Issue/PRで続ける。M2の公開API・保存形式・権限・配布契約は維持した。

@@ -1,9 +1,11 @@
 package flow
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"github.com/sori883/ai-dd/src/internal/filestore"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -111,7 +113,6 @@ func TestUnitAssignmentReassign(t *testing.T) {
 	req.Session = "new-worker"
 	req.PreviousRunStopped = true
 	req.Reason = "old worker and known commands stopped, results collected"
-	req.VerificationSHA256 = flowGit(t, s.Root, "rev-parse", "HEAD")
 	next, err := s.Unit(st.ID, st.Revision, req)
 	if err != nil {
 		t.Fatal(err)
@@ -199,30 +200,45 @@ func TestUnitAssignmentPendingMutation(t *testing.T) {
 	}
 }
 
-func TestUnitAssignmentLegacyResult(t *testing.T) {
+func TestUnitAssignmentUnmanagedResult(t *testing.T) {
 	s, st, worker := unitFixture(t)
-	st.Config.Units[0].Status = "running"
-	var err error
-	st, err = saveExecutionFixture(t, s, st, st.Revision)
+	st, err := assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: st.CurrentStepID, Action: "claim", Unit: "a", Root: worker, Session: "worker"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := filepath.EvalSymlinks(worker)
+	if err := os.WriteFile(filepath.Join(worker, "a.txt"), []byte("done"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run, err := s.assignment(st.ID, "a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy := UnitRequest{StepID: st.CurrentStepID, Action: "claim", Unit: "a", Root: root, Session: "old", RunID: "old-run"}
-	raw, err := json.Marshal(legacy)
+	request := prepareUnitResultFixture(t, s, st, UnitRequest{StepID: st.CurrentStepID, Action: "result", Unit: "a", Root: worker, Session: "worker", RunID: run.RunID})
+	registry := assignment.Store{Root: s.Root}
+	reg, err := registry.Read()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := filestore.WriteFile(s.Root, s.assignmentPath(st.ID, "a"), raw); err != nil {
+	reg.Reservations = nil
+	raw, err := json.Marshal(reg)
+	if err != nil {
 		t.Fatal(err)
 	}
-	legacy.Action = "result"
-	legacy.VerificationSHA256 = flowGit(t, s.Root, "rev-parse", "HEAD")
-	if _, err := s.Unit(st.ID, st.Revision, legacy); err == nil {
-		t.Fatal("legacy worker result bypassed managed registry")
+	if err := filestore.WriteFile(s.Root, "aidlc/.runtime/assignments/registry.json", raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.Read(); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(filepath.Join(s.Root, s.path(st.ID)))
+	runtimeBefore, _ := os.ReadFile(filepath.Join(s.Root, s.assignmentPath(st.ID, "a")))
+	if _, err := s.Unit(st.ID, st.Revision, request); err == nil {
+		t.Fatal("unmanaged result accepted")
+	}
+	after, _ := os.ReadFile(filepath.Join(s.Root, s.path(st.ID)))
+	runtimeAfter, _ := os.ReadFile(filepath.Join(s.Root, s.assignmentPath(st.ID, "a")))
+	if !bytes.Equal(before, after) || !bytes.Equal(runtimeBefore, runtimeAfter) {
+		t.Fatal("unmanaged result changed state/runtime")
 	}
 }
 
@@ -246,7 +262,9 @@ func TestUnitAssignmentReassignAdmissionFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	other := filepath.Join(t.TempDir(), "other")
-	flowGit(t, s.Root, "worktree", "add", "--detach", other, flowGit(t, s.Root, "rev-parse", "HEAD"))
+	if err := os.MkdirAll(other, 0700); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.ReserveAssignment(st.ID, st.Revision, "another-main", AssignmentRequest{RegistryEpoch: reg.Epoch, RequestID: "other", StepID: st.CurrentStepID, Agent: "aidlc-worker", Root: other, Session: "other"}); err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +273,6 @@ func TestUnitAssignmentReassignAdmissionFailure(t *testing.T) {
 	req.RequestID = "reassign"
 	req.Root = other
 	req.Session = "new"
-	req.VerificationSHA256 = flowGit(t, s.Root, "rev-parse", "HEAD")
 	req.PreviousRunStopped = true
 	req.Reason = "old stopped and collected"
 	if _, err := s.Unit(st.ID, st.Revision, req); err == nil {

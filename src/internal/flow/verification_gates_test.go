@@ -19,15 +19,17 @@ func TestVerificationGates(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = os.RemoveAll(filepath.Join(s.Root, ".git")); err != nil {
-				t.Fatal(err)
-			}
 			if err = os.WriteFile(filepath.Join(s.Root, "code"), []byte("code"), 0644); err != nil {
 				t.Fatal(err)
 			}
 			gate, err := s.Check(st.ID)
 			if err != nil || gate.Status != "pass" {
 				t.Fatalf("gitless Sensor %+v %v", gate, err)
+			}
+			if change == "none" {
+				if _, err := s.Review(st.ID, st.Revision, ReviewRequest{Action: "assign", CoordinatorSession: "same", Session: "same", Root: s.Root}); err == nil {
+					t.Fatal("same-session reviewer accepted")
+				}
 			}
 			req := ReviewRequest{Action: "assign", CoordinatorSession: "main", Session: "reviewer", Root: s.Root}
 			st, err = s.Review(st.ID, st.Revision, req)
@@ -82,12 +84,6 @@ func TestVerificationGates(t *testing.T) {
 				t.Fatal("stale review accepted")
 			}
 		})
-	}
-}
-func TestVerificationGatesIndependence(t *testing.T) {
-	s, st := sensorFixture(t)
-	if _, err := s.Review(st.ID, st.Revision, ReviewRequest{Action: "assign", CoordinatorSession: "same", Session: "same", Root: s.Root}); err == nil {
-		t.Fatal("same session reviewer accepted")
 	}
 }
 

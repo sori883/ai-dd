@@ -1,72 +1,31 @@
 package flow
 
 import (
-	"bytes"
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestBoundaryStoreSchema(t *testing.T) {
-	s := flowStore(t)
-	st, err := createExecutionFixture(t, s, "New")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if st.SchemaVersion != 6 {
-		t.Fatalf("schema=%d want 4", st.SchemaVersion)
-	}
-	st.Config.NoMaterialsReason = "new project"
-	next, err := saveExecutionFixture(t, s, st, st.Revision)
-	if err != nil || next.Revision != 2 {
-		t.Fatalf("CAS: %+v %v", next, err)
-	}
-	if _, err = saveExecutionFixture(t, s, st, st.Revision); err == nil {
-		t.Fatal("stale save accepted")
-	}
-	st.SchemaVersion = 1
-	raw, err := json.Marshal(st)
-	if err != nil {
-		t.Fatal(err)
-	}
-	name := filepath.Join(s.Root, s.path(st.ID))
-	if err = os.WriteFile(name, raw, 0600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.Read(st.ID); err == nil || !strings.Contains(err.Error(), "schema") {
-		t.Fatalf("legacy schema: %v", err)
-	}
-	after, err := os.ReadFile(name)
-	if err != nil || !bytes.Equal(raw, after) {
-		t.Fatal("legacy state changed")
-	}
-}
 func TestBoundaryStoreVersions(t *testing.T) {
-	for _, entry := range []*StageEntry{
-		{Stage: "other"}, {Stage: "planning"}, {Stage: "discovery", Inputs: []FileVersion{{Path: "../escape", SHA256: strings.Repeat("a", 64)}}},
-		{Stage: "discovery", Inputs: []FileVersion{{Path: "file", SHA256: "bad"}}},
-		{Stage: "discovery", Sources: []FileVersion{{Path: "aidlc/.runtime/x", SHA256: strings.Repeat("a", 64)}}},
-		{Stage: "discovery", Inputs: []FileVersion{{Path: "file", SHA256: strings.Repeat("a", 64)}, {Path: "file", SHA256: strings.Repeat("a", 64)}}},
-	} {
-		s := flowStore(t)
-		st, err := createExecutionFixture(t, s, "New")
-		if err != nil {
-			t.Fatal(err)
-		}
-		st.Entry = entry
-		if err = s.persist(st); err == nil {
-			t.Errorf("invalid entry accepted: %+v", entry)
-		}
-	}
-	s := flowStore(t)
-	st, err := createExecutionFixture(t, s, "New")
-	if err != nil {
-		t.Fatal(err)
-	}
-	st.Accepted = map[string]StageAcceptance{"bogus": {Stage: "bogus", ReviewTarget: strings.Repeat("b", 64)}}
-	if err = s.persist(st); err == nil {
-		t.Fatal("unknown acceptance accepted")
+	for _, mode := range []string{"valid", "stage", "input path", "hash", "source runtime", "duplicate input"} {
+		t.Run(mode, func(t *testing.T) {
+			s := flowStore(t)
+			st := schemaPlanState(s)
+			st.Entry = &StageEntry{Stage: st.Stage, StepID: st.CurrentStepID, Inputs: []FileVersion{{Path: "file", SHA256: strings.Repeat("a", 64)}}, Sources: []FileVersion{{Path: "source", SHA256: strings.Repeat("b", 64)}}}
+			switch mode {
+			case "stage":
+				st.Entry.Stage = "planning"
+			case "input path":
+				st.Entry.Inputs[0].Path = "../escape"
+			case "hash":
+				st.Entry.Inputs[0].SHA256 = "bad"
+			case "source runtime":
+				st.Entry.Sources[0].Path = "aidlc/.runtime/x"
+			case "duplicate input":
+				st.Entry.Inputs = append(st.Entry.Inputs, st.Entry.Inputs[0])
+			}
+			if err := s.persist(st); (err == nil) != (mode == "valid") {
+				t.Fatalf("entry %s: %v", mode, err)
+			}
+		})
 	}
 }

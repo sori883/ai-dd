@@ -17,9 +17,6 @@ func TestDefinitionBindingDrift(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.SchemaVersion != 6 {
-		t.Errorf("schema=%d want 6", st.SchemaVersion)
-	}
 	p := filepath.Join(s.Root, "aidlc/workflow/stages/tdd.md")
 	raw, _ := os.ReadFile(p)
 	os.WriteFile(p, append(raw, []byte("changed\n")...), 0644)
@@ -40,109 +37,6 @@ func TestDefinitionBindingDrift(t *testing.T) {
 		t.Fatal("restored definition rejected", err)
 	}
 }
-func TestReopenLogFailures(t *testing.T) {
-	for _, point := range []string{"pending", "log", "final"} {
-		t.Run(point, func(t *testing.T) {
-			s := flowStore(t)
-			deployFlowDefinition(t, s)
-			st, err := createExecutionFixture(t, s, "log")
-			if err != nil {
-				t.Fatal(err)
-			}
-			logPath := workLogPath(s, st.ID)
-			seedWorkLog(t, s, st, "Existing note.\n")
-			count := 0
-			request := TransitionRequest{Action: "reopen", Stage: "discovery", Reason: "line one\n## forged marker"}
-			st = prepareReopenFixture(t, s, st, request)
-			s.write = func(root, name string, raw []byte) error {
-				if !strings.Contains(name, "/history/") {
-					count++
-				}
-				if point == "pending" && count == 1 || point == "log" && strings.HasSuffix(name, "work-log.md") || point == "final" && count == 3 {
-					return errors.New("injected save failure")
-				}
-				return filestore.WriteFile(root, name, raw)
-			}
-			if _, err = transitionExecutionFixture(t, s, st.ID, st.Revision, request); err == nil {
-				t.Fatal("partial save returned success")
-			}
-			got, err := s.Read(st.ID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got.Revision != st.Revision {
-				t.Fatal("partial save changed revision")
-			}
-			s.write = nil
-			if point != "pending" {
-				if _, err = saveExecutionFixture(t, s, got, got.Revision); err == nil {
-					t.Fatal("pending allowed configure")
-				}
-				if _, err = transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "pause", Reason: "other"}); err == nil {
-					t.Fatal("pending allowed different operation")
-				}
-				if err = s.CheckWork(st.ID); err == nil {
-					t.Fatal("pending allowed work")
-				}
-			}
-			got, err = transitionExecutionFixture(t, s, st.ID, st.Revision, request)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got.Revision != st.Revision+1 {
-				t.Fatal("retry revision mismatch")
-			}
-			raw, err := filestore.ReadFile(s.Root, logPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !strings.Contains(string(raw), "\nExisting note.\n") || strings.Count(string(raw), "forged marker") != 1 || strings.Contains(string(raw), "\n## forged marker") {
-				t.Fatalf("history or escaped reason corrupted: %s", raw)
-			}
-			if _, err = transitionExecutionFixture(t, s, st.ID, st.Revision, request); err == nil {
-				t.Fatal("old expect accepted")
-			}
-		})
-	}
-}
-
-func TestReopenLogChangedHistoryRejected(t *testing.T) {
-	s := flowStore(t)
-	st, err := createExecutionFixture(t, s, "log conflict")
-	if err != nil {
-		t.Fatal(err)
-	}
-	name := workLogPath(s, st.ID)
-	seedWorkLog(t, s, st, "history\n")
-	count := 0
-	request := TransitionRequest{Action: "reopen", Stage: "discovery", Reason: "retry"}
-	st = prepareReopenFixture(t, s, st, request)
-	s.write = func(root, path string, raw []byte) error {
-		if !strings.Contains(path, "/history/") {
-			count++
-		}
-		if count == 3 {
-			return errors.New("final save failure")
-		}
-		return filestore.WriteFile(root, path, raw)
-	}
-	if _, err = transitionExecutionFixture(t, s, st.ID, st.Revision, request); err == nil {
-		t.Fatal("failure hidden")
-	}
-	s.write = nil
-	for _, mode := range []string{"changed", "deleted"} {
-		t.Run(mode, func(t *testing.T) {
-			if mode == "changed" {
-				filestore.WriteFile(s.Root, name, []byte("different history\n"))
-			} else {
-				os.Remove(filepath.Join(s.Root, name))
-			}
-			if _, err = transitionExecutionFixture(t, s, st.ID, st.Revision, request); err == nil {
-				t.Fatal("corrupt history accepted")
-			}
-		})
-	}
-}
 
 func TestDefinitionBindingMalformedState(t *testing.T) {
 	s := flowStore(t)
@@ -156,7 +50,6 @@ func TestDefinitionBindingMalformedState(t *testing.T) {
 	}
 	for _, bad := range []struct{ name, old, new string }{
 		{"missing hash", st.DefinitionHash, ""},
-		{"old schema", `"schema_version": 6`, `"schema_version": 5`},
 		{"forged pending", `"entry": null`, `"pending_reopen":{"revision":99,"from":"other","to":"discovery","reason":"x","at":"bad","log_hash":"bad"},"entry": null`},
 	} {
 		t.Run(bad.name, func(t *testing.T) {

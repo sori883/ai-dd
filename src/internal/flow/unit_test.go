@@ -24,7 +24,9 @@ func unitFixture(t *testing.T) (Store, State, string) {
 		t.Fatal(err)
 	}
 	worker := filepath.Join(t.TempDir(), "worker")
-	flowGit(t, s.Root, "worktree", "add", "--detach", worker, flowGit(t, s.Root, "rev-parse", "HEAD"))
+	if err := os.MkdirAll(worker, 0700); err != nil {
+		t.Fatal(err)
+	}
 	return s, st, worker
 }
 func TestFlowUnitClaimDependencyAndOverlap(t *testing.T) {
@@ -58,9 +60,6 @@ func TestFlowUnitResultIntegrationAndResume(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(worker, "a.txt"), []byte("done"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	flowGit(t, worker, "add", "a.txt")
-	flowGit(t, worker, "commit", "-qm", "unit a")
-	commit := flowGit(t, worker, "rev-parse", "HEAD")
 	request := UnitRequest{StepID: "s04", Action: "result", Unit: "a", Session: "worker-a", Root: worker, RunID: assignment.RunID}
 	bad := request
 	bad.RunID = "wrong"
@@ -91,7 +90,7 @@ func TestFlowUnitResultIntegrationAndResume(t *testing.T) {
 	if _, err := assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "integrate", Unit: "a"}); err == nil {
 		t.Fatal("unintegrated result accepted")
 	}
-	flowGit(t, s.Root, "merge", "--ff-only", commit)
+	copyUnitFile(t, worker, s.Root, "a.txt")
 	st, err = assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "integrate", Unit: "a"})
 	if err != nil || st.Config.Units[0].Status != "integrated" {
 		t.Fatalf("integration %+v %v", st, err)
@@ -100,7 +99,9 @@ func TestFlowUnitResultIntegrationAndResume(t *testing.T) {
 func TestFlowUnitTwoParallelThenDependent(t *testing.T) {
 	s, st, one := unitFixture(t)
 	two := filepath.Join(t.TempDir(), "worker-b")
-	flowGit(t, s.Root, "worktree", "add", "--detach", two, flowGit(t, s.Root, "rev-parse", "HEAD"))
+	if err := os.MkdirAll(two, 0700); err != nil {
+		t.Fatal(err)
+	}
 	var err error
 	for _, r := range []UnitRequest{{StepID: "s04", Action: "claim", Unit: "a", Session: "a", Root: one}, {StepID: "s04", Action: "claim", Unit: "b", Session: "b", Root: two}} {
 		st, err = assignmentUnit(t, s, st.ID, st.Revision, r)
@@ -116,9 +117,6 @@ func TestFlowUnitTwoParallelThenDependent(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(root, unit+".txt"), []byte(unit), 0600); err != nil {
 			t.Fatal(err)
 		}
-		flowGit(t, root, "add", unit+".txt")
-		flowGit(t, root, "commit", "-qm", unit)
-		commit := flowGit(t, root, "rev-parse", "HEAD")
 		a, err := s.assignment(st.ID, unit)
 		if err != nil {
 			t.Fatal(err)
@@ -127,15 +125,16 @@ func TestFlowUnitTwoParallelThenDependent(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		flowGit(t, s.Root, "merge", "--no-edit", commit)
+		copyUnitFile(t, root, s.Root, unit+".txt")
 		st, err = assignmentUnit(t, s, st.ID, st.Revision, UnitRequest{StepID: "s04", Action: "integrate", Unit: unit})
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 	three := filepath.Join(t.TempDir(), "worker-c")
-	head := flowGit(t, s.Root, "rev-parse", "HEAD")
-	flowGit(t, s.Root, "worktree", "add", "--detach", three, head)
+	if err := os.MkdirAll(three, 0700); err != nil {
+		t.Fatal(err)
+	}
 	st, err = saveExecutionFixture(t, s, st, st.Revision)
 	if err != nil {
 		t.Fatal(err)
@@ -175,4 +174,15 @@ func assignmentUnit(t *testing.T, s Store, id string, expect uint64, r UnitReque
 		r = prepareUnitResultFixture(t, s, st, r)
 	}
 	return s.Unit(id, expect, r)
+}
+
+func copyUnitFile(t *testing.T, from, to, name string) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(from, name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(to, name), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
 }

@@ -22,6 +22,10 @@ func TestRegistry(t *testing.T) {
 		if r.SchemaVersion != 2 || r.Epoch == "" || r.Revision != 1 {
 			t.Fatalf("invalid initialized registry: %+v", r)
 		}
+		again, err := s.Init(InitRequest{RequestID: "init-1", HumanConfirmed: true, Reason: "known work stopped and collected"})
+		if err != nil || again.Epoch != r.Epoch || again.Revision != r.Revision {
+			t.Fatalf("init retry: %+v %v", again, err)
+		}
 		alias := filepath.Join(t.TempDir(), "alias")
 		if err := os.Symlink(root, alias); err != nil {
 			t.Fatal(err)
@@ -45,23 +49,6 @@ func TestRegistry(t *testing.T) {
 			t.Fatal("failed write accepted")
 		}
 	})
-	for _, tc := range []struct{ name, raw string }{
-		{"broken", `{`}, {"unknown version", `{"schema_version":2}`}, {"unknown field", `{"schema_version":1,"unexpected":true}`},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			root := t.TempDir()
-			path := filepath.Join(root, registryPath)
-			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(path, []byte(tc.raw), 0600); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := (Store{Root: root}).Read(); err == nil {
-				t.Fatal("invalid registry accepted")
-			}
-		})
-	}
 	t.Run("root binding", func(t *testing.T) {
 		s := Store{Root: t.TempDir()}
 		r, err := s.Init(InitRequest{RequestID: "init", HumanConfirmed: true, Reason: "confirmed"})
@@ -83,23 +70,26 @@ func TestRegistry(t *testing.T) {
 }
 
 func TestRegistryRejectsDamagedRecords(t *testing.T) {
-	s, r, a, _ := registryFixture(t)
-	if _, err := s.Reserve(reserveRequest(r, a)); err != nil {
-		t.Fatal(err)
-	}
-	reg, err := s.Read()
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, tc := range []struct {
 		name   string
 		change func(*Registry)
 	}{
+		{"unsupported schema", func(r *Registry) { r.SchemaVersion = 99 }},
+		{"unknown field", func(r *Registry) {}},
+		{"broken JSON", func(r *Registry) {}},
 		{"missing root", func(r *Registry) { r.Reservations[0].Root = "" }},
 		{"unknown state", func(r *Registry) { r.Reservations[0].Status = "finished" }},
 		{"duplicate id", func(r *Registry) { r.Reservations = append(r.Reservations, r.Reservations[0]) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			s, r, a, _ := registryFixture(t)
+			if _, err := s.Reserve(reserveRequest(r, a)); err != nil {
+				t.Fatal(err)
+			}
+			reg, err := s.Read()
+			if err != nil {
+				t.Fatal(err)
+			}
 			original, _ := json.Marshal(reg)
 			var bad Registry
 			if err := json.Unmarshal(original, &bad); err != nil {
@@ -107,6 +97,12 @@ func TestRegistryRejectsDamagedRecords(t *testing.T) {
 			}
 			tc.change(&bad)
 			raw, _ := json.Marshal(bad)
+			if tc.name == "unknown field" {
+				raw = append([]byte(`{"unexpected":true,`), raw[1:]...)
+			}
+			if tc.name == "broken JSON" {
+				raw = []byte(`{`)
+			}
 			if err := os.WriteFile(filepath.Join(s.Root, registryPath), raw, 0600); err != nil {
 				t.Fatal(err)
 			}

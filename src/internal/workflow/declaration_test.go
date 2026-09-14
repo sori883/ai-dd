@@ -17,7 +17,6 @@ func TestDocumentDeclaration(t *testing.T) {
 		{"selector", "[{match: {type: Requirements, intent_id: '${intent_id}'}, count: one, version: accepted, accepted_at: discovery}]", "[]", false},
 		{"output", "[]", "[{role: plan, path: '${knowledge_root}/design/${intent_id}/plan.md', metadata: {type: ImplementationPlan, intent_id: '${intent_id}'}}]", false},
 		{"declared", "[{declared: intent_documents}]", "[{declared: intent_documents}]", false},
-		{"old refs", "[{refs: config.adr.refs, version: current}]", "[]", true},
 		{"input path", "[{path: '${knowledge_root}/a.md', version: current}]", "[]", true},
 		{"output no metadata", "[]", "[{role: plan, path: '${knowledge_root}/a.md'}]", true},
 		{"unknown match", "[{match: {type: Note, unknown: true}, count: one, version: current}]", "[]", true},

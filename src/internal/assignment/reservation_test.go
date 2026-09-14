@@ -3,26 +3,13 @@ package assignment
 import (
 	"os"
 	"os/exec"
-	"path/filepath"
 	"testing"
 )
 
 func registryFixture(t *testing.T) (Store, Registry, string, string) {
 	t.Helper()
 	root := t.TempDir()
-	run := func(dir string, args ...string) {
-		t.Helper()
-		c := exec.Command("git", args...)
-		c.Dir = dir
-		if out, err := c.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %s %v", args, out, err)
-		}
-	}
-	run(root, "init", "-q")
-	run(root, "-c", "user.name=Probe", "-c", "user.email=probe@example.invalid", "commit", "--allow-empty", "-qm", "base")
-	a, b := filepath.Join(t.TempDir(), "a"), filepath.Join(t.TempDir(), "b")
-	run(root, "worktree", "add", "--detach", a)
-	run(root, "worktree", "add", "--detach", b)
+	a, b := t.TempDir(), t.TempDir()
 	s := Store{Root: root}
 	r, err := s.Init(InitRequest{RequestID: "init", HumanConfirmed: true, Reason: "confirmed"})
 	if err != nil {
@@ -40,19 +27,12 @@ func TestReservation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reserve first: %v", err)
 	}
-	if first.ID == "" || first.TaskName == "" || first.Status != "reserved" {
-		t.Fatalf("invalid reservation: %+v", first)
-	}
-	again, err := s.Reserve(req)
-	if err != nil || again.ID != first.ID {
-		t.Fatalf("retry: %+v %v", again, err)
-	}
 	changed := req
 	changed.Root = b
 	if _, err := s.Reserve(changed); err == nil {
 		t.Fatal("changed request id accepted")
 	}
-	for _, field := range []string{"space", "intent", "session", "alias"} {
+	for _, field := range []string{"space", "intent", "session"} {
 		t.Run(field, func(t *testing.T) {
 			other := req
 			other.RequestID = "other-" + field
@@ -63,22 +43,12 @@ func TestReservation(t *testing.T) {
 				other.IntentID = "22222222222222222222222222222222"
 			case "session":
 				other.CoordinatorSession = "other"
-			case "alias":
-				other.Root = filepath.Join(t.TempDir(), "alias")
-				if err := os.Symlink(a, other.Root); err != nil {
-					t.Fatal(err)
-				}
+
 			}
 			if _, err := s.Reserve(other); err == nil {
 				t.Fatal("occupied root accepted")
 			}
 		})
-	}
-	other := req
-	other.RequestID = "request-2"
-	other.Root = b
-	if _, err := s.Reserve(other); err != nil {
-		t.Fatalf("separate root: %v", err)
 	}
 	release := ReleaseRequest{RegistryEpoch: r.Epoch, RequestID: "release-1", PreviousRunStopped: true, NoMoreRequests: true, Reason: "results collected, no pending processes"}
 	if _, err := s.Release(first.ID, "main", first.EntryRevision, release); err != nil {

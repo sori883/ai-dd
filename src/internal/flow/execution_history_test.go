@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/sori883/ai-dd/src/internal/filestore"
+	"github.com/sori883/ai-dd/src/internal/okfmemory"
 	"strings"
 	"testing"
 )
@@ -221,6 +222,7 @@ func TestExecutionPlanReopenHistoryEarlyInitialization(t *testing.T) {
 
 func TestExecutionPlanReopenHistoryLogRetry(t *testing.T) {
 	s, st := completedDiscovery(t)
+	seedWorkLog(t, s, st, "old history\n")
 	var err error
 	st, err = s.Reopen(st.ID, st.Revision, "s02", "revisit")
 	if err != nil {
@@ -258,6 +260,13 @@ func TestExecutionPlanReopenHistoryLogRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	doc, err := okfmemory.Parse(before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Metadata["generated"].(map[string]any)["at"] != current.PendingReopen.At || !strings.Contains(doc.Body, "old history\n") {
+		t.Fatal("pending timestamp/old body lost")
+	}
 	s.write = nil
 	current, err = s.DecidePlan(st.ID, st.Revision, decision)
 	if err != nil {
@@ -267,7 +276,7 @@ func TestExecutionPlanReopenHistoryLogRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(before) != string(after) || strings.Count(string(after), "## Reopen") != 1 || current.PendingReopen != nil {
+	if string(before) != string(after) || strings.Count(string(after), "## Reopen") != 1 || current.PendingReopen != nil || current.ExecutionPlan.Revision != 2 {
 		t.Fatal("retry duplicated or rewrote log")
 	}
 }
@@ -316,24 +325,28 @@ func TestExecutionPlanReopenHistoryCurrentReplacement(t *testing.T) {
 }
 
 func TestExecutionPlanReopenHistoryPendingBinding(t *testing.T) {
-	s, st := executionAt(t, "tdd")
-	if err := s.persist(st); err != nil {
-		t.Fatal(err)
-	}
-	st, err := s.Reopen(st.ID, st.Revision, st.CurrentStepID, "retry")
-	if err != nil {
-		t.Fatal(err)
-	}
-	d := st.ExecutionPlan.Draft
-	p := PendingReopen{Revision: st.Revision, From: st.Stage, To: st.Stage, Reason: d.Reason, At: "2026-09-09T00:00:00Z", LogHash: strings.Repeat("a", 64), LogAfterHash: strings.Repeat("b", 64), StepID: d.ReopenStepID, PlanRevision: d.Revision, PlanHash: PlanHash(*d), HadLog: true}
-	st.PendingReopen = &p
-	if err = s.persist(st); err != nil {
-		t.Fatal(err)
-	}
-	for _, field := range []string{"step", "revision", "hash", "reason"} {
+	for _, field := range []string{"step", "revision", "hash", "reason", "missing log hash", "bad log after hash"} {
 		t.Run(field, func(t *testing.T) {
+			s, st := executionAt(t, "tdd")
+			if err := s.persist(st); err != nil {
+				t.Fatal(err)
+			}
+			st, err := s.Reopen(st.ID, st.Revision, st.CurrentStepID, "retry")
+			if err != nil {
+				t.Fatal(err)
+			}
+			d := st.ExecutionPlan.Draft
+			p := PendingReopen{Revision: st.Revision, From: st.Stage, To: st.Stage, Reason: d.Reason, At: "2026-09-09T00:00:00Z", LogHash: strings.Repeat("a", 64), LogAfterHash: strings.Repeat("b", 64), StepID: d.ReopenStepID, PlanRevision: d.Revision, PlanHash: PlanHash(*d), HadLog: true}
+			st.PendingReopen = &p
+			if err = s.persist(st); err != nil {
+				t.Fatal(err)
+			}
 			bad := p
 			switch field {
+			case "missing log hash":
+				bad.LogHash = ""
+			case "bad log after hash":
+				bad.LogAfterHash = "bad"
 			case "step":
 				bad.StepID = "s01"
 			case "revision":

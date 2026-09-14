@@ -82,6 +82,11 @@ func TestExecutionPlanApprovalBootstrapFinish(t *testing.T) {
 	if _, err = s.Finish(st.ID, st.Revision); err == nil {
 		t.Fatal("unstarted execution finished")
 	}
+	st.Config.Units = []Unit{{ID: "old", StepID: st.CurrentStepID, Status: "integrated"}}
+	st, err = s.Save(st, st.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
 	st, err = s.Begin(st.ID, st.Revision)
 	if err != nil {
 		t.Fatal(err)
@@ -91,9 +96,15 @@ func TestExecutionPlanApprovalBootstrapFinish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if st.Review.StepID != "s01" {
+		t.Fatal("review assign lost StepID")
+	}
 	st, err = s.Review(st.ID, st.Revision, ReviewRequest{Action: "accept", Root: root, Session: "reviewer", Target: st.Review.Target, Status: "pass", Summary: "verified settings"})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if st.Review.StepID != "s01" || st.Review.Status != "pass" {
+		t.Fatal("review result lost StepID/pass")
 	}
 	if st.Approval == nil || st.Approval.Status != "pending" {
 		t.Fatal("review did not request human result approval")
@@ -116,6 +127,10 @@ func TestExecutionPlanApprovalBootstrapFinish(t *testing.T) {
 	if st.CurrentStepID != "s02" || st.Stage != "discovery" || st.ExecutionPlan.Approved != nil || st.Accepted["s01"].StepID != "s01" {
 		t.Fatalf("bootstrap completion: %+v", st)
 	}
+
+	if len(st.Config.Units) != 0 {
+		t.Fatal("previous units retained")
+	}
 }
 
 func discoveryApprovalFixture(t *testing.T) (Store, State) {
@@ -127,9 +142,6 @@ func discoveryApprovalFixtureOrder(t *testing.T, order []string) (Store, State) 
 	if len(order) > 0 {
 		boundaryFile(t, s, "aidlc/workflow/stages/integration.md", "---\nstage_id: integration\nagents: []\ninputs: []\noutputs: []\nsensors:\n  start: integration-start\n  end: integration-end\n---\n# Inspect\nInspect existing code.\n")
 	}
-	flowGit(t, s.Root, "init", "-q")
-	flowGit(t, s.Root, "add", ".")
-	flowGit(t, s.Root, "commit", "-qm", "installed")
 	st, err := s.Create("discovery")
 	if err != nil {
 		t.Fatal(err)
@@ -165,7 +177,7 @@ func discoveryApprovalFixtureOrder(t *testing.T, order []string) (Store, State) 
 		t.Fatal(err)
 	}
 	root := t.TempDir()
-	flowGit(t, s.Root, "worktree", "add", "--detach", root, "HEAD")
+	root = flowReviewRoot(t, s.Root)
 	st, err = s.Review(st.ID, st.Revision, ReviewRequest{Action: "assign", Root: root, Session: "reviewer", CoordinatorSession: "coordinator"})
 	if err != nil {
 		t.Fatal(err)
@@ -295,7 +307,7 @@ func TestExecutionPlanApprovalArbitraryOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 		root := t.TempDir()
-		flowGit(t, s.Root, "worktree", "add", "--detach", root, "HEAD")
+		root = flowReviewRoot(t, s.Root)
 		st, err = s.Review(st.ID, st.Revision, ReviewRequest{Action: "assign", Root: root, Session: "reviewer", CoordinatorSession: "coordinator"})
 		if err != nil {
 			t.Fatal(err)
@@ -319,59 +331,6 @@ func TestExecutionPlanApprovalArbitraryOrder(t *testing.T) {
 	}
 	if st.Status != "completed" {
 		t.Fatal("last selected execution did not complete")
-	}
-}
-
-func TestExecutionPlanApprovalFinishDropsPreviousUnits(t *testing.T) {
-	s := executionFixture(t)
-	st, err := s.Create("initialize")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.Finish(st.ID, st.Revision); err == nil {
-		t.Fatal("unstarted execution finished")
-	}
-	st.Config.Units = []Unit{{ID: "old", StepID: st.CurrentStepID, Status: "integrated"}}
-	st, err = s.Save(st, st.Revision)
-	if err != nil {
-		t.Fatal(err)
-	}
-	st, err = s.Begin(st.ID, st.Revision)
-	if err != nil {
-		t.Fatal(err)
-	}
-	root := t.TempDir()
-	st, err = s.Review(st.ID, st.Revision, ReviewRequest{Action: "assign", Root: root, Session: "reviewer", CoordinatorSession: "coordinator"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	st, err = s.Review(st.ID, st.Revision, ReviewRequest{Action: "accept", Root: root, Session: "reviewer", Target: st.Review.Target, Status: "pass", Summary: "verified settings"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if st.Approval == nil || st.Approval.Status != "pending" {
-		t.Fatal("review did not request human result approval")
-	}
-	if _, err = s.Finish(st.ID, st.Revision); err == nil {
-		t.Fatal("review alone finished execution")
-	}
-	if err = s.CaptureApproval(st.ID, "user", "", "A", "I approve the initialization result"); err != nil {
-		t.Fatal(err)
-	}
-	a := st.Approval
-	st, err = s.Decide(st.ID, st.Revision, ApprovalDecision{RequestID: a.RequestID, Target: a.Target, Decision: "approve", Session: "user", Turn: "A", Quote: "approve"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	st, err = s.Finish(st.ID, st.Revision)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if st.CurrentStepID != "s02" || st.Stage != "discovery" || st.ExecutionPlan.Approved != nil || st.Accepted["s01"].StepID != "s01" {
-		t.Fatalf("bootstrap completion: %+v", st)
-	}
-	if len(st.Config.Units) != 0 {
-		t.Fatal("previous run Units carried into next execution")
 	}
 }
 

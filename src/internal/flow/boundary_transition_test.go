@@ -118,7 +118,6 @@ func TestSelectedDocumentsIntegrationDoesNotFreezeMaterials(t *testing.T) {
 	boundaryDoc(t, s, st, "CurrentAnalysis")
 	boundaryDoc(t, s, st, "Architecture")
 	boundaryFile(t, s, "inputs/source", "before")
-	_ = flowGit(t, s.Root, "rev-parse", "HEAD")
 	fixtureExecutionStage(t, s, &st, "tdd")
 	st.Entry = &StageEntry{StepID: "s04", Stage: "tdd"}
 	st.Accepted = map[string]StageAcceptance{"s02": {StepID: "s02", Stage: "discovery", ReviewTarget: strings.Repeat("a", 64), Outputs: []FileVersion{boundaryVersion(t, s, req)}}, "s03": {StepID: "s03", Stage: "planning", ReviewTarget: strings.Repeat("b", 64), Outputs: []FileVersion{boundaryVersion(t, s, plan)}}}

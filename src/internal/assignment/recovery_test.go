@@ -114,18 +114,6 @@ func TestAssignmentRecoveryMissing(t *testing.T) {
 	}
 }
 
-func TestAssignmentRecoveryInitRetry(t *testing.T) {
-	s := Store{Root: t.TempDir()}
-	req := InitRequest{RequestID: "init", HumanConfirmed: true, Reason: "human confirmed known work stopped"}
-	first, err := s.Init(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	again, err := s.Init(req)
-	if err != nil || again.Epoch != first.Epoch {
-		t.Fatalf("init response loss: %+v %v", again, err)
-	}
-}
 func TestAssignmentRecoveryEscapedReleaseCapacity(t *testing.T) {
 	s, r, a, _ := registryFixture(t)
 	for i := 0; i < 100; i++ {

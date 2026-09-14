@@ -14,7 +14,6 @@ func TestCodeKBIntegrationFeature(t *testing.T) {
 			fixtureExecutionStage(t, s, &st, "integration")
 			prepareBoundaryStage(t, s, &st)
 			st.Accepted["s04"] = StageAcceptance{StepID: "s04", Stage: "tdd", ReviewTarget: strings.Repeat("c", 64)}
-			_ = flowGit(t, s.Root, "rev-parse", "HEAD")
 			st.Config = Config{Objective: "Work", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, VerificationPaths: []string{"."}, Plan: "implement", Tests: []string{"go test"}}
 			prepareBoundaryResults(t, s, &st)
 			boundaryDoc(t, s, st, "CurrentAnalysis")
@@ -45,35 +44,5 @@ func TestCodeKBIntegrationFeature(t *testing.T) {
 				t.Fatalf("old folder substituted for codekb: %+v", gate)
 			}
 		})
-	}
-}
-
-func TestCodeKBSharedDocuments(t *testing.T) {
-	s, st := boundaryFixture(t)
-	for _, kind := range []string{"CurrentAnalysis", "Architecture"} {
-		source := boundaryDoc(t, s, st, kind)
-		target := "aidlc/spaces/default/knowledge/codekb/" + filepath.Base(source)
-		if source != target {
-			if err := os.MkdirAll(filepath.Dir(filepath.Join(s.Root, target)), 0700); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Rename(filepath.Join(s.Root, source), filepath.Join(s.Root, target)); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	boundaryDoc(t, s, st, "Requirements")
-	st.Config.NoMaterialsReason = "new project"
-	if err := s.persist(st); err != nil {
-		t.Fatal(err)
-	}
-	var err error
-	st, err = s.Begin(st.ID, st.Revision)
-	if err != nil {
-		t.Fatal(err)
-	}
-	collector := s.endDocuments(st)
-	if len(collector.failures) > 0 {
-		t.Fatalf("codekb shared docs rejected: %v", collector.failures)
 	}
 }

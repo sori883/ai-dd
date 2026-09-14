@@ -20,9 +20,6 @@ func unitWithoutGitFixture(t *testing.T) (Store, State, assignment.Registry) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = os.RemoveAll(filepath.Join(s.Root, ".git")); err != nil {
-		t.Fatal(err)
-	}
 	registry, err := (assignment.Store{Root: s.Root}).Init(assignment.InitRequest{RequestID: "init", HumanConfirmed: true, Reason: "new project"})
 	if err != nil {
 		t.Fatal(err)
