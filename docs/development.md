@@ -69,7 +69,8 @@ loopでは実装計画のtargeted testだけを実行します。全package/race
 ```sh
 go test -count=1 ./src/internal/flow -run '^TestFlow'
 go test -count=1 ./src/internal/app ./src/internal/cli -run '^TestFlow'
-go test -count=1 ./src/internal/install ./src/internal/workspace ./src/internal/okfmemory -run '^TestFlow'
+go test -count=1 ./src/internal/install -run '^Test(CodexManifestParity|DocumentDistributionRuleSelector)$'
+go test -count=1 ./src/internal/workspace ./src/internal/okfmemory -run '^TestFlow'
 go test -count=1 ./src/cmd/aidlc -run '^TestFlowCommand'
 ```
 
@@ -151,7 +152,7 @@ fresh installは `.codex/agents/aidlc-{researcher,requirements,stage-planner,wor
 workerはworkspace-write、残る4担当はread-only。
 model/effortは定義で固定せず利用者設定を継承する。共有stateとKnowledge/ADRの保存は調整役が担当する。
 既存配置を自動上書きする更新機能ではないため、利用には5定義とaidlc/aidlc-cli/okf-agent-memoryの3skillが配置された環境が必要。
-配置原稿との一致は `go test -count=1 ./src/internal/install -run '^TestProductAgent'` で確認する。
+配置原稿との一致は `go test -count=1 ./src/harness/codex -run '^TestDistribution$'` と `go test -count=1 ./src/internal/install -run '^TestCodexManifestParity$'` で確認する。
 実際のnamed agent起動は固定Codex環境で別途検証し、配置testだけで実行や任意の成果品質を保証しない。
 
 専用のaidlc-stage-plannerはdiscovery内で要件整理・調査結果が揃った後にメインAIが呼び出します。

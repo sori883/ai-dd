@@ -53,3 +53,7 @@ Releaseの公開・tag作成はこの依頼の対象ではない。
 ## M1の実施結果
 
 M1の24入口削除・構文拒否fixture軽量化と生存保証は、[M1結果](../../design/test-reduction-m1-result.md)に記録した。独立レビュー、final、同headのCIとマージは親が続けて確認する。
+
+## M2の実施結果
+
+26候補の削減・集約・理由付き保持は[M2結果](../../design/test-reduction-m2-result.md)に記録した。検証の所有境界を維持し、独立review・final・同head CI・mergeは親が確認する。

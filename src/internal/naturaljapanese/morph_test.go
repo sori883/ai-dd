@@ -33,17 +33,24 @@ func TestMorph(t *testing.T) {
 }
 func TestMorphNominal(t *testing.T) {
 	for _, tt := range []struct {
-		name, text string
-		count      int
-	}{{"short", strings.Repeat("猫が走る。", 5), 0}, {"long", strings.Repeat("猫が走る。", 500), 1}, {"nominal", strings.Repeat("猫が走る。", 500) + "猫。", 0}, {"masked", strings.Repeat("# 猫が走る。\n", 500) + "猫が走る。", 0}} {
+		name      string
+		sentences int
+		nominal   bool
+		want      int
+	}{
+		{"below sentence gate", 4, false, 0}, {"at sentence gate", 5, false, 1}, {"nominal", 5, true, 0},
+	} {
 		t.Run(tt.name, func(t *testing.T) {
-			ts, err := Analyze(Prepare(tt.text).Sentences)
-			if err != nil {
-				t.Fatal(err)
+			ts := []TokenizedSentence{}
+			for i := 0; i < tt.sentences; i++ {
+				pos := "動詞"
+				if tt.nominal && i == 0 {
+					pos = "名詞"
+				}
+				ts = append(ts, TokenizedSentence{Sentence: Sentence{Line: i + 1, Raw: strings.Repeat("猫", 500)}, Tokens: []Token{{Surface: "猫", Base: "猫", POS: []string{pos}}}})
 			}
-			fs := Morph(ts, 2000)
-			if countCategory(fs, "nominal_ending") != tt.count {
-				t.Fatal(fs)
+			if got := countCategory(Morph(ts, 2000), "nominal_ending"); got != tt.want {
+				t.Fatal(got)
 			}
 		})
 	}

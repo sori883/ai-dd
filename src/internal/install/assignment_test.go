@@ -1,7 +1,6 @@
 package install
 
 import (
-	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -43,36 +42,5 @@ func TestAssignmentContract(t *testing.T) {
 	}
 	if _, err := Relocate(root, "/new/aidlc", root, "/old/aidlc"); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestAssignmentContractDocumentRules(t *testing.T) {
-	root := t.TempDir()
-	if _, err := Codex(root, "/opt/aidlc"); err != nil {
-		t.Fatal(err)
-	}
-	bootstrap, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc/SKILL.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(bootstrap) > 4096 {
-		t.Fatalf("bootstrap %d bytes exceeds 4 KiB", len(bootstrap))
-	}
-	if !bytes.Contains(bootstrap, []byte("文書記録規約は [okf-agent-memory](../okf-agent-memory/SKILL.md)")) {
-		t.Fatal("bootstrap does not direct readers to document recording rules")
-	}
-	detail, err := os.ReadFile(filepath.Join(root, ".agents/skills/aidlc-cli/SKILL.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	okf, err := os.ReadFile(filepath.Join(root, ".agents/skills/okf-agent-memory/SKILL.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	detail = append(detail, okf...)
-	for _, rule := range []string{"ADRは判断のwhy・代替案・影響", "毎操作の日誌や一律ADRは作らない", "不要なら理由をreviewする", "outputsは期待する文書だけで、なければなし", "プログラム・テストコード・commitを文書outputsへ列挙せず", "共有文書のID/日時を形式だけのために更新しない"} {
-		if !bytes.Contains(detail, []byte(rule)) {
-			t.Errorf("deployed document rule missing: %s", rule)
-		}
 	}
 }

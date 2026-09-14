@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -204,6 +205,15 @@ func TestCreateSpaceScaffold(t *testing.T) {
 				name,
 				"# Organization defaults\n",
 			)
+			knowledge := filepath.Join(projectPath, "aidlc/spaces", name, "knowledge")
+			raw, err := os.ReadFile(filepath.Join(knowledge, "index.md"))
+			if err != nil || !strings.Contains(string(raw), "(codekb/index.md)") {
+				t.Fatal("missing CodeKB link", err)
+			}
+			if _, err := os.Lstat(filepath.Join(knowledge, "knowledge")); !os.IsNotExist(err) {
+				t.Fatal("nested knowledge directory", err)
+			}
+
 		})
 	}
 }

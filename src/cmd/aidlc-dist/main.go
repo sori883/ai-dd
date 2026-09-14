@@ -60,7 +60,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	o.Targets = strings.Split(*targets, ",")
-	if err := packageArchives(o); err != nil {
+	if err := packageRelease(o); err != nil {
 		fmt.Fprintln(stderr, "aidlc-dist:", err)
 		if errors.Is(err, errInvalidInput) {
 			return 2

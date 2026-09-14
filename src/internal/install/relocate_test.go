@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"github.com/sori883/ai-dd/src/core"
+	"github.com/sori883/ai-dd/src/harness/codex"
 	"github.com/sori883/ai-dd/src/internal/filestore"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -25,7 +27,17 @@ func relocateFixture(t *testing.T) (string, string, string) {
 	return root, root, "/missing/old aidlc"
 }
 func TestRelocateReferences(t *testing.T) {
-	root, oldRoot, oldBinary := relocateFixture(t)
+	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := codex.Binaries{AIDLC: "/missing/old aidlc", OKF: "/knowledge/old okf", Natural: "/words/old natural"}
+	updated := codex.Binaries{AIDLC: "/new/aidlc", OKF: "/new-knowledge/okf", Natural: "/new-words/natural"}
+	if _, err := CodexFrom(root, old, core.Files, codex.Files); err != nil {
+		t.Fatal(err)
+	}
+	oldRoot := root
 	p := filepath.Join(root, ".codex/hooks.json")
 	raw, err := os.ReadFile(p)
 	if err != nil {
@@ -41,7 +53,7 @@ func TestRelocateReferences(t *testing.T) {
 	if err := os.WriteFile(p, raw, 0644); err != nil {
 		t.Fatal(err)
 	}
-	result, err := Relocate(root, "/new/aidlc", oldRoot, oldBinary)
+	result, err := RelocateFrom(root, oldRoot, updated, old, core.Files, codex.Files)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,9 +61,9 @@ func TestRelocateReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old, _ := json.Marshal(shellQuote(oldBinary) + " __hook --project-dir " + shellQuote(oldRoot) + " --okf-binary " + shellQuote(filepath.Join(filepath.Dir(oldBinary), "okf")))
-	new, _ := json.Marshal(shellQuote("/new/aidlc") + " __hook --project-dir " + shellQuote(root) + " --okf-binary '/new/okf'")
-	want := bytes.ReplaceAll(raw, old, new)
+	oldCommand, _ := json.Marshal(shellQuote(old.AIDLC) + " __hook --project-dir " + shellQuote(oldRoot) + " --okf-binary " + shellQuote(old.OKF))
+	newCommand, _ := json.Marshal(shellQuote(updated.AIDLC) + " __hook --project-dir " + shellQuote(root) + " --okf-binary " + shellQuote(updated.OKF))
+	want := bytes.ReplaceAll(raw, oldCommand, newCommand)
 	if !bytes.Equal(got, want) || len(result.Paths) != 6 {
 		t.Fatalf("references not relocated: paths=%v\n%s", result.Paths, got)
 	}
@@ -59,7 +71,13 @@ func TestRelocateReferences(t *testing.T) {
 	if err != nil || !strings.Contains(string(skill), shellQuote("/new/aidlc")) {
 		t.Fatal("skill not updated", err)
 	}
-	again, err := Relocate(root, "/new/aidlc", oldRoot, oldBinary)
+	for name, binary := range map[string]string{"aidlc": updated.AIDLC, "okf-agent-memory": updated.OKF, "natural-japanese-go": updated.Natural} {
+		body, err := os.ReadFile(filepath.Join(root, ".agents/skills", name, "SKILL.md"))
+		if err != nil || !bytes.Contains(body, []byte(shellQuote(binary))) {
+			t.Fatalf("unmoved %s: %s %v", name, body, err)
+		}
+	}
+	again, err := RelocateFrom(root, oldRoot, updated, old, core.Files, codex.Files)
 	if err != nil || len(again.Paths) != 0 {
 		t.Fatalf("retry %+v %v", again, err)
 	}
@@ -100,66 +118,121 @@ func TestRelocateRejectsBeforeSaving(t *testing.T) {
 }
 
 func TestRelocatePartialAndConcurrentRetry(t *testing.T) {
-	for _, conflict := range []bool{false, true} {
-		t.Run(fmt.Sprint("conflict=", conflict), func(t *testing.T) {
+	paths := []string{".agents/skills/aidlc/SKILL.md", ".agents/skills/aidlc-cli/SKILL.md", ".agents/skills/okf-agent-memory/SKILL.md", ".agents/skills/natural-japanese-go/SKILL.md", ".agents/skills/natural-japanese-go/references/cli.md", ".codex/hooks.json"}
+	for _, tc := range []struct {
+		name, fail string
+		conflict   bool
+	}{
+		{name: "early skill", fail: paths[1]}, {name: "hooks", fail: paths[5]}, {name: "concurrent hooks", fail: paths[5], conflict: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			root, oldRoot, oldBinary := relocateFixture(t)
-			hooks := filepath.Join(root, ".codex/hooks.json")
-			original, err := os.ReadFile(hooks)
-			if err != nil {
+			before := map[string][]byte{}
+			for _, path := range paths {
+				raw, err := os.ReadFile(filepath.Join(root, path))
+				if err != nil {
+					t.Fatal(err)
+				}
+				before[path] = raw
+			}
+			user := filepath.Join(root, "user.md")
+			if err := os.WriteFile(user, []byte("keep"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			result, err := relocate(root, "/new/aidlc", oldRoot, oldBinary, func(r, p string, b []byte) error {
-				if strings.HasSuffix(p, "hooks.json") {
+			result, err := relocate(root, "/new/aidlc", oldRoot, oldBinary, func(r, path string, data []byte) error {
+				if path == tc.fail {
 					return errors.New("injected save failure")
 				}
-				if err := filestore.WriteFile(r, p, b); err != nil {
+				if err := filestore.WriteFile(r, path, data); err != nil {
 					return err
 				}
-				if conflict {
-					return os.WriteFile(hooks, append(original, ' '), 0644)
+				if tc.conflict {
+					return os.WriteFile(filepath.Join(root, paths[5]), append(append([]byte{}, before[paths[5]]...), ' '), 0644)
 				}
 				return nil
 			})
-			if err == nil || len(result.Paths) != 5 || len(result.Pending) != 1 || result.Pending[0] != ".codex/hooks.json" {
-				t.Fatalf("partial result %+v %v", result, err)
+			if err == nil {
+				t.Fatal("partial save succeeded")
 			}
-			if conflict && !strings.Contains(err.Error(), "concurrent asset change") {
+			if tc.conflict && !strings.Contains(err.Error(), "concurrent asset change") {
 				t.Fatal(err)
 			}
+			saved, pending := []string{}, []string{}
+			failed := false
+			for _, path := range paths {
+				failed = failed || path == tc.fail
+				raw, err := os.ReadFile(filepath.Join(root, path))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if failed {
+					pending = append(pending, path)
+					want := before[path]
+					if tc.conflict && path == paths[5] {
+						want = append(append([]byte{}, want...), ' ')
+					}
+					if !bytes.Equal(raw, want) {
+						t.Errorf("pending file changed: %s", path)
+					}
+				} else {
+					saved = append(saved, path)
+					if bytes.Equal(raw, before[path]) {
+						t.Errorf("saved file unchanged: %s", path)
+					}
+				}
+			}
+			if !reflect.DeepEqual(result.Paths, saved) || !reflect.DeepEqual(result.Pending, pending) {
+				t.Fatalf("partial result %+v want %v / %v", result, saved, pending)
+			}
 			retry, err := Relocate(root, "/new/aidlc", oldRoot, oldBinary)
-			if err != nil || len(retry.Paths) != 1 {
+			if err != nil || !reflect.DeepEqual(retry.Paths, pending) || len(retry.Pending) != 0 {
 				t.Fatalf("retry %+v %v", retry, err)
+			}
+			again, err := Relocate(root, "/new/aidlc", oldRoot, oldBinary)
+			if err != nil || len(again.Paths) != 0 || len(again.Pending) != 0 {
+				t.Fatalf("again %+v %v", again, err)
+			}
+			raw, err := os.ReadFile(user)
+			if err != nil || string(raw) != "keep" {
+				t.Fatal("changed user file", err)
 			}
 		})
 	}
 }
+
 func TestRelocateRejectsSymlinkAndEditedSkill(t *testing.T) {
-	for _, symlink := range []bool{false, true} {
-		t.Run(fmt.Sprint("symlink=", symlink), func(t *testing.T) {
+	for _, mode := range []string{"edited", "missing", "symlink"} {
+		t.Run(mode, func(t *testing.T) {
 			root, oldRoot, oldBinary := relocateFixture(t)
-			p := filepath.Join(root, ".agents/skills/aidlc/SKILL.md")
+			path := filepath.Join(root, ".agents/skills/natural-japanese-go/references/cli.md")
 			before, err := os.ReadFile(filepath.Join(root, ".codex/hooks.json"))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if symlink {
-				if err := os.Remove(p); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.Symlink("/unavailable/old", p); err != nil {
-					t.Fatal(err)
-				}
+			if mode == "edited" {
+				err = os.WriteFile(path, []byte("edited"), 0644)
 			} else {
-				if err := os.WriteFile(p, []byte("edited"), 0644); err != nil {
-					t.Fatal(err)
+				err = os.Remove(path)
+				if err == nil && mode == "symlink" {
+					err = os.Symlink("/unavailable/old", path)
 				}
 			}
-			if _, err := Relocate(root, "/new/aidlc", oldRoot, oldBinary); err == nil {
-				t.Fatal("accepted unknown skill")
+			if err != nil {
+				t.Fatal(err)
 			}
-			after, _ := os.ReadFile(filepath.Join(root, ".codex/hooks.json"))
-			if !bytes.Equal(before, after) {
-				t.Fatal("hooks changed")
+			result, err := Relocate(root, "/new/aidlc", oldRoot, oldBinary)
+			if err == nil || len(result.Paths) != 0 {
+				t.Fatalf("accepted unknown skill: %+v %v", result, err)
+			}
+			after, err := os.ReadFile(filepath.Join(root, ".codex/hooks.json"))
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatal("hooks changed", err)
+			}
+			if mode == "edited" {
+				raw, err := os.ReadFile(path)
+				if err != nil || string(raw) != "edited" {
+					t.Fatal("user edit changed", err)
+				}
 			}
 		})
 	}
@@ -183,73 +256,5 @@ func TestRelocateSameReferencesAndLock(t *testing.T) {
 	after, _ := os.ReadFile(filepath.Join(root, ".codex/hooks.json"))
 	if !bytes.Equal(before, after) {
 		t.Fatal("changed locked asset")
-	}
-}
-
-func TestOKFSkillRelocate(t *testing.T) {
-	t.Parallel()
-	for _, state := range []string{"known", "edited", "missing"} {
-		t.Run(state, func(t *testing.T) {
-			root, oldRoot, oldBinary := relocateFixture(t)
-			path := filepath.Join(root, ".agents/skills/okf-agent-memory/SKILL.md")
-			before, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			switch state {
-			case "edited":
-				if err := os.WriteFile(path, append(before, []byte("user edit")...), 0644); err != nil {
-					t.Fatal(err)
-				}
-			case "missing":
-				if err := os.Remove(path); err != nil {
-					t.Fatal(err)
-				}
-			}
-			result, err := Relocate(root, "/new/aidlc", oldRoot, oldBinary)
-			if state != "known" {
-				if err == nil || len(result.Paths) != 0 {
-					t.Fatalf("invalid skill accepted: %+v %v", result, err)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			after, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			want := bytes.ReplaceAll(before, []byte(shellQuote(filepath.Join(filepath.Dir(oldBinary), "okf"))), []byte(shellQuote("/new/okf")))
-			if !bytes.Equal(after, want) {
-				t.Fatal("OKF skill binary reference was not relocated")
-			}
-		})
-	}
-}
-
-func TestRelocateComposedContractEditRejected(t *testing.T) {
-	root := t.TempDir()
-	if _, err := Codex(root, "/old/aidlc"); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(root, ".agents/skills/aidlc-cli/SKILL.md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	edited := bytes.Replace(data, []byte("共有stateの単独writer"), []byte("共有stateの複数writer"), 1)
-	if bytes.Equal(data, edited) {
-		t.Fatal("missing composed writer contract")
-	}
-	if err := os.WriteFile(path, edited, 0644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Relocate(root, "/new/aidlc", root, "/old/aidlc"); err == nil {
-		t.Fatal("accepted edited composed contract")
-	}
-	current, err := os.ReadFile(path)
-	if err != nil || !bytes.Equal(current, edited) {
-		t.Fatal("changed edited content", err)
 	}
 }

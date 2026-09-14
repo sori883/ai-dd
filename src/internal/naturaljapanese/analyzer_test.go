@@ -30,12 +30,3 @@ func TestAnalyzerEmpty(t *testing.T) {
 		t.Fatal(got, err)
 	}
 }
-func TestAnalyzerExamples(t *testing.T) {
-	got, err := Analyze(Prepare("これは結果をもたらした。この事実は意味する。そのことは証明した。これは生み出した。ことができる。").Sentences)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, s := range got {
-		t.Logf("%s: %+v", s.Text, s.Tokens)
-	}
-}

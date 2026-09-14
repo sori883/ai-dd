@@ -45,6 +45,6 @@ Markdownのfrontmatter、見出し、箇条書き、引用、表、フェンス�
 | low_lexical_diversity_mtld | 同じ対象語でTTR 0.72以下ごとにfactor、端数factorを含む前後平均MTLDが40未満 |
 | low_specificity | 80字以上の段落・内容語15以上。(固有名詞数＋数値hit数)/内容語数＋例示加点0.1−1.5×抽象名詞率が−0.15未満 |
 
-2026-09-12のローカルtargeted fixture確認では、固定原典のai-smelly.mdで25件、natural.mdで0件を観測しました。これはGo実装の観測値であり、Python版を同環境で実行した比較ではありません。testは期待件数への一致を要求せず、catalogの検出と分類・行番号を確認しています。モーラburstinessはそれぞれ約−0.365485、−0.169135でした。UniDicの短単位分割・Lemma表記・PronはSudachiと異なります。文脈の自然さと検出件数を同一視しません。
+2026-09-12のローカルtargeted fixture確認では、固定原典のai-smelly.mdで25件、natural.mdで0件を観測しました。これはGo実装の観測値であり、Python版を同環境で実行した比較ではありません。この観測用fixtureはテスト削減で除去し、現在はAnalyzer・Surface・Morph・Reportの意味とCLIの出力を個別に確認しています。過去の観測件数を合格条件にはしていません。モーラburstinessはそれぞれ約−0.365485、−0.169135でした。UniDicの短単位分割・Lemma表記・PronはSudachiと異なります。文脈の自然さと検出件数を同一視しません。
 
 baselineは行番号を同一性キーに含めません。集計5カテゴリはカテゴリ名、それ以外は空白を除いたexcerpt先頭20文字との組で多重集合比較します。同じ指摘が複数ある場合も1対1で対応付けます。誤った型や異なるengine/dictionary/schemaのbaselineはエラーです。

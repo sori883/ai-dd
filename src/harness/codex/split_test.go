@@ -14,9 +14,6 @@ func TestSplitCLIDistribution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(assets) != 71 {
-		t.Fatalf("assets %d, want 71", len(assets))
-	}
 	joined := ""
 	for _, a := range assets {
 		joined += string(a.Data)

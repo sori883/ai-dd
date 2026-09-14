@@ -1,19 +1,19 @@
 package install
 
 import (
-	"archive/tar"
 	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
 	"github.com/sori883/ai-dd/src/core"
 	"github.com/sori883/ai-dd/src/harness/codex"
 	"github.com/sori883/ai-dd/src/internal/release"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -35,16 +35,6 @@ func TestReleaseAssetValidation(t *testing.T) {
 				t.Fatal("unsafe release accepted")
 			}
 		})
-	}
-}
-func TestInstallFailure(t *testing.T) {
-	root := t.TempDir()
-	_, err := InstallRelease(context.Background(), ReleaseOptions{Root: root, Version: "v0.1.1", Target: "linux/amd64", Directory: t.TempDir()})
-	if err == nil {
-		t.Fatal("missing candidate accepted")
-	}
-	if _, err := os.Stat(filepath.Join(root, ".codex/hooks.json")); !os.IsNotExist(err) {
-		t.Fatal("failed validation wrote assets")
 	}
 }
 
@@ -112,15 +102,14 @@ func candidateFetch(files map[string][]byte) func(context.Context, string) ([]by
 	}
 }
 func TestReleaseAssetValidationCandidate(t *testing.T) {
-	for _, mode := range []string{"valid", "binary hash", "missing source", "other version", "schema", "extra path"} {
+	original := candidateFiles(t)
+	for _, mode := range []string{"valid", "binary hash", "other version"} {
 		t.Run(mode, func(t *testing.T) {
-			files := candidateFiles(t)
+			files := maps.Clone(original)
 			switch mode {
 			case "binary hash":
 				files["ai-dd_v0.1.1_linux_amd64.tar.gz"] = []byte("corrupted")
-			case "missing source":
-				delete(files, "ai-dd_v0.1.1_linux_amd64.tar.gz")
-			case "other version", "schema", "extra path":
+			case "other version":
 				name := "ai-dd_v0.1.1_linux_amd64.tar.gz"
 				entries, err := release.Unpack(files[name], false, release.MaxArchiveBytes)
 				if err != nil {
@@ -131,12 +120,6 @@ func TestReleaseAssetValidationCandidate(t *testing.T) {
 				if mode == "other version" {
 					m.Version = "v0.1.2"
 				}
-				if mode == "schema" {
-					m.SchemaVersion = 1
-				}
-				if mode == "extra path" {
-					m.Files = append(m.Files, release.BundleFile{Path: "core/../state.json", SHA256: strings.Repeat("a", 64), Size: 1, Mode: 0644})
-				}
 				entries["manifest.json"], _ = json.Marshal(m)
 				old := release.Hash(files[name])
 				files[name], err = release.ArchiveModes(entries, release.BundlePaths("linux/amd64"), false)
@@ -146,7 +129,11 @@ func TestReleaseAssetValidationCandidate(t *testing.T) {
 				files["SHA256SUMS"] = []byte(strings.ReplaceAll(string(files["SHA256SUMS"]), old, release.Hash(files[name])))
 			}
 			root := t.TempDir()
-			r, err := InstallRelease(context.Background(), ReleaseOptions{Root: root, Version: "v0.1.1", Target: "linux/amd64", fetch: candidateFetch(files)})
+			calls := []string{}
+			r, err := InstallRelease(context.Background(), ReleaseOptions{Root: root, Version: "v0.1.1", Target: "linux/amd64", fetch: func(ctx context.Context, name string) ([]byte, error) {
+				calls = append(calls, name)
+				return candidateFetch(files)(ctx, name)
+			}})
 			if mode != "valid" {
 				if err == nil || len(r.Paths) != 0 {
 					t.Fatalf("invalid release: %+v %v", r, err)
@@ -156,8 +143,26 @@ func TestReleaseAssetValidationCandidate(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(r.Paths) != 120 {
-				t.Fatalf("installed %d files", len(r.Paths))
+			if strings.Join(calls, ",") != "SHA256SUMS,ai-dd_v0.1.1_linux_amd64.tar.gz" {
+				t.Fatal("expected two downloads", calls)
+			}
+			for _, absent := range []string{"aidlc-install", "aidlc-dist"} {
+				if _, err := os.Lstat(filepath.Join(root, "aidlc/bin/v0.1.1", absent)); !os.IsNotExist(err) {
+					t.Fatal("non-runtime installed", absent, err)
+				}
+			}
+			for _, required := range []string{".codex/hooks.json", ".agents/skills/aidlc/SKILL.md", ".agents/skills/okf-agent-memory/SKILL.md", ".agents/skills/natural-japanese-go/SKILL.md"} {
+				raw, err := os.ReadFile(filepath.Join(root, required))
+				if err != nil || len(raw) == 0 || !slices.Contains(r.Paths, required) {
+					t.Fatal("missing release asset", required, err)
+				}
+			}
+			for _, product := range []string{"aidlc", "okf", "natural-japanese-go"} {
+				name := "aidlc/bin/v0.1.1/licenses/" + product + "/PRODUCT.txt"
+				raw, err := os.ReadFile(filepath.Join(root, name))
+				if err != nil || string(raw) != "license" || !slices.Contains(r.Paths, name) {
+					t.Fatal("missing exact release license", name, err)
+				}
 			}
 			for _, name := range []string{"aidlc", "okf", "natural-japanese-go"} {
 				raw, err := os.ReadFile(filepath.Join(root, "aidlc/bin/v0.1.1", name))
@@ -185,10 +190,14 @@ func TestInstallReservation(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("download did not start")
 	}
-	_, err := InstallRelease(context.Background(), ReleaseOptions{Root: root, Version: "v0.1.1", Target: "linux/amd64", fetch: candidateFetch(candidateFiles(t))})
+	called := false
+	_, err := InstallRelease(context.Background(), ReleaseOptions{Root: root, Version: "v0.1.1", Target: "linux/amd64", fetch: func(context.Context, string) ([]byte, error) {
+		called = true
+		return nil, errors.New("unexpected fetch")
+	}})
 	close(finish)
-	<-done
-	if err == nil {
+	firstErr := <-done
+	if err == nil || called || firstErr == nil {
 		t.Fatal("concurrent install accepted")
 	}
 }
@@ -229,51 +238,30 @@ func TestReleaseDownloadHTTP(t *testing.T) {
 		})
 	}
 }
-func TestReleaseAssetValidationUnsafeArchives(t *testing.T) {
-	for _, mode := range []string{"escape", "duplicate", "symlink"} {
-		t.Run(mode, func(t *testing.T) {
-			var b bytes.Buffer
-			g := gzip.NewWriter(&b)
-			tr := tar.NewWriter(g)
-			h := &tar.Header{Name: "aidlc", Typeflag: tar.TypeReg, Mode: 0755, Size: 1}
-			if mode == "escape" {
-				h.Name = "../aidlc"
-			}
-			if mode == "symlink" {
-				h.Typeflag = tar.TypeSymlink
-				h.Linkname = "/outside"
-				h.Size = 0
-			}
-			tr.WriteHeader(h)
-			if h.Size == 1 {
-				tr.Write([]byte("x"))
-			}
-			if mode == "duplicate" {
-				tr.WriteHeader(h)
-				tr.Write([]byte("x"))
-			}
-			tr.Close()
-			g.Close()
-			if _, err := release.Unpack(b.Bytes(), false, 1024); err == nil {
-				t.Fatal("unsafe archive accepted")
-			}
-		})
-	}
-}
 func TestReleaseAssetValidationOffline(t *testing.T) {
 	files := candidateFiles(t)
-	dir := t.TempDir()
-	for name, raw := range files {
-		if name != "SHA256SUMS" && name != "ai-dd_v0.1.1_linux_amd64.tar.gz" {
-			continue
-		}
-		if err := os.WriteFile(filepath.Join(dir, name), raw, 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	r, err := InstallRelease(context.Background(), ReleaseOptions{Root: t.TempDir(), Version: "v0.1.1", Target: "linux/amd64", Directory: dir})
-	if err != nil || len(r.Paths) != 120 {
-		t.Fatalf("offline %+v %v", r, err)
+	for _, mode := range []string{"valid", "missing"} {
+		t.Run(mode, func(t *testing.T) {
+			dir, root := t.TempDir(), t.TempDir()
+			if mode == "valid" {
+				for _, name := range []string{"SHA256SUMS", "ai-dd_v0.1.1_linux_amd64.tar.gz"} {
+					if err := os.WriteFile(filepath.Join(dir, name), files[name], 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			r, err := InstallRelease(context.Background(), ReleaseOptions{Root: root, Version: "v0.1.1", Target: "linux/amd64", Directory: dir})
+			if mode == "missing" {
+				if err == nil || len(r.Paths) != 0 {
+					t.Fatal("missing candidate accepted", r, err)
+				}
+				if _, err := os.Lstat(filepath.Join(root, ".codex/hooks.json")); !os.IsNotExist(err) {
+					t.Fatal("validation wrote assets", err)
+				}
+			} else if err != nil || !slices.Contains(r.Paths, "aidlc/bin/v0.1.1/aidlc") {
+				t.Fatalf("offline %+v %v", r, err)
+			}
+		})
 	}
 }
 
@@ -310,13 +298,14 @@ func TestInstallerCommandRelocation(t *testing.T) {
 }
 
 func TestReleaseLicenseRetention(t *testing.T) {
-	for _, mode := range []string{"fresh", "collision", "partial", "relocate", "tampered", "missing"} {
+	files := candidateFiles(t)
+	for _, mode := range []string{"collision", "partial", "relocate", "tampered", "missing"} {
 		t.Run(mode, func(t *testing.T) {
 			root, err := filepath.EvalSymlinks(t.TempDir())
 			if err != nil {
 				t.Fatal(err)
 			}
-			o := ReleaseOptions{Root: root, Version: "v0.1.1", Target: "linux/amd64", fetch: candidateFetch(candidateFiles(t))}
+			o := ReleaseOptions{Root: root, Version: "v0.1.1", Target: "linux/amd64", fetch: candidateFetch(files)}
 			path := "aidlc/bin/v0.1.1/licenses/okf/PRODUCT.txt"
 			if mode == "collision" {
 				if err := os.MkdirAll(filepath.Dir(filepath.Join(root, path)), 0755); err != nil {
@@ -356,9 +345,6 @@ func TestReleaseLicenseRetention(t *testing.T) {
 					t.Fatal("missing exact release license", product, string(raw), err)
 				}
 			}
-			if mode == "fresh" {
-				return
-			}
 			if mode == "tampered" {
 				if err := os.WriteFile(filepath.Join(root, path), []byte("changed"), 0644); err != nil {
 					t.Fatal(err)
@@ -381,21 +367,6 @@ func TestReleaseLicenseRetention(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
-	}
-}
-
-func TestReleaseBundleDownloads(t *testing.T) {
-	files := candidateFiles(t)
-	var calls []string
-	_, err := InstallRelease(context.Background(), ReleaseOptions{Root: t.TempDir(), Version: "v0.1.1", Target: "linux/amd64", fetch: func(ctx context.Context, name string) ([]byte, error) {
-		calls = append(calls, name)
-		return candidateFetch(files)(ctx, name)
-	}})
-	if err != nil {
-		t.Fatal("complete bundle must install", err)
-	}
-	if strings.Join(calls, ",") != "SHA256SUMS,ai-dd_v0.1.1_linux_amd64.tar.gz" {
-		t.Fatal("expected only two downloads", calls)
 	}
 }
 

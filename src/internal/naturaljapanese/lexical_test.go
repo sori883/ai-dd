@@ -28,19 +28,32 @@ func TestLexicalMTLD(t *testing.T) {
 }
 func TestLexical(t *testing.T) {
 	for _, tt := range []struct {
-		name, text string
-		count      int
-	}{{"short", strings.Repeat("猫が走る。", 999), 0}, {"boundary", strings.Repeat("猫が走る。", 1000), 2}, {"masked", strings.Repeat("# 猫が走る。\n", 1000) + "猫が走る。", 0}} {
+		name               string
+		chars, words, want int
+	}{
+		{"below character gate", 3999, 30, 0}, {"at character gate", 4000, 30, 2}, {"below word gate", 4000, 29, 0},
+	} {
 		t.Run(tt.name, func(t *testing.T) {
-			ts, err := Analyze(Prepare(tt.text).Sentences)
-			if err != nil {
-				t.Fatal(err)
+			tokens := make([]Token, tt.words)
+			for i := range tokens {
+				tokens[i] = Token{Base: "猫", POS: []string{"名詞"}}
 			}
-			if got := Lexical(ts); len(got) != tt.count {
+			ts := []TokenizedSentence{{Sentence: Sentence{Line: 1, Raw: strings.Repeat("猫", tt.chars)}, Tokens: tokens}}
+			if got := Lexical(ts); len(got) != tt.want {
 				t.Fatal(got)
 			}
 		})
 	}
+	t.Run("analyzer connection", func(t *testing.T) {
+		ts, err := Analyze(Prepare(strings.Repeat("猫が走る。", 1000)).Sentences)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := Lexical(ts)
+		if countCategory(got, "low_lexical_diversity_ttr") != 1 || countCategory(got, "low_lexical_diversity_mtld") != 1 {
+			t.Fatal(got)
+		}
+	})
 }
 func TestLexicalSpecificity(t *testing.T) {
 	for _, tt := range []struct {
@@ -62,7 +75,7 @@ func TestLexicalTTRBoundary(t *testing.T) {
 	for _, tt := range []struct {
 		name        string
 		types, want int
-	}{{"at", 18, 0}, {"below", 17, 1}, {"above", 19, 0}} {
+	}{{"at", 18, 0}, {"below", 17, 1}} {
 		t.Run(tt.name, func(t *testing.T) {
 			tokens := []Token{}
 			for i := 0; i < 40; i++ {

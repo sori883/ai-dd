@@ -1,7 +1,6 @@
 package naturaljapanese
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -13,10 +12,6 @@ func TestReport(t *testing.T) {
 	}
 	if r.SchemaVersion != 1 || r.Engine != "Kagome v2.11.0" || r.Dictionary != "UniDic v1.2.6" || r.File != "a.md" || len(r.Findings) != 1 || r.Findings[0].Line != 2 || r.Stats == nil {
 		t.Fatalf("%+v", r)
-	}
-	b, err := json.Marshal(r)
-	if err != nil || !json.Valid(b) {
-		t.Fatal(err)
 	}
 }
 func TestGenre(t *testing.T) {

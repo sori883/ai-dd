@@ -124,7 +124,7 @@ Release導入のcandidateFilesは同一testの中で1回だけ作る。caseご�
 まずTestDistribution/Parityへ独立期待値・固有assertを移し、次に固定SHAと文章/存在反復を削除する。追加Space側のassertも移してからCodeKBDistributionを除く。
 
 ```sh
-go test -count=1 ./src/harness/codex -run '^Test(Distribution|ContentDistribution|ContentSharedAgentContractAndTOML|ContentRoleDescriptionComesFromCommonSource|SplitCLIDistribution)$'
+go test -count=1 ./src/harness/codex -run '^Test(Distribution|ContentSharedAgentContractAndTOML|ContentRoleDescriptionComesFromCommonSource|SplitCLIDistribution)$'
 go test -count=1 ./src/internal/install -run '^Test(CodexManifestParity|DocumentDistributionRuleSelector|InstallBootstrapBinaryPathBudget|AssignmentContract|InstallHookCommands)$'
 go test -tags=integration -count=1 ./src/internal/workspace -run '^TestCreateSpaceScaffold$'
 go test -count=1 ./src/core ./src/internal/flow -run '^Test(ContentSharedChangeReachesEveryConsumer|ProcedureBoundarySharedOperationPropagation)$'

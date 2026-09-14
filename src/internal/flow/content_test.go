@@ -1,11 +1,7 @@
 package flow
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"io/fs"
-	"os"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -13,39 +9,6 @@ import (
 	"github.com/sori883/ai-dd/src/core"
 	coreworkflow "github.com/sori883/ai-dd/src/core/workflow"
 )
-
-func TestProcedureBoundaryComposedWorkflow(t *testing.T) {
-	got, err := coreworkflow.Render(core.Files, map[string]string{"skill-root": ".agents/skills"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := os.ReadFile("../install/testdata/five-cli-assets-sha256.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var baseline []struct {
-		Path   string
-		SHA256 string
-	}
-	if err := json.Unmarshal(raw, &baseline); err != nil {
-		t.Fatal(err)
-	}
-	count := 0
-	for _, asset := range baseline {
-		if !strings.HasPrefix(asset.Path, "aidlc/workflow/") {
-			continue
-		}
-		count++
-		name := strings.TrimPrefix(asset.Path, "aidlc/workflow/")
-		hash := sha256.Sum256(got[name])
-		if hex.EncodeToString(hash[:]) != asset.SHA256 {
-			t.Errorf("completed workflow bytes changed: %s", name)
-		}
-	}
-	if count != 7 {
-		t.Fatalf("checked %d assets, want 7", count)
-	}
-}
 
 func TestProcedureBoundarySharedOperationPropagation(t *testing.T) {
 	files := fstest.MapFS{}
