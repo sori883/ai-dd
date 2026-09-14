@@ -1,5 +1,9 @@
 # 開発プロジェクトRAM
 
+- [テスト削減の実装とIssue・PRマージを承認](decisions/2026-09-14-test-reduction-approved.md): 監査に基づく削除・統合を区切って実施する直接依頼。保存・承認・担当・配布の固有保証を残し、[6区切りの具体計画](../design/test-reduction-milestones.md)に従って各PRを検証後に順次マージする。[M1結果](../design/test-reduction-m1-result.md)に削除と生存保証を記録。
+
+- [テストの削除・統合候補監査](research/2026-09-14-test-suite-reduction-audit.md): mainの216 test fileとCIを静的監査。[全候補一覧](../test-suite-reduction-audit.md)に削る範囲・残す保証・コストを整理。テスト・コード・CIの変更は未実施。
+
 - [Windows directory同一性の修復05](decisions/2026-09-14-consolidated-release-bootstrap-repair-05.md): 短名・長名等の別表記を実在directoryの同一性で比較するtest修復。
 
 - [coverage子プロセス診断の修復04](decisions/2026-09-14-consolidated-release-bootstrap-repair-04.md): stdout/stderr分離と終了値を維持し、追加ホスト診断を許容する。

@@ -308,8 +308,6 @@ func TestEndSensorIntegrationDocuments(t *testing.T) {
 	}
 }
 
-func TestEndSensorUnitCommandPair(t *testing.T) { TestVerificationResults(t) }
-
 func TestStartSensorMissingViaSymlinkIsNotAbsent(t *testing.T) {
 	s, st := boundaryFixture(t)
 	if err := os.Symlink(filepath.Join(s.Root, "missing"), filepath.Join(s.Root, "aidlc/spaces/default/knowledge/codekb")); err != nil {

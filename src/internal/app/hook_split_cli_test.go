@@ -91,11 +91,3 @@ func TestHookSplitCLIPost(t *testing.T) {
 		t.Fatal("stale Rule allowed work")
 	}
 }
-
-func TestHookSplitCLIRepair(t *testing.T) {
-	TestBoundaryHookRepairAndBegin(t)
-	TestIntentDocumentsHookRepair(t)
-	TestIntentDocumentsUnregisteredInputRepair(t)
-	TestProcedureDriftBlocksDocumentRepair(t)
-	TestOKFSkillReadApprovalPending(t)
-}

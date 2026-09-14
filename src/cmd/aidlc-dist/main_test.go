@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,7 +52,15 @@ func TestDistCommand(t *testing.T) {
 		{"missing args", nil, true}, {"unknown flag", []string{"--publish"}, false}, {"positional", []string{"extra"}, false}, {"empty targets", []string{"--targets="}, false}, {"duplicate target", []string{"--targets", "linux/amd64,linux/amd64"}, false}, {"unknown target", []string{"--targets", "plan9/amd64"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			o := releaseFixture(t)
+			root := t.TempDir()
+			o := options{
+				InputDir:   filepath.Join(root, "input"),
+				OutputDir:  filepath.Join(root, "output"),
+				LicenseDir: filepath.Join(root, "licenses"),
+				Version:    "v0.1.2",
+				Commit:     strings.Repeat("a", 40),
+				GoVersion:  "go1.26.4",
+			}
 			args := append(commandArgs(o), tc.extra...)
 			if tc.empty {
 				args = nil
@@ -81,13 +88,6 @@ func TestDistCommand(t *testing.T) {
 			t.Fatal("changed existing output", err)
 		}
 	})
-}
-func TestProductCLI(t *testing.T) {
-	var out bytes.Buffer
-	code := run([]string{"--product", "bad"}, &out, io.Discard)
-	if code != 2 {
-		t.Fatal(code)
-	}
 }
 
 func TestFiveProductVersion(t *testing.T) {

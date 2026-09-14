@@ -396,39 +396,7 @@ func hookProbeLiteralCall(input string) (hookProbeCall, error) {
 	return hookProbeCall{}, fmt.Errorf("unknown recorded literal wrapper: %s", input)
 }
 
-func TestHookProbeCanonicalRoot(t *testing.T) {
-	parent := t.TempDir()
-	target := filepath.Join(parent, "repo")
-	if err := os.Mkdir(target, 0700); err != nil {
-		t.Fatal(err)
-	}
-	alias := filepath.Join(parent, "alias")
-	if err := os.Symlink(target, alias); err != nil {
-		t.Fatal(err)
-	}
-	expected, err := filepath.EvalSymlinks(target)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := hookProbeCanonicalRoot(alias)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != expected {
-		t.Fatalf("root = %q, want canonical trust/workdir root %q", got, expected)
-	}
-}
-
 func hookProbeCanonicalRoot(root string) (string, error) { return filepath.EvalSymlinks(root) }
-
-func TestHookProbeTrustConfig(t *testing.T) {
-	root := "/private/tmp/probe repo"
-	got := hookProbeTrustConfig(root)
-	want := `projects={"/private/tmp/probe repo"={trust_level="trusted"}}`
-	if got != want {
-		t.Fatalf("trust override = %q, want whole projects map %q", got, want)
-	}
-}
 
 func hookProbeTrustConfig(root string) string {
 	return "projects={" + strconvQuote(root) + `={trust_level="trusted"}}`

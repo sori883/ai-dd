@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"github.com/sori883/ai-dd/src/internal/release"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -52,20 +50,6 @@ func TestReleaseLicenseInputs(t *testing.T) {
 	}
 	if _, err := os.Stat(o.OutputDir); !os.IsNotExist(err) {
 		t.Fatal("invalid input wrote candidate")
-	}
-}
-func TestVersionedAssetsLicense(t *testing.T) {
-	o := releaseFixture(t)
-	if err := packageRelease(o); err != nil {
-		t.Fatal(err)
-	}
-	raw := mustRead(t, filepath.Join(o.OutputDir, release.BundleName(o.Version, "linux/amd64")))
-	files, err := release.Unpack(raw, false, release.MaxArchiveBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(files["LICENSES/PRODUCT.txt"], mustRead(t, "../../../LICENSE")) {
-		t.Fatal("source license missing")
 	}
 }
 
