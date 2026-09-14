@@ -69,3 +69,7 @@ CLI・Space・OKF等の36候補を[M4結果](../../design/test-reduction-m4-resu
 ## M5実装結果
 
 34候補のCLI入口・旧実験・診断tag・binary/Git準備を[M5結果](../../design/test-reduction-m5-result.md)へ記録した。targeted/compile/discoveryを区別し、実一周と同候補3OS Nativeは親final待ち。CorruptStateは現行fs.ErrInvalid→exit2へfixture期待を整合し、公開仕様は変更していない。
+
+## M6実装結果
+
+CIの6候補を[M6結果](../../design/test-reduction-m6-result.md)へ記録した。2Go設定の通常/filesystem検査、主要版のrace等、固定Go版の6target配布・3OS Nativeの責任を明確にした。限定構文・集合・入口確認を終え、独立review・final・同head checks・mergeは親が続ける。

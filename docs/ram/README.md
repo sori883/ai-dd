@@ -1,6 +1,10 @@
 # 開発プロジェクトRAM
 
-- [テスト削減M5完了](decisions/2026-09-14-test-reduction-m5-completed.md): 34候補を整理し、Issue #212・PR #213を完了。独立レビュー・final・修正版CI/3OS配布検査が成功。
+- [6区切りのテスト削減結果](decisions/2026-09-14-test-reduction-results.md): 151候補の処置、削除規模、保持した保証と検証責任。M6の最終証拠はIssue #214に紐づくPR。
+
+- [テスト削減M6結果](../design/test-reduction-m6-result.md): 6候補のCI実行責任を整理。限定確認済み、独立review・final・同head checks・merge待ち。
+
+- [テスト削減M5完了](decisions/2026-09-14-test-reduction-m5-completed.md): 34候補を整理し、Issue #212・PR #213を完了。独立レビュー・final・修正版CI/3OS配布検査が成功。main反映後もCI/Distributionが初回成功。
 - [テスト削減M6計画](../design/test-reduction-m6-plan.md): Issue #214。最後の6候補としてCIの実行責任を整理する。
 
 - [テスト削減M4完了](decisions/2026-09-14-test-reduction-m4-completed.md): 36候補を整理。Issue #210・PR #211を完了し、独立レビュー・final・3OS配布検査が成功。

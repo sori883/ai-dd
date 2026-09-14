@@ -11,3 +11,7 @@ head `a21cd21e1410d50f3ebcfd0585d4ce36bff66a3b` の親によるread-only final�
 修正版のPR [CI](https://github.com/sori883/ai-dd/actions/runs/34805390468)・[Distribution](https://github.com/sori883/ai-dd/actions/runs/34805390542)と作業branch側が成功した。6環境build、同候補の3OS Native/bootstrap、Windowsのpowershell.exe/pwsh.exeを確認した。Releaseやtagは公開していない。
 
 [全6区切りの承認](2026-09-14-test-reduction-approved.md)に従い、最後のM6でCIの重複実行を整理する。
+
+## main反映後の検証
+
+親がmain `d8aa6cf3415e3cfe984dc2f530bd9da398cdddc2` の [CI 34805764782](https://github.com/sori883/ai-dd/actions/runs/34805764782) と [Distribution 34805765866](https://github.com/sori883/ai-dd/actions/runs/34805765866) を確認し、両方とも初回実行で成功した。
