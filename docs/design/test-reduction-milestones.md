@@ -193,8 +193,8 @@ rollbackは問題のあるPRだけをrevertする別PRで行い、他者の変�
 
 | 区切り | 状態 | Issue / PR |
 |---|---|---|
-| M1 | [実装結果](test-reduction-m1-result.md)。レビュー・最終検証待ち | [#204](https://github.com/sori883/ai-dd/issues/204) / PR未作成 |
-| M2 | 未着手 | — |
+| M1 | 完了・main反映済み。[結果](test-reduction-m1-result.md) | [#204](https://github.com/sori883/ai-dd/issues/204) / [PR #205](https://github.com/sori883/ai-dd/pull/205) |
+| M2 | [具体計画](test-reduction-m2-plan.md)、実装中 | [#206](https://github.com/sori883/ai-dd/issues/206) / PR未作成 |
 | M3 | 未着手 | — |
 | M4 | 未着手 | — |
 | M5 | 未着手 | — |
