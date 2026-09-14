@@ -25,13 +25,21 @@ func TestBootstrapPowerShell(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	normal, err := release.Archive(map[string][]byte{"aidlc-install.exe": binary}, "aidlc-install.exe", true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, shell := range []string{"powershell.exe", "pwsh.exe"} {
 		t.Run(shell, func(t *testing.T) {
 			if _, err := exec.LookPath(shell); err != nil {
 				t.Fatal("required Windows verification shell missing", err)
 			}
 			for _, invocation := range []string{"file", "scriptblock"} {
-				for _, mode := range []string{"valid", "exit", "checksum", "missing", "version", "duplicate", "symlink", "start failure"} {
+				modes := []string{"valid", "exit", "checksum", "missing", "version", "duplicate", "symlink", "start failure"}
+				if invocation == "file" {
+					modes = []string{"valid", "exit", "start failure"}
+				}
+				for _, mode := range modes {
 					t.Run(invocation+"/"+mode, func(t *testing.T) {
 						base := t.TempDir()
 						fixture := filepath.Join(base, "fixture")
@@ -46,10 +54,7 @@ func TestBootstrapPowerShell(t *testing.T) {
 						if mode == "start failure" {
 							os.WriteFile(filepath.Join(bin, "curl.exe"), []byte("invalid first exe"), 0700)
 						}
-						raw, err := release.Archive(map[string][]byte{"aidlc-install.exe": binary}, "aidlc-install.exe", true)
-						if err != nil {
-							t.Fatal(err)
-						}
+						raw := normal
 						if mode == "duplicate" || mode == "symlink" {
 							var b bytes.Buffer
 							w := zip.NewWriter(&b)

@@ -9,28 +9,6 @@ import (
 	"github.com/sori883/ai-dd/src/core"
 )
 
-func TestContentDistribution(t *testing.T) {
-	assets, err := contentAssets(core.Files, Files, "/opt/aidlc")
-	if err != nil {
-		t.Fatal(err)
-	}
-	skills, agents := 0, 0
-	for _, asset := range assets {
-		if strings.HasSuffix(asset.Path, "/SKILL.md") {
-			skills++
-		}
-		if strings.HasPrefix(asset.Path, ".codex/agents/") {
-			agents++
-		}
-		if strings.Contains(asset.Path, "shared/") || strings.HasSuffix(asset.Path, ".tmpl") || strings.Contains(string(asset.Data), "{{include") {
-			t.Fatalf("internal source deployed: %s", asset.Path)
-		}
-	}
-	if skills != 15 || agents != 5 {
-		t.Fatalf("got %d skills and %d agents, want 15 and 5", skills, agents)
-	}
-}
-
 func TestContentSharedAgentContractAndTOML(t *testing.T) {
 	sources := fstest.MapFS{}
 	if err := fs.WalkDir(core.Files, ".", func(name string, entry fs.DirEntry, err error) error {

@@ -92,3 +92,9 @@ Distributionは確定commitから一度buildして梱包した7件をActions art
 手動実行の`tag`にはmainに含まれる既存tagを指定します。`create_draft`は既定falseで、trueならpackage・nativeが成功した後に7件を添付したRelease下書きを作ります。書込み権限はdraft jobだけです。remote tag変更、artifact不一致、API失敗、既存Releaseがあれば停止します。途中失敗で部分的な下書きが残った場合も自動削除・上書きしません。内容を確認してから公開します。
 
 公開候補の最終確認では、実五製品の依存と許諾集合、三OS検査、通常trustの実Codex操作を区別して記録します。独立reviewとfinal検証が終わるまでは、候補を検証済みの一般公開版と扱いません。
+
+## 配布検査の実行分担
+
+Packageの `TestReleaseCandidateMetadata` は6targetの各archiveを一度解釈し、同じ内容からlicense・原稿・実BuildInfoを照合します。各OSの `TestReleaseCandidateNative` はPackageが渡した同じartifactの自targetだけを静的確認して5CLIを起動します。公開直前の候補照合は別の境界として全targetを再確認します。
+
+正常bootstrap fixtureの圧縮は形式ごとに一度だけ行い、書込先は各caseで分離します。Windowsの各PowerShell engineではScriptBlockの8caseと `-File` の正常・子exit・起動失敗3caseを確認します。

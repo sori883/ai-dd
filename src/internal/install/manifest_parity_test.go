@@ -2,9 +2,6 @@ package install
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -12,48 +9,43 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/sori883/ai-dd/src/core"
+	"github.com/sori883/ai-dd/src/harness/codex"
+	"github.com/sori883/ai-dd/src/internal/workflow"
 )
 
-type deployedAsset struct {
-	Path   string      `json:"path"`
-	SHA256 string      `json:"sha256"`
-	Mode   fs.FileMode `json:"mode"`
-}
-
-// This fixture pins the renamed and attributed distribution for Issue #198.
-// The historical 69-asset fixture remains unchanged. Only the hook root is normalized.
 func TestCodexManifestParity(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "project's root")
 	if err := os.Mkdir(root, 0755); err != nil {
 		t.Fatal(err)
 	}
-	result, err := Codex(root, "/opt/aidlc's binary")
+	root, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err = filepath.EvalSymlinks(root)
+	binaries := codex.Binaries{AIDLC: "/opt/aidlc's binary", OKF: "/knowledge/okf", Natural: "/words/natural"}
+	result, err := CodexFrom(root, binaries, core.Files, codex.Files)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Replace only the encoded root token; preserve hook JSON formatting and all other bytes.
-	rootToken, err := json.Marshal(shellQuote(root))
+	assets, err := codex.DistributionFrom(root, binaries, core.Files, codex.Files)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixedToken, err := json.Marshal(shellQuote("/fixed/project"))
+	expected := map[string][]byte{}
+	for _, a := range assets {
+		expected[a.Path] = a.Data
+	}
+	control := filepath.Join(filepath.Dir(root), "mode-control")
+	if err := os.WriteFile(control, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(control)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A control file observes the caller's umask without changing process-wide state.
-	controlPath := filepath.Join(filepath.Dir(root), "mode-control")
-	if err := os.WriteFile(controlPath, nil, 0644); err != nil {
-		t.Fatal(err)
-	}
-	controlInfo, err := os.Stat(controlPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got []deployedAsset
+	paths := []string{}
 	err = filepath.WalkDir(root, func(name string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -61,57 +53,55 @@ func TestCodexManifestParity(t *testing.T) {
 		if entry.IsDir() {
 			return nil
 		}
-		path, err := filepath.Rel(root, name)
+		relative, err := filepath.Rel(root, name)
 		if err != nil {
 			return err
 		}
+		relative = filepath.ToSlash(relative)
 		raw, err := os.ReadFile(name)
 		if err != nil {
 			return err
 		}
-		if filepath.ToSlash(path) == ".codex/hooks.json" {
-			raw = bytes.ReplaceAll(raw, rootToken[1:len(rootToken)-1], fixedToken[1:len(fixedToken)-1])
-		}
-		info, err := entry.Info()
+		actual, err := entry.Info()
 		if err != nil {
 			return err
 		}
-		if !info.Mode().IsRegular() {
-			t.Errorf("deployed asset %q is not regular: %v", path, info.Mode())
+		want, ok := expected[relative]
+		if !ok || !bytes.Equal(raw, want) {
+			t.Errorf("unexpected deployed bytes: %s", relative)
 		}
-		sum := sha256.Sum256(raw)
-		got = append(got, deployedAsset{filepath.ToSlash(path), hex.EncodeToString(sum[:]), info.Mode()})
+		if !actual.Mode().IsRegular() || actual.Mode().Perm() != info.Mode().Perm() {
+			t.Errorf("wrong deployed mode: %s: %v", relative, actual.Mode())
+		}
+		paths = append(paths, relative)
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	slices.SortFunc(got, func(a, b deployedAsset) int { return strings.Compare(a.Path, b.Path) })
-	var paths []string
-	for _, asset := range got {
-		paths = append(paths, asset.Path)
+	slices.Sort(paths)
+	if len(paths) != len(expected) || !reflect.DeepEqual(paths, result.Paths) {
+		t.Fatalf("saved/returned paths differ: %v", result.Paths)
 	}
-	if !reflect.DeepEqual(paths, result.Paths) {
-		t.Fatalf("returned paths differ from saved files: %v", result.Paths)
+	if _, err := workflow.Load(root); err != nil {
+		t.Fatal(err)
 	}
-	raw, err := os.ReadFile("testdata/five-cli-assets-sha256.json")
+	if !strings.Contains(string(expected["aidlc/templates/adr.md"]), "type: adr") {
+		t.Error("wrong ADR type")
+	}
+	knowledge := filepath.Join(root, "aidlc/spaces/default/knowledge")
+	if !strings.Contains(string(expected["aidlc/spaces/default/knowledge/index.md"]), "(codekb/index.md)") {
+		t.Error("missing CodeKB link")
+	}
+	entries, err := os.ReadDir(knowledge)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var want []deployedAsset
-	if err := json.Unmarshal(raw, &want); err != nil {
-		t.Fatal(err)
+	for _, entry := range entries {
+		if entry.Name() == "ADR" || entry.Name() == "knowledge" {
+			t.Errorf("obsolete directory %s", entry.Name())
+		}
 	}
-	for i := range want {
-		want[i].Mode = controlInfo.Mode().Perm()
-	}
-	if len(got) != len(want) {
-		t.Fatalf("asset count = %d, want %d", len(got), len(want))
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("Codex deployment changed\ngot: %+v\nwant: %+v", got, want)
-	}
-	t.Logf("verified %d deployed files, bytes and regular modes", len(got))
 }
 
 func TestCodexManifestPreflight(t *testing.T) {
@@ -163,4 +153,43 @@ func TestCodexManifestPreflight(t *testing.T) {
 			}
 		})
 	}
+	for _, kind := range []string{"late skill", "nested parent link"} {
+		t.Run(kind, func(t *testing.T) {
+			root, outside := t.TempDir(), t.TempDir()
+			target := filepath.Join(root, ".agents/skills/verification-before-completion/SKILL.md")
+			if kind == "nested parent link" {
+				target = filepath.Dir(target)
+			}
+			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if kind == "late skill" {
+				if err := os.WriteFile(target, []byte("user asset"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.Symlink(outside, target); err != nil {
+				t.Fatal(err)
+			}
+			result, err := Codex(root, "/opt/aidlc")
+			if err == nil || len(result.Paths) != 0 {
+				t.Fatalf("preflight %+v %v", result, err)
+			}
+			for _, absent := range []string{".codex", "aidlc", ".agents/skills/aidlc"} {
+				if _, err := os.Lstat(filepath.Join(root, absent)); !os.IsNotExist(err) {
+					t.Fatal("partial install", absent, err)
+				}
+			}
+			entries, err := os.ReadDir(outside)
+			if err != nil || len(entries) != 0 {
+				t.Fatal("wrote outside root", err)
+			}
+			if kind == "late skill" {
+				raw, err := os.ReadFile(target)
+				if err != nil || string(raw) != "user asset" {
+					t.Fatal("changed collision", err)
+				}
+			}
+		})
+	}
+
 }

@@ -85,6 +85,10 @@ func TestBootstrap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	normal, err := release.Archive(map[string][]byte{"aidlc-install": binary}, "aidlc-install", false)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, mode := range []string{"valid", "checksum", "missing", "version", "duplicate", "symlink", "nested", "project", "architecture", "exit"} {
 		t.Run(mode, func(t *testing.T) {
 			base := t.TempDir()
@@ -99,10 +103,7 @@ func TestBootstrap(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			raw, err := release.Archive(map[string][]byte{"aidlc-install": binary}, "aidlc-install", false)
-			if err != nil {
-				t.Fatal(err)
-			}
+			raw := normal
 			// Duplicate/link fixtures are formed independently of the safe archive writer.
 			if mode == "nested" {
 				raw, err = release.Archive(map[string][]byte{"aidlc-install/evil": binary}, "aidlc-install/evil", false)

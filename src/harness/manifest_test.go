@@ -83,6 +83,9 @@ func TestManifestRejectsInvalid(t *testing.T) {
 		}{
 			name: "destination " + path, manifest: harness.Manifest{Mappings: []harness.Mapping{mapping}}, want: fs.ErrInvalid,
 		})
+		if path != "../escape" {
+			continue
+		}
 		mapping = single
 		mapping.Source = path
 		tests = append(tests, struct {

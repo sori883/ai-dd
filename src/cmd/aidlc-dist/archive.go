@@ -1,20 +1,13 @@
 package main
 
 import (
-	"archive/tar"
-	"archive/zip"
-	"bytes"
-	"compress/gzip"
 	"errors"
 	"fmt"
-	"github.com/sori883/ai-dd/src/core"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 )
 
 type options struct {
@@ -27,44 +20,6 @@ type options struct {
 
 var supportedTargets = []string{"darwin/amd64", "darwin/arm64", "linux/amd64", "linux/arm64", "windows/amd64", "windows/arm64"}
 var errInvalidInput = errors.New("invalid input")
-
-func packageArchives(o options) error {
-	if o.Product == "all" {
-		return packageRelease(o)
-	}
-	if o.Product == "" {
-		o.Product = "aidlc"
-	}
-	inputs, err := validateInputs(o)
-	if err != nil {
-		return err
-	}
-	if err := os.Mkdir(o.OutputDir, 0755); err != nil {
-		return fmt.Errorf("create new output directory: %w", err)
-	}
-	write := o.writeFile
-	if write == nil {
-		write = writeNewFile
-	}
-	m := manifest{SchemaVersion: 1, Version: o.Version, SourceCommit: o.Commit, GoVersion: o.GoVersion}
-	for _, input := range inputs {
-		windows := strings.HasPrefix(input.target, "windows/")
-		archive, err := productArchiveBytes(input.raw, windows, o.Product)
-		if err != nil {
-			return err
-		}
-		suffix, binary := ".tar.gz", o.Product
-		if windows {
-			suffix, binary = ".zip", o.Product+".exe"
-		}
-		name := o.Product + "_" + o.Version + "_" + strings.ReplaceAll(input.target, "/", "_") + suffix
-		if err := write(filepath.Join(o.OutputDir, name), archive); err != nil {
-			return fmt.Errorf("write %s (candidate is incomplete): %w", name, err)
-		}
-		m.Artifacts = append(m.Artifacts, artifact{Target: input.target, Binary: binary, BinarySHA256: checksum(input.raw), BinarySize: int64(len(input.raw)), Archive: name, ArchiveSHA256: checksum(archive), ArchiveSize: int64(len(archive))})
-	}
-	return writeManifest(o.OutputDir, m, write)
-}
 
 type binaryInput struct {
 	target string
@@ -127,80 +82,4 @@ func writeNewFile(path string, raw []byte) error {
 	}
 	_, err = file.Write(raw)
 	return errors.Join(err, file.Close())
-}
-
-func archiveBytes(raw []byte, windows bool) ([]byte, error) {
-	return productArchiveBytes(raw, windows, "aidlc")
-}
-func productArchiveBytes(raw []byte, windows bool, product string) ([]byte, error) {
-	binary := product
-	if windows {
-		binary += ".exe"
-	}
-	entries := map[string][]byte{binary: raw}
-	names := []string{binary}
-	if product == "natural-japanese-go" {
-		readme, err := core.Files.ReadFile("skills/natural-japanese-go/references/cli.md")
-		if err != nil {
-			return nil, err
-		}
-		entries["README.md"] = []byte(strings.ReplaceAll(string(readme), "@@NATURAL_BINARY@@", "natural-japanese-go"))
-		names = append(names, "README.md")
-		err = fs.WalkDir(core.Files, "skills/natural-japanese-go/licenses", func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() {
-				return nil
-			}
-			raw, err := core.Files.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			name := "LICENSES/" + filepath.Base(path)
-			entries[name] = raw
-			names = append(names, name)
-			return nil
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-	var buf bytes.Buffer
-	if windows {
-		z := zip.NewWriter(&buf)
-		for _, name := range names {
-			h := &zip.FileHeader{Name: name, Method: zip.Deflate, Modified: time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)}
-			h.SetMode(0644)
-			w, err := z.CreateHeader(h)
-			if err != nil {
-				return nil, err
-			}
-			if _, err := w.Write(entries[name]); err != nil {
-				return nil, err
-			}
-		}
-		if err := z.Close(); err != nil {
-			return nil, err
-		}
-	} else {
-		gz := gzip.NewWriter(&buf)
-		tr := tar.NewWriter(gz)
-		for _, name := range names {
-			mode := int64(0644)
-			if name == binary {
-				mode = 0755
-			}
-			if err := tr.WriteHeader(&tar.Header{Name: name, Mode: mode, Size: int64(len(entries[name])), Typeflag: tar.TypeReg}); err != nil {
-				return nil, err
-			}
-			if _, err := tr.Write(entries[name]); err != nil {
-				return nil, err
-			}
-		}
-		if err := errors.Join(tr.Close(), gz.Close()); err != nil {
-			return nil, err
-		}
-	}
-	return buf.Bytes(), nil
 }

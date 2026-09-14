@@ -16,29 +16,7 @@ func ValidVersion(v string) bool {
 	return regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`).MatchString(v) && !strings.Contains(v, "..")
 }
 func ValidCommit(v string) bool { return regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(v) }
-func MetadataNames(product string) (string, string) {
-	if product == "aidlc" {
-		return "manifest.json", "SHA256SUMS"
-	}
-	return product + "-manifest.json", product + "-SHA256SUMS"
-}
 
-type Artifact struct {
-	Target        string `json:"target"`
-	Binary        string `json:"binary"`
-	BinarySHA256  string `json:"binary_sha256"`
-	BinarySize    int64  `json:"binary_size"`
-	Archive       string `json:"archive"`
-	ArchiveSHA256 string `json:"archive_sha256"`
-	ArchiveSize   int64  `json:"archive_size"`
-}
-type Manifest struct {
-	SchemaVersion int        `json:"schema_version"`
-	Version       string     `json:"version"`
-	SourceCommit  string     `json:"source_commit"`
-	GoVersion     string     `json:"go_version"`
-	Artifacts     []Artifact `json:"artifacts"`
-}
 type DataFile struct {
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256"`

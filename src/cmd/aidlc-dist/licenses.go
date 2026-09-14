@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/sori883/ai-dd/src/core"
+	"github.com/sori883/ai-dd/src/internal/release"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -37,7 +38,7 @@ func releaseLicenses(o options) (map[string][]byte, error) {
 		files[name] = raw
 	}
 	for name, want := range map[string]string{"PRODUCT.txt": productLicenseSHA, "yaml-LICENSE.txt": "d18f6323b71b0b768bb5e9616e36da390fbd39369a81807cca352de4e4e6aa0b", "yaml-NOTICE.txt": "f6c2dd3a67b576eafb89b80200b8b1627230bf3821a0c14cb99a22ac19107d00", "Apache-2.0.txt": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"} {
-		if checksum(files[name]) != want {
+		if release.Hash(files[name]) != want {
 			return nil, fmt.Errorf("%w: wrong %s", errInvalidInput, name)
 		}
 	}

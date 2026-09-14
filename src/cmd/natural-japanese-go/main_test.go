@@ -22,10 +22,6 @@ func TestCommand(t *testing.T) {
 		{"version", []string{"--version"}, "", 0, "natural-japanese-go"},
 		{"rules", []string{"--list-rules", "--json"}, "", 0, "low_specificity"},
 		{"stdin", []string{"-", "--json"}, "猫が走る。", 0, "schema_version"},
-		{"missing", nil, "", 2, ""}, {"flag", []string{"--semantic", "-"}, "", 2, ""},
-		{"genre", []string{"--genre", "unknown", "-"}, "", 2, ""},
-		{"unreadable", []string{"/does-not-exist"}, "", 1, ""},
-		{"invalid utf8", []string{"-"}, string([]byte{255}), 1, ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var out, errout bytes.Buffer
@@ -65,11 +61,6 @@ func TestCommandFile(t *testing.T) {
 type failedWriter struct{}
 
 func (failedWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
-func TestCommandOutputError(t *testing.T) {
-	if code := run([]string{"--help"}, strings.NewReader(""), failedWriter{}, io.Discard); code != 1 {
-		t.Fatal(code)
-	}
-}
 func TestCommandAnalysis(t *testing.T) {
 	var out bytes.Buffer
 	if code := run([]string{"--json", "-"}, strings.NewReader("非常に重要。"), &out, io.Discard); code != 0 {
@@ -102,31 +93,25 @@ func TestCommandBaselineError(t *testing.T) {
 }
 
 func TestCommandBaselineExcerptRequired(t *testing.T) {
-	for _, missing := range []bool{true, false} {
-		var initial bytes.Buffer
-		if code := run([]string{"--json", "-"}, strings.NewReader("非常に重要。"), &initial, io.Discard); code != 0 {
-			t.Fatal(code)
-		}
-		var doc map[string]any
-		if err := json.Unmarshal(initial.Bytes(), &doc); err != nil {
-			t.Fatal(err)
-		}
-		f := doc["findings"].([]any)[0].(map[string]any)
-		if missing {
-			delete(f, "excerpt")
-		} else {
-			f["excerpt"] = ""
-		}
-		raw, _ := json.Marshal(doc)
-		path := filepath.Join(t.TempDir(), "baseline.json")
-		if err := os.WriteFile(path, raw, 0600); err != nil {
-			t.Fatal(err)
-		}
-		var out, stderr bytes.Buffer
-		code := run([]string{"--baseline", path, "-"}, strings.NewReader("猫。"), &out, &stderr)
-		if code != 1 || out.Len() != 0 || !strings.Contains(stderr.String(), "excerpt") {
-			t.Fatalf("missing=%v exit=%d stdout=%s stderr=%s", missing, code, &out, &stderr)
-		}
+	var initial bytes.Buffer
+	if code := run([]string{"--json", "-"}, strings.NewReader("非常に重要。"), &initial, io.Discard); code != 0 {
+		t.Fatal(code)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(initial.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	f := doc["findings"].([]any)[0].(map[string]any)
+	delete(f, "excerpt")
+	raw, _ := json.Marshal(doc)
+	path := filepath.Join(t.TempDir(), "baseline.json")
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out, stderr bytes.Buffer
+	code := run([]string{"--baseline", path, "-"}, strings.NewReader("猫。"), &out, &stderr)
+	if code != 1 || out.Len() != 0 || !strings.Contains(stderr.String(), "excerpt") {
+		t.Fatalf("missing excerpt exit=%d stdout=%s stderr=%s", code, &out, &stderr)
 	}
 }
 

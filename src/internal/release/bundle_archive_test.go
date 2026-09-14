@@ -33,85 +33,9 @@ func TestBundleArchiveRejectsUnsafe(t *testing.T) {
 				continue
 			} // ZIP has no hard-link member type.
 			t.Run(fmt.Sprintf("zip=%v/%s", windows, mode), func(t *testing.T) {
-				names := []string{"a"}
-				switch mode {
-				case "duplicate":
-					names = []string{"a", "a"}
-				case "parent collision":
-					names = []string{"a", "a/b"}
-				case "reverse collision":
-					names = []string{"a/b", "a"}
-				case "parent path":
-					names = []string{"../a"}
-				case "absolute path":
-					names = []string{"/a"}
-				case "backslash":
-					names = []string{`a\b`}
-				}
-				var b bytes.Buffer
-				if windows {
-					w := zip.NewWriter(&b)
-					for _, name := range names {
-						h := &zip.FileHeader{Name: name, Method: zip.Deflate}
-						perm := fs.FileMode(0644)
-						switch mode {
-						case "bad mode":
-							perm = 0777
-						case "symlink":
-							perm |= fs.ModeSymlink
-						case "special":
-							perm |= fs.ModeNamedPipe
-						}
-						h.SetMode(perm)
-						f, err := w.CreateHeader(h)
-						if err != nil {
-							t.Fatal(err)
-						}
-						if _, err := f.Write([]byte("payload")); err != nil {
-							t.Fatal(err)
-						}
-					}
-					if err := w.Close(); err != nil {
-						t.Fatal(err)
-					}
-				} else {
-					g := gzip.NewWriter(&b)
-					w := tar.NewWriter(g)
-					for _, name := range names {
-						h := &tar.Header{Name: name, Mode: 0644, Typeflag: tar.TypeReg, Size: 7}
-						switch mode {
-						case "bad mode":
-							h.Mode = 0777
-						case "symlink":
-							h.Typeflag = tar.TypeSymlink
-							h.Linkname = "outside"
-							h.Size = 0
-						case "hardlink":
-							h.Typeflag = tar.TypeLink
-							h.Linkname = "outside"
-							h.Size = 0
-						case "special":
-							h.Typeflag = tar.TypeFifo
-							h.Size = 0
-						}
-						if err := w.WriteHeader(h); err != nil {
-							t.Fatal(err)
-						}
-						if h.Size > 0 {
-							if _, err := w.Write([]byte("payload")); err != nil {
-								t.Fatal(err)
-							}
-						}
-					}
-					if err := w.Close(); err != nil {
-						t.Fatal(err)
-					}
-					if err := g.Close(); err != nil {
-						t.Fatal(err)
-					}
-				}
+				raw := unsafeArchiveFixture(t, windows, mode)
 				// Observe only the unpacker, without a manifest parser masking acceptance.
-				entries, modes, err := unpackBundle(b.Bytes(), windows)
+				entries, modes, err := unpackBundle(raw, windows)
 				if mode == "valid" {
 					if err != nil || len(entries) != 1 || string(entries["a"]) != "payload" || modes["a"] != 0644 {
 						t.Fatal("normal archive must unpack", entries, modes, err)
@@ -195,5 +119,108 @@ func TestBundleArchiveComplete(t *testing.T) {
 				t.Fatal("invalid bundle accepted", change)
 			}
 		})
+	}
+}
+
+func unsafeArchiveFixture(t *testing.T, windows bool, mode string) []byte {
+	t.Helper()
+	names := []string{"a"}
+	switch mode {
+	case "duplicate":
+		names = []string{"a", "a"}
+	case "parent collision":
+		names = []string{"a", "a/b"}
+	case "reverse collision":
+		names = []string{"a/b", "a"}
+	case "parent path":
+		names = []string{"../a"}
+	case "absolute path":
+		names = []string{"/a"}
+	case "backslash":
+		names = []string{`a\b`}
+	}
+	var b bytes.Buffer
+	if windows {
+		w := zip.NewWriter(&b)
+		for _, name := range names {
+			h := &zip.FileHeader{Name: name, Method: zip.Deflate}
+			perm := fs.FileMode(0644)
+			switch mode {
+			case "bad mode":
+				perm = 0777
+			case "symlink":
+				perm |= fs.ModeSymlink
+			case "special":
+				perm |= fs.ModeNamedPipe
+			}
+			h.SetMode(perm)
+			f, err := w.CreateHeader(h)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.Write([]byte("payload")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		g := gzip.NewWriter(&b)
+		w := tar.NewWriter(g)
+		for _, name := range names {
+			h := &tar.Header{Name: name, Mode: 0644, Typeflag: tar.TypeReg, Size: 7}
+			switch mode {
+			case "bad mode":
+				h.Mode = 0777
+			case "symlink":
+				h.Typeflag = tar.TypeSymlink
+				h.Linkname = "outside"
+				h.Size = 0
+			case "hardlink":
+				h.Typeflag = tar.TypeLink
+				h.Linkname = "outside"
+				h.Size = 0
+			case "special":
+				h.Typeflag = tar.TypeFifo
+				h.Size = 0
+			}
+			if err := w.WriteHeader(h); err != nil {
+				t.Fatal(err)
+			}
+			if h.Size > 0 {
+				if _, err := w.Write([]byte("payload")); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := g.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return b.Bytes()
+}
+
+func TestUnpackRejectsUnsafe(t *testing.T) {
+	for _, windows := range []bool{false, true} {
+		for _, mode := range []string{"valid", "duplicate", "symlink", "hardlink", "parent path", "absolute path", "backslash", "special"} {
+			if windows && mode == "hardlink" {
+				continue
+			}
+			t.Run(fmt.Sprintf("zip=%v/%s", windows, mode), func(t *testing.T) {
+				raw := unsafeArchiveFixture(t, windows, mode)
+				entries, err := Unpack(raw, windows, 1024)
+				if mode == "valid" {
+					if err != nil || string(entries["a"]) != "payload" {
+						t.Fatal(entries, err)
+					}
+				} else if err == nil {
+					t.Fatal("unsafe member accepted", mode)
+				}
+			})
+		}
 	}
 }

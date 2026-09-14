@@ -1,6 +1,10 @@
 # 開発プロジェクトRAM
 
-- [テスト削減の実装とIssue・PRマージを承認](decisions/2026-09-14-test-reduction-approved.md): 監査に基づく削除・統合を区切って実施する直接依頼。保存・承認・担当・配布の固有保証を残し、[6区切りの具体計画](../design/test-reduction-milestones.md)に従って各PRを検証後に順次マージする。[M1結果](../design/test-reduction-m1-result.md)に削除と生存保証を記録。
+- [Windows配布試験の一時失敗](research/2026-09-14-windows-native-rename-observation.md): M1マージ後にfixtureの移動が失敗。同じSHAの再実行は成功したが、原因は未特定。推測による製品変更はしていない。
+
+- [テスト削減M1完了](decisions/2026-09-14-test-reduction-m1-completed.md): 24入口を削除。Issue #204・PR #205でmainへ反映、独立review・全体検証・3OS配布検証が成功。
+
+- [テスト削減の実装とIssue・PRマージを承認](decisions/2026-09-14-test-reduction-approved.md): 監査に基づく削除・統合を区切って実施する直接依頼。保存・承認・担当・配布の固有保証を残し、[6区切りの具体計画](../design/test-reduction-milestones.md)に従って各PRを検証後に順次マージする。[M1結果](../design/test-reduction-m1-result.md)に削除と生存保証を記録。[M2結果](../design/test-reduction-m2-result.md)に26候補の処置を記録。
 
 - [テストの削除・統合候補監査](research/2026-09-14-test-suite-reduction-audit.md): mainの216 test fileとCIを静的監査。[全候補一覧](../test-suite-reduction-audit.md)に削る範囲・残す保証・コストを整理。テスト・コード・CIの変更は未実施。
 
