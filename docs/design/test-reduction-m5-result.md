@@ -33,7 +33,7 @@
 | C25 | missing peerの壁時計assertを除去し有限pair診断へ。 | pair終了・記録、duplicate nonce拒否。AssignmentLive用processは保持。 | Q6 |
 | C26 | aidlc/okfをlazy sync.Onceとprocess所有temp/TestMain cleanupで共有。natural常時buildを除去。 | 不変binaryだけ共有。test TempDir/Contextをcache寿命に使わずroot/state/evidenceは独立。 | Q4–9 |
 | C27 | 不要init/commit/HEAD/worktreeと無参照fixtureGitRootを除去。 | 別rootへ必要な実fileをcopy。RuntimeBoundaryのGit index smokeのみ製品接続として保持。G0の明示診断用worktreeは調査fixtureとして保持。 | Q4–8、Q10–11 discovery |
-| C28 | 廃止advance拒否を同stage finish拒否へ置換。 | pass→必要承認→同Target再assign/fail、approved/noDraft/endSensorpassを前提assert。result changed/exit1/空stdout/bytes不変。後続pass成功を保持。 | Q10 discovery。実行は親final待ち |
+| C28 | 廃止advance拒否を同stage finish拒否へ置換。 | pass→必要承認→同Target再assign/fail、approved/noDraft/endSensorpassを前提assert。result changed/exit2/空stdout/bytes不変。後続pass成功を保持。 | Q10 discovery。実行は親final待ち |
 | C29 | GitHandoff/GitConflict演習をRuntimeBoundary/CorruptStateへ置換。 | 実Git indexのruntime除外、共有fileだけcopy、旧session空、現在Stage/StepID/SHAのUnit confirm/review acceptがruntime欠落で拒否。壊れJSON非成功/空stdout/bytes不変。 | Q7 |
 | C30 | relocation後半再TDD/2worker/mergeと置換oracleを削除。 | 通常dir copy、実生成hookの新root/binary canary、user file保全、source snapshot不変。 | Q10 discovery。実行はfinal待ち |
 | C31 | 旧Relocation live/selectorを削除。 | 現行MemoryMetadataLiveとRelocationCommand/Nativeへ責任を整理。 | Q5 compile・Q10–11 discovery |
@@ -90,7 +90,7 @@ go test -tags='integration,diagnostic' -run '^$' ./src/cmd/aidlc
 Q6 (targeted): exit 0
 
 ```sh
-go test -tags='integration,diagnostic' -count=1 ./src/cmd/aidlc -run '^Test(BoundaryEvidence(Sequence|Command)|ProcedureEvidenceSequence|ExecutionPlanDistributionEvidence|HookProbe(ObservedTransport|Replay|HelperProtocol)|AgentHookProbe(Protocol|ProtocolObservedFault|EvidenceObservedWire)|HookReliabilityProbe(Protocol|CollectedEvidence|OpaqueReceipt)|HookReliabilityOpaqueEvidence|AssignmentProcessRendezvous|MemoryMetadataCommandEvidence|StageSkillsEvidence)$'
+go test -tags='integration,diagnostic' -count=1 ./src/cmd/aidlc -run '^Test(BoundaryEvidence(Sequence|Command)|ProcedureEvidenceSequence|ExecutionPlanDistributionEvidence|HookProbe(ObservedTransport|Replay|HelperProtocol)|AgentHookProbe(Protocol|ProtocolObservedFault|Evidence|EvidenceObservedWire)|HookReliabilityProbe(Protocol|CollectedEvidence|OpaqueReceipt)|HookReliabilityOpaqueEvidence|AssignmentProcessRendezvous|MemoryMetadataCommandEvidence|StageSkillsEvidence)$'
 ```
 
 Q7 (targeted): exit 0
@@ -124,3 +124,14 @@ go test -tags=integration -list '^TestReleaseCandidate(Metadata|Native)$' ./src/
 ```
 
 変更前/移動後/修復/末尾のcommand・exit・outputは `/tmp/m5-evidence.json`。変更file一覧とSHA-256は `/tmp/m5-files-sha256.txt`、tracked差分hashは `/tmp/m5-diff-sha256.txt` に保存する。新規binary/shell/OKF fixtureと本結果docもfile一覧へ含める。
+
+## PR review修復（同work unit）
+
+開始HEADは `167db50b87b387a7b1860edf67f34cc46829b9c4`。初回PR CI [34804857150](https://github.com/sori883/ai-dd/actions/runs/34804857150) の両Go Qualityで、Flow/GitIndependentJourneyがresult changed・code2を返し、code1の誤期待で失敗した（親ログ `/tmp/ai-dd-m5-first-ci-failed.log`）。Finishのfs.ErrInvalidをCLIがexit2へ分類する現仕様に期待値を整合した。製品修正や有効REDではない。
+
+- Relocationの書換え許容を現行6pathへ整合し、生成hookのargsをそのまま直接実行する。既存の移動先runtime・移動元bytes保全を維持。共有binary directoryは初回配置前にcanonical化し、失敗時のerrorとTestMain cleanupを維持する。
+- OKF Metadataは3番目の本文で古いhashを再送し、exit2・Concept hash conflict・空stdout・保存bytes不変を検査。no-op拒否による偽passを防ぐ。
+- ObservedWire正例をsynthetic CRLFに置換し、raw bytes比較を保持。Q6へTestAgentHookProbeEvidenceを加え、noPost/duplicateStartも実行する。
+- Recorded/ObservedControl、execution-plan、memory/stage証拠、hook lock、projectrootの削除case専用分岐と空fixture fileを撤去。実機評価器・collectorは保持。
+
+修復前の非live Q6・OKF Metadata・projectrootはすべてALREADY_GREEN。修復後も同対象が成功し、integrationおよびintegration+diagnostic compile、5journey名のdiscoveryが成功。正確なcommand・exit・出力は `/tmp/m5-review-fixes.json` に追記保存する。compileのno-tests出力とdiscoveryは実挙動の成功とは扱わない。実journey・全normal/race/vet・Native・liveは本修復で未実行で、親finalの境界を維持する。

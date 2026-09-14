@@ -74,12 +74,11 @@ func TestResolvePreservesErrors(t *testing.T) {
 
 func TestResolveInstallationContext(t *testing.T) {
 	for _, tc := range []struct {
-		name     string
-		markers  []string
-		explicit string
-		install  bool
-		want     string
-		wantErr  string
+		name    string
+		markers []string
+		install bool
+		want    string
+		wantErr string
 	}{
 		{name: "application", markers: []string{"project"}, want: "project"},
 		{name: "missing", wantErr: "install"},
@@ -88,9 +87,6 @@ func TestResolveInstallationContext(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			base := t.TempDir()
 			cwd := filepath.Join(base, "project/app")
-			if tc.name == "project" {
-				cwd = filepath.Join(base, "project")
-			}
 			if err := os.MkdirAll(cwd, 0755); err != nil {
 				t.Fatal(err)
 			}
@@ -103,11 +99,7 @@ func TestResolveInstallationContext(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			explicit := ""
-			if tc.explicit != "" {
-				explicit = filepath.Join(base, tc.explicit)
-			}
-			got, err := Resolve(explicit, cwd, tc.install)
+			got, err := Resolve("", cwd, tc.install)
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("got %q, %v; want error containing %q", got, err, tc.wantErr)

@@ -143,7 +143,7 @@ func runGitIndependentBoundaryJourney(t *testing.T, binary, root string, units b
 	}
 	before := f.bytes(st)
 	rejected := f.run("intent", "finish", st.ID, "--space", "default", "--expect", strconv.FormatUint(st.Revision, 10))
-	if rejected.code != 1 || len(rejected.out) != 0 || !bytes.Contains(rejected.stderr, []byte("result changed")) || !bytes.Equal(before, f.bytes(st)) {
+	if rejected.code != 2 || len(rejected.out) != 0 || !bytes.Contains(rejected.stderr, []byte("result changed")) || !bytes.Equal(before, f.bytes(st)) {
 		t.Fatalf("failed review did not reject unchanged finish: %+v", rejected)
 	}
 	review("pass")

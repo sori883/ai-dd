@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -88,7 +89,7 @@ func TestRelocationCommand(t *testing.T) {
 		before[runtimeIgnore] = filestore.Hash([]byte("*\n"))
 	}
 	for p, hash := range before {
-		if p == ".codex/hooks.json" || p == ".agents/skills/aidlc/SKILL.md" || p == ".agents/skills/aidlc-cli/SKILL.md" || p == ".agents/skills/okf-agent-memory/SKILL.md" {
+		if p == ".agents/skills/natural-japanese-go/SKILL.md" || p == ".agents/skills/natural-japanese-go/references/cli.md" || p == ".codex/hooks.json" || p == ".agents/skills/aidlc/SKILL.md" || p == ".agents/skills/aidlc-cli/SKILL.md" || p == ".agents/skills/okf-agent-memory/SKILL.md" {
 			continue
 		}
 		if after[p] != hash {
@@ -113,7 +114,12 @@ func TestRelocationCommand(t *testing.T) {
 	if !ok || args[0] != g.binary {
 		t.Fatal("bad relocated command")
 	}
-	runAIDLCCLI(t, args[0], clone, []byte(`{"hook_event_name":"UserPromptSubmit","session_id":"new-coordinator","turn_id":"turn"}`), args[1:]...)
+	cmd := exec.CommandContext(t.Context(), args[0], args[1:]...)
+	cmd.Dir = clone
+	cmd.Stdin = bytes.NewReader([]byte(`{"hook_event_name":"UserPromptSubmit","session_id":"new-coordinator","turn_id":"turn"}`))
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("generated hook: %v: %s", err, output)
+	}
 	if g.session("new-coordinator").Turn != "turn" {
 		t.Fatal("relocated hook did not initialize destination runtime")
 	}

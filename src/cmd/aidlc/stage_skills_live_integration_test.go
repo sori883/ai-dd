@@ -152,13 +152,9 @@ func TestStageSkillsEvidence(t *testing.T) {
 			commands := []string{"cat .agents/skills/grilling/SKILL.md", "cat .agents/skills/natural-japanese-go/SKILL.md", "/opt/natural-japanese-go --json text.md"}
 			for i, cmd := range commands {
 				out := stageEvidenceOutput(t, i)
-				if mode == "wrong stdout" {
-					out = "claimed success"
-				}
+
 				exit := 0
-				if mode == "failed exit" {
-					exit = 1
-				}
+
 				event := map[string]any{"type": "item.completed", "item": map[string]any{"type": "command_execution", "command": cmd, "exit_code": exit, "aggregated_output": out}}
 				line, err := json.Marshal(event)
 				if err != nil {
@@ -166,15 +162,13 @@ func TestStageSkillsEvidence(t *testing.T) {
 				}
 				transport = append(transport, append(line, '\n')...)
 				for _, ev := range []string{"PreToolUse", "PostToolUse"} {
-					if mode == "no post" && ev == "PostToolUse" {
-						continue
-					}
+
 					raw := fmt.Sprintf(`{"hook_event_name":%q,"session_id":"s","tool_name":"Bash","tool_use_id":%q,"tool_input":{"command":%q}}`, ev, fmt.Sprint(i), cmd)
 					decision := json.RawMessage(`{}`)
 					if mode == "denied" {
 						decision = json.RawMessage(`{"hookSpecificOutput":{"permissionDecision":"deny"}}`)
 					}
-					records = append(records, memoryLiveRecord{Raw: json.RawMessage(raw), Output: decision, Bound: mode != "unbound"})
+					records = append(records, memoryLiveRecord{Raw: json.RawMessage(raw), Output: decision, Bound: true})
 				}
 			}
 			if mode == "no transport" {

@@ -7,18 +7,19 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"github.com/sori883/ai-dd/src/internal/okfmemory"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/sori883/ai-dd/src/internal/okfmemory"
 )
 
 func TestMemoryMetadataCommand(t *testing.T) {
 	f := newMemoryFixture(t)
-	binary, root := f.binary, f.root
+	root := f.root
 	nested := filepath.Join(root, "drafts")
 	writeMemoryFixture(t, filepath.Join(nested, "body.md"), "# First body\n")
 	for _, tc := range []struct{ id, kind string }{{"codekb/example", "Design"}, {"rules/example", "Rule"}} {
@@ -61,9 +62,10 @@ func TestMemoryMetadataCommand(t *testing.T) {
 		if got := updated.Metadata["generated"].(map[string]any)["by"]; got != "human:editor" {
 			t.Fatal(got)
 		}
-		cmd := exec.Command(binary, "update", tc.id, "--space", "default", "--project-dir", root, "--body-file", filepath.Join(nested, "body.md"), "--actor", "human:editor", "--expect", before.Hash)
-		if err := cmd.Run(); err == nil {
-			t.Fatal("stale hash accepted")
+		writeMemoryFixture(t, filepath.Join(nested, "body.md"), "# Third body\n")
+		f.rejectCode(2, "Concept hash conflict", "update", tc.id, "--space", "default", "--body-file", filepath.Join(nested, "body.md"), "--actor", "human:editor", "--expect", before.Hash)
+		if !bytes.Equal(raw, memoryRead(t, filepath.Join(root, "aidlc/spaces/default/knowledge", tc.id+".md"))) {
+			t.Fatal("stale update changed saved Concept")
 		}
 		writeMemoryFixture(t, filepath.Join(nested, "body.md"), "# First body\n")
 	}
@@ -133,8 +135,6 @@ func TestMemorySaveRecovery(t *testing.T) {
 		t.Fatal("index not recovered")
 	}
 }
-
-// Synthetic answer provenance is explicitly test-only; live tests use real hooks.
 
 type memoryFixture struct {
 	t            *testing.T

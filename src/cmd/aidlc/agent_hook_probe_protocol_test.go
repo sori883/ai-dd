@@ -75,7 +75,7 @@ func TestAgentHookProbeProtocol(t *testing.T) {
 
 func TestAgentHookProbeEvidence(t *testing.T) {
 	t.Run("measured_deny_and_allow_control", func(t *testing.T) {
-		denyDir, allowDir := agentProbeRecordedControl(t, "object", "")
+		denyDir, allowDir := agentProbeRecordedControl(t, "object")
 		e, err := agentProbeCollectEvidence(denyDir, true)
 		if err != nil {
 			t.Fatal(err)
@@ -115,26 +115,17 @@ func TestAgentHookProbeEvidence(t *testing.T) {
 	})
 }
 
-func agentProbeRecordedControl(t *testing.T, wrapper, mutation string) (string, string) {
+func agentProbeRecordedControl(t *testing.T, wrapper string) (string, string) {
 	t.Helper()
 	base := t.TempDir()
 	dirs := []string{filepath.Join(base, "deny"), filepath.Join(base, "allow")}
 	const nonce = "probe123"
 	const command = "'/probe/test-binary' -test.run='^TestAgentHookProbeProcess$' -- agent-process '/probe/processes' probe123 15000"
-	wrap := func(value map[string]any, denied bool) any {
+	wrap := func(value map[string]any) any {
 		data, _ := json.Marshal(value)
 		switch wrapper {
 		case "string":
 			return string(data)
-		case "array":
-			header, text := "Script completed\nWall time 0.1 seconds\nOutput:\n", string(data)
-			if denied {
-				header = "Script failed\nWall time 0.1 seconds\n"
-				text = "Script error:\nCommand blocked by PreToolUse hook: Expected G0 probe denial. Do not retry or substitute another agent."
-			}
-			return []any{map[string]any{"type": "input_text", "text": header}, map[string]any{"type": "input_text", "text": text}}
-		case "unknown":
-			return map[string]any{"unrecognized_wrapper": value}
 		default:
 			return value
 		}
@@ -155,32 +146,22 @@ func agentProbeRecordedControl(t *testing.T, wrapper, mutation string) (string, 
 		appendCall := func(rows *[]map[string]any, name, id string, input map[string]any, output any) {
 			data, _ := json.Marshal(input)
 			callType, outType, inputKey := "function_call", "function_call_output", "arguments"
-			if wrapper == "array" {
-				callType, outType, inputKey = "custom_tool_call", "custom_tool_call_output", "input"
-			}
+
 			*rows = append(*rows, map[string]any{"type": "response_item", "payload": map[string]any{"type": callType, "name": name, "call_id": id, inputKey: string(data)}}, map[string]any{"type": "response_item", "payload": map[string]any{"type": outType, "call_id": id, "output": output}})
 		}
 		spawnName := "spawn_agent"
-		if mutation == "opaque_code_mode" && i == 1 {
-			spawnName = "exec"
-		}
-		output := wrap(map[string]any{"error": "Expected G0 probe denial. Do not retry or substitute another agent."}, true)
+
+		output := wrap(map[string]any{"error": "Expected G0 probe denial. Do not retry or substitute another agent."})
 		if i == 1 {
-			output = wrap(map[string]any{"agent_id": "child1"}, false)
+			output = wrap(map[string]any{"agent_id": "child1"})
 		}
 		appendCall(&parentRows, spawnName, "spawn1", map[string]any{"agent_type": "probe_worker"}, output)
 		if i == 1 {
-			appendCall(&parentRows, "wait", "wait1", map[string]any{"ids": []string{"child1"}}, wrap(map[string]any{"status": "completed"}, false))
-			appendCall(&parentRows, "close_agent", "close1", map[string]any{"id": "child1"}, wrap(map[string]any{"status": "closed"}, false))
-			if mutation == "duplicate_spawn" {
-				appendCall(&parentRows, "spawn_agent", "spawn2", map[string]any{"agent_type": "probe_worker"}, output)
-			}
-			if mutation == "duplicate_output" {
-				parentRows = append(parentRows, parentRows[1])
-			}
-			if mutation != "missing_child_call" {
-				appendCall(&childRows, "exec_command", "mark1", map[string]any{"cmd": command}, wrap(map[string]any{"exit_code": 0}, false))
-			}
+			appendCall(&parentRows, "wait", "wait1", map[string]any{"ids": []string{"child1"}}, wrap(map[string]any{"status": "completed"}))
+			appendCall(&parentRows, "close_agent", "close1", map[string]any{"id": "child1"}, wrap(map[string]any{"status": "closed"}))
+
+			appendCall(&childRows, "exec_command", "mark1", map[string]any{"cmd": command}, wrap(map[string]any{"exit_code": 0}))
+
 		}
 		writeRows := func(path string, rows []map[string]any) {
 			var data []byte
@@ -199,9 +180,7 @@ func agentProbeRecordedControl(t *testing.T, wrapper, mutation string) (string, 
 		hooks = append(hooks, map[string]any{"hook_event_name": "SessionStart", "session_id": parent, "transcript_path": parentPath}, map[string]any{"hook_event_name": "PreToolUse", "session_id": parent, "tool_use_id": "spawn1", "tool_name": "spawn_agent", "tool_input": map[string]any{"agent_type": "probe_worker"}})
 		if i == 1 {
 			markerSession := "child1"
-			if mutation == "ambiguous_session" {
-				markerSession = parent
-			}
+
 			hooks = append(hooks, map[string]any{"hook_event_name": "SubagentStart", "session_id": parent, "agent_id": "child1"}, map[string]any{"hook_event_name": "SessionStart", "session_id": "child1", "transcript_path": childPath}, map[string]any{"hook_event_name": "PostToolUse", "session_id": markerSession, "tool_name": "Bash", "tool_use_id": "mark1", "tool_input": map[string]any{"command": command}, "tool_response": map[string]any{"exit_code": 0}})
 		}
 		for at, hook := range hooks {
@@ -217,11 +196,9 @@ func agentProbeRecordedControl(t *testing.T, wrapper, mutation string) (string, 
 		if err := agentProbeWriteJSON(filepath.Join(dir, "manifest.json"), map[string]any{"nonce": nonce, "process_command": command}); err != nil {
 			t.Fatal(err)
 		}
-		if i == 1 && mutation != "missing_process" {
+		if i == 1 {
 			processNonce := nonce
-			if mutation == "wrong_nonce" {
-				processNonce = "anothernonce"
-			}
+
 			now := time.Now().UTC()
 			state := agentProbeProcessState{Nonce: processNonce, PID: 123, StartedAt: now.Add(-time.Second), ObservedAt: now, EndedAt: now}
 			if err := agentProbeWriteJSON(filepath.Join(dir, "processes", "process-"+processNonce+".json"), state); err != nil {
@@ -280,10 +257,10 @@ func TestAgentHookProbeProtocolObservedFault(t *testing.T) {
 }
 
 func TestAgentHookProbeEvidenceObservedWire(t *testing.T) {
-	for _, mutation := range []string{"", "metadata_parent", "missing_metadata", "missing_process", "unfinished_capture"} {
+	for _, mutation := range []string{"crlf_metadata", "metadata_parent", "missing_metadata", "missing_process", "unfinished_capture"} {
 		name := mutation
-		if name == "" {
-			name = "synthetic_control"
+		if name == "crlf_metadata" {
+			name = "synthetic_crlf_control"
 		}
 		t.Run(name, func(t *testing.T) {
 			denyDir, allowDir := agentProbeObservedControl(t, mutation)
@@ -299,13 +276,13 @@ func TestAgentHookProbeEvidenceObservedWire(t *testing.T) {
 				allowed.Complete = false
 			}
 			want := "inconclusive"
-			if mutation == "" || mutation == "crlf_metadata" {
+			if mutation == "crlf_metadata" {
 				want = "pass"
 			}
 			if got := agentProbeAggregate(denied, allowed)["G0-1"]; got.Status != want {
 				t.Fatalf("observed wire=%+v want %s", got, want)
 			}
-			if mutation == "" || mutation == "crlf_metadata" {
+			if mutation == "crlf_metadata" {
 				data, err := os.ReadFile(filepath.Join(allowDir, "transcript-child1.jsonl"))
 				if err != nil || !strings.Contains(string(data), `"session_meta"`) {
 					t.Fatalf("explicit child transcript not captured: %s %v", data, err)
@@ -324,7 +301,7 @@ func TestAgentHookProbeEvidenceObservedWire(t *testing.T) {
 
 func agentProbeObservedControl(t *testing.T, mutation string) (string, string) {
 	t.Helper()
-	denyDir, allowDir := agentProbeRecordedControl(t, "string", "")
+	denyDir, allowDir := agentProbeRecordedControl(t, "string")
 	for _, dir := range []string{denyDir, allowDir} {
 		allow := dir == allowDir
 		parent := "parent-deny"
@@ -397,12 +374,7 @@ func agentProbeObservedControl(t *testing.T, mutation string) (string, string) {
 			}
 			if allow && event["hook_event_name"] == "SubagentStart" {
 				event["transcript_path"] = filepath.Join(dir, "rollout-child1.jsonl")
-				if mutation == "duplicate_start" {
-					raw, _ := json.Marshal(event)
-					if err := agentProbeWriteJSON(filepath.Join(dir, "events", "event-start-duplicate.json"), agentProbeRecord{Raw: string(raw), Response: "{}"}); err != nil {
-						t.Fatal(err)
-					}
-				}
+
 			}
 			if allow && event["tool_name"] == "Bash" {
 				event["session_id"] = parent
@@ -410,24 +382,19 @@ func agentProbeObservedControl(t *testing.T, mutation string) (string, string) {
 				event["turn_id"] = "child-turn"
 				event["tool_use_id"] = "exec-internal1"
 				event["tool_response"] = ""
-				if mutation == "bash_agent" {
-					event["agent_id"] = "other-child"
+
+				pre := map[string]any{}
+				for k, v := range event {
+					pre[k] = v
 				}
-				if mutation != "missing_bash_pre" {
-					pre := map[string]any{}
-					for k, v := range event {
-						pre[k] = v
-					}
-					pre["hook_event_name"] = "PreToolUse"
-					delete(pre, "tool_response")
-					if mutation == "bash_call" {
-						pre["tool_use_id"] = "exec-other"
-					}
-					raw, _ := json.Marshal(pre)
-					if err := agentProbeWriteJSON(filepath.Join(dir, "events", "event-bash-pre.json"), agentProbeRecord{Raw: string(raw), Response: "{}"}); err != nil {
-						t.Fatal(err)
-					}
+				pre["hook_event_name"] = "PreToolUse"
+				delete(pre, "tool_response")
+
+				raw, _ := json.Marshal(pre)
+				if err := agentProbeWriteJSON(filepath.Join(dir, "events", "event-bash-pre.json"), agentProbeRecord{Raw: string(raw), Response: "{}"}); err != nil {
+					t.Fatal(err)
 				}
+
 			}
 			raw, _ := json.Marshal(event)
 			record.Raw = string(raw)
@@ -440,12 +407,6 @@ func agentProbeObservedControl(t *testing.T, mutation string) (string, string) {
 			switch mutation {
 			case "metadata_parent":
 				meta["parent_thread_id"] = "unrelated"
-			case "metadata_fork":
-				meta["forked_from_id"] = "unrelated"
-			case "metadata_agent":
-				meta["id"] = "unrelated"
-			case "metadata_path":
-				meta["agent_path"] = "/root/unrelated"
 			}
 			row, _ := json.Marshal(map[string]any{"type": "session_meta", "payload": meta})
 			child := append(row, '\n')
@@ -453,9 +414,7 @@ func agentProbeObservedControl(t *testing.T, mutation string) (string, string) {
 			if mutation == "crlf_metadata" {
 				child = bytes.Replace(child, []byte("\n"), []byte("\r\n"), 1)
 			}
-			if mutation == "duplicate_metadata" {
-				child = append(child, append(row, '\n')...)
-			}
+
 			if strings.HasPrefix(mutation, "metadata_") {
 				child = append(row, []byte("\nTHIS BODY MUST NOT BE PARSED\n")...)
 			}

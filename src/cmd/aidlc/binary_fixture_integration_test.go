@@ -27,6 +27,13 @@ func buildAIDLCBinary(t *testing.T) string {
 		if fixtureBinary.err != nil {
 			return
 		}
+		directory, err := filepath.EvalSymlinks(fixtureBinary.dir)
+		if err != nil {
+			fixtureBinary.err = err
+			return
+		}
+		fixtureBinary.dir = directory
+
 		suffix := ""
 		if runtime.GOOS == "windows" {
 			suffix = ".exe"

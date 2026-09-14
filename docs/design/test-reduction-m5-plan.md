@@ -72,7 +72,7 @@ M2マージ後の追加確認: `cmd/aidlc-dist/distribution_integration_test.go`
 
 M3 merge `b958199018563f24178106f0ec365bb2cfbedd8b` を独立した読み取り担当が限定確認した。M4はこれらのflow製品・testsを変更しない。以下は旧testを製品へ合わせるための仕様変更ではなく、意図した拒否を実際に通すfixture条件の具体化である。
 
-C28: `src/internal/flow/review_test.go::TestFlowReviewFailRecorded` はfail結果の保存のみ。`execution_approval_test.go::TestExecutionPlanApprovalBootstrapFinish` は承認待ちの拒否であり、`transition_test.go::TestFlowTransitionGatesAndStages` もpass時だけ承認を作るfixtureのため、failed review固有の代替とは扱えない。単にadvanceをfinishへ置換しない。最小案は、同じstageでpass結果と必要な計画・成果承認を用意し、Finish前に同じTargetへ再assign/accept failを記録すること。直前のApproval=approved、draftなし、End Sensor=passを確認し、finishのexit1・空stdout・result changed診断・state bytes不変を確認する。判定順の根拠は `approval.go::Finish`（固定head260–276行）。既存pass→承認→finish成功は維持する。この案は未実行で、製品の既存制約で成立しない場合は別エラーによる拒否を成功扱いせず親へ返す。
+C28: `src/internal/flow/review_test.go::TestFlowReviewFailRecorded` はfail結果の保存のみ。`execution_approval_test.go::TestExecutionPlanApprovalBootstrapFinish` は承認待ちの拒否であり、`transition_test.go::TestFlowTransitionGatesAndStages` もpass時だけ承認を作るfixtureのため、failed review固有の代替とは扱えない。単にadvanceをfinishへ置換しない。最小案は、同じstageでpass結果と必要な計画・成果承認を用意し、Finish前に同じTargetへ再assign/accept failを記録すること。直前のApproval=approved、draftなし、End Sensor=passを確認し、finishのexit2・空stdout・result changed診断・state bytes不変を確認する。判定順の根拠は `approval.go::Finish`（固定head260–276行）。既存pass→承認→finish成功は維持する。この案は未実行で、製品の既存制約で成立しない場合は別エラーによる拒否を成功扱いせず親へ返す。
 
 C29: `src/internal/flow/assignment_test.go::TestUnitAssignmentUnmanagedResult` は、正常managed claimと実bytes・正しいStepID/Session/RunID/SHA/結果証拠を用意し、RegistryのReservationsだけを空にしてUnit result拒否とstate/runtime bytes不変を所有する。`TestUnitAssignmentLegacyReassign` は現在schemaのneeds_confirmation Unitで予約なしreassign拒否を所有する。共有copy先のruntime file不存在、旧sessionの不在、Review runtime file不存在は同等保証として確認できないため、予定のCLI代表を維持する。
 
@@ -98,7 +98,7 @@ C29: `src/internal/flow/assignment_test.go::TestUnitAssignmentUnmanagedResult` �
 
 3. **小診断へ縮小（C14–C20/C22–C25/C33）**。命名は生存入口を維持する。以下は外部Codexを呼ばないreplay/protocolだけ。必要実記録がないtestは小syntheticに明記し、env依存skipだけで保証を移したことにしない。
 
-   `go test -tags='integration,diagnostic' -count=1 ./src/cmd/aidlc -run '^Test(BoundaryEvidence(Sequence|Command)|ProcedureEvidenceSequence|ExecutionPlanDistributionEvidence|HookProbe(ObservedTransport|Replay|HelperProtocol)|AgentHookProbe(Protocol|ProtocolObservedFault|EvidenceObservedWire)|HookReliabilityProbe(Protocol|CollectedEvidence|OpaqueReceipt)|HookReliabilityOpaqueEvidence|AssignmentProcessRendezvous|MemoryMetadataCommandEvidence|StageSkillsEvidence)$'`
+   `go test -tags='integration,diagnostic' -count=1 ./src/cmd/aidlc -run '^Test(BoundaryEvidence(Sequence|Command)|ProcedureEvidenceSequence|ExecutionPlanDistributionEvidence|HookProbe(ObservedTransport|Replay|HelperProtocol)|AgentHookProbe(Protocol|ProtocolObservedFault|Evidence|EvidenceObservedWire)|HookReliabilityProbe(Protocol|CollectedEvidence|OpaqueReceipt)|HookReliabilityOpaqueEvidence|AssignmentProcessRendezvous|MemoryMetadataCommandEvidence|StageSkillsEvidence)$'`
 
 4. **build共有・必要境界を先に移動・Git準備を削減（C26/C27/C29/C34）**。M3の無管理runとM4の所有者を確認し、runtime/corruptの移動先を先に成立させる。実process CAS・実保存失敗は通常integrationのまま。
 
@@ -137,3 +137,7 @@ P26は同head GitHub Distribution Package＋3OS Native/bootstrap（PS5.1/7含む
 C29 CorruptStateのexit1は誤期待だった。現行flow/store.go:252のfs.ErrInvalidがcli/command.go:74でexit2/invalid JSONへ分類されるため、非成功・空stdout・破損診断・state bytes不変という主保証を保ってexit2へ訂正した。親が同work unit内で修復を許可し、新例成功後に旧GitConflict演習を除去した。製品Goは変更しない。
 
 C27の別review rootでは旧worktreeに含まれた実 `.agents/.codex` bytesが必要なので、通常directoryへその内容をcopyする。C23はinstallのcanonical rootと現在の--okf-binary付きhookを使い、生成しないtrust設定は既存user fileとして用意する。詳しい処置と検証境界は[M5結果](test-reduction-m5-result.md)を参照。
+
+## review修復の根拠
+
+C28のexit1は入力fixtureの誤期待だった。現行Finishはresult changedをfs.ErrInvalidで返し、CLIはexit2に分類するため期待値のみ訂正する。Relocateの許容書換えは現行6pathへ整合し、生成hook引数は変換せず直接実行する。共有binaryの一時directoryは配置前にEvalSymlinksで正規化する。OKFの旧hash拒否は異なる本文でCAS判定を必要にし、CRLF正例はraw bytes保全を検査する。削除case専用のfixture分岐だけを撤去し、実機評価器・collector・製品Goは変更しない。

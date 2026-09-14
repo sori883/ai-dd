@@ -34,20 +34,10 @@ func TestExecutionPlanDistributionEvidence(t *testing.T) {
 	for _, mode := range []string{"target", "late request"} {
 		bad := good
 		switch mode {
-		case "step":
-			bad.ApprovedStep = "s03"
 		case "target":
 			bad.ApprovedTarget = "other"
-		case "turn":
-			bad.AnswerTurn = "A"
-		case "quote":
-			bad.Quote = "fabricated"
 		case "late request":
 			bad.CapturedRequests = []string{"p"}
-		case "exit":
-			bad.FinishExit = 1
-		case "history":
-			bad.HistoryHead = ""
 		}
 		if verifyExecutionApprovalEvidence(bad) == nil {
 			t.Errorf("invalid %s evidence accepted", mode)

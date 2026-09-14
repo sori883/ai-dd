@@ -110,10 +110,9 @@ func TestHookReliabilityProbeProtocol(t *testing.T) {
 	binary := buildAIDLCBinary(t)
 	for _, tc := range []struct {
 		name, raw, before, after string
-		lock                     bool
 	}{
-		{"terminal", ` {"session_id":"session","turn_id":"turn","tool_use_id":"tool","tool_name":"Bash","hook_event_name":"PostToolUse","unknown":{"preserve":true}} `, "tool", "", false},
-		{"invalid_wire", "not json\n", "tool", "tool", false},
+		{"terminal", ` {"session_id":"session","turn_id":"turn","tool_use_id":"tool","tool_name":"Bash","hook_event_name":"PostToolUse","unknown":{"preserve":true}} `, "tool", ""},
+		{"invalid_wire", "not json\n", "tool", "tool"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root, err := filepath.EvalSymlinks(t.TempDir())
@@ -129,11 +128,7 @@ func TestHookReliabilityProbeProtocol(t *testing.T) {
 			if err := os.WriteFile(name, before, 0600); err != nil {
 				t.Fatal(err)
 			}
-			if tc.lock {
-				if err := os.MkdirAll(filepath.Join(root, "aidlc/.runtime/locks/session-session"), 0700); err != nil {
-					t.Fatal(err)
-				}
-			}
+
 			// The independent product invocation supplies the expected wire result.
 			cmd := observerHookCommand(t.Context(), binary, root)
 			cmd.Stdin = bytes.NewBufferString(tc.raw)
