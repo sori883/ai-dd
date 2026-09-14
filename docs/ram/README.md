@@ -1,5 +1,9 @@
 # 開発プロジェクトRAM
 
+- [テスト削減M2完了](decisions/2026-09-14-test-reduction-m2-completed.md): 配布・配置・自然日本語の26候補を整理。Issue #206・PR #207を完了。Windowsの一時的な移動失敗の再発と同SHA再実行成功を記録。
+
+- [テスト削減M3計画](../design/test-reduction-m3-plan.md): Issue #208。工程・担当管理の39候補を7項目の順で整理する。
+
 - [Windows配布試験の一時失敗](research/2026-09-14-windows-native-rename-observation.md): M1マージ後にfixtureの移動が失敗。同じSHAの再実行は成功したが、原因は未特定。推測による製品変更はしていない。
 
 - [テスト削減M1完了](decisions/2026-09-14-test-reduction-m1-completed.md): 24入口を削除。Issue #204・PR #205でmainへ反映、独立review・全体検証・3OS配布検証が成功。
