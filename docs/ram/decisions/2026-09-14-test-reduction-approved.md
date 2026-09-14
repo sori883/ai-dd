@@ -49,3 +49,7 @@ Releaseの公開・tag作成はこの依頼の対象ではない。
 今回の直接承認とリポジトリの単独writer・独立review・final・自律merge規則を優先する。
 各PRを単独で正しい状態にしてmainへ取り込み、次の区切りへ進む。
 
+
+## M1の実施結果
+
+M1の24入口削除・構文拒否fixture軽量化と生存保証は、[M1結果](../../design/test-reduction-m1-result.md)に記録した。独立レビュー、final、同headのCIとマージは親が続けて確認する。

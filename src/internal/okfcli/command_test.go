@@ -43,5 +43,3 @@ func TestOKFHelp(t *testing.T) {
 		})
 	}
 }
-
-func TestOKFMemoryContract(t *testing.T) { TestOKFCommand(t) }

@@ -13,13 +13,6 @@ import (
 	"time"
 )
 
-// TestDistributionArchives verifies candidates built outside this test, without executing them.
-func TestDistributionArchives(t *testing.T) {
-	dir, e := releaseInputs(t)
-	verifyReleaseCandidate(t, dir, e)
-	t.Log("verified same six bundled archives; foreign binaries were not executed")
-}
-
 func distributionCommand(t *testing.T, dir, command string, args ...string) ([]byte, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
@@ -39,37 +32,7 @@ func distributionOK(t *testing.T, dir, command string, args ...string) []byte {
 	}
 	return out
 }
-func fixtureBinaryPath(t *testing.T, binary string) string {
-	t.Helper()
-	actual, err := filepath.EvalSymlinks(binary)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return actual
-}
 
-func TestDistributionBinaryPath(t *testing.T) {
-	root := t.TempDir()
-	realDir := filepath.Join(root, "real")
-	if err := os.Mkdir(realDir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	binary := filepath.Join(realDir, "aidlc")
-	if err := os.WriteFile(binary, []byte("fixture"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	alias := filepath.Join(root, "alias")
-	if err := os.Symlink(realDir, alias); err != nil {
-		t.Fatal(err)
-	}
-	want, err := filepath.EvalSymlinks(binary)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := fixtureBinaryPath(t, filepath.Join(alias, "aidlc")); got != want {
-		t.Fatalf("binary reference = %q, want installed physical path %q", got, want)
-	}
-}
 func writeFixture(t *testing.T, root, name string, raw []byte) {
 	t.Helper()
 	p := filepath.Join(root, filepath.FromSlash(name))
@@ -113,12 +76,3 @@ func withCustomHook(t *testing.T, raw []byte) []byte {
 	}
 	return []byte(strings.TrimSuffix(string(raw), ending) + ",\n    " + customHook + ending)
 }
-
-// TestDistributionJourney validates a manual procedure, not an automatic updater
-// or compatibility with an unknown future version. Both builds use this source.
-// Same-version relocation is exercised against the one verified release candidate.
-func TestDistributionJourney(t *testing.T) { TestReleaseCandidateNative(t) }
-
-func TestNaturalJapaneseDistributionArchives(t *testing.T) { TestReleaseCandidateMetadata(t) }
-
-func TestNaturalJapaneseDistributionJourney(t *testing.T) { TestReleaseCandidateNative(t) }

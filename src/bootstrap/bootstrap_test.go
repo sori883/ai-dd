@@ -13,12 +13,6 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	if os.Getenv("BOOTSTRAP_STREAM_HELPER") == "1" {
-		fmt.Fprintln(os.Stdout, `{"Paths":[]}`)
-		fmt.Fprintln(os.Stderr, "#< CLIXML progress")
-		code, _ := strconv.Atoi(os.Getenv("BOOTSTRAP_EXIT"))
-		os.Exit(code)
-	}
 	if os.Getenv("BOOTSTRAP_HELPER") == "1" {
 		name := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe")
 		switch name {
@@ -187,51 +181,6 @@ func TestBootstrap(t *testing.T) {
 			got, _ = os.ReadFile(calls)
 			if string(got) != "SHA256SUMS\n"+name+"\n" {
 				t.Fatal("downloads repeated", string(got))
-			}
-		})
-	}
-}
-
-func TestBootstrapOutputStreams(t *testing.T) {
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, code := range []int{0, 17} {
-		t.Run(strconv.Itoa(code), func(t *testing.T) {
-			cmd := exec.Command(exe)
-			cmd.Env = append(os.Environ(), "BOOTSTRAP_STREAM_HELPER=1", "BOOTSTRAP_EXIT="+strconv.Itoa(code))
-			stdout, stderr, err := bootstrapCommandOutput(cmd)
-			if string(stdout) != "{\"Paths\":[]}\n" || !strings.HasPrefix(string(stderr), "#< CLIXML progress\n") || strings.Contains(string(stderr), `{"Paths":[]}`) {
-				t.Fatalf("output streams mixed: stdout=%q stderr=%q", stdout, stderr)
-			}
-			if code == 0 {
-				if err != nil {
-					t.Fatal(err)
-				}
-			} else if e, ok := err.(*exec.ExitError); !ok || e.ExitCode() != code {
-				t.Fatal("failure status lost", err)
-			}
-		})
-	}
-}
-
-func TestBootstrapProjectDirectory(t *testing.T) {
-	project := filepath.Join(t.TempDir(), "project space 日本語")
-	if err := os.Mkdir(project, 0700); err != nil {
-		t.Fatal(err)
-	}
-	other := t.TempDir()
-	missing := filepath.Join(project, "missing")
-	for _, tc := range []struct {
-		name, actual, expected string
-		want                   bool
-	}{
-		{"same", project, project, true}, {"alternate spelling", project + string(os.PathSeparator) + ".", project, true}, {"different", other, project, false}, {"missing actual", missing, project, false}, {"missing expected", project, missing, false}, {"both missing", missing, missing, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := sameProjectDirectory(tc.actual, tc.expected); got != tc.want {
-				t.Fatalf("same directory=%v want=%v", got, tc.want)
 			}
 		})
 	}

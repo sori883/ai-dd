@@ -187,25 +187,6 @@ func validateCandidateBundle(raw []byte, e releaseExpectation, target, digest st
 	return nil
 }
 
-func TestReleaseCandidateNativeSelection(t *testing.T) {
-	for _, target := range append(append([]string{}, release.Targets...), "freebsd/amd64") {
-		sums := map[string]string{}
-		for _, platform := range release.Targets {
-			sums[release.BundleName("v0.1.2", platform)] = strings.Repeat("a", 64)
-		}
-		got, err := selectBundleNative(sums, "v0.1.2", target)
-		if target == "freebsd/amd64" {
-			if err == nil {
-				t.Fatal("unknown target accepted")
-			}
-		} else if err != nil || got != release.BundleName("v0.1.2", target) {
-			t.Fatal(got, err)
-		}
-	}
-	if _, err := selectBundleNative(map[string]string{}, "v0.1.2", "linux/amd64"); err == nil {
-		t.Fatal("missing native accepted")
-	}
-}
 func selectBundleNative(sums map[string]string, version, target string) (string, error) {
 	name := release.BundleName(version, target)
 	if !release.ValidVersion(version) || !slices.Contains(release.Targets, target) || !release.ValidHash(sums[name]) {
@@ -419,18 +400,6 @@ func TestReleaseCandidateNative(t *testing.T) {
 		t.Fatal("created Git metadata")
 	}
 	t.Logf("same seven-asset candidate: five native CLIs, fresh install, role references, preservation and same-version relocation on %s; no live Codex execution", target)
-}
-
-func TestReleaseCandidateProjectDirectory(t *testing.T) {
-	t.Parallel()
-	root := releaseProjectDirectory(t, filepath.Join(t.TempDir(), "project"))
-	info, err := os.Stat(root)
-	if err != nil || !info.IsDir() || !filepath.IsAbs(root) {
-		t.Fatalf("project must be an absolute directory: %q, %v", root, err)
-	}
-	if _, err := os.Lstat(filepath.Join(root, ".git")); !os.IsNotExist(err) {
-		t.Fatalf("release candidate project must have no .git: %v", err)
-	}
 }
 
 func releaseProjectDirectory(t *testing.T, root string) string {

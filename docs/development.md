@@ -173,7 +173,7 @@ plan/plan-approvalで保存します。
 新しい文書型・必須節・実行証拠JSONはintent procedureが返す段階手順と公開helpを参照する。
 
 限定確認は `go test -count=1 ./src/internal/flow -run '^(TestBoundary|TestStartSensor|TestEndSensor)'`。
-実CLIの初期化・目的整理と選択した段階はfinalで `go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestBoundaryJourney$'`。
+実CLIの初期化・目的整理と選択した段階はfinalで `go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestFlowJourney$'`。
 固定Codex 0.153.4の限定実機は `AIDLC_BOUNDARY_LIVE=1 go test -tags=integration -count=1 -v -timeout 15m ./src/cmd/aidlc -run '^TestBoundaryLive$'`。
 後者は未開始拒否→必要文書修復→begin→一般編集の実hook/CLIと現物証拠に限定し、選択計画の完走と同一視しない。
 既存model/認証/通常sandboxを保ち、test observerは製品hook出力を変更せず一時fixtureに記録する。
@@ -199,7 +199,7 @@ pending保存後は元revision・要求・時刻・文書の前後hashを保持�
 loopの指定targetedとaffected通常testの証拠はRAMへ記録する。親final用の限定実行は次のとおり。
 
 ```sh
-go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestProcedureJourney$'
+go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestFlowJourney$'
 AIDLC_PROCEDURE_LIVE=1 go test -tags=integration -count=1 -v -timeout 15m ./src/cmd/aidlc -run '^TestProcedureLive$'
 ```
 
@@ -230,7 +230,7 @@ aidlc intent documents ID --space SPACE --expect REV --file documents.json
 accepted 入力は合格した path/hash を保持し、変更には前段への reopen が必要です。共有 current 文書は更新できますが、開始時の選択を別 path へ黙って交換できません。入力変更は begin を無効化し、現在・将来段階の output 追加だけなら begin を保持します。
 `test_results` は文書宣言と異なり、実行後に存在する strict JSON と出力ファイルだけを登録します。将来の integration 結果は実行後に追記します。
 
-親 final 用の実 CLI 一周は `go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestIntentDocumentsJourney$'` です。loop では実行しません。
+親 final 用の実 CLI 一周は `go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestFlowJourney$'` です。loop では実行しません。
 
 ## 実行計画と会話承認
 

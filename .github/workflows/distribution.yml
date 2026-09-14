@@ -133,7 +133,7 @@ jobs:
           go run ./src/cmd/aidlc-dist --input-dir "$input" --output-dir "$output" \
             --version "$version" --commit "$commit" --go-version "$toolchain" --license-dir "$licenses"
           AIDLC_DIST_DIR="$output" AIDLC_RELEASE_GO_VERSION="$toolchain" go test -tags=integration -count=1 -v \
-            ./src/cmd/aidlc-dist -run '^Test(DistributionArchives|ReleaseCandidateMetadata|ReleaseCandidateMetadataValidation|ReleaseCandidateNativeSelection|ReleaseCandidateProjectDirectory)$'
+            ./src/cmd/aidlc-dist -run '^TestReleaseCandidate(Metadata|MetadataValidation)$'
 
       - name: Transfer verified candidate files
         id: upload

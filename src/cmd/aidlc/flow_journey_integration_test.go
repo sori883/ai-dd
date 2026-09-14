@@ -81,9 +81,7 @@ func writeAIDLCFixture(t *testing.T, path, body string) {
 
 // This deterministic executable journey covers failure/recovery boundaries;
 // actual asynchronous Codex transport pairing is separately live-probed.
-func TestFlowJourney(t *testing.T)      { runBoundaryJourney(t) }
-func TestBoundaryJourney(t *testing.T)  { runBoundaryJourney(t) }
-func TestProcedureJourney(t *testing.T) { runBoundaryJourney(t) }
+func TestFlowJourney(t *testing.T) { runBoundaryJourney(t) }
 func runBoundaryJourney(t *testing.T) {
 	runGitIndependentBoundaryJourney(t, buildAIDLCBinary(t), t.TempDir(), false)
 }

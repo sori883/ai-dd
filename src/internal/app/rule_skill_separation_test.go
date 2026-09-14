@@ -76,8 +76,6 @@ func TestRuleSkillSeparationHook(t *testing.T) {
 	}
 }
 
-func TestRuleSkillSeparationHookApprovalPending(t *testing.T) { TestExecutionPlanCLIPendingHook(t) }
-
 func TestOKFSkillRead(t *testing.T) {
 	for _, mode := range []string{"all", "single", "before begin", "unread", "inflight", "missing", "symlink", "redirect", "compound", "arbitrary", "retired", "old-installed"} {
 		t.Run(mode, func(t *testing.T) {

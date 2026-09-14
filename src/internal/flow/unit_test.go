@@ -145,7 +145,6 @@ func TestFlowUnitTwoParallelThenDependent(t *testing.T) {
 		t.Fatalf("dependent start %+v %v", st, err)
 	}
 }
-func TestFlowUnitDependencyContent(t *testing.T) { TestUnitWithoutGit(t) }
 
 func assignmentUnit(t *testing.T, s Store, id string, expect uint64, r UnitRequest) (State, error) {
 	t.Helper()
