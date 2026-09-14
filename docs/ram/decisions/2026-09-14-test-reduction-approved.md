@@ -57,3 +57,7 @@ M1の24入口削除・構文拒否fixture軽量化と生存保証は、[M1結果
 ## M2の実施結果
 
 26候補の削減・集約・理由付き保持は[M2結果](../../design/test-reduction-m2-result.md)に記録した。検証の所有境界を維持し、独立review・final・同head CI・mergeは親が確認する。
+
+## M3実装結果
+
+工程・担当管理の39候補を[M3結果](../../design/test-reduction-m3-result.md)に記録した。F41は承認済みfallbackにより旧容量2testを通常suiteに保持し、stress tagは採用していない。独立review・final・checks・mergeは親が確認する。

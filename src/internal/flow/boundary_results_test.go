@@ -29,23 +29,6 @@ func successfulRun(t *testing.T, s Store, command, commit, output string) result
 	zero := 0
 	return resultRun{UnitID: commit, Command: command, ExitCode: &zero, OutputPath: output}
 }
-func TestEndSensorSharedCommandRequiresEachUnitResult(t *testing.T) {
-	s, st, a, b := resultPairFixture(t)
-	one := successfulRun(t, s, "go test", a, "aidlc/evidence/a.txt")
-	two := successfulRun(t, s, "go test", b, "aidlc/evidence/b.txt")
-	writeResultRuns(t, s, st.Config.TestResults[0], "tdd", one)
-	c := boundaryCollector{store: s}
-	c.results(st)
-	if len(c.failures) == 0 {
-		t.Fatal("one Unit result satisfied both Units")
-	}
-	writeResultRuns(t, s, st.Config.TestResults[0], "tdd", one, two)
-	c = boundaryCollector{store: s}
-	c.results(st)
-	if len(c.failures) != 0 {
-		t.Fatalf("both Unit results: %v", c.failures)
-	}
-}
 func TestEndSensorIntegrationRequiresCurrentSHA(t *testing.T) {
 	s, st, a, b := resultPairFixture(t)
 	fixtureExecutionStage(t, s, &st, "integration")

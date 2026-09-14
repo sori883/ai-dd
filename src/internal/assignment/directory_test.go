@@ -20,6 +20,9 @@ func TestDirectoryAssignment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if v.ID == "" || v.TaskName == "" || v.Status != "reserved" {
+		t.Fatalf("invalid reservation: %+v", v)
+	}
 	if _, err = s.Read(); err != nil {
 		t.Fatal(err)
 	}

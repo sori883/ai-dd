@@ -6,7 +6,7 @@ import (
 )
 
 func TestRuleSkillSeparationRuleReference(t *testing.T) {
-	for _, mode := range []string{"valid", "path", "type", "version", "match", "count", "role", "accepted_at", "invalid metadata", "title", "description", "status", "tags", "intent_id"} {
+	for _, mode := range []string{"valid", "path", "type", "version", "match", "count", "role", "accepted_at", "title", "description", "status", "tags", "intent_id"} {
 		t.Run(mode, func(t *testing.T) {
 			r := Reference{Path: "${knowledge_root}/rules/rule.md", Metadata: &okfmemory.DocumentMatch{Type: "Rule"}, Version: "current"}
 			switch mode {
@@ -39,9 +39,6 @@ func TestRuleSkillSeparationRuleReference(t *testing.T) {
 				r.Role = "rules"
 			case "accepted_at":
 				r.AcceptedAt = "discovery"
-			case "invalid metadata":
-				empty := ""
-				r.Metadata.Title = &empty
 			}
 			if err := validateReference(r, false); (err == nil) != (mode == "valid") {
 				t.Fatalf("%s: %v", mode, err)

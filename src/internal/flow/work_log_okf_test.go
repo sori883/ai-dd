@@ -100,147 +100,115 @@ func seedWorkLog(t *testing.T, s Store, st State, body string) []byte {
 }
 
 func TestOKFWorkLogRecovery(t *testing.T) {
-	for _, existing := range []bool{false, true} {
-		points := []string{"base", "pending", "log", "final"}
-		if existing {
-			points = points[1:]
-		}
-		for _, point := range points {
-			t.Run(map[bool]string{false: "fresh", true: "existing"}[existing]+"/"+point, func(t *testing.T) {
-				s := flowStore(t)
-				st, err := createExecutionFixture(t, s, "recover")
-				if err != nil {
-					t.Fatal(err)
+	for _, point := range []string{"fresh/base", "existing/pending", "existing/log"} {
+		t.Run(point, func(t *testing.T) {
+			s := flowStore(t)
+			st, err := createExecutionFixture(t, s, "recover")
+			if err != nil {
+				t.Fatal(err)
+			}
+			existing := strings.HasPrefix(point, "existing/")
+			var original []byte
+			if existing {
+				original = seedWorkLog(t, s, st, "old history\n")
+			}
+			request := TransitionRequest{Action: "reopen", Stage: "discovery", Reason: "recover reason"}
+			if point == "existing/log" {
+				request.Reason = "line one\n## forged marker"
+			}
+			st = prepareReopenFixture(t, s, st, request)
+			injected := errors.New("injected " + point)
+			s.write = func(root, name string, raw []byte) error {
+				if (point == "fresh/base" || point == "existing/log") && name == workLogPath(s, st.ID) {
+					return injected
 				}
-				if existing {
-					seedWorkLog(t, s, st, "old history\n")
+				if point == "existing/pending" && name == s.path(st.ID) {
+					var candidate State
+					if err := json.Unmarshal(raw, &candidate); err != nil {
+						return err
+					}
+					if candidate.PendingReopen != nil {
+						return injected
+					}
 				}
-				writes := 0
-				request := TransitionRequest{Action: "reopen", Stage: "discovery", Reason: "recover reason"}
-				st = prepareReopenFixture(t, s, st, request)
-				s.write = func(root, name string, raw []byte) error {
-					if !strings.Contains(name, "/history/") {
-						writes++
-					}
-					n := map[string]int{"base": 1, "pending": 2, "log": 3, "final": 4}[point]
-					if existing {
-						n--
-					}
-					if writes == n {
-						return errors.New("injected " + point)
-					}
-					return filestore.WriteFile(root, name, raw)
+				return filestore.WriteFile(root, name, raw)
+			}
+			if _, err = transitionExecutionFixture(t, s, st.ID, st.Revision, request); !errors.Is(err, injected) {
+				t.Fatalf("save point: %v", err)
+			}
+			current, err := s.Read(st.ID)
+			if err != nil || current.Revision != st.Revision {
+				t.Fatal("partial write advanced state", err)
+			}
+			if existing {
+				before, err := filestore.ReadFile(s.Root, workLogPath(s, st.ID))
+				if err != nil || string(before) != string(original) {
+					t.Fatal("partial write changed old log", err)
 				}
+			}
+			s.write = nil
+			if point == "existing/log" {
+				if current.PendingReopen == nil {
+					t.Fatal("pending missing")
+				}
+				if _, err = saveExecutionFixture(t, s, current, current.Revision); err == nil {
+					t.Fatal("pending allowed configure")
+				}
+				if _, err = transitionExecutionFixture(t, s, st.ID, st.Revision, TransitionRequest{Action: "pause", Reason: "other"}); err == nil {
+					t.Fatal("pending allowed pause")
+				}
+				if err = s.CheckWork(st.ID); err == nil {
+					t.Fatal("pending allowed work")
+				}
+				different := request
+				different.Reason = "different"
+				if _, err = transitionExecutionFixture(t, s, st.ID, st.Revision, different); err == nil {
+					t.Fatal("different request accepted")
+				}
+			}
+			result, err := transitionExecutionFixture(t, s, st.ID, st.Revision, request)
+			if err != nil {
+				t.Fatal("same request recovery failed", err)
+			}
+			after, err := filestore.ReadFile(s.Root, workLogPath(s, st.ID))
+			if err != nil {
+				t.Fatal(err)
+			}
+			doc, err := okfmemory.Parse(after)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Revision != st.Revision+1 || result.PendingReopen != nil {
+				t.Fatal("recovery revision/pending")
+			}
+			reason := "recover reason"
+			if point == "existing/log" {
+				reason = "forged marker"
+			}
+			if strings.Count(doc.Body, reason) != 1 || strings.Contains(doc.Body, "\n## forged marker") {
+				t.Fatal("reason duplicated or unescaped")
+			}
+			if existing && !strings.Contains(doc.Body, "old history\n") {
+				t.Fatal("old body lost")
+			}
+			if current.PendingReopen != nil && doc.Metadata["generated"].(map[string]any)["at"] != current.PendingReopen.At {
+				t.Fatal("retry changed timestamp")
+			}
+			matches, err := okfmemory.Search(filepath.Join(s.Root, "aidlc/spaces", s.Space, "knowledge"), "work-log", &st.ID)
+			if err != nil || len(matches) != 1 {
+				t.Fatal("recovered log not searchable", err)
+			}
+			if point == "existing/log" {
 				if _, err = transitionExecutionFixture(t, s, st.ID, st.Revision, request); err == nil {
-					t.Fatal("partial write returned success")
+					t.Fatal("old expect accepted")
 				}
-				current, err := s.Read(st.ID)
-				if err != nil || current.Revision != st.Revision {
-					t.Fatal("partial write advanced state", err)
-				}
-				name := workLogPath(s, st.ID)
-				before, readErr := filestore.ReadFile(s.Root, name)
-				if point != "base" {
-					if readErr != nil {
-						t.Fatal(readErr)
-					}
-					if _, err = okfmemory.Parse(before); err != nil {
-						t.Fatal("partial write poisoned OKF", err)
-					}
-					if _, err = okfmemory.Search(filepath.Join(s.Root, "aidlc/spaces", s.Space, "knowledge"), "", nil); err != nil {
-						t.Fatal("partial write poisoned search", err)
-					}
-				}
-				if point == "log" || point == "final" {
-					pendingJSON, err := json.Marshal(current.PendingReopen)
-					if err != nil {
-						t.Fatal(err)
-					}
-					var pending map[string]any
-					if err = json.Unmarshal(pendingJSON, &pending); err != nil {
-						t.Fatal(err)
-					}
-					afterHash, _ := pending["log_after_hash"].(string)
-					if len(afterHash) != 64 {
-						t.Fatal("missing completed document hash")
-					}
-					different := request
-					different.Reason = "different"
-					if _, err = transitionExecutionFixture(t, s, st.ID, st.Revision, different); err == nil {
-						t.Fatal("different request accepted")
-					}
-				}
-				s.write = nil
-				result, err := transitionExecutionFixture(t, s, st.ID, st.Revision, request)
-				if err != nil {
-					t.Fatal("same request recovery failed", err)
-				}
-				after, err := filestore.ReadFile(s.Root, name)
-				if err != nil {
-					t.Fatal(err)
-				}
-				doc, err := okfmemory.Parse(after)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if strings.Count(doc.Body, "recover reason") != 1 || result.Revision != st.Revision+1 {
-					t.Fatalf("recovery duplicated or advanced incorrectly: %s", after)
-				}
-				if point == "final" && string(before) != string(after) {
-					t.Fatal("final retry rewrote completed document")
-				}
-				if current.PendingReopen != nil {
-					generated := doc.Metadata["generated"].(map[string]any)
-					if generated["at"] != current.PendingReopen.At {
-						t.Fatal("retry changed timestamp")
-					}
-				}
-			})
-		}
-	}
-}
-
-func TestOKFWorkLogRecoveryPendingValidation(t *testing.T) {
-	for _, field := range []string{"log_hash", "log_after_hash"} {
-		for _, value := range []any{nil, "bad"} {
-			t.Run(field+"/"+map[bool]string{true: "missing", false: "bad"}[value == nil], func(t *testing.T) {
-				s := flowStore(t)
-				st, err := createExecutionFixture(t, s, "pending validation")
-				if err != nil {
-					t.Fatal(err)
-				}
-				raw, err := filestore.ReadFile(s.Root, s.path(st.ID))
-				if err != nil {
-					t.Fatal(err)
-				}
-				var state map[string]any
-				if err = json.Unmarshal(raw, &state); err != nil {
-					t.Fatal(err)
-				}
-				pending := map[string]any{"revision": st.Revision, "from": st.Stage, "to": "discovery", "reason": "retry", "at": "2020-01-01T00:00:00Z", "log_hash": strings.Repeat("a", 64), "log_after_hash": strings.Repeat("b", 64), "had_log": true}
-				if value == nil {
-					delete(pending, field)
-				} else {
-					pending[field] = value
-				}
-				state["pending_reopen"] = pending
-				raw, err = json.Marshal(state)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err = filestore.WriteFile(s.Root, s.path(st.ID), raw); err != nil {
-					t.Fatal(err)
-				}
-				if _, err = s.Read(st.ID); err == nil {
-					t.Fatal("invalid pending hash accepted")
-				}
-			})
-		}
+			}
+		})
 	}
 }
 
 func TestOKFWorkLogRecoveryRejects(t *testing.T) {
-	for _, mode := range []string{"malformed", "wrong type", "wrong intent", "directory", "symlink", "oversize", "metadata overflow", "missing pending", "changed pending"} {
+	for _, mode := range []string{"malformed", "wrong type", "wrong intent", "directory", "symlink", "oversize", "before log changed", "after log deleted"} {
 		t.Run(mode, func(t *testing.T) {
 			s := flowStore(t)
 			st, err := createExecutionFixture(t, s, "reject")
@@ -260,25 +228,35 @@ func TestOKFWorkLogRecoveryRejects(t *testing.T) {
 				original = []byte(strings.Replace(string(original), st.ID, strings.Repeat("f", 32), 1))
 			case "oversize":
 				original = []byte(strings.Repeat("a", filestore.MaxBytes+1))
-			case "metadata overflow":
-				doc, err := okfmemory.Parse(original)
-				if err != nil {
-					t.Fatal(err)
-				}
-				doc.Body = strings.Repeat("a", filestore.MaxBytes-len(original)+len(doc.Body)-10)
-				original, err = doc.Bytes()
-				if err != nil {
-					t.Fatal(err)
-				}
-			case "missing pending", "changed pending":
+			case "before log changed", "after log deleted":
+				injected := errors.New("injected log boundary")
 				s.write = func(root, path string, raw []byte) error {
-					if strings.HasSuffix(path, "work-log.md") {
-						return errors.New("log failure")
+					if mode == "before log changed" && path == name {
+						return injected
+					}
+					if mode == "after log deleted" && path == s.path(st.ID) {
+						var candidate State
+						if err := json.Unmarshal(raw, &candidate); err != nil {
+							return err
+						}
+						if candidate.PendingReopen == nil {
+							return injected
+						}
 					}
 					return filestore.WriteFile(root, path, raw)
 				}
-				if _, err = transitionExecutionFixture(t, s, st.ID, st.Revision, request); err == nil {
-					t.Fatal("expected save failure")
+				if _, err = transitionExecutionFixture(t, s, st.ID, st.Revision, request); !errors.Is(err, injected) {
+					t.Fatalf("save boundary: %v", err)
+				}
+				pending, err := s.Read(st.ID)
+				if err != nil || pending.PendingReopen == nil {
+					t.Fatal("missing durable pending", err)
+				}
+				if mode == "after log deleted" {
+					completed, err := filestore.ReadFile(s.Root, name)
+					if err != nil || filestore.Hash(completed) != pending.PendingReopen.LogAfterHash {
+						t.Fatal("final failure did not retain completed log", err)
+					}
 				}
 				s.write = nil
 				original = append(original, []byte("changed")...)
@@ -286,7 +264,7 @@ func TestOKFWorkLogRecoveryRejects(t *testing.T) {
 			if err = filestore.WriteFile(s.Root, name, original); err != nil {
 				t.Fatal(err)
 			}
-			if mode == "directory" || mode == "symlink" || mode == "missing pending" {
+			if mode == "directory" || mode == "symlink" || mode == "after log deleted" {
 				if err = os.Remove(filepath.Join(s.Root, name)); err != nil {
 					t.Fatal(err)
 				}
@@ -316,7 +294,12 @@ func TestOKFWorkLogRecoveryRejects(t *testing.T) {
 			if err != nil || string(after) != string(before) {
 				t.Fatal("rejection changed state", err)
 			}
-			if mode != "directory" && mode != "missing pending" {
+			if mode == "after log deleted" {
+				if _, err := os.Lstat(filepath.Join(s.Root, name)); !os.IsNotExist(err) {
+					t.Fatal("deleted log recreated", err)
+				}
+			}
+			if mode != "directory" && mode != "after log deleted" {
 				after, err = os.ReadFile(filepath.Join(s.Root, name))
 				if err != nil || string(after) != string(original) {
 					t.Fatal("rejection changed log", err)

@@ -163,36 +163,6 @@ func TestSelectedDocumentsCollectorSnapshot(t *testing.T) {
 	}
 }
 
-func TestSelectedDocumentsIntegrationFeature(t *testing.T) {
-	s, st := boundaryFixture(t)
-	fixtureExecutionStage(t, s, &st, "integration")
-	prepareBoundaryStage(t, s, &st)
-	st.Accepted["s04"] = StageAcceptance{StepID: "s04", Stage: "tdd", ReviewTarget: strings.Repeat("c", 64)}
-	_ = flowGit(t, s.Root, "rev-parse", "HEAD")
-	st.Config = Config{Objective: "Work", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, VerificationPaths: []string{"."}, Plan: "implement", Tests: []string{"go test"}}
-	prepareBoundaryResults(t, s, &st)
-	boundaryDoc(t, s, st, "CurrentAnalysis")
-	boundaryDoc(t, s, st, "Architecture")
-	name := boundaryDoc(t, s, st, "Knowledge")
-	raw, err := filestore.ReadFile(s.Root, name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	doc, err := okfmemory.Parse(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	title, description := doc.String("title"), doc.String("description")
-	st.Config.DocumentOutputs = []DocumentDeclaration{{Stage: "integration", Path: name, Metadata: okfmemory.DocumentMatch{Type: "Knowledge", Title: &title, Description: &description}}}
-	if err = s.persist(st); err != nil {
-		t.Fatal(err)
-	}
-	gate, err := s.Check(st.ID)
-	if err != nil || gate.Status != "pass" {
-		t.Fatalf("registered feature rejected: %+v %v", gate, err)
-	}
-}
-
 func boundaryDeclaration(t *testing.T, s Store, st State, kind string) DocumentDeclaration {
 	t.Helper()
 	name := boundaryDoc(t, s, st, kind)

@@ -11,7 +11,7 @@ func TestStagePlannerRole(t *testing.T) {
 	for _, tc := range []struct {
 		name, role, agent string
 		valid             bool
-	}{{"planner", "execution_planning", "aidlc-stage-planner", true}, {"unknown role", "invented", "aidlc-stage-planner", false}, {"wrong agent", "execution_planning", "aidlc-worker", false}} {
+	}{{"planner", "execution_planning", "aidlc-stage-planner", true}, {"unknown role", "invented", "aidlc-stage-planner", false}, {"wrong agent", "execution_planning", "aidlc-worker", false}, {"missing role", "", "aidlc-stage-planner", false}} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := definitionFixture(t)
 			p := filepath.Join(root, "aidlc/workflow/stages/discovery.md")

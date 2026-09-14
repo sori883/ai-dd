@@ -1,7 +1,6 @@
 package flow
 
 import (
-	"encoding/json"
 	"errors"
 	"github.com/sori883/ai-dd/src/internal/filestore"
 	"github.com/sori883/ai-dd/src/internal/okfmemory"
@@ -19,9 +18,6 @@ func TestIntentDocumentsRegistration(t *testing.T) {
 	st, err := createExecutionFixture(t, s, "Documents")
 	if err != nil {
 		t.Fatal(err)
-	}
-	if st.SchemaVersion != 6 {
-		t.Errorf("schema=%d want4", st.SchemaVersion)
 	}
 	docs := IntentDocuments{Inputs: []DocumentDeclaration{}, Outputs: []DocumentDeclaration{declaredDoc("integration", "knowledge/orders", "Knowledge"), declaredDoc("discovery", "adr/storage", "adr")}}
 	got, err := s.SetDocuments(st.ID, st.Revision, docs)
@@ -142,38 +138,5 @@ func TestIntentDocumentsNewADRBindingPersists(t *testing.T) {
 	}
 	if st.Config.DocumentOutputs[0].Metadata.IntentID == nil || *st.Config.DocumentOutputs[0].Metadata.IntentID != st.ID {
 		t.Fatal("new ADR binding reclassified after file creation")
-	}
-}
-
-func TestIntentDocumentsLegacyFieldsRejected(t *testing.T) {
-	for _, field := range []string{"feature_knowledge", "refs"} {
-		t.Run(field, func(t *testing.T) {
-			s := flowStore(t)
-			st, err := createExecutionFixture(t, s, "Documents")
-			if err != nil {
-				t.Fatal(err)
-			}
-			raw, err := filestore.ReadFile(s.Root, s.path(st.ID))
-			if err != nil {
-				t.Fatal(err)
-			}
-			var object map[string]any
-			if err = json.Unmarshal(raw, &object); err != nil {
-				t.Fatal(err)
-			}
-			config := object["config"].(map[string]any)
-			if field == "refs" {
-				config["adr"].(map[string]any)[field] = []string{}
-			} else {
-				config[field] = []string{}
-			}
-			raw, _ = json.Marshal(object)
-			if err = filestore.WriteFile(s.Root, s.path(st.ID), raw); err != nil {
-				t.Fatal(err)
-			}
-			if _, err = s.Read(st.ID); err == nil {
-				t.Fatal("legacy config field accepted")
-			}
-		})
 	}
 }

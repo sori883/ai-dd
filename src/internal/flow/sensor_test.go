@@ -3,29 +3,15 @@ package flow
 import (
 	"github.com/sori883/ai-dd/src/internal/okfmemory"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func flowGit(t *testing.T, root string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=Flow", "GIT_AUTHOR_EMAIL=flow@example.invalid", "GIT_COMMITTER_NAME=Flow", "GIT_COMMITTER_EMAIL=flow@example.invalid")
-	raw, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %s %v", args, raw, err)
-	}
-	return strings.TrimSpace(string(raw))
-}
 func sensorFixture(t *testing.T) (Store, State) {
 	t.Helper()
 	s, st := boundaryFixture(t)
 	var err error
-	if err != nil {
-		t.Fatal(err)
-	}
 	name := "aidlc/spaces/default/knowledge/current.md"
 	if err := os.MkdirAll(filepath.Dir(filepath.Join(s.Root, name)), 0700); err != nil {
 		t.Fatal(err)
@@ -90,22 +76,51 @@ func TestFlowSensorDiscovery(t *testing.T) {
 	}
 }
 func TestFlowSensorUnitGraph(t *testing.T) {
-	for _, units := range [][]Unit{{{ID: "a", DependsOn: []string{"missing"}}}, {{ID: "a", DependsOn: []string{"b"}}, {ID: "b", DependsOn: []string{"a"}}}, {{ID: "a"}, {ID: "a"}}} {
+	units := func() []Unit {
+		return []Unit{{ID: "a", Bolt: "one", Scope: []string{"a.txt"}, Tests: []string{"verify a"}}, {ID: "b", Bolt: "two", Scope: []string{"b.txt"}, Tests: []string{"verify b"}, DependsOn: []string{"a"}}}
+	}
+	for _, mode := range []string{"valid", "unknown dependency", "Unit dependency cycle"} {
+		t.Run(mode, func(t *testing.T) {
+			graph := units()
+			if mode == "unknown dependency" {
+				graph[0].DependsOn = []string{"missing"}
+			}
+			if mode == "Unit dependency cycle" {
+				graph[0].DependsOn = []string{"b"}
+			}
+			problems := unitPlanProblems(graph)
+			joined := strings.Join(problems, ";")
+			if strings.Contains(joined, "incomplete Unit plan") || (mode == "valid" && len(problems) != 0) || (mode != "valid" && !strings.Contains(joined, mode)) {
+				t.Fatal(problems)
+			}
+		})
+	}
+	t.Run("sensor forwarding", func(t *testing.T) {
 		s, st := sensorFixture(t)
 		fixtureExecutionStage(t, s, &st, "planning")
 		prepareBoundaryStage(t, s, &st)
 		st.Config.Plan = "A plan"
-		st.Config.Units = units
+		st.Config.Units = units()
 		st, err := saveExecutionFixture(t, s, st, st.Revision)
 		if err != nil {
-			continue
+			t.Fatal(err)
 		}
 		gate, err := s.Check(st.ID)
-		if err != nil || gate.Status != "fail" {
-			t.Fatalf("bad graph: %+v %v", gate, err)
+		if err != nil || gate.Status != "pass" {
+			t.Fatalf("normal graph: %+v %v", gate, err)
 		}
-	}
+		st.Config.Units[0].DependsOn = []string{"missing"}
+		st, err = saveExecutionFixture(t, s, st, st.Revision)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gate, err = s.Check(st.ID)
+		if err != nil || gate.Status != "fail" || !strings.Contains(gate.Summary, "unknown dependency") {
+			t.Fatalf("dependency forwarding: %+v %v", gate, err)
+		}
+	})
 }
+
 func TestFlowSensorDirectImplementation(t *testing.T) {
 	s, st := sensorFixture(t)
 	fixtureExecutionStage(t, s, &st, "planning")

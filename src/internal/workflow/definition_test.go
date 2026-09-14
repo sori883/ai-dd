@@ -52,6 +52,7 @@ func TestDefinitionRejectsInvalid(t *testing.T) {
 	cases := []struct{ name, file, old, new string }{
 		{"unknown graph", "stage-graph.json", `"schema_version":2`, `"schema_version":2,"unknown":1`},
 		{"duplicate graph key", "stage-graph.json", `"schema_version":2`, `"schema_version":2,"schema_version":2`},
+		{"missing required prefix", "stage-graph.json", `"required_prefix":["initialization","discovery"]`, `"required_prefix":[]`},
 		{"invalid prefix", "stage-graph.json", `"required_prefix":["initialization","discovery"]`, `"required_prefix":["discovery","initialization"]`},
 		{"outside procedure", "stage-graph.json", "stages/tdd.md", "../tdd.md"},
 		{"stage mismatch", "stages/tdd.md", "stage_id: tdd", "stage_id: planning"},
@@ -91,36 +92,6 @@ func TestDefinitionRejectsInvalid(t *testing.T) {
 			}
 			if _, err := Load(root); err == nil {
 				t.Fatal("invalid file accepted")
-			}
-		})
-	}
-}
-
-func TestDefinitionAcceptedInputMustPrecedeStage(t *testing.T) {
-	root := definitionFixture(t)
-	p := filepath.Join(root, "aidlc/workflow/stages/planning.md")
-	raw, _ := os.ReadFile(p)
-	raw = []byte(strings.Replace(string(raw), "inputs: []", "inputs:\n  - path: \"${knowledge_root}/design/${intent_id}/requirements.md\"\n    version: accepted\n    accepted_at: tdd", 1))
-	os.WriteFile(p, raw, 0644)
-	if _, err := Load(root); err == nil {
-		t.Fatal("future accepted input creates an impossible prerequisite")
-	}
-}
-
-func TestDefinitionRejectsEmptyOrUnknownAgent(t *testing.T) {
-	for _, agent := range []string{"{}", "{role: unsupported}", "{agent: aidlc-worker}"} {
-		t.Run(agent, func(t *testing.T) {
-			root := definitionFixture(t)
-			p := filepath.Join(root, "aidlc/workflow/stages/tdd.md")
-			raw, err := os.ReadFile(p)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err = os.WriteFile(p, []byte(strings.Replace(string(raw), "agents: []", "agents: ["+agent+"]", 1)), 0644); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := Load(root); err == nil {
-				t.Fatal("empty or unknown agent accepted")
 			}
 		})
 	}

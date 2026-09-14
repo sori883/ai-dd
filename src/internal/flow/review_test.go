@@ -3,7 +3,6 @@ package flow
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -75,23 +74,34 @@ func TestFlowReviewRejectsWrongCheckout(t *testing.T) {
 
 func flowReviewRoot(t *testing.T, project string) string {
 	t.Helper()
-	root := filepath.Join(t.TempDir(), "review")
-	flowGit(t, project, "worktree", "add", "--detach", root, "HEAD")
-	files := flowGit(t, project, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
-	for _, name := range strings.Split(files, "\x00") {
-		if name == "" || strings.HasPrefix(name, "aidlc/") {
-			continue
-		}
-		raw, err := os.ReadFile(filepath.Join(project, name))
+	root := t.TempDir()
+	err := filepath.WalkDir(project, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
-			t.Fatal(err)
+			return err
 		}
-		dest := filepath.Join(root, name)
-		os.MkdirAll(filepath.Dir(dest), 0700)
-		if err := os.WriteFile(dest, raw, 0600); err != nil {
-			t.Fatal(err)
+		name, err := filepath.Rel(project, path)
+		if err != nil {
+			return err
 		}
+		if name == "." {
+			return nil
+		}
+		if entry.IsDir() {
+			if name == ".git" || name == "aidlc" {
+				return filepath.SkipDir
+			}
+			return os.MkdirAll(filepath.Join(root, name), 0700)
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(root, name), raw, 0600)
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
+
 	return root
 }
 func TestFlowReviewRejectsChangedCheckout(t *testing.T) {

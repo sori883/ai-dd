@@ -58,14 +58,8 @@ func TestFlowStoreRejectsCorruptAndIsolates(t *testing.T) {
 	if _, err := other.Read(state.ID); err == nil {
 		t.Fatal("read another Space")
 	}
-	path := filepath.Join(s.Root, "aidlc/spaces/default/intents", state.ID, "state.json")
-	if err := os.WriteFile(path, []byte(`{"schema_version":1,"schema_version":2}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.Read(state.ID); err == nil {
-		t.Fatal("accepted corrupt state")
-	}
 }
+
 func TestFlowStoreFailurePreservesState(t *testing.T) {
 	s := flowStore(t)
 	state, err := s.Create("Work")
@@ -102,28 +96,48 @@ func TestFlowStoreNames(t *testing.T) {
 	}
 }
 func TestFlowStoreWireSchema(t *testing.T) {
-	s := flowStore(t)
-	st, err := s.Create("Work")
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := os.ReadFile(filepath.Join(s.Root, s.path(st.ID)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var fields map[string]any
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		t.Fatal(err)
-	}
-	if fields["schema_version"] != float64(6) || fields["id"] != st.ID {
-		t.Fatalf("noncanonical JSON: %s", raw)
-	}
-	for _, bad := range []string{strings.Replace(string(raw), `"schema_version": 6`, `"schema_version": 6, "schema_version": 6`, 1), strings.Replace(string(raw), `"schema_version": 6`, `"schema_version": 6, "unexpected": true`, 1), string(raw) + `{}`, strings.Replace(string(raw), st.ID, strings.Repeat("a", 32), 1)} {
-		if err := os.WriteFile(filepath.Join(s.Root, s.path(st.ID)), []byte(bad), 0600); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := s.Read(st.ID); err == nil {
-			t.Fatalf("accepted corrupt state: %s", bad)
-		}
+	for _, tc := range []struct{ name, from, to string }{
+		{"duplicate key", `"schema_version": 6`, `"schema_version": 6, "schema_version": 6`},
+		{"unknown field", `"schema_version": 6`, `"schema_version": 6, "unexpected": true`},
+		{"unsupported schema", `"schema_version": 6`, `"schema_version": 5`},
+		{"trailing JSON", "", ""},
+		{"identity", "", strings.Repeat("a", 32)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := flowStore(t)
+			st, err := s.Create("Work")
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := os.ReadFile(filepath.Join(s.Root, s.path(st.ID)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fields map[string]any
+			if err := json.Unmarshal(raw, &fields); err != nil {
+				t.Fatal(err)
+			}
+			if fields["schema_version"] != float64(6) || fields["id"] != st.ID {
+				t.Fatalf("noncanonical JSON: %s", raw)
+			}
+			if tc.name == "identity" {
+				tc.from = st.ID
+			}
+			bad := strings.Replace(string(raw), tc.from, tc.to, 1)
+			if tc.name == "trailing JSON" {
+				bad = string(raw) + `{}`
+			}
+			name := filepath.Join(s.Root, s.path(st.ID))
+			if err := os.WriteFile(name, []byte(bad), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.Read(st.ID); err == nil {
+				t.Fatal("corrupt state accepted")
+			}
+			after, err := os.ReadFile(name)
+			if err != nil || string(after) != bad {
+				t.Fatal("rejected state changed", err)
+			}
+		})
 	}
 }

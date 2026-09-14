@@ -9,36 +9,28 @@ import (
 )
 
 func TestBoundaryTransitionCollectorSnapshot(t *testing.T) {
-	for _, remove := range []bool{false, true} {
-		t.Run(fmt.Sprint(remove), func(t *testing.T) {
-			s := flowStore(t)
-			boundaryFile(t, s, "evidence.txt", "reviewed")
-			c := boundaryCollector{store: s}
-			first, ok := c.file("evidence.txt")
-			if !ok {
-				t.Fatal(c.failures)
-			}
-			if remove {
-				if err := os.Remove(filepath.Join(s.Root, "evidence.txt")); err != nil {
-					t.Fatal(err)
-				}
-			} else {
-				boundaryFile(t, s, "evidence.txt", "changed")
-			}
-			second, ok := c.file("evidence.txt")
-			if !ok || string(first) != string(second) {
-				t.Fatal("collector reread changed or missing bytes under the first hash")
-			}
-		})
+	s := flowStore(t)
+	boundaryFile(t, s, "evidence.txt", "reviewed")
+	c := boundaryCollector{store: s}
+	first, ok := c.file("evidence.txt")
+	if !ok {
+		t.Fatal(c.failures)
+	}
+	if err := os.Remove(filepath.Join(s.Root, "evidence.txt")); err != nil {
+		t.Fatal(err)
+	}
+	second, ok := c.file("evidence.txt")
+	if !ok || string(first) != string(second) {
+		t.Fatal("collector reread missing bytes under first hash")
 	}
 }
+
 func TestBoundaryTransitionUsesOneSensorSnapshot(t *testing.T) {
 	for _, remove := range []bool{false, true} {
 		t.Run(fmt.Sprint(remove), func(t *testing.T) {
 			s, st := boundaryFixture(t)
 			fixtureExecutionStage(t, s, &st, "tdd")
 			prepareBoundaryStage(t, s, &st)
-			_ = flowGit(t, s.Root, "rev-parse", "HEAD")
 			st.Config = Config{Objective: "Build", Scope: []string{"src"}, Acceptance: []string{"works"}, NoMaterialsReason: "new", ADR: ADR{Reason: "none"}, VerificationPaths: []string{"."}, Plan: "Implement", Tests: []string{"go test"}}
 			prepareBoundaryResults(t, s, &st)
 			if err := s.persist(st); err != nil {

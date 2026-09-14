@@ -9,7 +9,7 @@ import (
 )
 
 func TestVerificationResults(t *testing.T) {
-	for _, change := range []string{"valid", "sha", "step", "scope", "unit", "command", "output", "exit", "second unit missing", "self cycle"} {
+	for _, change := range []string{"valid", "sha", "step", "scope", "unit", "command", "output", "exit", "second unit missing", "missing exit", "unknown JSON field", "empty step", "invalid SHA format"} {
 		t.Run(change, func(t *testing.T) {
 			s := flowStore(t)
 			if err := os.WriteFile(filepath.Join(s.Root, "code"), []byte("code"), 0644); err != nil {
@@ -24,6 +24,12 @@ func TestVerificationResults(t *testing.T) {
 			doc := resultDocument{StepID: "s04", Stage: "tdd", VerificationScope: "intent", VerificationSHA256: digest.SHA256, Runs: []resultRun{{UnitID: "a", Command: "test", ExitCode: &zero, OutputPath: "aidlc/evidence/output"}, {UnitID: "b", Command: "test", ExitCode: &zero, OutputPath: "aidlc/evidence/output"}}}
 			body := "passed"
 			switch change {
+			case "missing exit":
+				doc.Runs[1].ExitCode = nil
+			case "empty step":
+				doc.StepID = ""
+			case "invalid SHA format":
+				doc.VerificationSHA256 = strings.Repeat("a", 40)
 			case "sha":
 				doc.VerificationSHA256 = strings.Repeat("a", 64)
 			case "step":
@@ -49,12 +55,15 @@ func TestVerificationResults(t *testing.T) {
 				t.Fatal(err)
 			}
 			raw, _ := json.Marshal(doc)
+			if change == "unknown JSON field" {
+				raw = append([]byte(`{"extra":1,`), raw[1:]...)
+			}
 			if err = os.WriteFile(filepath.Join(s.Root, st.Config.TestResults[0]), raw, 0644); err != nil {
 				t.Fatal(err)
 			}
 			c := boundaryCollector{store: s}
 			c.results(st)
-			if change == "valid" || change == "self cycle" {
+			if change == "valid" {
 				if len(c.failures) > 0 {
 					t.Fatal(c.failures)
 				}
@@ -111,20 +120,17 @@ func TestVerificationResultsUnit(t *testing.T) {
 }
 
 func TestVerificationResultsStageValidity(t *testing.T) {
-	for _, stage := range []string{"initialization", "discovery", "planning"} {
-		t.Run(stage, func(t *testing.T) {
-			s, st, a, b := resultPairFixture(t)
-			one := successfulRun(t, s, "go test", a, "aidlc/evidence/a.txt")
-			two := successfulRun(t, s, "go test", b, "aidlc/evidence/b.txt")
-			writeResultRuns(t, s, st.Config.TestResults[0], "tdd", one, two)
-			other := "aidlc/evidence/other.json"
-			writeResultRuns(t, s, other, stage, one)
-			st.Config.TestResults = append(st.Config.TestResults, other)
-			c := boundaryCollector{store: s}
-			c.results(st)
-			if len(c.failures) == 0 {
-				t.Fatal("non-test stage result accepted")
-			}
-		})
+	stage := "planning"
+	s, st, a, b := resultPairFixture(t)
+	one := successfulRun(t, s, "go test", a, "aidlc/evidence/a.txt")
+	two := successfulRun(t, s, "go test", b, "aidlc/evidence/b.txt")
+	writeResultRuns(t, s, st.Config.TestResults[0], "tdd", one, two)
+	other := "aidlc/evidence/other.json"
+	writeResultRuns(t, s, other, stage, one)
+	st.Config.TestResults = append(st.Config.TestResults, other)
+	c := boundaryCollector{store: s}
+	c.results(st)
+	if len(c.failures) == 0 {
+		t.Fatal("non-test stage result accepted")
 	}
 }

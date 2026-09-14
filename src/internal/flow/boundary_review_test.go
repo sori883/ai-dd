@@ -8,7 +8,7 @@ import (
 func TestBoundaryReviewRequiresEndPass(t *testing.T) {
 	s, st := boundaryFixture(t)
 	reviewRoot := t.TempDir()
-	flowGit(t, s.Root, "worktree", "add", "--detach", reviewRoot, "HEAD")
+	reviewRoot = flowReviewRoot(t, s.Root)
 	request := ReviewRequest{Action: "assign", CoordinatorSession: "coordinator", Session: "reviewer", Root: reviewRoot}
 	if _, err := s.Review(st.ID, st.Revision, request); err == nil {
 		t.Fatal("unstarted incomplete review assigned")

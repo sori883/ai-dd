@@ -37,7 +37,6 @@ func TestExecutionPlanSchemaState(t *testing.T) {
 		name   string
 		change func(*State)
 	}{
-		{name: "old schema", change: func(st *State) { st.SchemaVersion = 4 }},
 		{name: "duplicate id", change: func(st *State) { st.ExecutionPlan.Bootstrap[1].ID = "s01" }},
 		{name: "wrong prefix", change: func(st *State) { st.ExecutionPlan.Bootstrap[1].Stage = "tdd" }},
 		{name: "invalid id", change: func(st *State) { st.ExecutionPlan.Bootstrap[1].ID = "../s02" }},
@@ -54,40 +53,6 @@ func TestExecutionPlanSchemaState(t *testing.T) {
 			tc.change(&st)
 			if err := s.persist(st); err == nil {
 				t.Fatal("invalid execution plan accepted")
-			}
-		})
-	}
-}
-
-func TestExecutionPlanSchemaChoices(t *testing.T) {
-	s := flowStore(t)
-	st := schemaPlanState(s)
-	st.ExecutionPlan.Approved = &PlanVersion{Revision: 1, Reason: "investigation only", Steps: st.ExecutionPlan.Bootstrap, Omitted: []StageOmission{{Stage: "architecture-analysis", Reason: "not needed"}, {Stage: "planning", Reason: "no implementation"}, {Stage: "tdd", Reason: "no implementation"}, {Stage: "integration", Reason: "no implementation"}}}
-	st.ExecutionPlan.Bootstrap = nil
-	st.ExecutionPlan.Revision = 1
-	fixturePlanApproval(t, &st)
-	if err := s.persist(st); err != nil {
-		t.Fatalf("complete choices rejected: %v", err)
-	}
-	for _, mode := range []string{"missing choice", "empty reason", "duplicate omission", "selected and omitted"} {
-		t.Run(mode, func(t *testing.T) {
-			candidate := st
-			version := *st.ExecutionPlan.Approved
-			version.Omitted = append([]StageOmission{}, version.Omitted...)
-			candidate.ExecutionPlan.Approved = &version
-			switch mode {
-			case "missing choice":
-				version.Omitted = version.Omitted[:3]
-			case "empty reason":
-				version.Omitted[0].Reason = ""
-			case "duplicate omission":
-				version.Omitted = append(version.Omitted, version.Omitted[0])
-			case "selected and omitted":
-				version.Steps = append(append([]ExecutionStep{}, version.Steps...), ExecutionStep{ID: "s03", Stage: "tdd", Status: "pending"})
-				candidate.ExecutionPlan.NextID = 4
-			}
-			if err := s.persist(candidate); err == nil {
-				t.Fatal("invalid adoption accepted")
 			}
 		})
 	}
@@ -143,6 +108,10 @@ func TestExecutionPlanBootstrap(t *testing.T) {
 	if _, err = s.Save(candidate, st.Revision); err == nil {
 		t.Fatal("configure skipped initialization")
 	}
+	gate, _, _ := s.startState(st)
+	if gate.StepID != st.CurrentStepID {
+		t.Fatal("start gate lost StepID")
+	}
 	started, err := s.Begin(st.ID, st.Revision)
 	if err != nil {
 		t.Fatalf("initialization begin: %v", err)
@@ -152,6 +121,10 @@ func TestExecutionPlanBootstrap(t *testing.T) {
 	}
 	if err = s.CheckWork(st.ID); err != nil {
 		t.Fatal(err)
+	}
+	gate, err = s.Check(st.ID)
+	if err != nil || gate.Status != "pass" || gate.StepID != "s01" {
+		t.Fatalf("initial Sensor: %+v %v", gate, err)
 	}
 	repeated, err := s.Begin(st.ID, started.Revision)
 	if err != nil || repeated.Revision != started.Revision {
@@ -164,7 +137,7 @@ func TestExecutionPlanBootstrap(t *testing.T) {
 }
 
 func TestExecutionPlanBootstrapMissingConfiguration(t *testing.T) {
-	for _, name := range []string{"aidlc/spaces/default/knowledge/rules/rule.md", ".codex/hooks.json", ".agents/skills/aidlc/SKILL.md"} {
+	for _, name := range []string{".codex/hooks.json", ".agents/skills/aidlc/SKILL.md", ".agents/skills/aidlc-cli/SKILL.md", ".agents/skills/okf-agent-memory/SKILL.md"} {
 		t.Run(name, func(t *testing.T) {
 			s := executionFixture(t)
 			st, err := s.Create("inspect")
@@ -231,7 +204,7 @@ func TestExecutionPlanDraft(t *testing.T) {
 }
 
 func TestExecutionPlanDraftRejects(t *testing.T) {
-	for _, mode := range []string{"prefix", "duplicate", "unknown id", "stage swap", "choice missing", "completed removed", "worker running"} {
+	for _, mode := range []string{"prefix", "unknown id", "stage swap", "choice missing", "empty omission reason", "duplicate omission", "selected and omitted", "completed removed", "worker running"} {
 		t.Run(mode, func(t *testing.T) {
 			s := executionFixture(t)
 			st, err := s.Create("draft")
@@ -242,12 +215,16 @@ func TestExecutionPlanDraftRejects(t *testing.T) {
 			switch mode {
 			case "prefix":
 				request.Steps[0].Stage = "tdd"
-			case "duplicate":
-				request.Steps[2].ID = "s02"
 			case "unknown id":
 				request.Steps[2].ID = "s99"
 			case "stage swap":
 				request.Steps[2] = PlanStepInput{ID: "s02", Stage: "tdd"}
+			case "empty omission reason":
+				request.Omitted[0].Reason = ""
+			case "duplicate omission":
+				request.Omitted = append(request.Omitted, request.Omitted[0])
+			case "selected and omitted":
+				request.Omitted = append(request.Omitted, StageOmission{Stage: "tdd", Reason: "not needed"})
 			case "choice missing":
 				request.Omitted = request.Omitted[:2]
 			case "completed removed":
@@ -300,22 +277,6 @@ func TestExecutionPlanEvidenceBindings(t *testing.T) {
 				t.Fatal("other execution evidence accepted")
 			}
 		})
-	}
-}
-
-func TestExecutionPlanEvidenceInitializationEnd(t *testing.T) {
-	s := executionFixture(t)
-	st, err := s.Create("initialize")
-	if err != nil {
-		t.Fatal(err)
-	}
-	st, err = s.Begin(st.ID, st.Revision)
-	if err != nil {
-		t.Fatal(err)
-	}
-	c := s.endDocuments(st)
-	if len(c.failures) > 0 {
-		t.Fatalf("initialization required fabricated documents: %v", c.failures)
 	}
 }
 
@@ -380,22 +341,6 @@ func TestExecutionPlanEvidenceAcceptedRuns(t *testing.T) {
 	candidate.Accepted = map[string]StageAcceptance{"s04": {StepID: "s03", Stage: "tdd", ReviewTarget: strings.Repeat("b", 64)}}
 	if err := s.persist(candidate); err == nil {
 		t.Fatal("acceptance relabelled for new run")
-	}
-}
-
-func TestExecutionPlanEvidenceInitialSensor(t *testing.T) {
-	s := executionFixture(t)
-	st, err := s.Create("setup")
-	if err != nil {
-		t.Fatal(err)
-	}
-	st, err = s.Begin(st.ID, st.Revision)
-	if err != nil {
-		t.Fatal(err)
-	}
-	g, err := s.Check(st.ID)
-	if err != nil || g.Status != "pass" || g.StepID != "s01" {
-		t.Fatalf("setup Sensor demanded code work: %+v %v", g, err)
 	}
 }
 
@@ -477,39 +422,8 @@ func TestExecutionPlanEvidenceSelectedEnd(t *testing.T) {
 	}
 }
 
-func TestExecutionPlanEvidenceResultRun(t *testing.T) {
-	s, st := executionAt(t, "tdd")
-	flowGit(t, s.Root, "init", "-q")
-	flowGit(t, s.Root, "commit", "--allow-empty", "-qm", "base")
-	_ = flowGit(t, s.Root, "rev-parse", "HEAD")
-	st.Config.VerificationPaths = []string{"."}
-	st.Config.Tests = []string{"go test ./target"}
-	st.Config.TestResults = []string{"aidlc/evidence/result.json"}
-	boundaryFile(t, s, "aidlc/evidence/output.txt", "ok")
-	zero := 0
-	result := resultDocument{StepID: "s03", Stage: "tdd", VerificationScope: "intent", VerificationSHA256: verificationTestSHA(t, s.Root, []string{"."}), Runs: []resultRun{{Command: "go test ./target", ExitCode: &zero, OutputPath: "aidlc/evidence/output.txt"}}}
-	for _, id := range []string{"s03", "s02", ""} {
-		result.StepID = id
-		raw, err := json.Marshal(result)
-		if err != nil {
-			t.Fatal(err)
-		}
-		boundaryFile(t, s, "aidlc/evidence/result.json", string(raw))
-		c := boundaryCollector{store: s}
-		c.results(st)
-		if id == "s03" && len(c.failures) > 0 {
-			t.Fatalf("current result failed: %v", c.failures)
-		}
-		if id != "s03" && len(c.failures) == 0 {
-			t.Fatal("past or unbound result passed")
-		}
-	}
-}
-
 func TestExecutionPlanEvidenceSensorTarget(t *testing.T) {
 	s, st := executionAt(t, "tdd")
-	flowGit(t, s.Root, "init", "-q")
-	flowGit(t, s.Root, "commit", "--allow-empty", "-qm", "base")
 	first, err := s.checkState(st)
 	if err != nil {
 		t.Fatal(err)
@@ -527,37 +441,8 @@ func TestExecutionPlanEvidenceSensorTarget(t *testing.T) {
 	}
 }
 
-func TestExecutionPlanEvidenceInitialReview(t *testing.T) {
-	s := executionFixture(t)
-	st, err := s.Create("setup review")
-	if err != nil {
-		t.Fatal(err)
-	}
-	st, err = s.Begin(st.ID, st.Revision)
-	if err != nil {
-		t.Fatal(err)
-	}
-	reviewer := t.TempDir()
-	st, err = s.Review(st.ID, st.Revision, ReviewRequest{Action: "assign", Root: reviewer, Session: "reviewer", CoordinatorSession: "coordinator"})
-	if err != nil {
-		t.Fatalf("initialization review requires unrelated code checkout: %v", err)
-	}
-	if st.Review.StepID != "s01" {
-		t.Fatal("review assignment lost execution")
-	}
-	st, err = s.Review(st.ID, st.Revision, ReviewRequest{Action: "accept", Root: reviewer, Session: "reviewer", Target: st.Review.Target, Status: "pass", Summary: "settings inspected"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if st.Review.StepID != "s01" || st.Review.Status != "pass" {
-		t.Fatal("review result lost execution")
-	}
-}
-
 func TestExecutionPlanEvidenceOptionalPlan(t *testing.T) {
 	s, st := executionAt(t, "tdd")
-	flowGit(t, s.Root, "init", "-q")
-	flowGit(t, s.Root, "commit", "--allow-empty", "-qm", "base")
 	g, err := s.checkState(st)
 	if err != nil {
 		t.Fatal(err)
@@ -615,17 +500,6 @@ func fixturePlanApproval(t *testing.T, st *State) {
 	p.Approval = a
 }
 
-func TestExecutionPlanEvidenceStartGateStep(t *testing.T) {
-	s := executionFixture(t)
-	st, err := s.Create("start binding")
-	if err != nil {
-		t.Fatal(err)
-	}
-	gate, _, _ := s.startState(st)
-	if gate.StepID != st.CurrentStepID {
-		t.Fatalf("start gate step=%q want %q", gate.StepID, st.CurrentStepID)
-	}
-}
 func TestExecutionPlanSchemaEncodedLimit(t *testing.T) {
 	s := flowStore(t)
 	st := schemaPlanState(s)
@@ -654,8 +528,6 @@ func TestExecutionPlanSchemaMandatoryIdentity(t *testing.T) {
 
 func TestExecutionPlanEvidenceArtifactSelectedOrder(t *testing.T) {
 	s, st := executionAt(t, "tdd")
-	flowGit(t, s.Root, "init", "-q")
-	flowGit(t, s.Root, "commit", "--allow-empty", "-qm", "base")
 	st.ExecutionPlan.Approved.Steps = append(st.ExecutionPlan.Approved.Steps, ExecutionStep{ID: "s04", Stage: "architecture-analysis", Status: "pending"})
 	st.ExecutionPlan.NextID = 5
 	st.Config.Artifacts = []Artifact{{Stage: "architecture-analysis", Kind: "Knowledge", Path: "aidlc/spaces/default/knowledge/codekb/future.md"}}
