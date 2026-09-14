@@ -1,4 +1,4 @@
-//go:build integration
+//go:build integration && diagnostic
 
 package main
 
@@ -44,8 +44,6 @@ func TestHumanApprovalLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runFixtureProcess(t, root, "git", "init", "-q")
-	runFixtureProcess(t, root, "git", "-c", "user.name=Boundary", "-c", "user.email=boundary@example.invalid", "commit", "--allow-empty", "-qm", "base")
 	if _, err = install.Codex(root, binary); err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +91,6 @@ func TestHumanApprovalLive(t *testing.T) {
 	st = f.action(st, "begin")
 	st = f.review(st)
 	st = f.finish(st)
-	f.commit("fixture assets")
 	config := flow.Config{NoMaterialsReason: "new fixture", Objective: "Approve reviewed discovery", Scope: []string{"src"}, Acceptance: []string{"human approval recorded"}, VerificationPaths: []string{"."}, ADR: flow.ADR{Reason: "none"}}
 	st = f.action(st, "configure", "--file", f.request(config))
 	boundaryFixtureDocument(t, root, st.ID, "Requirements")

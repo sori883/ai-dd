@@ -1,3 +1,5 @@
+//go:build integration && diagnostic
+
 package main
 
 import (
@@ -6,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"github.com/sori883/ai-dd/src/internal/install"
 	"io"
 	"net/url"
 	"os"
@@ -104,22 +107,19 @@ func TestHookReliabilityProbeHelper(t *testing.T) {
 }
 
 func TestHookReliabilityProbeProtocol(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "aidlc")
-	build := exec.CommandContext(t.Context(), "go", "build", "-o", binary, ".")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build product: %v: %s", err, out)
-	}
+	binary := buildAIDLCBinary(t)
 	for _, tc := range []struct {
 		name, raw, before, after string
 		lock                     bool
 	}{
 		{"terminal", ` {"session_id":"session","turn_id":"turn","tool_use_id":"tool","tool_name":"Bash","hook_event_name":"PostToolUse","unknown":{"preserve":true}} `, "tool", "", false},
-		{"duplicate", `{"session_id":"session","turn_id":"turn","tool_use_id":"tool","tool_name":"Bash","hook_event_name":"PostToolUse"}`, "", "", false},
-		{"lock_failure", `{"session_id":"session","turn_id":"turn","tool_use_id":"tool","tool_name":"Bash","hook_event_name":"PostToolUse"}`, "tool", "tool", true},
 		{"invalid_wire", "not json\n", "tool", "tool", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			root := t.TempDir()
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
 			name := filepath.Join(root, "aidlc/.runtime/flow/sessions/session.txt")
 			if err := os.MkdirAll(filepath.Dir(name), 0700); err != nil {
 				t.Fatal(err)
@@ -189,13 +189,47 @@ func TestHookReliabilityProbeProtocol(t *testing.T) {
 			if err := os.MkdirAll(filepath.Join(root, ".codex"), 0700); err != nil {
 				t.Fatal(err)
 			}
-			registration := fmt.Sprintf(`{"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":%q}]}]}}`, hookProbeQuote(binary)+" __hook --project-dir "+hookProbeQuote(root))
-			if err := os.WriteFile(filepath.Join(root, ".codex/hooks.json"), []byte(registration), 0600); err != nil {
+			if _, err := install.Codex(root, binary); err != nil {
+				t.Fatal(err)
+			}
+			hookFile := filepath.Join(root, ".codex/hooks.json")
+			installed, err := os.ReadFile(hookFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var registration map[string]any
+			if err := json.Unmarshal(installed, &registration); err != nil {
+				t.Fatal(err)
+			}
+			groups := registration["hooks"].(map[string]any)["PreToolUse"].([]any)
+			group := groups[0].(map[string]any)
+			handlers := group["hooks"].([]any)
+			handlers[0].(map[string]any)["timeout"] = 10
+			group["hooks"] = append(handlers, map[string]any{"type": "command", "command": "echo user-hook", "timeout": 4})
+			encoded, err := json.Marshal(registration)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(hookFile, encoded, 0600); err != nil {
+				t.Fatal(err)
+			}
+			writeAIDLCFixture(t, filepath.Join(root, ".codex/config.toml"), "# existing fixture trust configuration\n")
+			trustBefore := operationsRead(t, filepath.Join(root, ".codex/config.toml"))
+			original, err := os.ReadFile(filepath.Join(root, ".codex/hooks.json"))
+			if err != nil {
 				t.Fatal(err)
 			}
 			assetDir := t.TempDir()
 			if err := reliabilityPrepare(root, binary, helper, assetDir); err != nil {
 				t.Fatal(err)
+			}
+			candidate := operationsRead(t, filepath.Join(assetDir, "hooks.candidate.json"))
+			if !bytes.Contains(candidate, []byte("echo user-hook")) || !bytes.Contains(candidate, []byte(`"timeout": 10`)) || !bytes.Equal(trustBefore, operationsRead(t, filepath.Join(root, ".codex/config.toml"))) {
+				t.Fatal("prepare changed user hook/timeout/trust")
+			}
+			unchanged, err := os.ReadFile(filepath.Join(root, ".codex/hooks.json"))
+			if err != nil || !bytes.Equal(unchanged, original) {
+				t.Fatal("prepare altered registration")
 			}
 			wrapper, err := os.ReadFile(filepath.Join(assetDir, "wrapper.sh"))
 			if err != nil {
@@ -339,153 +373,6 @@ func reliabilitySessionTool(snapshot reliabilitySnapshot) (string, bool) {
 	return values["tool"], true
 }
 
-func TestHookReliabilityProbeEvidence(t *testing.T) {
-	t.Run("child_request", func(t *testing.T) {
-		request, err := reliabilityChildRequest("/root/phase", "aidlc-reviewer")
-		if err != nil || !strings.Contains(request, "/root/phase") || !strings.Contains(request, "child-generated") || !strings.Contains(request, "/root/phase/unregistered_sibling") || !strings.Contains(request, "structured parent notification") {
-			t.Fatalf("missing bounded child observation request: %q %v", request, err)
-		}
-	})
-	t.Run("child_receipt", func(t *testing.T) {
-		raw := []byte(`{"type":"response_item","payload":{"type":"agent_message","author":"/root/report","recipient":"/root","content":[{"type":"input_text","text":"Message Type: MESSAGE\nTask name: /root\nSender: /root/report\nPayload:\nnonce"}]}}`)
-		if !reliabilityChildReceipt(raw, "/root", "/root/report", "nonce") {
-			t.Fatal("fixed structured intermediate receipt rejected")
-		}
-		for _, pair := range [][2]string{{"MESSAGE", "FINAL_ANSWER"}, {"/root/report", "/root/other"}, {"nonce", "different"}, {"input_text", "output_text"}} {
-			t.Run(pair[1], func(t *testing.T) {
-				if reliabilityChildReceipt(bytes.ReplaceAll(raw, []byte(pair[0]), []byte(pair[1])), "/root", "/root/report", "nonce") {
-					t.Fatalf("invalid receipt accepted: %v", pair)
-				}
-			})
-		}
-		t.Run("encrypted_second_element", func(t *testing.T) {
-			mixed := bytes.ReplaceAll(raw, []byte(`}]}}`), []byte(`},{"type":"input_text","encrypted_content":"opaque"}]}}`))
-			if !json.Valid(mixed) {
-				t.Fatal("invalid test receipt")
-			}
-			if reliabilityChildReceipt(mixed, "/root", "/root/report", "nonce") {
-				t.Fatal("mixed encrypted receipt accepted")
-			}
-		})
-	})
-	t.Run("prepare_preserves_registration", func(t *testing.T) {
-		root, evidence := t.TempDir(), t.TempDir()
-		if err := os.MkdirAll(filepath.Join(root, ".codex"), 0700); err != nil {
-			t.Fatal(err)
-		}
-		binary, err := os.Executable()
-		if err != nil {
-			t.Fatal(err)
-		}
-		original := []byte(fmt.Sprintf(`{"hooks":{"PreToolUse":[{"matcher":"^Bash$","hooks":[{"type":"command","command":%q,"timeout":10},{"type":"command","command":"echo user-hook","timeout":4}]}]}}`, hookProbeQuote(binary)+" __hook --project-dir "+hookProbeQuote(root)))
-		if err := os.WriteFile(filepath.Join(root, ".codex/hooks.json"), original, 0600); err != nil {
-			t.Fatal(err)
-		}
-		if err := reliabilityPrepare(root, binary, binary, evidence); err != nil {
-			t.Fatal(err)
-		}
-		candidate, err := os.ReadFile(filepath.Join(evidence, "hooks.candidate.json"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Contains(candidate, []byte(`"matcher": "^Bash$"`)) || !bytes.Contains(candidate, []byte(`"timeout": 10`)) || !bytes.Contains(candidate, []byte("wrapper.sh")) {
-			t.Fatalf("registration not preserved: %s", candidate)
-		}
-		if !bytes.Contains(candidate, []byte("echo user-hook")) {
-			t.Fatal("prepare replaced a user-owned hook")
-		}
-		unchanged, err := os.ReadFile(filepath.Join(root, ".codex/hooks.json"))
-		if err != nil || !bytes.Equal(unchanged, original) {
-			t.Fatal("prepare modified installed hooks")
-		}
-		wrapper, err := os.ReadFile(filepath.Join(evidence, "wrapper.sh"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, forbidden := range []string{"bypass", "trust_level", "assignment init", "app-server"} {
-			if bytes.Contains(wrapper, []byte(forbidden)) {
-				t.Fatalf("unsafe prepare %s", forbidden)
-			}
-		}
-	})
-	// Inputs are literal protocol examples, independent of collector output.
-	preRaw := []byte(`{"hook_event_name":"PreToolUse","session_id":"s","turn_id":"t","tool_use_id":"exec-1","tool_name":"Bash","tool_input":{"command":"printf done"}}`)
-	postRaw := []byte(`{"hook_event_name":"PostToolUse","session_id":"s","turn_id":"t","tool_use_id":"exec-1","tool_name":"Bash","tool_response":"done"}`)
-	terminal := []byte(`{"type":"event_msg","payload":{"type":"item_completed","thread_id":"s","turn_id":"t","completed_at_ms":2000,"item":{"type":"CommandExecution","id":"exec-1","status":"completed","exit_code":0}}}`)
-	empty := []byte("space=\nintent=\nturn=t\ntool=\nrule_turn=\nrule_hash=\n")
-	busy := []byte("space=\nintent=\nturn=t\ntool=exec-1\nrule_turn=\nrule_hash=\n")
-	for _, tc := range []struct {
-		name, observation, product string
-		mutate                     func(*[]reliabilityRecord, *[]byte)
-	}{
-		{"cleared", "complete", "pass", nil},
-		{"missing_post", "incomplete", "unknown", func(r *[]reliabilityRecord, _ *[]byte) { *r = (*r)[:1] }},
-		{"missing_terminal", "incomplete", "unknown", func(_ *[]reliabilityRecord, b *[]byte) { *b = nil }},
-		{"running", "incomplete", "unknown", func(_ *[]reliabilityRecord, b *[]byte) {
-			*b = bytes.ReplaceAll(*b, []byte(`"completed"`), []byte(`"inProgress"`))
-		}},
-		{"wrong_id", "incomplete", "unknown", func(r *[]reliabilityRecord, _ *[]byte) {
-			(*r)[1].Raw = bytes.ReplaceAll((*r)[1].Raw, []byte("exec-1"), []byte("exec-2"))
-		}},
-		{"wrong_turn", "incomplete", "unknown", func(_ *[]reliabilityRecord, b *[]byte) {
-			*b = bytes.ReplaceAll(*b, []byte(`"turn_id":"t"`), []byte(`"turn_id":"other"`))
-		}},
-		{"missing_snapshot", "incomplete", "unknown", func(r *[]reliabilityRecord, _ *[]byte) { (*r)[1].After = reliabilitySnapshot{Missing: true} }},
-		{"retained", "complete", "unrepaired", func(r *[]reliabilityRecord, _ *[]byte) { (*r)[1].After.Data = busy }},
-		{"save_failure", "complete", "unrepaired", func(r *[]reliabilityRecord, _ *[]byte) {
-			(*r)[1].After.Data = busy
-			(*r)[1].Stdout = []byte(`{"continue":false,"stopReason":"lock unavailable"}`)
-		}},
-		{"hook_exit", "complete", "unrepaired", func(r *[]reliabilityRecord, _ *[]byte) { (*r)[1].Exit = 1 }},
-		{"tool_failure", "complete", "pass", func(_ *[]reliabilityRecord, b *[]byte) {
-			*b = bytes.ReplaceAll(*b, []byte(`"exit_code":0`), []byte(`"exit_code":7`))
-			*b = bytes.ReplaceAll(*b, []byte(`"status":"completed"`), []byte(`"status":"failed"`))
-		}},
-		{"completed_nonzero", "incomplete", "unknown", func(_ *[]reliabilityRecord, b *[]byte) {
-			*b = bytes.ReplaceAll(*b, []byte(`"exit_code":0`), []byte(`"exit_code":7`))
-		}},
-		{"failed_zero", "incomplete", "unknown", func(_ *[]reliabilityRecord, b *[]byte) {
-			*b = bytes.ReplaceAll(*b, []byte(`"status":"completed"`), []byte(`"status":"failed"`))
-		}},
-		{"post_before_terminal", "incomplete", "unknown", func(r *[]reliabilityRecord, _ *[]byte) { (*r)[1].Started = time.UnixMilli(1500) }},
-		{"duplicate_idempotent", "complete", "pass", func(r *[]reliabilityRecord, _ *[]byte) {
-			d := (*r)[1]
-			d.Before = d.After
-			d.Started = time.UnixMilli(4000)
-			d.Finished = time.UnixMilli(4100)
-			*r = append(*r, d)
-		}},
-		{"duplicate_mutates", "complete", "unrepaired", func(r *[]reliabilityRecord, _ *[]byte) {
-			d := (*r)[1]
-			d.Before = d.After
-			d.After.Data = busy
-			d.Started = time.UnixMilli(4000)
-			d.Finished = time.UnixMilli(4100)
-			*r = append(*r, d)
-		}},
-		{"child_final_only", "incomplete", "unknown", func(r *[]reliabilityRecord, b *[]byte) {
-			*r = nil
-			*b = []byte(`{"type":"event_msg","payload":{"type":"task_complete","last_agent_message":"reported"}}`)
-		}},
-		{"listed_only", "incomplete", "unknown", func(r *[]reliabilityRecord, b *[]byte) { *r = nil; *b = []byte(`{"hooks":[{"event":"PreToolUse"}]}`) }},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			r := []reliabilityRecord{
-				{Raw: preRaw, Stdout: []byte("{}\n"), Before: reliabilitySnapshot{Data: empty}, After: reliabilitySnapshot{Data: busy}, Started: time.UnixMilli(1000), Finished: time.UnixMilli(1100)},
-				{Raw: postRaw, Stdout: []byte("{}\n"), Before: reliabilitySnapshot{Data: busy}, After: reliabilitySnapshot{Data: empty}, Started: time.UnixMilli(2000), Finished: time.UnixMilli(2100)},
-			}
-			b := bytes.Clone(terminal)
-			if tc.mutate != nil {
-				tc.mutate(&r, &b)
-			}
-			got := reliabilityEvaluate(r, b)
-			if got.Observation != tc.observation || got.Product != tc.product {
-				t.Fatalf("got %+v, want %s/%s", got, tc.observation, tc.product)
-			}
-		})
-	}
-}
-
 func reliabilityChildRequest(parent, role string) (string, error) {
 	if !regexp.MustCompile(`^/root(/[a-z][a-z0-9_]*)*$`).MatchString(parent) || len(parent) > 512 || role != "aidlc-reviewer" && role != "aidlc-stage-planner" {
 		return "", fmt.Errorf("explicit canonical parent and eligible read-only role required")
@@ -535,7 +422,7 @@ func reliabilityPrepare(root, binary, helper, evidence string) error {
 		return fmt.Errorf("no deployed hooks")
 	}
 	owned := 0
-	productCommand := hookProbeQuote(binary) + " __hook --project-dir " + hookProbeQuote(root)
+	productCommand := hookProbeQuote(binary) + " __hook --project-dir " + hookProbeQuote(root) + " --okf-binary " + hookProbeQuote(filepath.Join(filepath.Dir(binary), "okf"))
 	for _, value := range hooks {
 		groups, ok := value.([]any)
 		if !ok {

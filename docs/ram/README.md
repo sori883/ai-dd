@@ -1,6 +1,7 @@
 # 開発プロジェクトRAM
 
 - [テスト削減M4完了](decisions/2026-09-14-test-reduction-m4-completed.md): 36候補を整理。Issue #210・PR #211を完了し、独立レビュー・final・3OS配布検査が成功。
+- [テスト削減M5結果](../design/test-reduction-m5-result.md): 34候補の削減・診断分離とloop確認。実一周/同候補Native・独立review/final待ち。
 - [テスト削減M5計画](../design/test-reduction-m5-plan.md): Issue #212。34候補のCLI一周・旧実験・build/Git準備を整理する。
 
 - [テスト削減M3完了](decisions/2026-09-14-test-reduction-m3-completed.md): 39候補を整理しIssue #208・PR #209を完了。独立レビュー・final・3OS配布検査が成功。

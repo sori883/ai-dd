@@ -1,3 +1,5 @@
+//go:build integration && diagnostic
+
 package main
 
 import (
@@ -108,18 +110,7 @@ func assignmentReadProcess(t *testing.T, dir, nonce string) assignmentProcessRec
 	return r
 }
 func TestAssignmentProcessRendezvous(t *testing.T) {
-	t.Run("finite missing peer", func(t *testing.T) {
-		dir := t.TempDir()
-		start := time.Now()
-		err := assignmentRunProcess(dir, "a", "b", 30*time.Millisecond, 30*time.Millisecond)
-		if !errors.Is(err, context.DeadlineExceeded) {
-			t.Fatalf("missing peer did not time out: %v", err)
-		}
-		r := assignmentReadProcess(t, dir, "a")
-		if time.Since(start) > time.Second || r.ReadyAt.IsZero() || !r.WorkStartedAt.IsZero() || r.EndedAt.IsZero() || r.Error == "" {
-			t.Fatalf("invalid timeout record: %+v", r)
-		}
-	})
+
 	t.Run("actual peer and duplicate nonce", func(t *testing.T) {
 		dir := t.TempDir()
 		done := make(chan error, 2)

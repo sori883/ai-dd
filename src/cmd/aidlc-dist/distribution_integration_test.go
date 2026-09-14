@@ -51,18 +51,6 @@ func snapshotFixture(t *testing.T, root string, names []string) map[string]strin
 	}
 	return m
 }
-func fixtureGitRoot(t *testing.T, root string) string {
-	t.Helper()
-	if err := os.MkdirAll(root, 0700); err != nil {
-		t.Fatal(err)
-	}
-	distributionOK(t, root, "git", "init", "-q")
-	actual, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return actual
-}
 
 const customHook = `"Notification": [
       {"hooks":[{"type":"command","command":"echo user-hook","timeout":3}]}

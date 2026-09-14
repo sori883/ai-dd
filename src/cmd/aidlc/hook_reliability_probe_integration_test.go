@@ -1,4 +1,4 @@
-//go:build integration
+//go:build integration && diagnostic
 
 package main
 
@@ -400,6 +400,31 @@ func TestHookReliabilityProbeCollectedEvidence(t *testing.T) {
 	if err != nil || len(got) != 1 || got["s/t/exec-1"].Product != "pass" {
 		t.Fatalf("terminal collection=%+v, error=%v", got, err)
 	}
+	postPath := filepath.Join(evidence, "record-1")
+	savedPost := operationsRead(t, postPath)
+	if err := os.Remove(postPath); err != nil {
+		t.Fatal(err)
+	}
+	incomplete, err := reliabilityCollect(evidence)
+	if err != nil || incomplete["s/t/exec-1"].Product == "pass" {
+		t.Fatal("missing Post accepted")
+	}
+	var wrong reliabilityRecord
+	if err := json.Unmarshal(savedPost, &wrong); err != nil {
+		t.Fatal(err)
+	}
+	wrong.Raw = bytes.ReplaceAll(wrong.Raw, []byte(`"session_id":"s"`), []byte(`"session_id":"other"`))
+	wrongBytes, _ := json.Marshal(wrong)
+	if err := os.WriteFile(postPath, wrongBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	incomplete, err = reliabilityCollect(evidence)
+	if err != nil || incomplete["s/t/exec-1"].Product == "pass" {
+		t.Fatal("wrong identity accepted")
+	}
+	if err := os.WriteFile(postPath, savedPost, 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(transcript, []byte(`{"type":"event_msg","payload":{"type":"task_complete","last_agent_message":"exec-1 completed"}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -455,28 +480,4 @@ func TestHookReliabilityProbeOpaqueReceipt(t *testing.T) {
 		t.Fatal("opaque-delivery unconfirmed")
 	}
 	t.Logf("opaque-delivery sha256=%s", hash)
-}
-
-func TestHookReliabilityProbeOpaqueReceiptSynthetic(t *testing.T) {
-	pre, post, rows := opaqueFixture(t)
-	root := t.TempDir()
-	for key, record := range map[string]reliabilityRecord{"PRE_RECORD": pre, "POST_RECORD": post} {
-		raw, err := json.Marshal(record)
-		if err != nil {
-			t.Fatal(err)
-		}
-		name := filepath.Join(root, key)
-		if err := os.WriteFile(name, raw, 0600); err != nil {
-			t.Fatal(err)
-		}
-		t.Setenv("AIDLC_HOOK_RELIABILITY_"+key, name)
-	}
-	name := filepath.Join(root, "receipt.jsonl")
-	if err := os.WriteFile(name, bytes.Join(rows, []byte("\n")), 0600); err != nil {
-		t.Fatal(err)
-	}
-	for key, value := range map[string]string{"RECEIPT_FILE": name, "PARENT_TASK": "/root", "CHILD_TASK": "/root/report", "CHILD_AGENT_ID": "agent"} {
-		t.Setenv("AIDLC_HOOK_RELIABILITY_"+key, value)
-	}
-	TestHookReliabilityProbeOpaqueReceipt(t)
 }

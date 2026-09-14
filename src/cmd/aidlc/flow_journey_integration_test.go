@@ -16,23 +16,6 @@ import (
 	"time"
 )
 
-func buildAIDLCBinary(t *testing.T) string {
-	t.Helper()
-	binary := filepath.Join(t.TempDir(), "aidlc")
-	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "go", "build", "-o", binary, ".")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build: %v: %s", err, output)
-	}
-	for _, product := range []string{"okf", "natural-japanese-go"} {
-		cmd := exec.CommandContext(ctx, "go", "build", "-o", filepath.Join(filepath.Dir(binary), product), "../"+product)
-		if output, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("build %s: %v: %s", product, err, output)
-		}
-	}
-	return binary
-}
 func runAIDLCCLI(t *testing.T, binary, root string, input []byte, args ...string) []byte {
 	t.Helper()
 	if result, ok := fixtureInstall(binary, root, args); ok {
@@ -81,7 +64,10 @@ func writeAIDLCFixture(t *testing.T, path, body string) {
 
 // This deterministic executable journey covers failure/recovery boundaries;
 // actual asynchronous Codex transport pairing is separately live-probed.
-func TestFlowJourney(t *testing.T) { runBoundaryJourney(t) }
+func TestFlowJourney(t *testing.T) {
+	t.Setenv("AIDLC_TEST_PRODUCT_PATH", t.TempDir())
+	runBoundaryJourney(t)
+}
 func runBoundaryJourney(t *testing.T) {
 	runGitIndependentBoundaryJourney(t, buildAIDLCBinary(t), t.TempDir(), false)
 }
@@ -109,7 +95,9 @@ func runGitIndependentBoundaryJourney(t *testing.T, binary, root string, units b
 		t.Helper()
 		base := []string{"intent", action, st.ID, "--space", "default", "--expect", strconv.FormatUint(st.Revision, 10)}
 		read(runAIDLCCLI(t, binary, root, nil, append(base, args...)...))
-		procedure()
+		if action == "reopen" {
+			procedure()
+		}
 	}
 	writeRequest := func(name string, value any) string {
 		t.Helper()
@@ -138,21 +126,29 @@ func runGitIndependentBoundaryJourney(t *testing.T, binary, root string, units b
 	call("begin")
 	review("pass")
 	st = f.finish(st)
+	procedure()
 	call("configure", "--file", writeRequest("config.json", config))
 	st = f.selectPlan(st)
 	boundaryFixtureDocument(t, root, st.ID, "Requirements")
 	call("begin")
+	review("pass")
+	st = f.approve(st, false)
 	review("fail")
-	cmd := exec.Command(binary, "intent", "advance", st.ID, "--space", "default", "--expect", strconv.FormatUint(st.Revision, 10))
-	cmd.Dir = root
-	if productPath := os.Getenv("AIDLC_TEST_PRODUCT_PATH"); productPath != "" {
-		cmd.Env = gitIndependentEnvironment(os.Environ(), productPath)
+	var endGate flow.Gate
+	if err := json.Unmarshal(runAIDLCCLI(t, binary, root, nil, "intent", "check", st.ID, "--space", "default"), &endGate); err != nil {
+		t.Fatal(err)
 	}
-	if err := cmd.Run(); err == nil {
-		t.Fatal("failed review advanced")
+	if st.Approval == nil || st.Approval.Status != "approved" || st.ExecutionPlan.Draft != nil || endGate.Status != "pass" {
+		t.Fatal("failed-review control lacks prior approval or passing end Sensor")
+	}
+	before := f.bytes(st)
+	rejected := f.run("intent", "finish", st.ID, "--space", "default", "--expect", strconv.FormatUint(st.Revision, 10))
+	if rejected.code != 1 || len(rejected.out) != 0 || !bytes.Contains(rejected.stderr, []byte("result changed")) || !bytes.Equal(before, f.bytes(st)) {
+		t.Fatalf("failed review did not reject unchanged finish: %+v", rejected)
 	}
 	review("pass")
 	st = f.finish(st)
+	procedure()
 	boundaryFixtureDocument(t, root, st.ID, "ImplementationPlan")
 	call("begin")
 	config.Plan = "Implement Add using a failing example then verification"
@@ -160,6 +156,7 @@ func runGitIndependentBoundaryJourney(t *testing.T, binary, root string, units b
 	call("configure", "--file", writeRequest("config.json", config))
 	review("pass")
 	st = f.finish(st)
+	procedure()
 	call("reopen", "--step", "s03", "--reason", "recheck implementation plan")
 	st = f.approve(st, true)
 	log, err := os.ReadFile(filepath.Join(root, "aidlc/spaces/default/knowledge/log", st.ID+"-work-log.md"))
@@ -188,28 +185,34 @@ func runGitIndependentBoundaryJourney(t *testing.T, binary, root string, units b
 	call("begin")
 	review("pass")
 	st = f.finish(st)
+	procedure()
 	call("begin")
 	writeAIDLCFixture(t, filepath.Join(root, "go.mod"), "module example.invalid/add\n\ngo 1.26\n")
 	writeAIDLCFixture(t, filepath.Join(root, "add.go"), "package add\nfunc Add(a,b int)int{return 0}\n")
 	writeAIDLCFixture(t, filepath.Join(root, "add_test.go"), "package add\nimport \"testing\"\nfunc TestAdd(t *testing.T){if Add(2,3)!=5{t.Fatal(\"wrong sum\")}}\n")
-	red := exec.Command("go", "test", "-count=1", "-run", "^TestAdd$")
-	red.Dir = root
-	if raw, err := red.CombinedOutput(); err == nil || !bytes.Contains(raw, []byte("wrong sum")) {
-		t.Fatalf("not assertion RED: %s %v", raw, err)
+	var green []byte
+	if !units {
+		red := exec.Command("go", "test", "-count=1", "-run", "^TestAdd$")
+		red.Dir = root
+		if raw, err := red.CombinedOutput(); err == nil || !bytes.Contains(raw, []byte("wrong sum")) {
+			t.Fatalf("not assertion RED: %s %v", raw, err)
+		}
 	}
 	writeAIDLCFixture(t, filepath.Join(root, "add.go"), "package add\nfunc Add(a,b int)int{return a+b}\n")
-	green := runFixtureProcess(t, root, "go", "test", "-count=1", "-run", "^TestAdd$")
-	writeAIDLCFixture(t, filepath.Join(root, "aidlc/evidence/results.txt"), string(green))
-	config.Artifacts = append(config.Artifacts, flow.Artifact{Path: "aidlc/evidence/results.txt", Kind: "test", Stage: "tdd"})
 	if units {
 		config = runGitIndependentUnits(t, binary, root, &st, config)
+		green = operationsRead(t, filepath.Join(root, "aidlc/evidence/b.txt"))
+	} else {
 		green = runFixtureProcess(t, root, "go", "test", "-count=1", "-run", "^TestAdd$")
 	}
+	writeAIDLCFixture(t, filepath.Join(root, "aidlc/evidence/results.txt"), string(green))
+	config.Artifacts = append(config.Artifacts, flow.Artifact{Path: "aidlc/evidence/results.txt", Kind: "test", Stage: "tdd"})
 	call("configure", "--file", writeRequest("config.json", config))
 	config.TestResults = append(config.TestResults, boundaryFixtureResults(t, root, st.CurrentStepID, "tdd", "", config.Tests, green))
 	call("configure", "--file", writeRequest("config.json", config))
 	review("pass")
 	st = f.finish(st)
+	procedure()
 	call("begin")
 	call("pause", "--reason", "session ended")
 	call("resume", "--reason", "new session inspected persisted state")
@@ -234,6 +237,7 @@ func runGitIndependentBoundaryJourney(t *testing.T, binary, root string, units b
 	runAIDLCCLI(t, binary, root, nil, "session", "bind", st.ID, "--space", "default", "--session", "second")
 	review("pass")
 	st = f.finish(st)
+	procedure()
 	if st.Status != "completed" {
 		t.Fatalf("not completed %+v", st)
 	}

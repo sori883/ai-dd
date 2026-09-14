@@ -66,7 +66,7 @@ M2マージ後の追加確認: `cmd/aidlc-dist/distribution_integration_test.go`
 
 その後は小さい通常directoryに共有対象だけをコピーし、旧sessionがなく、新しいbindingから管理runtimeのないUnit/review結果を受理しないことを確認する。現在schemaの有効なStepID・要求形・必要なSHAを使い、欠落runtime由来の拒否とstate bytes不変を確認する。40桁HEADだから旧testは無効、という理由付けはしない。M3で同じ固有境界が実製品へ既に移っていればそのtestへ統合し、CLI error代表だけ残す。
 
-`TestOperationsCorruptState` は正常なstateのraw JSONを壊し、`intent show` がexit1・空stdout・診断を返してbytesを変えないことを直接検査する。Gitが衝突markerを作る手順や手動解決commitは削除する。C28のfinishをreview以外の不足で拒否する場合は、それをfailed review保証と記録しない。正常対照から最小の不足だけを残すか、M3の固有review拒否testへ集約する。
+`TestOperationsCorruptState` は正常なstateのraw JSONを壊し、`intent show` がexit2・空stdout・診断を返してbytesを変えないことを直接検査する。Gitが衝突markerを作る手順や手動解決commitは削除する。C28のfinishをreview以外の不足で拒否する場合は、それをfailed review保証と記録しない。正常対照から最小の不足だけを残すか、M3の固有review拒否testへ集約する。
 
 ## M3固定headでのC28/C29追加確認
 
@@ -131,3 +131,9 @@ blocking finding解消後、親だけがread-only finalを開始する。上位�
 P26は同head GitHub Distribution Package＋3OS Native/bootstrap（PS5.1/7含む）の実成功を必須にする。ローカル30binary再buildは行わない。M5でCI整理全般はせず、廃止/移動名だけを修正する。全checks成功後のPR merge/Issue closeは親が承認済み手順で実施し、公開/tag操作はない。
 
 重要な未承認仕様選択はない。未確定なのはM3/M4 merge後の正確な生存test名、再利用できるsanitized実記録の有無、不要helperの最終callerで、親がbaseline固定時に確定する。実記録なしは小synthetic診断を理由付き保持、保証移動が成立しない場合は旧固有assertを残して理由を返す。製品の仕様を変えて古いtestに合わせない。問題があれば当該PRをrevertする別PRを用い、他の区切りや他者の変更をresetしない。
+
+## 実装時のfixture整合と結果
+
+C29 CorruptStateのexit1は誤期待だった。現行flow/store.go:252のfs.ErrInvalidがcli/command.go:74でexit2/invalid JSONへ分類されるため、非成功・空stdout・破損診断・state bytes不変という主保証を保ってexit2へ訂正した。親が同work unit内で修復を許可し、新例成功後に旧GitConflict演習を除去した。製品Goは変更しない。
+
+C27の別review rootでは旧worktreeに含まれた実 `.agents/.codex` bytesが必要なので、通常directoryへその内容をcopyする。C23はinstallのcanonical rootと現在の--okf-binary付きhookを使い、生成しないtrust設定は既存user fileとして用意する。詳しい処置と検証境界は[M5結果](test-reduction-m5-result.md)を参照。

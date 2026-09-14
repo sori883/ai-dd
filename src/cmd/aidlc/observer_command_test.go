@@ -1,3 +1,5 @@
+//go:build integration && diagnostic
+
 package main
 
 import (

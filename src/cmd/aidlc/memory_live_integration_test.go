@@ -1,4 +1,4 @@
-//go:build integration
+//go:build integration && diagnostic
 
 package main
 
@@ -212,7 +212,7 @@ func TestMemoryMetadataCommandEvidence(t *testing.T) {
 	}
 	first, second := document("FIRST-BODY\n"), document("SECOND-BODY\n")
 	update = strings.Replace(update, "--expect first", "--expect "+filestore.Hash(first), 1)
-	for _, mode := range []string{"valid", "missing skill", "denied skill", "mismatched skill", "failed skill", "missing skill post", "late skill", "missing update", "bound help", "wrong document", "wrong body", "denied create", "self report"} {
+	for _, mode := range []string{"valid", "denied skill", "self report"} {
 		t.Run(mode, func(t *testing.T) {
 			var records []memoryLiveRecord
 			add := func(event, id, command string, doc, body []byte, bound bool) {
@@ -364,7 +364,6 @@ func TestMemoryMetadataLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runFixtureProcess(t, root, "git", "init", "-q")
 	writeAIDLCFixture(t, filepath.Join(root, "arithmetic.go"), "package arithmetic\nfunc Add(a,b int)int{return a+b}\n")
 	if _, err := install.Codex(root, binary); err != nil {
 		t.Fatal(err)

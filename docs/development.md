@@ -78,25 +78,17 @@ go test -count=1 ./src/cmd/aidlc -run '^TestFlowCommand'
 
 ```sh
 go test -tags=integration -count=1 ./src/cmd/aidlc -run '^(TestFlowJourney|TestGitIndependentJourney)$'
-AIDLC_FLOW_LIVE=1 go test -tags=integration -v -count=1 -timeout=50m ./src/cmd/aidlc -run '^TestFlowJourneyLive$'
 ```
 
-liveはCodex CLI 0.153.4、gpt-6-astra/medium、workspace-write、approval=neverを使用します。
-HOME/CODEX_HOMEや認証を変更しません。fixtureのtrust mapをCLI引数で渡し、検査済みhookだけを実行します。
-既存live fixtureでは固定sandboxの制約によりtest hostがworktree作成・検証bytesのcommit・統合を行います。
-これはtest hostの準備・転送方法であり、製品の利用条件ではありません。TestGitIndependentJourneyはGitなしの通常フォルダと製品PATHで検証します。
-AIによるGit操作成功とは報告しません。調整役AIは実CLIのstate・割当・review・approval・finishを担当し、
-workerは実編集と実test、reviewerは独立read-only会話で固定対象をレビューします。
+通常の一周はno-git/directとdetect-git/unitsの2例です。不変のaidlc/okf binaryだけをtest process内で共有し、project root・state・evidenceは各例で独立させます。
 
-live evidenceは表示した一時ディレクトリへ保持します。raw hook、Codex JSONL/stdout/stderr、
-host job、実testのRED/GREEN・同一test本文hash・source hashを記録します。これらは検証fixtureであり製品auditではありません。
-通常testでliveがskipされてもlive成功とは扱いません。timeout、自己申告、test不在も成功にしません。
+現行liveはBoundary・Procedure・HumanApproval・Memory・StageSkillsの異なる境界を検査する手動診断です。`integration,diagnostic` tagと各既存opt-in環境変数を使います。固定Codex/model/既存trust経路は各fixtureに従います。旧Flow hostとRelocation liveは撤去しました。診断のsynthetic例やenv未設定skipを実機の成功と数えません。
 
 Knowledge CLIだけの親final検証は次を使用します。liveはhelpの実読取、本文のみの作成・更新、保存metadataをraw hookと実CLI結果で確認します。
 
 ```sh
-go test -tags=integration -count=1 ./src/cmd/aidlc -run '^TestMemoryMetadataCommand'
-AIDLC_MEMORY_LIVE=1 go test -tags=integration -v -count=1 -timeout=15m ./src/cmd/aidlc -run '^TestMemoryMetadataLive$'
+go test -tags=integration -count=1 ./src/cmd/okf -run '^TestMemory(MetadataCommand|SaveRecovery)$'
+AIDLC_MEMORY_LIVE=1 go test -tags=integration,diagnostic -v -count=1 -timeout=15m ./src/cmd/aidlc -run '^TestMemoryMetadataLive$'
 ```
 
 ## 日常運用の実CLI検証
@@ -105,10 +97,7 @@ AIDLC_MEMORY_LIVE=1 go test -tags=integration -v -count=1 -timeout=15m ./src/cmd
 go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestOperations'
 ```
 
-複数Intent、別session再開、Git clone引継ぎ、同revision並列更新、Unit割当競合、
-実filesystem保存障害と復旧、Git競合の明示解消を一時fixtureで検証します。
-実CLIのstdout/stderr/exit、保存stateのhash/revisionと文書bytesを比較します。Git操作はtest runnerが行い、
-製品のGit必須条件や実AIによる運用完走の証拠とは区別します。権限障害が効かない環境では成功やskipにせず失敗します。
+Intent作成の隔離、同revision別process更新の1勝1敗、runtimeを共有copyしないこと、壊れJSONの非成功・空stdout・bytes不変、実filesystem保存障害と復旧を検査します。runtime非共有だけは最小のGit index smokeを使い、clone/merge演習は行いません。Unitの占有から解放までの実CLI接続はAssignmentJourneyが所有します。権限障害が効かない環境は成功として扱いません。
 
 Git cloneはstate・Knowledge・ADRを保持しますが、runtimeの会話・worker/reviewer割当は共有しません。
 新sessionでIntentを選択して再開しても、旧Unitのconfirmや旧reviewのacceptをそのまま引き継げません。
@@ -139,11 +128,9 @@ reassignは旧処理の終了を確認してから使います。runningならpa
 
 ```sh
 go test -tags=integration -count=1 ./src/cmd/aidlc -run '^TestRelocationCommand'
-AIDLC_RELOCATION_LIVE=1 go test -tags=integration -v -count=1 -timeout=15m ./src/cmd/aidlc -run '^TestRelocationLive$'
 ```
 
-限定liveは親finalで実行し、固定Codex/model/通常sandboxで移転後の同じIntent選択とKnowledge作成更新を観測します。
-2Unitの実CLI引継ぎと実Go testの証拠は、実AI workerの完走とは区別します。
+移転先で生成hookを実行し、新root/new binary・user file保全・source snapshot不変を確認します。実installer全体と自然日本語stdin JSONの空PATH検査は同候補の3OS Nativeが所有します。
 
 ### 製品の5担当
 
@@ -175,7 +162,7 @@ plan/plan-approvalで保存します。
 
 限定確認は `go test -count=1 ./src/internal/flow -run '^(TestBoundary|TestStartSensor|TestEndSensor)'`。
 実CLIの初期化・目的整理と選択した段階はfinalで `go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestFlowJourney$'`。
-固定Codex 0.153.4の限定実機は `AIDLC_BOUNDARY_LIVE=1 go test -tags=integration -count=1 -v -timeout 15m ./src/cmd/aidlc -run '^TestBoundaryLive$'`。
+固定Codex 0.153.4の限定実機は `AIDLC_BOUNDARY_LIVE=1 go test -tags=integration,diagnostic -count=1 -v -timeout 15m ./src/cmd/aidlc -run '^TestBoundaryLive$'`。
 後者は未開始拒否→必要文書修復→begin→一般編集の実hook/CLIと現物証拠に限定し、選択計画の完走と同一視しない。
 既存model/認証/通常sandboxを保ち、test observerは製品hook出力を変更せず一時fixtureに記録する。
 
@@ -201,7 +188,7 @@ loopの指定targetedとaffected通常testの証拠はRAMへ記録する。親fi
 
 ```sh
 go test -tags=integration -count=1 -v ./src/cmd/aidlc -run '^TestFlowJourney$'
-AIDLC_PROCEDURE_LIVE=1 go test -tags=integration -count=1 -v -timeout 15m ./src/cmd/aidlc -run '^TestProcedureLive$'
+AIDLC_PROCEDURE_LIVE=1 go test -tags=integration,diagnostic -count=1 -v -timeout 15m ./src/cmd/aidlc -run '^TestProcedureLive$'
 ```
 
 journeyは実CLIの必須2段階と選択した計画・TDD・統合、TDDからplanningへの差戻し・再前進、Sensor/reviewの拒否を確認する。
@@ -254,7 +241,7 @@ Entry・文書宣言・実測JSON・Unit要求には実際のstep_idを用い、
 履歴はstateのheadが指す確定列だけを表示し、途中保存の未確定ファイルを成功扱いしません。
 
 限定実機の会話承認確認は親finalで実施します。
-`AIDLC_HUMAN_APPROVAL_LIVE=1 go test -tags=integration -count=1 -v -timeout 20m ./src/cmd/aidlc -run '^TestHumanApprovalLive$'`
+`AIDLC_HUMAN_APPROVAL_LIVE=1 go test -tags=integration,diagnostic -count=1 -v -timeout 20m ./src/cmd/aidlc -run '^TestHumanApprovalLive$'`
 は試験用の2承認待ちを準備し、実hookの作業拒否、同じ回答の出典、別承認CLIの成功、finishと確定履歴を照合します。
 
 プロジェクトの共通ルールはknowledge/rules/rule.mdに記載します。初期状態は「追加ルールはありません」で、製品が言語や設計制約を決めません。AI-DLCの進行・会話承認・記録先はaidlcスキル、操作案内はaidlc-cli、知識の検索・保存はokf-agent-memory、正確な引数・JSONはhelpにあります。工程手順はstage、担当責務はagent定義から取得します。新配布にはWORKFLOW.mdを含めません。既設Ruleや旧配置は自動移行・削除せず、新版は新配布・新Intentで利用します。
@@ -291,7 +278,7 @@ resetは新epochを発行し、読める旧記録を保管します。古い要�
 定義hashが変わるため、旧Intentは旧定義と対応版で扱うか、旧作業と成果を確認して新Intentへ新規claimします。旧Unitへ予約を後付けしません。
 ロールバックも停止確認後にbinary/hooks/skills/定義を対応する組で戻し、registry・進捗・Knowledgeを削除して空き扱いにしないでください。
 
-固定実機の観測fixtureは`AIDLC_ASSIGNMENT_LIVE=1 go test -tags=integration -count=1 ./src/cmd/aidlc -run '^TestAssignmentLive$' -timeout 30m`です。
+固定実機の観測fixtureは`AIDLC_ASSIGNMENT_LIVE=1 go test -tags=integration,diagnostic -count=1 ./src/cmd/aidlc -run '^TestAssignmentLive$' -timeout 30m`です。
 既存Codex CLI 0.153.4、macOS arm64、gpt-6-astra/xhighを使い、専用temp rootだけを変更します。認証ファイルは読み取り・コピーしません。
 一時fixtureのhook trust bypassを利用者配置へ適用しないでください。出力された`aidlc-assignment-live-*`にはcase別のhook生入力/出力、model transcript、process印、manifestを残します。
 モデルexit 0だけでは成功としません。許可/拒否、実並列、追加依頼、明示解放、Post欠落・保存失敗をrawで確認し、未実行は未確定として報告します。
@@ -304,6 +291,6 @@ resetは新epochを発行し、読める旧記録を保管します。古い要�
 
 hookの入力・transportを照合する補助testは `src/cmd/aidlc/hook_probe_test.go`、
 実機用の補助処理は `hook_probe_live_test.go` にあります。
-`TestHookProbeVerify` 等の限定testで証拠の検査処理を確認できます。
+`go test -tags=integration,diagnostic ./src/cmd/aidlc -run '^TestHookProbe(ObservedTransport|Replay)$'` で固定transportの再生診断を実行できます。
 実機用の起動指定は `AIDLC_HOOK_LIVE=1`、保存済み証拠を再検査する入力先は `AIDLC_HOOK_EVIDENCE` です。
 通常のtest成功を実機検証の成功に数えず、実機実行は承認済み計画のfinal範囲で行います。

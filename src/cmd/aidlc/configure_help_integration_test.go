@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -21,18 +22,14 @@ func TestConfigureHelpExamples(t *testing.T) {
 	}{{"without_units", 0}, {"with_units", 1}} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
-			runFixtureProcess(t, root, "git", "init", "-q")
 			runAIDLCCLI(t, binary, root, nil, "install", "codex", "--project-dir", root)
 			writeAIDLCFixture(t, filepath.Join(root, "aidlc/spaces/default/knowledge/codekb/current.md"), "---\ntype: Design\ntitle: Addition\ndescription: Current behavior\n---\nAdd returns the sum.\n")
-			runFixtureProcess(t, root, "git", "add", ".")
-			runFixtureProcess(t, root, "git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "assets")
-			head := strings.TrimSpace(string(runFixtureProcess(t, root, "git", "rev-parse", "HEAD")))
 			help := runAIDLCCLI(t, binary, root, nil, "intent", "configure", "--help")
 			examples := regexp.MustCompile("(?s)```json\\n(.*?)\\n```").FindAllStringSubmatch(string(help), -1)
 			if len(examples) != 2 {
 				t.Fatalf("missing examples: %s", help)
 			}
-			config := strings.ReplaceAll(examples[tc.index][1], "<CURRENT_HEAD>", head)
+			config := examples[tc.index][1]
 			file := filepath.Join(root, "aidlc/.runtime/config.json")
 			writeAIDLCFixture(t, file, strings.ReplaceAll(config, "<CURRENT_STEP>", "s02"))
 			var st flow.State
@@ -56,8 +53,12 @@ func TestConfigureHelpExamples(t *testing.T) {
 			boundaryFixtureDocument(t, root, st.ID, "Requirements")
 			call("configure", "--file", file)
 			call("begin")
-			reviewer := filepath.Join(t.TempDir(), "review")
-			runFixtureProcess(t, root, "git", "worktree", "add", "--detach", reviewer, head)
+			reviewer := t.TempDir()
+			for _, name := range []string{".agents", ".codex"} {
+				if err := os.CopyFS(filepath.Join(reviewer, name), os.DirFS(filepath.Join(root, name))); err != nil {
+					t.Fatal(err)
+				}
+			}
 			request := func(r flow.ReviewRequest) string {
 				t.Helper()
 				raw, err := json.Marshal(r)
@@ -93,10 +94,10 @@ func TestConfigureHelpExamples(t *testing.T) {
 			writeAIDLCFixture(t, file, strings.ReplaceAll(config, "<CURRENT_STEP>", st.CurrentStepID))
 			call("configure", "--file", file)
 			check()
-			if f.git("rev-parse", "HEAD") != head || len(st.Config.Units) != tc.index {
+			if len(st.Config.Units) != tc.index {
 				t.Fatal("configuration not preserved")
 			}
-			t.Logf("configure exit=0 planning Sensor=pass example=%s HEAD=%s revision=%d", tc.name, head, st.Revision)
+			t.Logf("configure exit=0 planning Sensor=pass example=%s revision=%d", tc.name, st.Revision)
 		})
 	}
 }

@@ -65,3 +65,7 @@ M1の24入口削除・構文拒否fixture軽量化と生存保証は、[M1結果
 ## M4実装結果
 
 CLI・Space・OKF等の36候補を[M4結果](../../design/test-reduction-m4-result.md)へ記録した。overlay範囲・安全なhelp案内・独自cursor/default close保証は理由付き保持。targeted確認を終え、独立review・final・checks・mergeは親が続ける。
+
+## M5実装結果
+
+34候補のCLI入口・旧実験・診断tag・binary/Git準備を[M5結果](../../design/test-reduction-m5-result.md)へ記録した。targeted/compile/discoveryを区別し、実一周と同候補3OS Nativeは親final待ち。CorruptStateは現行fs.ErrInvalid→exit2へfixture期待を整合し、公開仕様は変更していない。

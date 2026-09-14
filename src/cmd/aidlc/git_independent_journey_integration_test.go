@@ -14,36 +14,22 @@ import (
 
 func TestGitIndependentJourney(t *testing.T) {
 	binary := buildAIDLCBinary(t)
-	for _, mode := range []string{"no-git", "detect-git"} {
-		t.Run(mode, func(t *testing.T) {
-			productPath := t.TempDir()
-			marker := filepath.Join(productPath, "called")
-			if mode == "detect-git" {
-				stub := filepath.Join(productPath, "git")
-				if err := os.WriteFile(stub, []byte("#!/bin/sh\nprintf called > '"+marker+"'\nexit 99\n"), 0755); err != nil {
-					t.Fatal(err)
-				}
-			}
-			t.Setenv("AIDLC_TEST_PRODUCT_PATH", productPath)
-			for _, units := range []bool{false, true} {
-				name := "direct"
-				if units {
-					name = "units"
-				}
-				t.Run(name, func(t *testing.T) {
-					root := t.TempDir()
-					runGitIndependentBoundaryJourney(t, binary, root, units)
-					if _, err := os.Stat(filepath.Join(root, ".git")); !os.IsNotExist(err) {
-						t.Fatal("fixture acquired Git marker")
-					}
-				})
-			}
-			if _, err := os.Stat(marker); !os.IsNotExist(err) {
-				t.Fatal("product invoked Git")
-			}
-		})
+	productPath := t.TempDir()
+	marker := filepath.Join(productPath, "called")
+	if err := os.WriteFile(filepath.Join(productPath, "git"), []byte("#!/bin/sh\nprintf called > '"+marker+"'\nexit 99\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AIDLC_TEST_PRODUCT_PATH", productPath)
+	root := t.TempDir()
+	runGitIndependentBoundaryJourney(t, binary, root, true)
+	if _, err := os.Stat(filepath.Join(root, ".git")); !os.IsNotExist(err) {
+		t.Fatal("fixture acquired Git marker")
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("product invoked Git")
 	}
 }
+
 func runGitIndependentUnits(t *testing.T, binary, root string, st *flow.State, config flow.Config) flow.Config {
 	t.Helper()
 	config.Units = []flow.Unit{{ID: "a", StepID: st.CurrentStepID, Bolt: "one", Status: "pending", Scope: []string{"add.go"}, Tests: config.Tests}, {ID: "b", StepID: st.CurrentStepID, Bolt: "two", Status: "pending", DependsOn: []string{"a"}, Scope: []string{"add.go"}, Tests: config.Tests}}

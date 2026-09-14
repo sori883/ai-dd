@@ -1,9 +1,10 @@
+//go:build integration && diagnostic
+
 package main
 
 import (
 	"encoding/json"
 	"fmt"
-	"testing"
 )
 
 // These observations are test evidence, never product audit records.
@@ -38,113 +39,6 @@ var hookProbeCommands = []string{
 }
 var hookProbeFiles = []string{"probe-forbidden", "probe-success", "probe-failure", "probe-async-success", "probe-async-failure", "probe-patch"}
 var hookProbeContents = []string{"", "success", "failure", "async-success", "async-failure", "patch\n"}
-
-func TestHookProbeVerify(t *testing.T) {
-	tests := []struct {
-		name   string
-		mutate func(*[]hookProbeEvent, *[]hookProbeCall, map[string]string)
-	}{
-		{"complete", nil},
-		{"missing_start", func(e *[]hookProbeEvent, _ *[]hookProbeCall, _ map[string]string) { *e = (*e)[1:] }},
-		{"missing_prompt", func(e *[]hookProbeEvent, _ *[]hookProbeCall, _ map[string]string) {
-			*e = append((*e)[:1], (*e)[2:]...)
-		}},
-		{"missing_post", func(e *[]hookProbeEvent, _ *[]hookProbeCall, _ map[string]string) {
-			*e = append((*e)[:4], (*e)[5:]...)
-		}},
-		{"mismatched_id", func(e *[]hookProbeEvent, _ *[]hookProbeCall, _ map[string]string) { (*e)[4].Input.ID = "wrong" }},
-		{"wrong_turn", func(e *[]hookProbeEvent, _ *[]hookProbeCall, _ map[string]string) { (*e)[4].Input.Turn = "wrong" }},
-		{"early_post", func(e *[]hookProbeEvent, _ *[]hookProbeCall, _ map[string]string) { (*e)[8].Files = nil }},
-		{"pending_transport", func(_ *[]hookProbeEvent, c *[]hookProbeCall, _ map[string]string) {
-			(*c)[3].Output = `{"session_id":42}`
-		}},
-		{"wrong_exit", func(_ *[]hookProbeEvent, c *[]hookProbeCall, _ map[string]string) {
-			(*c)[1].Output = `{"exit_code":0}`
-		}},
-		{"forbidden_created", func(_ *[]hookProbeEvent, _ *[]hookProbeCall, f map[string]string) { f["probe-forbidden"] = "" }},
-		{"missing_patch", func(_ *[]hookProbeEvent, _ *[]hookProbeCall, f map[string]string) { delete(f, "probe-patch") }},
-		{"missing_reentry", func(e *[]hookProbeEvent, _ *[]hookProbeCall, _ map[string]string) { *e = (*e)[:len(*e)-1] }},
-		{"stop_not_active", func(e *[]hookProbeEvent, _ *[]hookProbeCall, _ map[string]string) {
-			(*e)[len(*e)-1].Input.Active = false
-		}},
-		{"not_async", func(_ *[]hookProbeEvent, c *[]hookProbeCall, _ map[string]string) {
-			(*c)[2].Output = `{"exit_code":0}`
-		}},
-		{"missing_poll", func(_ *[]hookProbeEvent, c *[]hookProbeCall, _ map[string]string) {
-			*c = append((*c)[:3], (*c)[4:]...)
-		}},
-		{"wrong_poll_session", func(_ *[]hookProbeEvent, c *[]hookProbeCall, _ map[string]string) {
-			(*c)[3].Arguments = `{"session_id":99}`
-		}},
-		{"poll_not_terminal", func(_ *[]hookProbeEvent, c *[]hookProbeCall, _ map[string]string) {
-			(*c)[3].Output = `{"output":""}`
-		}},
-		{"missing_sync", func(_ *[]hookProbeEvent, c *[]hookProbeCall, _ map[string]string) { *c = (*c)[1:] }},
-		{"reordered_transport", func(_ *[]hookProbeEvent, c *[]hookProbeCall, _ map[string]string) {
-			(*c)[0], (*c)[1] = (*c)[1], (*c)[0]
-		}},
-		{"pending_and_exit", func(_ *[]hookProbeEvent, c *[]hookProbeCall, _ map[string]string) {
-			(*c)[2].Output = `{"session_id":0,"exit_code":0}`
-		}},
-		{"wrong_async_exit", func(_ *[]hookProbeEvent, c *[]hookProbeCall, _ map[string]string) {
-			(*c)[5].Output = `{"exit_code":0}`
-		}},
-		{"duplicate_post", func(e *[]hookProbeEvent, _ *[]hookProbeCall, _ map[string]string) { *e = append(*e, (*e)[4]) }},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			events, calls, files := hookProbeFixture()
-			if tt.mutate != nil {
-				tt.mutate(&events, &calls, files)
-			}
-			err := hookProbeVerify(events, calls, files)
-			if (err != nil) != (tt.mutate != nil) {
-				t.Fatalf("verification error = %v, want rejection = %v", err, tt.mutate != nil)
-			}
-		})
-	}
-}
-
-func hookProbeFixture() ([]hookProbeEvent, []hookProbeCall, map[string]string) {
-	events := []hookProbeEvent{{Input: hookProbeInput{Event: "SessionStart", Session: "session"}}, {Input: hookProbeInput{Event: "UserPromptSubmit", Session: "session", Turn: "turn"}}}
-	files := map[string]string{}
-	var calls []hookProbeCall
-	for i, command := range hookProbeCommands {
-		input := hookProbeInput{Event: "PreToolUse", Session: "session", Turn: "turn", Tool: "Bash", ID: hookProbeFiles[i]}
-		input.Input.Command = command
-		if i == 5 {
-			input.Tool = "apply_patch"
-		}
-		events = append(events, hookProbeEvent{Input: input})
-		if i == 0 {
-			continue
-		}
-		input.Event = "PostToolUse"
-		code := "0"
-		if i == 2 || i == 4 {
-			code = "7"
-		}
-		input.Response = json.RawMessage(`""`)
-		if i == 5 {
-			input.Response = json.RawMessage(`"Success. Updated the following files: A probe-patch"`)
-		}
-		events = append(events, hookProbeEvent{Input: input, Files: map[string]string{hookProbeFiles[i]: hookProbeContents[i]}})
-		files[hookProbeFiles[i]] = hookProbeContents[i]
-		if i != 5 {
-			args, _ := json.Marshal(map[string]any{"cmd": command, "yield_time_ms": 1})
-			output := `{"exit_code":` + code + `}`
-			if i == 3 || i == 4 {
-				output = `{"session_id":` + code + `}`
-			}
-			calls = append(calls, hookProbeCall{ID: "outer-" + input.ID, Name: "exec_command", Arguments: string(args), Output: output})
-			if i == 3 || i == 4 {
-				calls = append(calls, hookProbeCall{ID: "poll" + code, Name: "write_stdin", Arguments: `{"session_id":` + code + `}`, Output: `{"exit_code":` + code + `}`})
-			}
-		}
-	}
-	events = append(events, hookProbeEvent{Input: hookProbeInput{Event: "Stop", Session: "session", Turn: "turn"}}, hookProbeEvent{Input: hookProbeInput{Event: "Stop", Session: "session", Turn: "next", Active: true}})
-	return events, calls, files
-}
 
 func hookProbeVerify(events []hookProbeEvent, calls []hookProbeCall, files map[string]string) error {
 	if _, ok := files["probe-forbidden"]; ok {

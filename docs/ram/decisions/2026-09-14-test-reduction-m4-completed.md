@@ -9,3 +9,7 @@ CLI・Space・OKFの36候補を整理し、[PR #211](https://github.com/sori883/
 PR [CI](https://github.com/sori883/ai-dd/actions/runs/34802600268)・[Distribution](https://github.com/sori883/ai-dd/actions/runs/34802600277)と作業branch側が初回成功した。26検証check成功、公開用2jobは条件により非対象。6環境build、同候補の3OS Native/bootstrap、Windowsのpowershell.exe/pwsh.exeを確認した。Releaseやtagは公開していない。
 
 [全6区切りの承認](2026-09-14-test-reduction-approved.md)に従い、M5のCLI一周・旧実験整理を別Issue/PRで続ける。
+
+## main反映後の検証
+
+main `271efb4b1e1030e7b25ef683ad6e49be1b859d35` の [CI 34802958443](https://github.com/sori883/ai-dd/actions/runs/34802958443) と [Distribution 34802958425](https://github.com/sori883/ai-dd/actions/runs/34802958425) は、親の確認により両方とも初回で成功した。
