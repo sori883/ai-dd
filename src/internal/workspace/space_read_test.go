@@ -16,10 +16,7 @@ func TestReadSpacesRejectsRelativeRoot(t *testing.T) {
 		name  string
 		input RootInput
 	}{
-		{name: "empty input"},
-		{name: "relative working directory", input: RootInput{WorkingDir: "relative"}},
 		{name: "relative explicit directory", input: RootInput{ExplicitDir: "project", WorkingDir: "relative"}},
-		{name: "relative environment directory", input: RootInput{AIDLCProjectDir: "project"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -40,8 +37,6 @@ func TestReadSpacesProjectOpenError(t *testing.T) {
 		name  string
 		cause error
 	}{
-		{name: "missing project", cause: fs.ErrNotExist},
-		{name: "permission denied", cause: fs.ErrPermission},
 		{name: "other failure", cause: errors.New("injected open failure")},
 	}
 	for _, tt := range tests {
@@ -96,27 +91,6 @@ func TestReadSpacesRootPrecedence(t *testing.T) {
 				ExplicitDir: explicit, AIDLCProjectDir: aidlc, ClaudeProjectDir: claude, WorkingDir: working,
 			},
 			want: explicit,
-		},
-		{
-			name:  "aidlc precedes claude",
-			input: RootInput{AIDLCProjectDir: aidlc, ClaudeProjectDir: claude, WorkingDir: working},
-			want:  aidlc,
-		},
-		{
-			name:  "claude precedes working directory",
-			input: RootInput{ClaudeProjectDir: claude, WorkingDir: working},
-			want:  claude,
-		},
-		{name: "working directory fallback", input: RootInput{WorkingDir: working}, want: working},
-		{
-			name:  "relative candidate is resolved and cleaned",
-			input: RootInput{ExplicitDir: "../explicit/nested/..", WorkingDir: working},
-			want:  explicit,
-		},
-		{
-			name:  "absolute candidate ignores relative working directory",
-			input: RootInput{ExplicitDir: explicit, WorkingDir: "relative"},
-			want:  explicit,
 		},
 	}
 	for _, tt := range tests {

@@ -30,11 +30,10 @@ func TestResolveAncestorFiles(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, explicit := range []string{"", project} {
-				got, err := Resolve(explicit, project, false)
-				if err != nil || got != want {
-					t.Fatalf("Resolve(%q) = %q, %v; want %q", explicit, got, err, want)
-				}
+			explicit := ""
+			got, err := Resolve(explicit, project, false)
+			if err != nil || got != want {
+				t.Fatalf("Resolve(%q) = %q, %v; want %q", explicit, got, err, want)
 			}
 		})
 	}

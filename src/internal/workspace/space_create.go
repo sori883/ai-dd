@@ -138,28 +138,6 @@ func readDefaultRule(root *os.Root) ([]byte, error) {
 	return data, nil
 }
 
-func readDefaultOrganization(openFile func(string) (io.ReadCloser, error)) (content string, err error) {
-	name := filepath.FromSlash("aidlc/spaces/default/memory/org.md")
-	file, err := openFile(name)
-	if errors.Is(err, fs.ErrNotExist) {
-		return "# Organization defaults\n", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("open default organization %q: %w", name, err)
-	}
-	defer func() {
-		if closeErr := file.Close(); closeErr != nil {
-			content = ""
-			err = errors.Join(err, fmt.Errorf("close default organization %q: %w", name, closeErr))
-		}
-	}()
-	data, err := io.ReadAll(file)
-	if err != nil {
-		return "", fmt.Errorf("read default organization %q: %w", name, err)
-	}
-	return string(data), nil
-}
-
 func writeSpaceFile(
 	name string,
 	content string,

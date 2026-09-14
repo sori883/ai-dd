@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -63,9 +62,6 @@ func TestAssignmentContractOwnerBoundary(t *testing.T) {
 				t.Fatal(err)
 			}
 			worker := t.TempDir()
-			if out, err := exec.Command("git", "-C", worker, "init", "-q").CombinedOutput(); err != nil {
-				t.Fatalf("git: %s %v", out, err)
-			}
 			owner := "another"
 			if name == "owner-release" || name == "release-root" {
 				owner = "session"

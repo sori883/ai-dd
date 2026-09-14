@@ -36,14 +36,7 @@ func TestScanBundleSelection(t *testing.T) {
 			t.Fatalf("warning %+v", w)
 		}
 	}
-	got.Concepts[0].Tags[0] = "mutated"
-	again, err := ScanBundle(f, "aidlc/spaces/main/knowledge/okf")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if again.Concepts[0].Tags[0] != "x" {
-		t.Fatal("shared tags")
-	}
+
 }
 
 func TestScanBundleLimits(t *testing.T) {

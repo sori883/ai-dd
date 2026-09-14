@@ -20,6 +20,7 @@ func TestResolveRoot(t *testing.T) {
 		input    RootInput
 		expected string
 	}{
+		{name: "absolute candidate ignores relative cwd", input: RootInput{ExplicitDir: explicitDir, WorkingDir: "relative"}, expected: explicitDir},
 		{
 			name: "explicit directory has highest precedence",
 			input: RootInput{

@@ -18,8 +18,6 @@ func TestCreateSpaceRejectsRelativeRoot(t *testing.T) {
 		name  string
 		input RootInput
 	}{
-		{name: "empty root input"},
-		{name: "relative working directory", input: RootInput{WorkingDir: "relative"}},
 		{name: "relative explicit without working directory", input: RootInput{ExplicitDir: "project"}},
 	}
 	for _, tt := range tests {
@@ -73,8 +71,6 @@ func TestCreateSpaceProjectOpenError(t *testing.T) {
 		name  string
 		cause error
 	}{
-		{name: "missing project", cause: fs.ErrNotExist},
-		{name: "permission denied", cause: fs.ErrPermission},
 		{name: "other error", cause: errors.New("injected project open failure")},
 	}
 	for _, tt := range tests {
@@ -107,85 +103,6 @@ func TestCreateSpaceProjectOpenError(t *testing.T) {
 			}
 			if !slices.Equal(opened, []string{projectPath}) {
 				t.Errorf("opened = %q, want only %q", opened, projectPath)
-			}
-		})
-	}
-}
-
-func TestReadDefaultOrganizationFailures(t *testing.T) {
-	t.Parallel()
-
-	readFailure := errors.New("injected organization read failure")
-	closeFailure := errors.New("injected organization close failure")
-	tests := []struct {
-		name      string
-		openErr   error
-		readErr   error
-		closeErr  error
-		want      string
-		wantCause []error
-	}{
-		{name: "confirmed absence", openErr: fs.ErrNotExist, want: "# Organization defaults\n"},
-		{name: "open permission", openErr: fs.ErrPermission, wantCause: []error{fs.ErrPermission}},
-		{name: "partial read data is discarded", readErr: readFailure, wantCause: []error{readFailure}},
-		{name: "read not exist is not absence", readErr: fs.ErrNotExist, wantCause: []error{fs.ErrNotExist}},
-		{name: "close failure discards data", closeErr: closeFailure, wantCause: []error{closeFailure}},
-		{
-			name:      "read and close failures joined",
-			readErr:   readFailure,
-			closeErr:  closeFailure,
-			wantCause: []error{readFailure, closeFailure},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			closeCalls := 0
-			got, err := readDefaultOrganization(func(name string) (io.ReadCloser, error) {
-				if want := filepath.Join(
-					"aidlc",
-					"spaces",
-					"default",
-					"memory",
-					"org.md",
-				); name != want {
-					t.Errorf("open path = %q, want %q", name, want)
-				}
-				if tt.openErr != nil {
-					return nil, tt.openErr
-				}
-				return spaceTestReadCloser{
-					read: func(p []byte) (int, error) {
-						readErr := tt.readErr
-						if readErr == nil {
-							readErr = io.EOF
-						}
-						return copy(p, "partial organization"), readErr
-					},
-					close: func() error {
-						closeCalls++
-						return tt.closeErr
-					},
-				}, nil
-			})
-			if got != tt.want {
-				t.Errorf("organization content = %q, want %q", got, tt.want)
-			}
-			if len(tt.wantCause) == 0 && err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-			for _, cause := range tt.wantCause {
-				if !errors.Is(err, cause) {
-					t.Errorf("error = %v, want cause %v", err, cause)
-				}
-			}
-			wantCloseCalls := 1
-			if tt.openErr != nil {
-				wantCloseCalls = 0
-			}
-			if closeCalls != wantCloseCalls {
-				t.Errorf("close calls = %d, want %d", closeCalls, wantCloseCalls)
 			}
 		})
 	}
@@ -275,14 +192,6 @@ func TestWriteSpaceFileFailures(t *testing.T) {
 		})
 	}
 }
-
-type spaceTestReadCloser struct {
-	read  func([]byte) (int, error)
-	close func() error
-}
-
-func (f spaceTestReadCloser) Read(p []byte) (int, error) { return f.read(p) }
-func (f spaceTestReadCloser) Close() error               { return f.close() }
 
 type spaceTestWriteCloser struct {
 	write func([]byte) (int, error)

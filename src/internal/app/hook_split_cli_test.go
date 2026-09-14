@@ -30,25 +30,6 @@ func TestHookSplitCLI(t *testing.T) {
 		})
 	}
 }
-func TestChildHookSplitCLI(t *testing.T) {
-	s, _ := childWorkerFixture(t, true)
-	s.OKFBinary = "/opt/okf"
-	for _, tc := range []struct {
-		name, command string
-		deny          bool
-	}{
-		{"read", "/opt/okf rules --space default", false},
-		{"mutation", "/opt/okf create codekb/x --space default --body-file body --actor process:x --type Note --title X --description X", true},
-		{"unknown", "/opt/okf __hook --project-dir /root", true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			out, err := s.Hook(childInput(t, "PreToolUse", "aidlc-worker", "Bash", tc.command))
-			if err != nil || deny(out) != tc.deny {
-				t.Fatalf("%+v %v", out, err)
-			}
-		})
-	}
-}
 func TestHookSplitCLIPost(t *testing.T) {
 	s, st := setup(t)
 	s.OKFBinary = "/opt/okf"

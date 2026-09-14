@@ -61,3 +61,7 @@ M1の24入口削除・構文拒否fixture軽量化と生存保証は、[M1結果
 ## M3実装結果
 
 工程・担当管理の39候補を[M3結果](../../design/test-reduction-m3-result.md)に記録した。F41は承認済みfallbackにより旧容量2testを通常suiteに保持し、stress tagは採用していない。独立review・final・checks・mergeは親が確認する。
+
+## M4実装結果
+
+CLI・Space・OKF等の36候補を[M4結果](../../design/test-reduction-m4-result.md)へ記録した。overlay範囲・安全なhelp案内・独自cursor/default close保証は理由付き保持。targeted確認を終え、独立review・final・checks・mergeは親が続ける。

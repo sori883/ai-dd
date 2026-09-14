@@ -8,7 +8,7 @@ import (
 )
 
 func TestFiveCLIContract(t *testing.T) {
-	for _, args := range [][]string{{"memory", "rules", "--space", "default"}, {"install", "codex"}} {
+	for _, args := range [][]string{{"memory", "rules", "--space", "default"}, {"install", "codex"}, {"kdr", "create"}, {"__minimal-hook"}} {
 		t.Run(args[0], func(t *testing.T) {
 			if _, err := ParseCommand(args); err == nil {
 				t.Fatal("retired command accepted")

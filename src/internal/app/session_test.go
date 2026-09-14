@@ -11,7 +11,6 @@ import (
 	"github.com/sori883/ai-dd/src/internal/filestore"
 	"github.com/sori883/ai-dd/src/internal/flow"
 	"github.com/sori883/ai-dd/src/internal/install"
-	"github.com/sori883/ai-dd/src/internal/okfmemory"
 )
 
 func setup(t *testing.T) (Service, flow.State) {
@@ -20,7 +19,6 @@ func setup(t *testing.T) (Service, flow.State) {
 	if _, err := install.Codex(root, "/opt/aidlc"); err != nil {
 		t.Fatal(err)
 	}
-	deployProcedureFixture(t, root)
 	s := Service{Root: root, Binary: "/opt/aidlc", OKFBinary: "/opt/okf"}
 	store := flow.Store{Root: root, Space: "default"}
 	saved, err := store.Create("Work")
@@ -130,9 +128,6 @@ func TestSessionMemoryWritesAndSearchPreserveSelection(t *testing.T) {
 	if _, err := s.Execute(request); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Execute(request); err == nil {
-		t.Fatal("accepted stale memory hash")
-	}
 	id := saved.ID
 	if _, err := s.Execute(cli.CommandRequest{Command: "memory", Action: "search", Space: "default", IntentID: &id}); err != nil {
 		t.Fatal(err)
@@ -151,34 +146,10 @@ func TestSessionMemoryBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := bodyRequest(draft)
-	output, err := s.Execute(r)
+	_, err := s.Execute(r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var result map[string]string
-	if err := json.Unmarshal(output, &result); err != nil {
-		t.Fatal(err)
-	}
-	savedPath := filepath.Join(s.Root, "aidlc/spaces/default/knowledge/codekb/note.md")
-	_, err = os.ReadFile(savedPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dropped := "Second.\n"
-	if err := os.WriteFile(draft, []byte(dropped), 0600); err != nil {
-		t.Fatal(err)
-	}
-	r.Action = "update"
-	r.Expect = result["hash"]
-	r.Metadata = okfmemory.MetadataInput{}
-	if _, err := s.Execute(r); err != nil {
-		t.Fatal(err)
-	}
-	doc, err := okfmemory.Read(filepath.Dir(filepath.Dir(savedPath)), "codekb/note")
-	if err != nil || doc.String("custom") != "keep" {
-		t.Fatal("memory update dropped unknown metadata", err)
-	}
-
 	r.Action = "create"
 	other := filepath.Join(s.Root, "aidlc/spaces/other/knowledge")
 	if err := os.MkdirAll(other, 0755); err != nil {

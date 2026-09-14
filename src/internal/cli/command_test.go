@@ -37,11 +37,6 @@ func TestCommandRejectsInvalid(t *testing.T) {
 		name string
 		args []string
 	}{
-		{"actor_missing", []string{"kdr", "create", "--space", "main", "--file", "draft"}},
-		{"space_missing", []string{"memory", "search", "query"}},
-		{"empty_id", []string{"memory", "search", "--space", "main", "--intent-id", ""}},
-		{"duplicate", []string{"memory", "rules", "--space", "main", "--space", "other"}},
-		{"unknown", []string{"kdr", "template", "--space", "main", "--force"}},
 		{"mixed_name_id", []string{"intent", "switch", "name", "--id", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "--space", "main", "--session", "s"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -64,7 +59,6 @@ func TestHookCommandDispatch(t *testing.T) {
 		wantCalls int
 	}{
 		{name: "current hook", args: []string{"__hook", "--project-dir", "/tmp/project"}, wantCalls: 1},
-		{name: "retired hook", args: []string{"__minimal-hook", "--project-dir", "/tmp/project"}, wantCode: 2},
 		{name: "unknown flag", args: []string{"__hook", "--project-dir", "/tmp/project", "--unknown"}, wantCode: 2},
 		{name: "missing project", args: []string{"__hook"}, wantCode: 2},
 		{name: "extra argument", args: []string{"__hook", "--project-dir", "/tmp/project", "extra"}, wantCode: 2},
@@ -86,10 +80,6 @@ func TestHookCommandDispatch(t *testing.T) {
 			}
 			if tc.wantCalls == 1 && out.String() != "hook result\n" {
 				t.Fatalf("output=%q", out.String())
-			}
-			_, err := ParseCommand(tc.args)
-			if (err == nil) != (tc.wantCode == 0) {
-				t.Fatalf("parse error=%v", err)
 			}
 		})
 	}

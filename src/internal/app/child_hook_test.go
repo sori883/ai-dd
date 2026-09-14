@@ -175,6 +175,8 @@ func TestChildHookCommandBoundary(t *testing.T) {
 		{"parent bind", "Bash", "/opt/aidlc session bind " + st.ID + " --space default --session session", true},
 		{"reservation release", "Bash", "/opt/aidlc assignment release id --session session --expect 1 --file r.json", true},
 		{"unit claim", "Bash", "/opt/aidlc unit claim " + st.ID + " --space default --expect 1 --file r.json", true},
+		{"knowledge create", "Bash", "/opt/okf create codekb/x --space default --body-file body --actor process:x --type Note --title X --description X", true},
+		{"okf unknown", "Bash", "/opt/okf __hook --project-dir /root", true},
 		{"knowledge update", "Bash", "/opt/okf update codekb/x --space default --body-file r.md --actor process:x --expect hash", true},
 		{"approval", "Bash", "/opt/aidlc intent approval " + st.ID + " --space default --expect 1 --file r.json", true},
 		{"plan change", "Bash", "/opt/aidlc intent plan " + st.ID + " --space default --expect 1 --file r.json", true},
