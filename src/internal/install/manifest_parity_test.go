@@ -83,17 +83,8 @@ func TestCodexManifestParity(t *testing.T) {
 	if len(paths) != len(expected) || !reflect.DeepEqual(paths, result.Paths) {
 		t.Fatalf("saved/returned paths differ: %v", result.Paths)
 	}
-	definition, err := workflow.Load(root)
-	if err != nil {
+	if _, err := workflow.Load(root); err != nil {
 		t.Fatal(err)
-	}
-	for _, ref := range definition.Procedures["integration"].Outputs {
-		if ref.Role == "current_analysis" && ref.Path != "${knowledge_root}/codekb/current-analysis.md" {
-			t.Errorf("analysis output: %s", ref.Path)
-		}
-		if ref.Role == "architecture" && ref.Path != "${knowledge_root}/codekb/architecture.md" {
-			t.Errorf("architecture output: %s", ref.Path)
-		}
 	}
 	if !strings.Contains(string(expected["aidlc/templates/adr.md"]), "type: adr") {
 		t.Error("wrong ADR type")

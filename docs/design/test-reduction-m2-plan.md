@@ -24,7 +24,7 @@
 | P09 | 旧単品builderとschema1専用test/helperを削る。現一式へ必要な拒否・途中保存を移す | 新 `TestReleaseInputValidation`、`TestReleasePreflight`、既存 `TestBundledRelease` / `TestReleaseLicenseInputs` / `TestDistCommand`。削除するproductionの詳細は後述 |
 | P10 | `bootstrap/powershell_test.go::TestBootstrapPowerShell` を各engineのScriptBlock全8mode、`-File`はvalid/exit/start failureの3modeへ。共通exeの圧縮は同formatで1回 | PS5.1/7ともcaller復帰、exit0/17、Start失敗で元診断を保つ。各caseのproject/result/PATH/curl配置は分離。`TestBootstrap`の正常tarも1回生成してreuse |
 | P11 | `harness/codex/manifest_test.go::TestDistribution` を独立した資材集合/role/参照/原典/未展開token契約へ変更。`install/manifest_parity_test.go::TestCodexManifestParity` は生成bytesと実配置の照合へ | 資材正本の独立期待値と配置層のbytes/regular/mode/umask/Pathsを分担。`install/testdata/five-cli-assets-sha256.json`を削除。固定全文hashや同等の巨大snapshotへ置換しない |
-| P12 | `TestInstallFresh`、`TestFlowInstallAssets`、`TestWorkflowDefinitionFresh`、`TestDocumentDistribution`、`TestCodeKBDistribution`の重複配置/存在/件数を削る。Codex Content/Splitの固定15/5/71件assertも削る | fresh配置はParity、追加Spaceは `workspace::TestCreateSpaceScaffold`。workflow.Load、default側のcodekbリンク・小文字adr/type、integration出力pathはParityへ。Rule selectorの実接続は `TestDocumentDistributionRuleSelector` を保持 |
+| P12 | `TestInstallFresh`、`TestFlowInstallAssets`、`TestWorkflowDefinitionFresh`、`TestDocumentDistribution`、`TestCodeKBDistribution`の重複配置/存在/件数を削る。Codex Content/Splitの固定15/5/71件assertも削る | fresh配置はParity、追加Spaceは `workspace::TestCreateSpaceScaffold`。workflow.Load、default側のcodekbリンク・小文字adr/typeはParityへ。Rule selectorの実接続は `TestDocumentDistributionRuleSelector` を保持 |
 | P13 | 監査の13項目の文面Containsを削除。専用testが空ならfileも削除 | 5agentのsandbox/encoded instructionsはDistribution、tool matcher/生成hookは `TestAssignmentContract` / `TestInstallHookCommands`、実help解決は既存CLI tests。CodeKBの出力path構造はParityへ。言い回しを新たなhashに置換しない |
 | P14 | 同じ `len(bootstrap)>4096` の反復を削除 | `bootstrap_test.go::TestInstallBootstrapBinaryPathBudget` の長い絶対path展開後の実context上限を維持 |
 | P15 | `TestStageSkillsInstall` / `TestNaturalJapaneseSkill` / `TestUpstreamSkillNames` / `TestStageSkillsReferencesResolve` / `TestUpstreamSkillReferences` をDistributionの1回の生成物検査へ移す | 13原典skill、SKILL/原典LICENSE/source、natural writingと補助license、相対リンク、旧接頭辞混入拒否を保持。正常assetを毎回installしない |
@@ -64,7 +64,7 @@
 
 `TestCodexManifestParity` は実root・明示binaryでCodexFromを実行し、そのroot/binaryで `codex.DistributionFrom` が生成したassetsと保存bytes/Pathsを照合する。旧のroot文字列正規化→hash比較を除く。既存apostrophe入りroot/binary、regular file、caller umaskを観測するcontrol file、戻りPathsと実保存集合を保持。生成側の不足は独立したTestDistribution、書き込み側の欠落/破損はParityが検出する。
 
-freshのworkflow.Load・templateのtype・小文字adr・default codekbリンク・integrationのcurrent_analysis/architecture出力pathを同じParityの不変rootへ集約する。追加Space側のcodekbリンクと二重knowledge directory不在は `workspace/space_create_integration_test.go::TestCreateSpaceScaffold` の既存team/defaultへ移す（このfileをM2所有へ追加）。実Rule selectorがRule本文に一致する `TestDocumentDistributionRuleSelector` は保持する。
+freshのworkflow.Load・templateのtype・小文字adr・default codekbリンクを同じParityの不変rootへ集約する。追加Space側のcodekbリンクと二重knowledge directory不在は `workspace/space_create_integration_test.go::TestCreateSpaceScaffold` の既存team/defaultへ移す（このfileをM2所有へ追加）。実Rule selectorがRule本文に一致する `TestDocumentDistributionRuleSelector` は保持する。
 
 P13の削除対象は `install_test.go` の RecoveryGuidanceAndContextLimit / MemoryCommandGuidance / FlowInstallInactiveResumeGuidance / MemoryHelpPlacedSkill / OKFWorkLogInstalledGuidance、`flow_test.go::TestFlowInstallJapaneseProcedure`、`assignment_test.go::TestAssignmentContractDocumentRules`、`codekb_test.go::TestCodeKBGuidance` の文章部、`execution_plan_test.go::TestExecutionPlanDistribution`、`stage_planner_test.go::TestStagePlannerDistribution`、`product_agents_test.go::TestProductAgentAssets` の文章部、`git_independent_test.go::TestGitIndependentInstall`、`rule_skill_separation_test.go::TestRuleSkillSeparationAssets`。残す構造を移して空になった関数/fileを除く。
 
@@ -233,3 +233,7 @@ final後の修正は証拠をstaleとして必要なloop/review/finalへ戻す�
 実装中に、旧参照群へ未知の現callerが見つかる、前段の別拒否しか通らない、ライセンス/権限の期待値を一次資料から一意に置けない、実際の動作修正を要するfailureが出る場合は、元の固有保証を保持して親へ返す。削減のために仕様やtest合格条件を緩めない。
 
 rollbackは問題のM2 PRを戻すPRで行い、M1や他の変更をresetしない。元の作業tree `/Users/const/sori883/ai-dd` を触らない。この計画は一時fileだけへ保存し、repo/GitHub/testは変更・実行していない。
+
+## review修正（test-reduction-m2-repair-01）
+
+Issue #206の承認範囲内で、句読点を飛ばす名詞終止検査を手作りtokenへ補い、入力検証fixtureをaidlcの6binaryへ縮小する。Parityのintegration出力条件分岐は現在のdeclared:intent_documentsに一致せず検査を行わないため削除し、workflow.Load成功は保持する。Sensorの出力契約検査は別の保証であり、Parityの保証とは扱わない。部分保存の1件確認後にある到達不能な6件以上の確認を削除する。製品コードは変更しない。

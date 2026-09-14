@@ -47,7 +47,7 @@ func TestMorphNominal(t *testing.T) {
 				if tt.nominal && i == 0 {
 					pos = "名詞"
 				}
-				ts = append(ts, TokenizedSentence{Sentence: Sentence{Line: i + 1, Raw: strings.Repeat("猫", 500)}, Tokens: []Token{{Surface: "猫", Base: "猫", POS: []string{pos}}}})
+				ts = append(ts, TokenizedSentence{Sentence: Sentence{Line: i + 1, Raw: strings.Repeat("猫", 500)}, Tokens: []Token{{Surface: "猫", Base: "猫", POS: []string{pos}}, {Surface: "。", POS: []string{"補助記号"}}}})
 			}
 			if got := countCategory(Morph(ts, 2000), "nominal_ending"); got != tt.want {
 				t.Fatal(got)

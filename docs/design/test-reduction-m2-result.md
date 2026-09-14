@@ -14,7 +14,7 @@
 | P09 | 旧packageArchives/archiveBytes/productArchiveBytes・manifest writer/schema1専用testと未使用validator群を削除。runをpackageReleaseへ直結 | ReleaseInputValidationでsyntax/target/file種別、ReleasePreflightでlate欠損・既存出力・部分保存。BuildData/DataManifest/DataFile/Unpackを保持 | S3 |
 | P10 | sh/PSの正常archiveを同formatで1回圧縮。PS各engineのFileを3caseへ | ScriptBlock8case、Fileのvalid/exit/start failure、project/result/curl/logの分離。Windows実行は同head CI | S6 |
 | P11 | 固定全文SHA fixtureを削除。Distributionを独立資材集合、Parityを生成bytesと保存結果へ置換 | 13原典skill・5role権限・原典license/source・追加resource・相対リンク・未展開token、実regular/mode/umask/Paths | S1 |
-| P12 | Fresh/FlowInstallAssets/WorkflowDefinitionFresh/DocumentDistribution/CodeKBDistributionの重複配置検査と固定件数を除去 | Parityのworkflow.Load、小文字adr/type、default codekbリンク、integration output。Scaffoldにteam/defaultリンク、Rule selector実接続は維持 | S1 |
+| P12 | Fresh/FlowInstallAssets/WorkflowDefinitionFresh/DocumentDistribution/CodeKBDistributionの重複配置検査と固定件数を除去 | Parityのworkflow.Load、小文字adr/type、default codekbリンク。Scaffoldにteam/defaultリンク、Rule selector実接続は維持 | S1 |
 | P13 | 計画の文章Contains 13項目を除去し、空のtest fileを削除 | role sandbox/encoded instructionsはDistribution、matcher/生成hookはAssignmentContract/InstallHookCommands、出力pathはParity。実help testsは保持 | S1 |
 | P14 | 削除対象内の同じ4096上限assert反復を除去 | 長い絶対binary path展開後のTestInstallBootstrapBinaryPathBudgetを変更せず保持 | S1 |
 | P15 | StageSkillsInstall/NaturalJapaneseSkill/UpstreamSkillNames/References系の個別installを除去 | Distributionの13skill/SKILL/LICENSE/source、natural5license/writing、原典repository/調整表示、相対リンク、旧接頭辞拒否 | S1 |
@@ -108,3 +108,16 @@ go test -count=1 ./src/core/workflow -run '^TestRenderRejectsDuplicateCompletedP
 ## work unit末尾の検証
 
 全8sliceの変更後、上記18コマンド（実行16、入口discovery 2）を一度まとめて再実行し、全てexit 0、実行対象なし・失敗はなかった。詳細は `/tmp/test-reduction-m2-writer-boundary.json` に保存した。変更Goファイルへgofmtを適用し、`git diff --check` と現行開発手順・CIの削除名参照確認も成功した。開始・終了HEADは `9a3fb08dae11e47b9796686b87b6aa1a9f5fcfaf`。
+
+## review修正: test-reduction-m2-repair-01
+
+開始HEADは `465e3023aefbc80d8407828816aa5f6efcc5f528`。4点とも既存挙動への検査修復・削減であり、ALREADY_GREENを確認し、人工REDは作らなかった。
+
+| 修正 | 保持する保証と根拠 | targeted command |
+| --- | --- | --- |
+| MorphNominalの名詞token末尾に「。」補助記号を追加 | 旧Analyze入力「猫。」の句読点を飛ばす分岐を軽いfixtureで保持 | `go test -count=1 ./src/internal/naturaljapanese -run '^TestMorphNominal$'` |
+| ReleaseInputValidationをaidlc 6binaryのcase固有fixtureへ縮小 | 全構文・binary種別拒否の正常起点を保持。30binary/license準備不要 | `go test -count=1 ./src/cmd/aidlc-dist -run '^Test(ReleaseInputValidation|ReleasePreflight)$'` |
+| Parityの旧integration Outputs条件分岐を削除 | 現在はdeclared:intent_documentsで旧条件が成立しない。workflow.Load成功を保持。Sensor出力契約は別保証 | `go test -count=1 ./src/internal/install -run '^Test(CodexManifestParity|AssignmentContract)$'` |
+| Preflightの到達不能な6件以上assertを削除 | errorと部分保存1件の実検査を保持 | 上記Release command |
+
+各修正の変更前後は全てexit 0。末尾でも3 targeted commandを再実行し全成功、gofmt・git diff --check成功。追加の製品挙動変更はない。additionalContextLimitは既存AssignmentContract→Relocateの独自validationを保持する。

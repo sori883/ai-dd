@@ -116,8 +116,20 @@ func TestReleaseInputValidation(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			o := releaseFixture(t)
-			o.Product = "aidlc"
+			o := options{
+				Product: "aidlc", InputDir: t.TempDir(), OutputDir: filepath.Join(t.TempDir(), "candidate"),
+				Version: "dev-abcdef0", Commit: strings.Repeat("a", 40), GoVersion: runtime.Version(),
+				Targets: append([]string{}, fixtureTargets...),
+			}
+			for _, target := range fixtureTargets {
+				name := "aidlc-" + strings.ReplaceAll(target, "/", "-")
+				if strings.HasPrefix(target, "windows/") {
+					name += ".exe"
+				}
+				if err := os.WriteFile(filepath.Join(o.InputDir, name), []byte(target), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
 			tc.change(t, &o)
 			_, err := validateInputs(o)
 			if (err == nil) != (tc.name == "valid") {
@@ -171,11 +183,6 @@ func TestReleasePreflight(t *testing.T) {
 			}
 			if mode == "existing output" && string(mustRead(t, filepath.Join(o.OutputDir, "keep"))) != "unchanged" {
 				t.Fatal("changed existing output")
-			}
-			if mode == "partial save" {
-				if len(entries) >= len(fixtureTargets) {
-					t.Fatal("partial output appears complete")
-				}
 			}
 		})
 	}
